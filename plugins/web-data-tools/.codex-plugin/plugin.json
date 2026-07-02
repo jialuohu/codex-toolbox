@@ -1,0 +1,25 @@
+{
+  "name": "web-data-tools",
+  "version": "0.1.0",
+  "description": "Web browsing, extraction, crawling, and browser automation tools.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Web Data Tools",
+    "shortDescription": "Firecrawl MCP and Playwright CLI skill.",
+    "longDescription": "Web Data Tools packages Firecrawl MCP for web data extraction and the Playwright CLI skill for browser automation workflows.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Extract web data or automate a browser flow."
+    ]
+  }
+}

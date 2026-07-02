@@ -1,0 +1,25 @@
+{
+  "name": "obsidian-tools",
+  "version": "0.1.0",
+  "description": "Obsidian skills and vault filesystem MCP access for personal note workflows.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Obsidian Tools",
+    "shortDescription": "Obsidian skills and vault filesystem access.",
+    "longDescription": "Obsidian Tools packages Obsidian CLI, Markdown, Bases, JSON Canvas skills, and a filesystem MCP server pointed at the configured Obsidian vault.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Work with my Obsidian vault notes and canvases."
+    ]
+  }
+}

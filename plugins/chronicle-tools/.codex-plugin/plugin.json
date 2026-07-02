@@ -1,0 +1,23 @@
+{
+  "name": "chronicle-tools",
+  "version": "0.1.0",
+  "description": "Chronicle screen-history skill for resolving recent-work context.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Chronicle Tools",
+    "shortDescription": "Chronicle skill for recent-work context.",
+    "longDescription": "Chronicle Tools packages the Chronicle skill for using local screen-history context when memories and Chronicle are available.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Use Chronicle to understand recent screen context."
+    ]
+  }
+}

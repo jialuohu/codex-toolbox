@@ -4,8 +4,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_CODEX="/Applications/Codex.app/Contents/Resources/codex"
 MARKETPLACE_NAME="jialuo-codex-toolbox"
-DEFAULT_PLUGINS=("lab-weekly-update" "context7-docs")
-RETIRED_PLUGINS=("legacy-toolbox")
+DEFAULT_PLUGINS=(
+  "obsidian-tools"
+  "research-tools"
+  "web-data-tools"
+  "trading-tools"
+  "chronicle-tools"
+)
+RETIRED_PLUGINS=(
+  "legacy-toolbox"
+  "lab-weekly-update"
+  "context7-docs"
+)
 
 resolve_codex() {
   if command -v codex >/dev/null 2>&1 && codex --version >/dev/null 2>&1; then
@@ -64,9 +74,10 @@ PY
 
 for plugin in "${RETIRED_PLUGINS[@]}"; do
   if plugin_installed "$plugin"; then
-    echo "Removing retired plugin: ${plugin}@${MARKETPLACE_NAME}"
     "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null
+    echo "Removed retired plugin: ${plugin}@${MARKETPLACE_NAME}"
   else
+    "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null 2>&1 || true
     echo "Retired plugin not installed: ${plugin}@${MARKETPLACE_NAME}"
   fi
 done

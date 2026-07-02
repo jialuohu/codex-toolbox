@@ -1,0 +1,51 @@
+{
+  "mcpServers": {
+    "alpaca": {
+      "enabled": true,
+      "command": "CODEX_LOCAL_BIN_DIR/uvx",
+      "args": [
+        "alpaca-mcp-server",
+        "--env-file",
+        "CODEX_SECRETS_DIR/alpaca-live.env"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 180,
+      "default_tools_approval_mode": "auto",
+      "tools": {
+        "update_account_config": {
+          "approval_mode": "prompt"
+        },
+        "replace_order_by_id": {
+          "approval_mode": "prompt"
+        },
+        "cancel_order_by_id": {
+          "approval_mode": "prompt"
+        },
+        "cancel_all_orders": {
+          "approval_mode": "prompt"
+        },
+        "place_stock_order": {
+          "approval_mode": "prompt"
+        },
+        "place_crypto_order": {
+          "approval_mode": "prompt"
+        },
+        "place_option_order": {
+          "approval_mode": "prompt"
+        },
+        "close_position": {
+          "approval_mode": "prompt"
+        },
+        "close_all_positions": {
+          "approval_mode": "prompt"
+        },
+        "exercise_options_position": {
+          "approval_mode": "prompt"
+        },
+        "do_not_exercise_options_position": {
+          "approval_mode": "prompt"
+        }
+      }
+    }
+  }
+}

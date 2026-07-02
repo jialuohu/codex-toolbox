@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "firecrawl": {
+      "enabled": true,
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "set -a; source CODEX_SECRETS_DIR/firecrawl.env; set +a; exec npx -y firecrawl-mcp"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 240,
+      "default_tools_approval_mode": "auto",
+      "disabled_tools": [
+        "firecrawl_search_feedback",
+        "firecrawl_feedback"
+      ]
+    }
+  }
+}

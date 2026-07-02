@@ -1,0 +1,100 @@
+{
+  "mcpServers": {
+    "paper_search_mcp": {
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "set -a; source CODEX_SECRETS_DIR/paper-search-mcp.env; set +a; exec uv run --directory PAPER_SEARCH_MCP_ROOT --python 3.12 -m paper_search_mcp.server"
+      ]
+    },
+    "zotero": {
+      "enabled": true,
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "set -a; source CODEX_SECRETS_DIR/zotero.env; set +a; exec CODEX_LOCAL_BIN_DIR/zotero-mcp serve --transport stdio"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 180,
+      "default_tools_approval_mode": "auto",
+      "disabled_tools": [
+        "zmcp-presearch-sync",
+        "zotero_update_search_database"
+      ],
+      "tools": {
+        "zotero_batch_update_tags": {
+          "approval_mode": "prompt"
+        },
+        "zotero_batch_update_extra": {
+          "approval_mode": "prompt"
+        },
+        "zotero_create_collection": {
+          "approval_mode": "prompt"
+        },
+        "zotero_delete_collection": {
+          "approval_mode": "prompt"
+        },
+        "zotero_manage_collections": {
+          "approval_mode": "prompt"
+        },
+        "zotero_add_by_doi": {
+          "approval_mode": "prompt"
+        },
+        "zotero_add_by_url": {
+          "approval_mode": "prompt"
+        },
+        "zotero_add_by_isbn": {
+          "approval_mode": "prompt"
+        },
+        "zotero_add_from_file": {
+          "approval_mode": "prompt"
+        },
+        "zotero_add_by_bibtex": {
+          "approval_mode": "prompt"
+        },
+        "zotero_add_by_csl_json": {
+          "approval_mode": "prompt"
+        },
+        "zotero_update_item": {
+          "approval_mode": "prompt"
+        },
+        "zotero_delete_item": {
+          "approval_mode": "prompt"
+        },
+        "zotero_merge_duplicates": {
+          "approval_mode": "prompt"
+        },
+        "zotero_add_item_relation": {
+          "approval_mode": "prompt"
+        },
+        "zotero_remove_item_relation": {
+          "approval_mode": "prompt"
+        },
+        "zotero_create_note": {
+          "approval_mode": "prompt"
+        },
+        "zotero_update_note": {
+          "approval_mode": "prompt"
+        },
+        "zotero_delete_note": {
+          "approval_mode": "prompt"
+        },
+        "zotero_create_annotation": {
+          "approval_mode": "prompt"
+        },
+        "zotero_create_area_annotation": {
+          "approval_mode": "prompt"
+        },
+        "zotero_update_annotation": {
+          "approval_mode": "prompt"
+        },
+        "zotero_delete_annotation": {
+          "approval_mode": "prompt"
+        },
+        "zotero_switch_library": {
+          "approval_mode": "prompt"
+        }
+      }
+    }
+  }
+}

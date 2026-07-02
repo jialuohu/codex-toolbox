@@ -5,10 +5,10 @@
   },
   "plugins": [
     {
-      "name": "lab-weekly-update",
+      "name": "obsidian-tools",
       "source": {
         "source": "local",
-        "path": "./plugins/lab-weekly-update"
+        "path": "./plugins/obsidian-tools"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -17,10 +17,46 @@
       "category": "Productivity"
     },
     {
-      "name": "context7-docs",
+      "name": "research-tools",
       "source": {
         "source": "local",
-        "path": "./plugins/context7-docs"
+        "path": "./plugins/research-tools"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "web-data-tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/web-data-tools"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "trading-tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/trading-tools"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "chronicle-tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/chronicle-tools"
       },
       "policy": {
         "installation": "AVAILABLE",

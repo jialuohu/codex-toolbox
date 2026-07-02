@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "obsidian_files": {
+      "enabled": true,
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "exec CODEX_LOCAL_BIN_DIR/npx -y @modelcontextprotocol/server-filesystem@2026.1.14 CODEX_OBSIDIAN_VAULT"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 180,
+      "default_tools_approval_mode": "auto",
+      "disabled_tools": [
+        "move_file"
+      ]
+    }
+  }
+}
