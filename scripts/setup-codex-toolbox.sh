@@ -9,6 +9,7 @@ DEFAULT_PLUGINS=(
   "research-tools"
   "web-data-tools"
   "trading-tools"
+  "vibe-trading-tools"
   "chronicle-tools"
 )
 RETIRED_PLUGINS=(
@@ -21,6 +22,7 @@ MANAGED_MCP_SERVERS=(
   "firecrawl"
   "obsidian_files"
   "paper_search_mcp"
+  "vibe_trading"
   "zotero"
 )
 

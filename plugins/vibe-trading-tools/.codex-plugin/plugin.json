@@ -1,0 +1,26 @@
+{
+  "name": "vibe-trading-tools",
+  "version": "0.1.0",
+  "description": "Vibe-Trading MCP access for finance research, backtesting, screening, and research swarms.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Vibe-Trading Tools",
+    "shortDescription": "Vibe-Trading MCP and routing skill.",
+    "longDescription": "Vibe-Trading Tools packages the upstream Vibe-Trading MCP server for finance research, market data, backtesting, factor analysis, research swarms, and Shadow Account workflows.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use Vibe-Trading for finance research or backtesting."
+    ]
+  }
+}

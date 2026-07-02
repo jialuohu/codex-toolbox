@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "vibe_trading": {
+      "enabled": true,
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "if [ -f \"$CODEX_SECRETS_DIR/vibe-trading.env\" ]; then set -a; source \"$CODEX_SECRETS_DIR/vibe-trading.env\"; set +a; fi; UVX=\"$(command -v uvx || true)\"; if [ -z \"$UVX\" ] && [ -x \"CODEX_LOCAL_BIN_DIR/uvx\" ]; then UVX=\"CODEX_LOCAL_BIN_DIR/uvx\"; fi; if [ -z \"$UVX\" ]; then echo \"uvx not found\" >&2; exit 127; fi; exec \"$UVX\" --from vibe-trading-ai vibe-trading-mcp"
+      ],
+      "startup_timeout_sec": 300,
+      "tool_timeout_sec": 3600,
+      "default_tools_approval_mode": "auto"
+    }
+  }
+}
