@@ -4,6 +4,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_CODEX="/Applications/Codex.app/Contents/Resources/codex"
 MARKETPLACE_NAME="jialuo-codex-toolbox"
+UI_UX_MARKETPLACE_NAME="ui-ux-pro-max-skill"
+UI_UX_MARKETPLACE_SOURCE="nextlevelbuilder/ui-ux-pro-max-skill"
+UI_UX_MARKETPLACE_REF="v2.10.0"
+UI_UX_MARKETPLACE_SPARSE_PATHS=(
+  ".claude/skills/ui-ux-pro-max"
+  ".claude-plugin"
+  "LICENSE"
+)
 DEFAULT_PLUGINS=(
   "obsidian-tools"
   "research-tools"
@@ -11,6 +19,9 @@ DEFAULT_PLUGINS=(
   "trading-tools"
   "vibe-trading-tools"
   "chronicle-tools"
+)
+THIRD_PARTY_DEFAULT_PLUGINS=(
+  "ui-ux-pro-max"
 )
 RETIRED_PLUGINS=(
   "legacy-toolbox"
@@ -55,6 +66,65 @@ fi
 echo "Using Codex binary: $CODEX_BIN"
 "$CODEX_BIN" --version
 
+marketplace_registered() {
+  local marketplace_name="$1"
+
+  MARKETPLACE_JSON="$("$CODEX_BIN" plugin marketplace list --json)" \
+    python3 - "$marketplace_name" <<'PY'
+import json
+import os
+import sys
+
+marketplace_name = sys.argv[1]
+data = json.loads(os.environ["MARKETPLACE_JSON"])
+
+for marketplace in data.get("marketplaces", []):
+    if marketplace.get("name") == marketplace_name:
+        sys.exit(0)
+
+sys.exit(1)
+PY
+}
+
+ui_ux_marketplace_config_current() {
+  local config_file="${CODEX_HOME:-$HOME/.codex}/config.toml"
+
+  [ -f "$config_file" ] || return 1
+  grep -Fq "[marketplaces.${UI_UX_MARKETPLACE_NAME}]" "$config_file" || return 1
+  grep -Fq 'source = "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill.git"' "$config_file" || return 1
+  grep -Fq "ref = \"${UI_UX_MARKETPLACE_REF}\"" "$config_file" || return 1
+
+  for sparse_path in "${UI_UX_MARKETPLACE_SPARSE_PATHS[@]}"; do
+    grep -Fq "\"${sparse_path}\"" "$config_file" || return 1
+  done
+}
+
+add_ui_ux_marketplace() {
+  local add_args=("$UI_UX_MARKETPLACE_SOURCE" "--ref" "$UI_UX_MARKETPLACE_REF")
+
+  for sparse_path in "${UI_UX_MARKETPLACE_SPARSE_PATHS[@]}"; do
+    add_args+=("--sparse" "$sparse_path")
+  done
+
+  "$CODEX_BIN" plugin marketplace add "${add_args[@]}" --json >/dev/null
+}
+
+ensure_ui_ux_marketplace() {
+  if ui_ux_marketplace_config_current; then
+    echo "Refreshing third-party marketplace: ${UI_UX_MARKETPLACE_NAME}"
+    "$CODEX_BIN" plugin marketplace upgrade "$UI_UX_MARKETPLACE_NAME" --json >/dev/null
+    return
+  fi
+
+  if marketplace_registered "$UI_UX_MARKETPLACE_NAME"; then
+    "$CODEX_BIN" plugin marketplace remove "$UI_UX_MARKETPLACE_NAME" --json >/dev/null
+    echo "Removed stale third-party marketplace: ${UI_UX_MARKETPLACE_NAME}"
+  fi
+
+  echo "Registering third-party marketplace: ${UI_UX_MARKETPLACE_NAME}"
+  add_ui_ux_marketplace
+}
+
 if "$CODEX_BIN" plugin marketplace list | awk 'NR > 1 {print $NF}' | grep -Fx "$ROOT" >/dev/null; then
   echo "Marketplace already registered: $ROOT"
 else
@@ -63,9 +133,10 @@ fi
 
 plugin_installed() {
   local plugin_name="$1"
+  local marketplace_name="$2"
 
-  PLUGIN_JSON="$("$CODEX_BIN" plugin list --marketplace "$MARKETPLACE_NAME" --available --json)" \
-    python3 - "$plugin_name" "$MARKETPLACE_NAME" <<'PY'
+  PLUGIN_JSON="$("$CODEX_BIN" plugin list --marketplace "$marketplace_name" --available --json)" \
+    python3 - "$plugin_name" "$marketplace_name" <<'PY'
 import json
 import os
 import sys
@@ -81,6 +152,20 @@ sys.exit(1)
 PY
 }
 
+install_or_refresh_plugin() {
+  local plugin_name="$1"
+  local marketplace_name="$2"
+
+  if plugin_installed "$plugin_name" "$marketplace_name"; then
+    echo "Refreshing plugin: ${plugin_name}@${marketplace_name}"
+    "$CODEX_BIN" plugin remove "${plugin_name}@${marketplace_name}" --json >/dev/null
+  else
+    echo "Installing plugin: ${plugin_name}@${marketplace_name}"
+  fi
+
+  "$CODEX_BIN" plugin add "${plugin_name}@${marketplace_name}" --json >/dev/null
+}
+
 direct_mcp_config_present() {
   local server_name="$1"
   local config_file="${CODEX_HOME:-$HOME/.codex}/config.toml"
@@ -89,13 +174,8 @@ direct_mcp_config_present() {
 }
 
 for plugin in "${RETIRED_PLUGINS[@]}"; do
-  if plugin_installed "$plugin"; then
-    "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null
-    echo "Removed retired plugin: ${plugin}@${MARKETPLACE_NAME}"
-  else
-    "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null 2>&1 || true
-    echo "Retired plugin not installed: ${plugin}@${MARKETPLACE_NAME}"
-  fi
+  "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null 2>&1 || true
+  echo "Removed retired plugin if present: ${plugin}@${MARKETPLACE_NAME}"
 done
 
 for server in "${MANAGED_MCP_SERVERS[@]}"; do
@@ -108,14 +188,12 @@ for server in "${MANAGED_MCP_SERVERS[@]}"; do
 done
 
 for plugin in "${DEFAULT_PLUGINS[@]}"; do
-  if plugin_installed "$plugin"; then
-    echo "Refreshing plugin: ${plugin}@${MARKETPLACE_NAME}"
-    "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null
-  else
-    echo "Installing plugin: ${plugin}@${MARKETPLACE_NAME}"
-  fi
+  install_or_refresh_plugin "$plugin" "$MARKETPLACE_NAME"
+done
 
-  "$CODEX_BIN" plugin add "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null
+ensure_ui_ux_marketplace
+for plugin in "${THIRD_PARTY_DEFAULT_PLUGINS[@]}"; do
+  install_or_refresh_plugin "$plugin" "$UI_UX_MARKETPLACE_NAME"
 done
 
 "$CODEX_BIN" plugin marketplace list
