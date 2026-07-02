@@ -16,6 +16,13 @@ RETIRED_PLUGINS=(
   "lab-weekly-update"
   "context7-docs"
 )
+MANAGED_MCP_SERVERS=(
+  "alpaca"
+  "firecrawl"
+  "obsidian_files"
+  "paper_search_mcp"
+  "zotero"
+)
 
 resolve_codex() {
   if command -v codex >/dev/null 2>&1 && codex --version >/dev/null 2>&1; then
@@ -72,6 +79,13 @@ sys.exit(1)
 PY
 }
 
+direct_mcp_config_present() {
+  local server_name="$1"
+  local config_file="${CODEX_HOME:-$HOME/.codex}/config.toml"
+
+  [ -f "$config_file" ] && grep -Eq "^\[mcp_servers\.${server_name//./\\.}\]" "$config_file"
+}
+
 for plugin in "${RETIRED_PLUGINS[@]}"; do
   if plugin_installed "$plugin"; then
     "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null
@@ -82,13 +96,24 @@ for plugin in "${RETIRED_PLUGINS[@]}"; do
   fi
 done
 
+for server in "${MANAGED_MCP_SERVERS[@]}"; do
+  if direct_mcp_config_present "$server"; then
+    "$CODEX_BIN" mcp remove "$server" >/dev/null
+    echo "Removed direct MCP config override: ${server}"
+  else
+    echo "Direct MCP config override not present: ${server}"
+  fi
+done
+
 for plugin in "${DEFAULT_PLUGINS[@]}"; do
   if plugin_installed "$plugin"; then
-    echo "Plugin already installed: ${plugin}@${MARKETPLACE_NAME}"
+    echo "Refreshing plugin: ${plugin}@${MARKETPLACE_NAME}"
+    "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null
   else
     echo "Installing plugin: ${plugin}@${MARKETPLACE_NAME}"
-    "$CODEX_BIN" plugin add "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null
   fi
+
+  "$CODEX_BIN" plugin add "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null
 done
 
 "$CODEX_BIN" plugin marketplace list

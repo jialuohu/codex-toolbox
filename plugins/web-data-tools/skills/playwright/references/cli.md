@@ -2,13 +2,14 @@
 
 Use the wrapper script unless the CLI is already installed globally:
 
+Resolve `scripts/playwright_cli.sh` relative to this skill directory, then export that absolute path:
+
 ```bash
-export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-export PWCLI="$CODEX_HOME/skills/playwright/scripts/playwright_cli.sh"
+export PWCLI="/absolute/path/to/this/skill/scripts/playwright_cli.sh"
 "$PWCLI" --help
 ```
 
-User-scoped skills install under `$CODEX_HOME/skills` (default: `~/.codex/skills`).
+Do not assume this skill is installed under `~/.codex/skills`; it may be loaded from a plugin cache.
 
 Optional convenience alias:
 

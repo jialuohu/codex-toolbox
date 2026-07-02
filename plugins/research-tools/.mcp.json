@@ -4,7 +4,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "set -a; source CODEX_SECRETS_DIR/paper-search-mcp.env; set +a; exec uv run --directory PAPER_SEARCH_MCP_ROOT --python 3.12 -m paper_search_mcp.server"
+        "set -a; source \"$CODEX_SECRETS_DIR/paper-search-mcp.env\"; set +a; exec uv run --directory \"PAPER_SEARCH_MCP_ROOT\" --python 3.12 -m paper_search_mcp.server"
       ]
     },
     "zotero": {
@@ -12,7 +12,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "set -a; source CODEX_SECRETS_DIR/zotero.env; set +a; exec CODEX_LOCAL_BIN_DIR/zotero-mcp serve --transport stdio"
+        "set -a; source \"$CODEX_SECRETS_DIR/zotero.env\"; set +a; ZOTERO_MCP=\"$(command -v zotero-mcp || true)\"; if [ -z \"$ZOTERO_MCP\" ] && [ -x \"CODEX_LOCAL_BIN_DIR/zotero-mcp\" ]; then ZOTERO_MCP=\"CODEX_LOCAL_BIN_DIR/zotero-mcp\"; fi; if [ -z \"$ZOTERO_MCP\" ]; then echo \"zotero-mcp not found\" >&2; exit 127; fi; exec \"$ZOTERO_MCP\" serve --transport stdio"
       ],
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 180,

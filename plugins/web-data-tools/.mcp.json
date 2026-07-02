@@ -5,7 +5,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "set -a; source CODEX_SECRETS_DIR/firecrawl.env; set +a; exec npx -y firecrawl-mcp"
+        "set -a; source \"$CODEX_SECRETS_DIR/firecrawl.env\"; set +a; exec npx -y firecrawl-mcp"
       ],
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 240,

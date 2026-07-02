@@ -33,12 +33,13 @@ Once `npx` is present, proceed with the wrapper script. A global install of `pla
 
 ## Skill path (set once)
 
+Resolve `scripts/playwright_cli.sh` relative to this skill directory, then export that absolute path:
+
 ```bash
-export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-export PWCLI="$CODEX_HOME/skills/playwright/scripts/playwright_cli.sh"
+export PWCLI="/absolute/path/to/this/skill/scripts/playwright_cli.sh"
 ```
 
-User-scoped skills install under `$CODEX_HOME/skills` (default: `~/.codex/skills`).
+Do not assume this skill is installed under `~/.codex/skills`; it may be loaded from a plugin cache.
 
 ## Quick start
 

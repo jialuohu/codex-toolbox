@@ -2,11 +2,10 @@
   "mcpServers": {
     "alpaca": {
       "enabled": true,
-      "command": "CODEX_LOCAL_BIN_DIR/uvx",
+      "command": "/bin/zsh",
       "args": [
-        "alpaca-mcp-server",
-        "--env-file",
-        "CODEX_SECRETS_DIR/alpaca-live.env"
+        "-lc",
+        "UVX=\"$(command -v uvx || true)\"; if [ -z \"$UVX\" ] && [ -x \"CODEX_LOCAL_BIN_DIR/uvx\" ]; then UVX=\"CODEX_LOCAL_BIN_DIR/uvx\"; fi; if [ -z \"$UVX\" ]; then echo \"uvx not found\" >&2; exit 127; fi; exec \"$UVX\" alpaca-mcp-server --env-file \"$CODEX_SECRETS_DIR/alpaca-live.env\""
       ],
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 180,
