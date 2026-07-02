@@ -1,0 +1,23 @@
+{
+  "name": "lab-weekly-update",
+  "version": "0.1.0",
+  "description": "Draft evidence-backed weekly lab updates from engineering artifacts, benchmark outputs, repo diffs, and notes.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Lab Weekly Update",
+    "shortDescription": "Draft lab weekly updates from technical work artifacts.",
+    "longDescription": "Lab Weekly Update turns repo diffs, benchmark artifacts, profiling outputs, experiment notes, and TODOs into concise evidence-backed weekly updates.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Create a weekly update from repo changes, benchmark artifacts, and notes."
+    ]
+  }
+}

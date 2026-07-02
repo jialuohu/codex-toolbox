@@ -1,0 +1,17 @@
+# Superpowers planning artifacts are local process notes, not toolbox assets.
+docs/superpowers/
+
+# Local environment and editor noise.
+.DS_Store
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+
+# Runtime caches and logs.
+.cache/
+.tmp/
+tmp/
+*.log
+node_modules/

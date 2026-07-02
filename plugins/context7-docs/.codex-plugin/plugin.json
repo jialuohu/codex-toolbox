@@ -1,0 +1,23 @@
+{
+  "name": "context7-docs",
+  "version": "0.1.0",
+  "description": "Provide Context7 MCP access for current library documentation lookup in Codex.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Context7 Docs",
+    "shortDescription": "Use Context7 documentation lookup through MCP.",
+    "longDescription": "Context7 Docs installs the Context7 MCP server so Codex can look up current library documentation while working in supported sessions.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Use Context7 to look up current library documentation."
+    ]
+  }
+}

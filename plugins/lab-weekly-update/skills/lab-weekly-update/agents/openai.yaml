@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lab Weekly Update"
+  short_description: "Draft lab weekly updates from technical work artifacts"
+  default_prompt: "Create a weekly update from the current repo changes, benchmark artifacts, and notes"
