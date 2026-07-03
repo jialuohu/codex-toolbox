@@ -12,6 +12,9 @@ UI_UX_MARKETPLACE_SPARSE_PATHS=(
   ".claude-plugin"
   "LICENSE"
 )
+CONTEXT7_MARKETPLACE_NAME="context7-marketplace"
+CONTEXT7_MARKETPLACE_SOURCE="upstash/context7"
+CONTEXT7_MARKETPLACE_GIT_SOURCE="https://github.com/upstash/context7.git"
 DEFAULT_PLUGINS=(
   "obsidian-tools"
   "research-tools"
@@ -23,6 +26,9 @@ DEFAULT_PLUGINS=(
 THIRD_PARTY_DEFAULT_PLUGINS=(
   "ui-ux-pro-max"
 )
+CONTEXT7_DEFAULT_PLUGINS=(
+  "context7"
+)
 RETIRED_PLUGINS=(
   "legacy-toolbox"
   "lab-weekly-update"
@@ -33,6 +39,7 @@ MANAGED_MCP_SERVERS=(
   "firecrawl"
   "obsidian_files"
   "paper_search_mcp"
+  "context7"
   "vibe_trading"
   "zotero"
 )
@@ -125,6 +132,34 @@ ensure_ui_ux_marketplace() {
   add_ui_ux_marketplace
 }
 
+context7_marketplace_config_current() {
+  local config_file="${CODEX_HOME:-$HOME/.codex}/config.toml"
+
+  [ -f "$config_file" ] || return 1
+  grep -Fq "[marketplaces.${CONTEXT7_MARKETPLACE_NAME}]" "$config_file" || return 1
+  grep -Fq "source = \"${CONTEXT7_MARKETPLACE_GIT_SOURCE}\"" "$config_file" || return 1
+}
+
+add_context7_marketplace() {
+  "$CODEX_BIN" plugin marketplace add "$CONTEXT7_MARKETPLACE_SOURCE" --json >/dev/null
+}
+
+ensure_context7_marketplace() {
+  if context7_marketplace_config_current; then
+    echo "Refreshing third-party marketplace: ${CONTEXT7_MARKETPLACE_NAME}"
+    "$CODEX_BIN" plugin marketplace upgrade "$CONTEXT7_MARKETPLACE_NAME" --json >/dev/null
+    return
+  fi
+
+  if marketplace_registered "$CONTEXT7_MARKETPLACE_NAME"; then
+    "$CODEX_BIN" plugin marketplace remove "$CONTEXT7_MARKETPLACE_NAME" --json >/dev/null
+    echo "Removed stale third-party marketplace: ${CONTEXT7_MARKETPLACE_NAME}"
+  fi
+
+  echo "Registering third-party marketplace: ${CONTEXT7_MARKETPLACE_NAME}"
+  add_context7_marketplace
+}
+
 if "$CODEX_BIN" plugin marketplace list | awk 'NR > 1 {print $NF}' | grep -Fx "$ROOT" >/dev/null; then
   echo "Marketplace already registered: $ROOT"
 else
@@ -194,6 +229,11 @@ done
 ensure_ui_ux_marketplace
 for plugin in "${THIRD_PARTY_DEFAULT_PLUGINS[@]}"; do
   install_or_refresh_plugin "$plugin" "$UI_UX_MARKETPLACE_NAME"
+done
+
+ensure_context7_marketplace
+for plugin in "${CONTEXT7_DEFAULT_PLUGINS[@]}"; do
+  install_or_refresh_plugin "$plugin" "$CONTEXT7_MARKETPLACE_NAME"
 done
 
 "$CODEX_BIN" plugin marketplace list
