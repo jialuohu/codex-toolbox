@@ -16,8 +16,8 @@ Codex remains the planner, reviewer, and integration owner.
 Default to Codex-only work for a single bugfix, one feature, one review, fast debugging, broad
 one-session exploration, or a vague request that has not yet been planned.
 
-For vague or broad project prompts, plan or clarify first. If the resulting plan clearly needs durable
-multi-ticket execution, recommend Symphony even when the user did not name Symphony or Linear:
+For vague or broad project prompts, plan or clarify first. If the resulting plan has durable
+multi-ticket execution shape, route to Symphony even when the user did not name Symphony or Linear:
 
 - 3 or more independent, testable tasks.
 - Clear acceptance criteria and verification for each task.
@@ -29,8 +29,10 @@ Use native Codex subagents before Symphony for one-session read-only exploration
 failure triage, and review passes.
 
 For greenfield apps and sites, do a serial bootstrap first when no repo exists or shared scaffolding is
-missing. After the scaffold is stable, split independent frontend, backend, content, testing, and polish
-work into Symphony issues.
+missing. After the scaffold is stable, split independent frontend, backend, content, testing, and
+polish work into Symphony issues. Do not continue the entire post-bootstrap build inline once the
+work has 3 or more independent, testable implementation tasks unless the user explicitly opts out of
+Symphony/Linear or asks for a quick single-session build.
 
 ## Local Surfaces
 
@@ -76,7 +78,7 @@ Write the workflow only after reviewing it. Use a separate port/logs root from t
 4. Select or create a project-specific workflow before creating issues for any repo other than
    Symphony Go.
 5. Confirm the repo has useful tests or review evidence before creating runnable issues.
-6. Dry-run issue creation first.
+6. Preview issue creation first with dry-run/preflight tool calls.
 7. Review payloads for project slug, team key, labels, state, acceptance criteria, and verification.
 8. Create live Linear issues only after payload review.
 9. After execution is approved, do not stop at dry-runs: write the reviewed workflow, create the
@@ -101,9 +103,11 @@ actions:
 - `symphony_add_linear_comment`: add reviewed closeout evidence to one Linear issue.
 - `symphony_move_linear_issue`: move one Linear issue to a reviewed target state.
 
-Issue creation and closeout tools default to dry-run. Live Linear mutations must pass both
-`dry_run: false` and `confirm: true`. Never let a worker use these tools to create follow-up Linear
-issues or mutate Linear state from inside an issue workspace.
+Issue creation and closeout tools default to dry-run because the tool API uses `dry_run` as its
+safety flag. In user-facing plans, call these "preflight" or "preview" payloads so they do not look
+like the final execution state. Live Linear mutations must pass both `dry_run: false` and
+`confirm: true`. Never let a worker use these tools to create follow-up Linear issues or mutate
+Linear state from inside an issue workspace.
 
 Workflow initialization also defaults to dry-run. Live file writes must pass both `dry_run: false`
 and `confirm: true`.
@@ -170,11 +174,15 @@ The user does not need to say "use Symphony." These are sufficient prompts:
 - "Modernize this app end to end, including UI polish, backend cleanup, and verification."
 
 For these, first plan the product and technical shape. If the plan produces 3 or more independent,
-testable implementation tasks, recommend the Symphony lane and prepare dry-run issue payloads.
+testable implementation tasks, route to the Symphony lane by default and prepare reviewed preflight
+issue payloads. Do not offer Codex-only as an equal lane unless the user explicitly asks for a quick
+single-session build or opts out of Symphony/Linear.
 
 ## Guardrails
 
 - Keep Symphony out of still-vague, high-judgment, fast interactive, or single-task work.
+- Do not add a Codex-only escape hatch to plans that are already Symphony-eligible unless the user
+  explicitly requests that constraint.
 - Do not auto-run every Linear issue; only explicitly labeled ready issues should run.
 - Keep `WORKFLOW.md` manual/default-safe unless the user asks for PR handoff or a pilot needs a
   temporary workflow.

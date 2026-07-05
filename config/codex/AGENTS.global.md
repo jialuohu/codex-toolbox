@@ -3,11 +3,11 @@
 For large or vague project requests, plan normally first, then choose the execution lane.
 
 - Use Codex-only work for tiny edits, one bugfix, one review, fast debugging, or single-session exploration.
-- If planning produces 3 or more independent, testable implementation tasks, recommend the Codex + Symphony + Linear lane even when the user did not mention Symphony or Linear.
-- In Plan mode, prepare the architecture, issue breakdown, project workflow choice, and dry-run Linear payloads only. Do not create live Linear issues, refresh/dispatch Symphony, or mutate Linear state in Plan mode.
+- If planning produces 3 or more independent, testable implementation tasks, route to the Codex + Symphony + Linear lane by default even when the user did not mention Symphony or Linear. Do not present Codex-only as an equal execution option unless the user explicitly asks for a quick single-session build or opts out of Symphony/Linear.
+- In Plan mode, prepare the architecture, issue breakdown, project workflow choice, and reviewed preflight Linear payloads only. Do not create live Linear issues, refresh/dispatch Symphony, or mutate Linear state in Plan mode.
 - In normal execution mode, create live Linear issues only after dry-run payload review and explicit approval. Scheduler refreshes and Linear closeout mutations also require confirmation.
 - After the user approves Symphony execution, do not stop at dry-runs. Write the reviewed project workflow, create the approved Linear issues, and start or refresh Symphony so workers actually run.
-- For greenfield apps or sites, do the serial bootstrap first when no repo exists or the shared foundation is not ready. Stop bootstrap at the stable shared foundation; split remaining frontend, backend, content, testing, and polish work into Symphony issues.
+- For greenfield apps or sites, do the serial bootstrap first when no repo exists or the shared foundation is not ready. Stop bootstrap at the stable shared foundation; split remaining frontend, backend, content, testing, and polish work into Symphony issues instead of continuing the whole build inline.
 - Use a project-specific Symphony workflow for unrelated projects. Do not run a new project through `SYMPHONY_WORKFLOW`; create or dry-run a workflow for that target repo first.
 
 ## Superpowers workflow
@@ -16,7 +16,7 @@ For non-trivial coding tasks, prefer the Superpowers workflow.
 
 - If requirements are unclear, use `superpowers:brainstorming`.
 - If the task needs multiple implementation steps, use `superpowers:writing-plans`.
-- After plan approval, use the orchestration routing rules above. Choose Symphony for durable multi-ticket work; otherwise offer `superpowers:subagent-driven-development` as the default execution path.
+- After plan approval, use the orchestration routing rules above. Choose Symphony for durable multi-ticket work and any plan with 3 or more independent, testable implementation tasks; otherwise offer `superpowers:subagent-driven-development` as the default execution path.
 - During implementation of features or bugfixes, use `superpowers:test-driven-development`.
 - Before claiming completion, use `superpowers:verification-before-completion`.
 

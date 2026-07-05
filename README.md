@@ -51,13 +51,16 @@ Build a polished business website for a small AI consulting agency.
 ```
 
 The global instructions should let Codex plan first, recognize when the work
-breaks into three or more independent testable tasks, and recommend the
+breaks into three or more independent testable tasks, and route to the
 Codex + Symphony + Linear lane without requiring the prompt to name Symphony.
-Plan mode may prepare issue breakdowns, a project-specific workflow dry-run,
-and Linear issue dry-runs. Live issue creation, scheduler refreshes, workflow
-writes, and Linear closeout still require explicit approval. After approval,
-dry-run is only the preflight; Codex should write the reviewed workflow, create
-the approved issues, and start or refresh Symphony so workers run.
+Plan mode may prepare issue breakdowns, a project-specific workflow preview,
+and reviewed Linear issue preflight payloads. Live issue creation, scheduler
+refreshes, workflow writes, and Linear closeout still require explicit approval.
+After approval, preflight is no longer the endpoint; Codex should write the
+reviewed workflow, create the approved issues, and start or refresh Symphony so
+workers run. Do not offer Codex-only as an equal path for Symphony-eligible
+plans unless the user explicitly asks for quick single-session execution or
+opts out of Symphony/Linear.
 
 For projects outside `SYMPHONY_ROOT`, create a project workflow first:
 
