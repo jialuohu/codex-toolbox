@@ -1,0 +1,27 @@
+{
+  "name": "game-asset-tools",
+  "version": "0.1.0",
+  "description": "PixelLab MCP access for pixel-art game asset generation.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Game Asset Tools",
+    "shortDescription": "PixelLab MCP for pixel-art game assets.",
+    "longDescription": "Game Asset Tools packages PixelLab MCP for generating pixel-art characters, animations, tilesets, isometric tiles, and map objects. PixelLab credentials load from the local Codex secrets directory, and creation/destructive tools prompt by default to avoid accidental credit spend.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Create pixel-art game assets with PixelLab.",
+      "Check PixelLab asset job status."
+    ]
+  }
+}

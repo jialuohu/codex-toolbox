@@ -1,0 +1,65 @@
+{
+  "mcpServers": {
+    "pixellab": {
+      "enabled": true,
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "if [ ! -f \"$CODEX_SECRETS_DIR/pixellab.env\" ]; then echo \"Missing $CODEX_SECRETS_DIR/pixellab.env with AUTH_HEADER=Bearer <token>\" >&2; exit 1; fi; set -a; source \"$CODEX_SECRETS_DIR/pixellab.env\"; set +a; if [ -z \"${AUTH_HEADER:-}\" ]; then echo \"Missing AUTH_HEADER in $CODEX_SECRETS_DIR/pixellab.env\" >&2; exit 1; fi; exec npx -y mcp-remote@latest https://api.pixellab.ai/mcp --transport http-only --header 'Authorization:${AUTH_HEADER}'"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 300,
+      "default_tools_approval_mode": "prompt",
+      "disabled_tools": [
+        "chat_list_conversations",
+        "chat_get_messages",
+        "chat_send_message",
+        "sandbox_create_session",
+        "sandbox_destroy_session",
+        "sandbox_bash",
+        "sandbox_run",
+        "sandbox_read",
+        "sandbox_write",
+        "sandbox_edit"
+      ],
+      "tools": {
+        "get_character": {
+          "approval_mode": "auto"
+        },
+        "list_characters": {
+          "approval_mode": "auto"
+        },
+        "get_portrait_character": {
+          "approval_mode": "auto"
+        },
+        "get_topdown_tileset": {
+          "approval_mode": "auto"
+        },
+        "list_topdown_tilesets": {
+          "approval_mode": "auto"
+        },
+        "get_sidescroller_tileset": {
+          "approval_mode": "auto"
+        },
+        "list_sidescroller_tilesets": {
+          "approval_mode": "auto"
+        },
+        "get_isometric_tile": {
+          "approval_mode": "auto"
+        },
+        "list_isometric_tiles": {
+          "approval_mode": "auto"
+        },
+        "get_map_object": {
+          "approval_mode": "auto"
+        },
+        "get_object": {
+          "approval_mode": "auto"
+        },
+        "list_objects": {
+          "approval_mode": "auto"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research LLM Wiki"
+  short_description: "Maintain a source-backed research wiki in Obsidian."
+  default_prompt: "Use $research-llm-wiki to ingest, query, or lint my research vault wiki."

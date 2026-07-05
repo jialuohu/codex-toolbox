@@ -45,6 +45,13 @@
           "approval_mode": "prompt"
         }
       }
+    },
+    "robinhood-trading": {
+      "type": "http",
+      "url": "https://agent.robinhood.com/mcp/trading",
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 180,
+      "default_tools_approval_mode": "auto"
     }
   }
 }

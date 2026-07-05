@@ -1,7 +1,7 @@
 {
   "name": "trading-tools",
   "version": "0.1.0",
-  "description": "Alpaca MCP access for market data and account/order workflows.",
+  "description": "Alpaca and Robinhood MCP access for market data and trading workflows.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -9,8 +9,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Trading Tools",
-    "shortDescription": "Alpaca MCP for trading workflows.",
-    "longDescription": "Trading Tools packages the Alpaca MCP server with mutation tools configured for prompt approval and secrets loaded from the local Codex secrets directory.",
+    "shortDescription": "Alpaca and Robinhood MCPs for trading workflows.",
+    "longDescription": "Trading Tools packages Alpaca MCP access plus Robinhood's official Agentic Trading MCP. Alpaca secrets load from the local Codex secrets directory and Alpaca mutation tools remain prompt-gated. Robinhood Agentic Trading uses the official Streamable HTTP endpoint with the user's requested automatic tool approval policy.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -19,7 +19,8 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "Review Alpaca account or market data."
+      "Review Alpaca account or market data.",
+      "Connect to Robinhood Agentic Trading."
     ]
   }
 }

@@ -1,12 +1,32 @@
 #!/usr/bin/env python3
 """Static checks for the Codex toolbox setup script."""
 
+import json
 import re
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP_SCRIPT = ROOT / "scripts" / "setup-codex-toolbox.sh"
+SYNC_AGENTS_SCRIPT = ROOT / "scripts" / "sync-agents.sh"
+GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
+MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
+GAME_ASSET_PLUGIN = ROOT / "plugins" / "game-asset-tools" / ".codex-plugin" / "plugin.json"
+GAME_ASSET_MCP = ROOT / "plugins" / "game-asset-tools" / ".mcp.json"
+TRADING_MCP = ROOT / "plugins" / "trading-tools" / ".mcp.json"
+RESEARCH_PLUGIN = ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json"
+RESEARCH_LLM_WIKI_SKILL = (
+    ROOT / "plugins" / "research-tools" / "skills" / "research-llm-wiki" / "SKILL.md"
+)
+RESEARCH_LLM_WIKI_LINT = (
+    ROOT
+    / "plugins"
+    / "research-tools"
+    / "skills"
+    / "research-llm-wiki"
+    / "scripts"
+    / "lint_research_llm_wiki.py"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -22,8 +42,63 @@ def array_body(script: str, name: str) -> str:
 
 def main() -> None:
     script = SETUP_SCRIPT.read_text()
+    require(GLOBAL_AGENTS.exists(), "canonical global AGENTS file must exist")
+    require(
+        GLOBAL_AGENTS.read_text().startswith("## Superpowers workflow\n"),
+        "canonical global AGENTS file must preserve the current global instructions",
+    )
+    require(SYNC_AGENTS_SCRIPT.exists(), "setup must include an AGENTS sync script")
+    sync_agents_script = SYNC_AGENTS_SCRIPT.read_text()
+    require(
+        '"${CODEX_HOME:-$HOME/.codex}"' in sync_agents_script,
+        "AGENTS sync script must respect CODEX_HOME with ~/.codex fallback",
+    )
+    require(
+        "AGENTS.override.md" in sync_agents_script,
+        "AGENTS sync script must warn about AGENTS.override.md precedence",
+    )
+    require(
+        ".codex-toolbox" in sync_agents_script,
+        "AGENTS sync script must write a local toolbox sync marker",
+    )
+    require(
+        '"$ROOT/scripts/sync-agents.sh" --install' in script,
+        "setup script must install global AGENTS instructions",
+    )
+    require(GAME_ASSET_PLUGIN.exists(), "game-asset-tools plugin manifest must exist")
+    require(GAME_ASSET_MCP.exists(), "game-asset-tools must define an MCP config")
+    require(RESEARCH_PLUGIN.exists(), "research-tools plugin manifest must exist")
+    require(RESEARCH_LLM_WIKI_SKILL.exists(), "research-tools must include research-llm-wiki skill")
+    require(
+        RESEARCH_LLM_WIKI_LINT.exists(),
+        "research-llm-wiki must include a deterministic lint helper",
+    )
+    marketplace = json.loads(MARKETPLACE.read_text())
+    game_asset_plugin = json.loads(GAME_ASSET_PLUGIN.read_text())
+    game_asset_mcp = json.loads(GAME_ASSET_MCP.read_text())
+    research_plugin = json.loads(RESEARCH_PLUGIN.read_text())
+    trading_mcp = json.loads(TRADING_MCP.read_text())
+    default_plugins = array_body(script, "DEFAULT_PLUGINS")
     managed_mcp_servers = array_body(script, "MANAGED_MCP_SERVERS")
+    pixellab_server = game_asset_mcp.get("mcpServers", {}).get("pixellab")
+    robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
 
+    require(
+        marketplace.get("name") == "jialuo-codex-toolbox",
+        "marketplace must be named jialuo-codex-toolbox",
+    )
+    require(
+        'MARKETPLACE_NAME="jialuo-codex-toolbox"' in script,
+        "setup script must register the jialuo-codex-toolbox marketplace",
+    )
+    require(
+        "OLD_MARKETPLACE_NAMES=(" in script and '"jialuo-codex-toolbox"' in script,
+        "setup script must track retired toolbox marketplace names",
+    )
+    require(
+        "remove_stale_plugin_config_blocks" in script,
+        "setup script must remove stale retired-marketplace plugin config blocks",
+    )
     require(
         'UI_UX_MARKETPLACE_NAME="ui-ux-pro-max-skill"' in script,
         "setup script must define the UI/UX Pro Max marketplace name",
@@ -68,8 +143,143 @@ def main() -> None:
         "setup script must install Context7 from the official marketplace",
     )
     require(
+        '  "game-asset-tools"' in default_plugins,
+        "setup script must install the game-asset-tools plugin",
+    )
+    require(
+        '  "pixellab"' in managed_mcp_servers,
+        "setup script must manage the pixellab MCP server cleanup list",
+    )
+    require(
+        any(
+            plugin.get("name") == "game-asset-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/game-asset-tools"
+            for plugin in marketplace.get("plugins", [])
+        ),
+        "marketplace must include game-asset-tools",
+    )
+    require(
+        game_asset_plugin.get("skills") == "./skills/",
+        "game-asset-tools must expose its PixelLab routing skill",
+    )
+    require(
+        game_asset_plugin.get("mcpServers") == "./.mcp.json",
+        "game-asset-tools must expose its MCP config",
+    )
+    require(
+        research_plugin.get("skills") == "./skills/",
+        "research-tools must expose bundled research skills",
+    )
+    research_interface = research_plugin.get("interface", {})
+    require(
+        "LLM Wiki" in research_interface.get("longDescription", ""),
+        "research-tools plugin description must mention the Research LLM Wiki workflow",
+    )
+    require(
+        any("wiki" in prompt.lower() for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must surface wiki usage",
+    )
+    research_skill_text = RESEARCH_LLM_WIKI_SKILL.read_text()
+    for expected in (
+        "name: research-llm-wiki",
+        "Research/LLM Wiki",
+        "$research-llm-wiki ingest",
+        "$research-llm-wiki query",
+        "$research-llm-wiki lint",
+        "lint_research_llm_wiki.py",
+        "Do not rewrite raw source notes",
+        "index.md",
+        "log.md",
+    ):
+        require(expected in research_skill_text, f"research-llm-wiki skill must mention {expected}")
+    lint_script_text = RESEARCH_LLM_WIKI_LINT.read_text()
+    for expected in (
+        "Missing required wiki path",
+        "missing source identity",
+        "citation",
+        "orphan concept page",
+    ):
+        require(expected in lint_script_text, f"research-llm-wiki lint helper must check {expected}")
+    require(
+        pixellab_server is not None,
+        "game-asset-tools must define the pixellab MCP server",
+    )
+    require(
+        pixellab_server.get("command") == "/bin/zsh",
+        "pixellab must use the zsh secret-loading wrapper",
+    )
+    pixellab_args = pixellab_server.get("args", [])
+    require(
+        len(pixellab_args) == 2 and pixellab_args[0] == "-lc",
+        "pixellab must run through zsh -lc",
+    )
+    pixellab_launch = pixellab_args[1] if len(pixellab_args) == 2 else ""
+    for expected in (
+        'source "$CODEX_SECRETS_DIR/pixellab.env"',
+        "npx -y mcp-remote@latest",
+        "https://api.pixellab.ai/mcp",
+        "--transport http-only",
+        "--header 'Authorization:${AUTH_HEADER}'",
+    ):
+        require(expected in pixellab_launch, f"pixellab launch must include {expected}")
+    require(
+        pixellab_server.get("default_tools_approval_mode") == "prompt",
+        "pixellab must prompt by default to avoid accidental credit spend",
+    )
+    disabled_pixellab_tools = set(pixellab_server.get("disabled_tools", []))
+    for tool_name in (
+        "chat_list_conversations",
+        "chat_get_messages",
+        "chat_send_message",
+        "sandbox_create_session",
+        "sandbox_destroy_session",
+        "sandbox_bash",
+        "sandbox_run",
+        "sandbox_read",
+        "sandbox_write",
+        "sandbox_edit",
+    ):
+        require(tool_name in disabled_pixellab_tools, f"pixellab must disable {tool_name}")
+    for tool_name in (
+        "get_character",
+        "list_characters",
+        "get_topdown_tileset",
+        "list_topdown_tilesets",
+        "get_sidescroller_tileset",
+        "list_sidescroller_tilesets",
+        "get_isometric_tile",
+        "list_isometric_tiles",
+        "get_map_object",
+        "get_object",
+        "list_objects",
+    ):
+        require(
+            pixellab_server.get("tools", {}).get(tool_name, {}).get("approval_mode") == "auto",
+            f"pixellab read/status tool {tool_name} must be auto-approved",
+        )
+    require(
         '  "context7"' in managed_mcp_servers,
         "setup script must manage the context7 MCP server cleanup list",
+    )
+    require(
+        '  "robinhood-trading"' in managed_mcp_servers,
+        "setup script must manage the robinhood-trading MCP server cleanup list",
+    )
+    require(
+        robinhood_server is not None,
+        "trading-tools must define the robinhood-trading MCP server",
+    )
+    require(
+        robinhood_server.get("type") == "http",
+        "robinhood-trading must use the Streamable HTTP plugin MCP shape",
+    )
+    require(
+        robinhood_server.get("url") == "https://agent.robinhood.com/mcp/trading",
+        "robinhood-trading must point to Robinhood's official Trading MCP endpoint",
+    )
+    require(
+        robinhood_server.get("default_tools_approval_mode") == "auto",
+        "robinhood-trading must use the requested auto approval policy",
     )
     require(
         'plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null 2>&1 || true'
