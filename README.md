@@ -27,6 +27,12 @@ instructions.
 3. Add per-device secrets under `CODEX_SECRETS_DIR/` as needed. Keep OAuth state,
    API keys, tokens, and env-file contents out of this repo.
 
+   Symphony Tools expects:
+
+   - `CODEX_SECRETS_DIR/symphony-linear.env` with the local Linear credentials.
+   - `symphony` installed on `PATH` or at `~/.local/bin/symphony`, usually by
+     running `make install-local` in `SYMPHONY_ROOT`.
+
 4. Run MCP login or connector setup commands for services that need local auth,
    such as Robinhood Trading or other account-backed connectors.
 

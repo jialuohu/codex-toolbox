@@ -1,0 +1,27 @@
+{
+  "name": "symphony-tools",
+  "version": "0.1.0",
+  "description": "Symphony MCP and orchestration skill for Linear-backed Codex worker pilots.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Symphony Tools",
+    "shortDescription": "Symphony MCP and orchestration routing.",
+    "longDescription": "Symphony Tools packages the local Symphony MCP adapter and orchestration skill for Codex planner-side Linear issue creation, daemon monitoring, refresh ticks, and handoff review. Secrets stay in the local Codex secrets directory, and issue creation or dispatch actions remain prompt-gated.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Plan a Symphony-backed Linear pilot.",
+      "Monitor Symphony worker state or review a handoff."
+    ]
+  }
+}

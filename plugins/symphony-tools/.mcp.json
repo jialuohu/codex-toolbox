@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "symphony": {
+      "enabled": true,
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "if [ ! -f \"$CODEX_SECRETS_DIR/symphony-linear.env\" ]; then echo \"Missing $CODEX_SECRETS_DIR/symphony-linear.env with LINEAR_API_KEY\" >&2; exit 1; fi; set -a; source \"$CODEX_SECRETS_DIR/symphony-linear.env\"; set +a; SYMPHONY=\"$(command -v symphony || true)\"; if [ -z \"$SYMPHONY\" ] && [ -x \"CODEX_LOCAL_BIN_DIR/symphony\" ]; then SYMPHONY=\"CODEX_LOCAL_BIN_DIR/symphony\"; fi; if [ -z \"$SYMPHONY\" ]; then echo \"symphony not found; run make install-local in SYMPHONY_ROOT\" >&2; exit 127; fi; exec \"$SYMPHONY\" mcp"
+      ],
+      "startup_timeout_sec": 30,
+      "tool_timeout_sec": 180,
+      "default_tools_approval_mode": "prompt",
+      "tools": {
+        "symphony_state": {
+          "approval_mode": "auto"
+        },
+        "symphony_handoff_summary": {
+          "approval_mode": "auto"
+        },
+        "symphony_create_issue": {
+          "approval_mode": "prompt"
+        },
+        "symphony_create_issue_batch": {
+          "approval_mode": "prompt"
+        },
+        "symphony_refresh": {
+          "approval_mode": "prompt"
+        }
+      }
+    }
+  }
+}

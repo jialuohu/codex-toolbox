@@ -13,6 +13,11 @@ GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
 MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
 GAME_ASSET_PLUGIN = ROOT / "plugins" / "game-asset-tools" / ".codex-plugin" / "plugin.json"
 GAME_ASSET_MCP = ROOT / "plugins" / "game-asset-tools" / ".mcp.json"
+SYMPHONY_PLUGIN = ROOT / "plugins" / "symphony-tools" / ".codex-plugin" / "plugin.json"
+SYMPHONY_MCP = ROOT / "plugins" / "symphony-tools" / ".mcp.json"
+SYMPHONY_SKILL = (
+    ROOT / "plugins" / "symphony-tools" / "skills" / "symphony-orchestration" / "SKILL.md"
+)
 TRADING_MCP = ROOT / "plugins" / "trading-tools" / ".mcp.json"
 RESEARCH_PLUGIN = ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json"
 RESEARCH_LLM_WIKI_SKILL = (
@@ -67,6 +72,9 @@ def main() -> None:
     )
     require(GAME_ASSET_PLUGIN.exists(), "game-asset-tools plugin manifest must exist")
     require(GAME_ASSET_MCP.exists(), "game-asset-tools must define an MCP config")
+    require(SYMPHONY_PLUGIN.exists(), "symphony-tools plugin manifest must exist")
+    require(SYMPHONY_MCP.exists(), "symphony-tools must define an MCP config")
+    require(SYMPHONY_SKILL.exists(), "symphony-tools must bundle the symphony-orchestration skill")
     require(RESEARCH_PLUGIN.exists(), "research-tools plugin manifest must exist")
     require(RESEARCH_LLM_WIKI_SKILL.exists(), "research-tools must include research-llm-wiki skill")
     require(
@@ -76,11 +84,14 @@ def main() -> None:
     marketplace = json.loads(MARKETPLACE.read_text())
     game_asset_plugin = json.loads(GAME_ASSET_PLUGIN.read_text())
     game_asset_mcp = json.loads(GAME_ASSET_MCP.read_text())
+    symphony_plugin = json.loads(SYMPHONY_PLUGIN.read_text())
+    symphony_mcp = json.loads(SYMPHONY_MCP.read_text())
     research_plugin = json.loads(RESEARCH_PLUGIN.read_text())
     trading_mcp = json.loads(TRADING_MCP.read_text())
     default_plugins = array_body(script, "DEFAULT_PLUGINS")
     managed_mcp_servers = array_body(script, "MANAGED_MCP_SERVERS")
     pixellab_server = game_asset_mcp.get("mcpServers", {}).get("pixellab")
+    symphony_server = symphony_mcp.get("mcpServers", {}).get("symphony")
     robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
 
     require(
@@ -147,8 +158,16 @@ def main() -> None:
         "setup script must install the game-asset-tools plugin",
     )
     require(
+        '  "symphony-tools"' in default_plugins,
+        "setup script must install the symphony-tools plugin",
+    )
+    require(
         '  "pixellab"' in managed_mcp_servers,
         "setup script must manage the pixellab MCP server cleanup list",
+    )
+    require(
+        '  "symphony"' in managed_mcp_servers,
+        "setup script must manage the symphony MCP server cleanup list",
     )
     require(
         any(
@@ -166,6 +185,70 @@ def main() -> None:
         game_asset_plugin.get("mcpServers") == "./.mcp.json",
         "game-asset-tools must expose its MCP config",
     )
+    require(
+        any(
+            plugin.get("name") == "symphony-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/symphony-tools"
+            for plugin in marketplace.get("plugins", [])
+        ),
+        "marketplace must include symphony-tools",
+    )
+    require(
+        symphony_plugin.get("skills") == "./skills/",
+        "symphony-tools must expose its orchestration skill",
+    )
+    require(
+        symphony_plugin.get("mcpServers") == "./.mcp.json",
+        "symphony-tools must expose its MCP config",
+    )
+    require(
+        symphony_server is not None,
+        "symphony-tools must define the symphony MCP server",
+    )
+    require(
+        symphony_server.get("command") == "/bin/zsh",
+        "symphony MCP must use the zsh secret-loading wrapper",
+    )
+    symphony_args = symphony_server.get("args", [])
+    require(
+        len(symphony_args) == 2 and symphony_args[0] == "-lc",
+        "symphony MCP must run through zsh -lc",
+    )
+    symphony_launch = symphony_args[1] if len(symphony_args) == 2 else ""
+    for expected in (
+        'source "$CODEX_SECRETS_DIR/symphony-linear.env"',
+        'command -v symphony',
+        '"CODEX_LOCAL_BIN_DIR/symphony"',
+        'exec "$SYMPHONY" mcp',
+    ):
+        require(expected in symphony_launch, f"symphony launch must include {expected}")
+    require(
+        symphony_server.get("default_tools_approval_mode") == "prompt",
+        "symphony MCP must prompt by default",
+    )
+    for tool_name in ("symphony_state", "symphony_handoff_summary"):
+        require(
+            symphony_server.get("tools", {}).get(tool_name, {}).get("approval_mode") == "auto",
+            f"symphony read/review tool {tool_name} must be auto-approved",
+        )
+    for tool_name in (
+        "symphony_create_issue",
+        "symphony_create_issue_batch",
+        "symphony_refresh",
+    ):
+        require(
+            symphony_server.get("tools", {}).get(tool_name, {}).get("approval_mode") == "prompt",
+            f"symphony mutating/dispatch tool {tool_name} must stay prompt-gated",
+        )
+    symphony_skill_text = SYMPHONY_SKILL.read_text()
+    for expected in (
+        "name: symphony-orchestration",
+        "MCP Tool Preference",
+        "symphony_create_issue",
+        "symphony_handoff_summary",
+        "Never let a worker use these tools",
+    ):
+        require(expected in symphony_skill_text, f"symphony skill must mention {expected}")
     require(
         research_plugin.get("skills") == "./skills/",
         "research-tools must expose bundled research skills",

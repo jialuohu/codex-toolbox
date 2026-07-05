@@ -26,7 +26,7 @@ Delegate when it improves reliability. Use subagents for broad research, indepen
 
 The personal toolbox repo is `CODEX_TOOLBOX_ROOT` and its GitHub remote is `jialuohu/codex-toolbox`. It is a repo-scoped Codex plugin marketplace named `jialuo-codex-toolbox`.
 
-- Keep plugins focused by domain. Current default plugins are `obsidian-tools`, `research-tools`, `web-data-tools`, `trading-tools`, `vibe-trading-tools`, and `chronicle-tools`.
+- Keep plugins focused by domain. Current default plugins are `obsidian-tools`, `research-tools`, `web-data-tools`, `game-asset-tools`, `symphony-tools`, `trading-tools`, `vibe-trading-tools`, and `chronicle-tools`.
 - The setup script also manages third-party Git marketplaces: `ui-ux-pro-max-skill`, pinned to `v2.10.0` with sparse checkout limited to the core `ui-ux-pro-max` skill, and the official Context7 marketplace `context7-marketplace`. Do not vendor these third-party plugins into `codex-toolbox` unless explicitly asked.
 - Do not reintroduce the retired starter plugins `lab-weekly-update` or `context7-docs` unless explicitly asked.
 - Do not commit secrets, OAuth state, API keys, or env-file contents. MCP configs may reference local secret files under `CODEX_SECRETS_DIR/`, but the secret files remain per-device.
@@ -45,6 +45,8 @@ Use Context7 for current, version-aware library and framework documentation, API
 Use Firecrawl as the default for public web search, current web pages, documentation scraping, site maps, crawls, structured extraction from websites, pages that need JavaScript rendering, and public web extraction. If Firecrawl tools are not visible, call `tool_search` for Firecrawl before using built-in web search; if `firecrawl_search` is still not exposed, retry with exact terms such as `firecrawl_search scrape web search` and a larger result limit before falling back. After using `firecrawl_search`, call the Firecrawl feedback tool only when that tool is exposed. Do not use Firecrawl for the user's private local files, saved Zotero library, Obsidian vault content, or other private workspace data unless the user explicitly asks to send that content to Firecrawl.
 
 Use PixelLab MCP (`pixellab`) only for pixel-art game asset workflows: sprites, character rotations, animations, top-down or sidescroller tilesets, isometric tiles, and map objects. Do not use PixelLab for web search, private/local files, normal coding, or generic image generation unless the user explicitly asks for PixelLab assets. Creation and destructive tools can spend credits or change saved assets, so keep them prompt-gated unless the user explicitly confirms the action.
+
+Use Symphony MCP (`symphony`) and the `symphony-orchestration` skill for durable Codex plus Linear orchestration: planning runnable Linear issues, dry-running reviewed issue payloads, monitoring Symphony daemon state, refreshing a scheduler tick, and summarizing worker handoffs. Keep issue creation dry-run first; live issue creation and dispatch refreshes require explicit confirmation. Symphony workers should not create more Linear issues from inside their issue workspace.
 
 Use `paper_search_mcp` for academic paper discovery across arXiv, Semantic Scholar, CORE, IEEE, Unpaywall, CrossRef, PubMed, BASE, and related sources. Prefer it when the user wants to find new papers, compare search results, inspect paper metadata, or download papers from public scholarly sources. Prefer Zotero MCP instead when the question is about papers the user has already saved.
 
