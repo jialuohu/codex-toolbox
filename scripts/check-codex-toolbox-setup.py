@@ -58,6 +58,8 @@ def main() -> None:
         "Codex + Symphony + Linear",
         "Plan mode",
         "project-specific Symphony workflow",
+        "do not stop at dry-runs",
+        "start or refresh Symphony",
     ):
         require(expected in global_agents_text, f"global AGENTS routing must mention {expected}")
     require(
@@ -267,6 +269,8 @@ def main() -> None:
         "symphony service",
         "large decomposable app/site/project builds",
         "Workflow Selection",
+        "--concurrency 4",
+        "do not stop at dry-runs",
         "Build a polished business website",
         "Never let a worker use these tools",
     ):

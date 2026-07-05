@@ -1,7 +1,7 @@
 {
   "name": "symphony-tools",
   "version": "0.1.0",
-  "description": "Symphony MCP and orchestration skill for Linear-backed Codex worker pilots.",
+  "description": "Symphony MCP and orchestration skill for Linear-backed Codex worker operations.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -20,7 +20,7 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "Plan a Symphony-backed Linear pilot.",
+      "Plan a Symphony-backed Linear operation.",
       "Monitor Symphony worker state or review a handoff."
     ]
   }

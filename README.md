@@ -55,7 +55,9 @@ breaks into three or more independent testable tasks, and recommend the
 Codex + Symphony + Linear lane without requiring the prompt to name Symphony.
 Plan mode may prepare issue breakdowns, a project-specific workflow dry-run,
 and Linear issue dry-runs. Live issue creation, scheduler refreshes, workflow
-writes, and Linear closeout still require explicit approval.
+writes, and Linear closeout still require explicit approval. After approval,
+dry-run is only the preflight; Codex should write the reviewed workflow, create
+the approved issues, and start or refresh Symphony so workers run.
 
 For projects outside `SYMPHONY_ROOT`, create a project workflow first:
 
@@ -66,7 +68,7 @@ symphony workflow init \
   --project-slug <PROJECT_SLUG> \
   --team-key <LINEAR_TEAM_KEY> \
   --port 4001 \
-  --concurrency 2 \
+  --concurrency 4 \
   --dry-run
 ```
 

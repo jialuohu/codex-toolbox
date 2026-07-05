@@ -1,6 +1,6 @@
 ---
 name: symphony-orchestration
-description: Plan and operate Codex plus Symphony plus Linear orchestration. Use when the user asks about Symphony, durable multi-ticket Codex execution, Linear-backed task decomposition, large decomposable app/site/project builds, multi-page frontend/backend work, Symphony pilots, planner-side Linear issue creation, Symphony MCP tools, worker status monitoring, or handoff/closeout workflows.
+description: Plan and operate Codex plus Symphony plus Linear orchestration. Use when the user asks about Symphony, durable multi-ticket Codex execution, Linear-backed task decomposition, large decomposable app/site/project builds, multi-page frontend/backend work, Symphony operations, planner-side Linear issue creation, Symphony MCP tools, worker status monitoring, or handoff/closeout workflows.
 ---
 
 # Symphony Orchestration
@@ -60,7 +60,7 @@ symphony workflow init \
   --project-slug <PROJECT_SLUG> \
   --team-key <LINEAR_TEAM_KEY> \
   --port 4001 \
-  --concurrency 2 \
+  --concurrency 4 \
   --dry-run
 ```
 
@@ -79,7 +79,8 @@ Write the workflow only after reviewing it. Use a separate port/logs root from t
 6. Dry-run issue creation first.
 7. Review payloads for project slug, team key, labels, state, acceptance criteria, and verification.
 8. Create live Linear issues only after payload review.
-9. Start or refresh the Symphony daemon only after the intended ready issues exist.
+9. After execution is approved, do not stop at dry-runs: write the reviewed workflow, create the
+   approved issues, and start or refresh Symphony so workers actually run.
 10. Monitor `/api/v1/state` for running count, issue identifiers, phase, retry rows, and workspace
    paths.
 11. Review handoffs manually unless the workflow explicitly enables draft PR handoff.
