@@ -49,8 +49,20 @@ def main() -> None:
     script = SETUP_SCRIPT.read_text()
     require(GLOBAL_AGENTS.exists(), "canonical global AGENTS file must exist")
     require(
-        GLOBAL_AGENTS.read_text().startswith("## Superpowers workflow\n"),
-        "canonical global AGENTS file must preserve the current global instructions",
+        GLOBAL_AGENTS.read_text().startswith("## Orchestration routing\n"),
+        "canonical global AGENTS file must start with orchestration routing",
+    )
+    global_agents_text = GLOBAL_AGENTS.read_text()
+    for expected in (
+        "3 or more independent, testable implementation tasks",
+        "Codex + Symphony + Linear",
+        "Plan mode",
+        "project-specific Symphony workflow",
+    ):
+        require(expected in global_agents_text, f"global AGENTS routing must mention {expected}")
+    require(
+        "## Superpowers workflow" in global_agents_text,
+        "canonical global AGENTS file must preserve the Superpowers workflow section",
     )
     require(SYNC_AGENTS_SCRIPT.exists(), "setup must include an AGENTS sync script")
     sync_agents_script = SYNC_AGENTS_SCRIPT.read_text()
@@ -234,6 +246,7 @@ def main() -> None:
     for tool_name in (
         "symphony_create_issue",
         "symphony_create_issue_batch",
+        "symphony_workflow_init",
         "symphony_refresh",
         "symphony_add_linear_comment",
         "symphony_move_linear_issue",
@@ -247,10 +260,14 @@ def main() -> None:
         "name: symphony-orchestration",
         "MCP Tool Preference",
         "symphony_create_issue",
+        "symphony_workflow_init",
         "symphony_handoff_summary",
         "symphony_add_linear_comment",
         "symphony_move_linear_issue",
         "symphony service",
+        "large decomposable app/site/project builds",
+        "Workflow Selection",
+        "Build a polished business website",
         "Never let a worker use these tools",
     ):
         require(expected in symphony_skill_text, f"symphony skill must mention {expected}")

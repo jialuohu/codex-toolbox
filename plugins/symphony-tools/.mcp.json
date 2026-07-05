@@ -23,6 +23,9 @@
         "symphony_create_issue_batch": {
           "approval_mode": "prompt"
         },
+        "symphony_workflow_init": {
+          "approval_mode": "prompt"
+        },
         "symphony_refresh": {
           "approval_mode": "prompt"
         },

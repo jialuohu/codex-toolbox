@@ -1,10 +1,21 @@
+## Orchestration routing
+
+For large or vague project requests, plan normally first, then choose the execution lane.
+
+- Use Codex-only work for tiny edits, one bugfix, one review, fast debugging, or single-session exploration.
+- If planning produces 3 or more independent, testable implementation tasks, recommend the Codex + Symphony + Linear lane even when the user did not mention Symphony or Linear.
+- In Plan mode, prepare the architecture, issue breakdown, project workflow choice, and dry-run Linear payloads only. Do not create live Linear issues, refresh/dispatch Symphony, or mutate Linear state in Plan mode.
+- In normal execution mode, create live Linear issues only after dry-run payload review and explicit approval. Scheduler refreshes and Linear closeout mutations also require confirmation.
+- For greenfield apps or sites, do the serial bootstrap first when no repo exists or the shared foundation is not ready. After the repo has a stable scaffold, split independent frontend, backend, content, testing, and polish work into Symphony issues.
+- Use a project-specific Symphony workflow for unrelated projects. Do not run a new project through `SYMPHONY_WORKFLOW`; create or dry-run a workflow for that target repo first.
+
 ## Superpowers workflow
 
 For non-trivial coding tasks, prefer the Superpowers workflow.
 
 - If requirements are unclear, use `superpowers:brainstorming`.
 - If the task needs multiple implementation steps, use `superpowers:writing-plans`.
-- After plan approval, offer `superpowers:subagent-driven-development` as the default execution path.
+- After plan approval, use the orchestration routing rules above. Choose Symphony for durable multi-ticket work; otherwise offer `superpowers:subagent-driven-development` as the default execution path.
 - During implementation of features or bugfixes, use `superpowers:test-driven-development`.
 - Before claiming completion, use `superpowers:verification-before-completion`.
 

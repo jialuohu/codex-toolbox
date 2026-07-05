@@ -42,6 +42,34 @@ instructions.
 5. Start a fresh Codex session so the installed global `AGENTS.md`, plugins, and
    MCP servers are loaded from the beginning of the run.
 
+## Symphony Routing
+
+For large decomposable projects, start naturally in Plan mode. For example:
+
+```text
+Build a polished business website for a small AI consulting agency.
+```
+
+The global instructions should let Codex plan first, recognize when the work
+breaks into three or more independent testable tasks, and recommend the
+Codex + Symphony + Linear lane without requiring the prompt to name Symphony.
+Plan mode may prepare issue breakdowns, a project-specific workflow dry-run,
+and Linear issue dry-runs. Live issue creation, scheduler refreshes, workflow
+writes, and Linear closeout still require explicit approval.
+
+For projects outside `SYMPHONY_ROOT`, create a project workflow first:
+
+```bash
+symphony workflow init \
+  --target-root ~/codes/example-project \
+  --output ~/codes/example-project/WORKFLOW.md \
+  --project-slug <PROJECT_SLUG> \
+  --team-key <LINEAR_TEAM_KEY> \
+  --port 4001 \
+  --concurrency 2 \
+  --dry-run
+```
+
 ## AGENTS.md Sync
 
 The canonical global instructions live at `config/codex/AGENTS.global.md`.
