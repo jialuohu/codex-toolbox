@@ -25,6 +25,12 @@
         },
         "symphony_refresh": {
           "approval_mode": "prompt"
+        },
+        "symphony_add_linear_comment": {
+          "approval_mode": "prompt"
+        },
+        "symphony_move_linear_issue": {
+          "approval_mode": "prompt"
         }
       }
     }

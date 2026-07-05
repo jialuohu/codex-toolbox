@@ -235,6 +235,8 @@ def main() -> None:
         "symphony_create_issue",
         "symphony_create_issue_batch",
         "symphony_refresh",
+        "symphony_add_linear_comment",
+        "symphony_move_linear_issue",
     ):
         require(
             symphony_server.get("tools", {}).get(tool_name, {}).get("approval_mode") == "prompt",
@@ -246,6 +248,9 @@ def main() -> None:
         "MCP Tool Preference",
         "symphony_create_issue",
         "symphony_handoff_summary",
+        "symphony_add_linear_comment",
+        "symphony_move_linear_issue",
+        "symphony service",
         "Never let a worker use these tools",
     ):
         require(expected in symphony_skill_text, f"symphony skill must mention {expected}")

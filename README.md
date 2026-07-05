@@ -32,6 +32,9 @@ instructions.
    - `CODEX_SECRETS_DIR/symphony-linear.env` with the local Linear credentials.
    - `symphony` installed on `PATH` or at `~/.local/bin/symphony`, usually by
      running `make install-local` in `SYMPHONY_ROOT`.
+   - Optional always-on operation uses `symphony service install/start`, which
+     sources the same env file at runtime and does not embed secrets in the
+     LaunchAgent plist.
 
 4. Run MCP login or connector setup commands for services that need local auth,
    such as Robinhood Trading or other account-backed connectors.

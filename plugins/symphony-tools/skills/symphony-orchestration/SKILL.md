@@ -67,10 +67,12 @@ actions:
 - `symphony_state`: read the loopback daemon state API or one issue row.
 - `symphony_refresh`: trigger one daemon refresh tick.
 - `symphony_handoff_summary`: summarize selected workspace changes before manual handoff.
+- `symphony_add_linear_comment`: add reviewed closeout evidence to one Linear issue.
+- `symphony_move_linear_issue`: move one Linear issue to a reviewed target state.
 
-Issue creation tools default to dry-run. Live creation must pass both `dry_run: false` and
-`confirm: true`. Never let a worker use these tools to create follow-up Linear issues from inside an
-issue workspace.
+Issue creation and closeout tools default to dry-run. Live Linear mutations must pass both
+`dry_run: false` and `confirm: true`. Never let a worker use these tools to create follow-up Linear
+issues or mutate Linear state from inside an issue workspace.
 
 If MCP tools are not visible, use the CLI fallback. Do not block a pilot on MCP availability.
 
@@ -107,6 +109,14 @@ GOCACHE=/private/tmp/symphony-go-build-cache \
   SYMPHONY_WORKFLOW
 ```
 
+Run it as a macOS LaunchAgent when always-on operation is intended:
+
+```bash
+symphony service install
+symphony service start
+symphony service status
+```
+
 Review handoff:
 
 ```bash
@@ -124,6 +134,8 @@ symphony handoff \
 - Keep `WORKFLOW.md` manual/default-safe unless the user asks for PR handoff or a pilot needs a
   temporary workflow.
 - Use one daemon per Linear scope/logs root.
+- For always-on operation, use `symphony service` and verify zero unexpected runnable Linear issues
+  before starting launchd.
 - Treat status sync as layered: Linear tracks task lifecycle, Symphony tracks worker runtime, Codex
   tracks reasoning and implementation, and GitHub tracks reviewable code output.
 - Stop and report if credentials, labels, states, acceptance criteria, file scope, or verification
