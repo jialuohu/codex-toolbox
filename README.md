@@ -18,10 +18,24 @@ third-party marketplace pins, and reusable Codex instructions.
    scripts/setup-codex-toolbox.sh
    ```
 
-   The script registers the configured toolbox marketplace, refreshes default
+   The script registers the configured toolbox marketplace from the Git-backed
+   marketplace source `jialuohu/codex-toolbox` on `main`, refreshes default
    plugins, installs third-party marketplace pins, removes stale direct MCP
    overrides for managed servers, and copies
    `config/codex/AGENTS.global.md` to `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`.
+   Because the toolbox marketplace is Git-backed, users can refresh it later
+   from the Codex Desktop app by clicking **Upgrade**, or from the CLI:
+
+   ```bash
+   codex plugin marketplace upgrade jialuo-codex-toolbox
+   ```
+
+   For local plugin development before changes are pushed to GitHub, register
+   the checkout directly instead:
+
+   ```bash
+   CODEX_TOOLBOX_MARKETPLACE_MODE=local scripts/setup-codex-toolbox.sh
+   ```
 
 3. Add per-device secrets outside the repository as needed. Keep OAuth state,
    API keys, tokens, credential files, and env-file contents out of version

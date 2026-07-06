@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SETUP_SCRIPT = ROOT / "scripts" / "setup-codex-toolbox.sh"
 SYNC_AGENTS_SCRIPT = ROOT / "scripts" / "sync-agents.sh"
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
+README = ROOT / "README.md"
 MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
 GAME_ASSET_PLUGIN = ROOT / "plugins" / "game-asset-tools" / ".codex-plugin" / "plugin.json"
 GAME_ASSET_MCP = ROOT / "plugins" / "game-asset-tools" / ".mcp.json"
@@ -54,6 +55,7 @@ def array_body(script: str, name: str) -> str:
 
 def main() -> None:
     script = SETUP_SCRIPT.read_text()
+    readme_text = README.read_text()
     require(GLOBAL_AGENTS.exists(), "canonical global AGENTS file must exist")
     require(
         GLOBAL_AGENTS.read_text().startswith("## Orchestration routing\n"),
@@ -144,6 +146,25 @@ def main() -> None:
         'MARKETPLACE_NAME="jialuo-codex-toolbox"' in script,
         "setup script must register the jialuo-codex-toolbox marketplace",
     )
+    for expected in (
+        "Git-backed",
+        "marketplace source `jialuohu/codex-toolbox`",
+        "Upgrade",
+        "codex plugin marketplace upgrade jialuo-codex-toolbox",
+        "CODEX_TOOLBOX_MARKETPLACE_MODE=local",
+    ):
+        require(expected in readme_text, f"README must document upgradeable toolbox marketplace: {expected}")
+    for expected in (
+        'TOOLBOX_MARKETPLACE_SOURCE="${CODEX_TOOLBOX_MARKETPLACE_SOURCE:-jialuohu/codex-toolbox}"',
+        'TOOLBOX_MARKETPLACE_GIT_URL="https://github.com/jialuohu/codex-toolbox.git"',
+        'TOOLBOX_MARKETPLACE_REF="${CODEX_TOOLBOX_MARKETPLACE_REF:-main}"',
+        'TOOLBOX_MARKETPLACE_MODE="${CODEX_TOOLBOX_MARKETPLACE_MODE:-git}"',
+        'plugin marketplace upgrade "$MARKETPLACE_NAME"',
+        'plugin marketplace add "$TOOLBOX_MARKETPLACE_SOURCE" --ref "$TOOLBOX_MARKETPLACE_REF"',
+        "local)",
+        "Registering local toolbox marketplace for development",
+    ):
+        require(expected in script, f"setup script must support upgradeable toolbox marketplace: {expected}")
     require(
         "declare -a OLD_MARKETPLACE_NAMES=()" in script,
         "setup script must not publish retired personal marketplace aliases",

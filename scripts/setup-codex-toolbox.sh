@@ -4,6 +4,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_CODEX="/Applications/Codex.app/Contents/Resources/codex"
 MARKETPLACE_NAME="jialuo-codex-toolbox"
+TOOLBOX_MARKETPLACE_SOURCE="${CODEX_TOOLBOX_MARKETPLACE_SOURCE:-jialuohu/codex-toolbox}"
+TOOLBOX_MARKETPLACE_GIT_URL="https://github.com/jialuohu/codex-toolbox.git"
+TOOLBOX_MARKETPLACE_REF="${CODEX_TOOLBOX_MARKETPLACE_REF:-main}"
+TOOLBOX_MARKETPLACE_MODE="${CODEX_TOOLBOX_MARKETPLACE_MODE:-git}"
 declare -a OLD_MARKETPLACE_NAMES=()
 UI_UX_MARKETPLACE_NAME="ui-ux-pro-max-skill"
 UI_UX_MARKETPLACE_SOURCE="nextlevelbuilder/ui-ux-pro-max-skill"
@@ -167,11 +171,59 @@ ensure_context7_marketplace() {
   add_context7_marketplace
 }
 
-if "$CODEX_BIN" plugin marketplace list | awk 'NR > 1 {print $NF}' | grep -Fx "$ROOT" >/dev/null; then
-  echo "Marketplace already registered: $ROOT"
-else
-  "$CODEX_BIN" plugin marketplace add "$ROOT"
-fi
+toolbox_git_marketplace_config_current() {
+  local config_file="${CODEX_HOME:-$HOME/.codex}/config.toml"
+
+  [ -f "$config_file" ] || return 1
+  grep -Fq "[marketplaces.${MARKETPLACE_NAME}]" "$config_file" || return 1
+  grep -Fq 'source_type = "git"' "$config_file" || return 1
+  grep -Fq "source = \"${TOOLBOX_MARKETPLACE_GIT_URL}\"" "$config_file" || return 1
+  grep -Fq "ref = \"${TOOLBOX_MARKETPLACE_REF}\"" "$config_file" || return 1
+}
+
+toolbox_local_marketplace_registered() {
+  "$CODEX_BIN" plugin marketplace list | awk 'NR > 1 {print $NF}' | grep -Fx "$ROOT" >/dev/null
+}
+
+ensure_toolbox_marketplace() {
+  case "$TOOLBOX_MARKETPLACE_MODE" in
+    git)
+      if toolbox_git_marketplace_config_current; then
+        echo "Refreshing upgradeable toolbox marketplace: ${MARKETPLACE_NAME}"
+        "$CODEX_BIN" plugin marketplace upgrade "$MARKETPLACE_NAME" --json >/dev/null
+        return
+      fi
+
+      if marketplace_registered "$MARKETPLACE_NAME"; then
+        "$CODEX_BIN" plugin marketplace remove "$MARKETPLACE_NAME" --json >/dev/null
+        echo "Removed stale toolbox marketplace registration: ${MARKETPLACE_NAME}"
+      fi
+
+      echo "Registering upgradeable toolbox marketplace: ${TOOLBOX_MARKETPLACE_SOURCE} @ ${TOOLBOX_MARKETPLACE_REF}"
+      "$CODEX_BIN" plugin marketplace add "$TOOLBOX_MARKETPLACE_SOURCE" --ref "$TOOLBOX_MARKETPLACE_REF" --json >/dev/null
+      ;;
+    local)
+      if toolbox_local_marketplace_registered; then
+        echo "Local toolbox marketplace already registered: $ROOT"
+        return
+      fi
+
+      if marketplace_registered "$MARKETPLACE_NAME"; then
+        "$CODEX_BIN" plugin marketplace remove "$MARKETPLACE_NAME" --json >/dev/null
+        echo "Removed Git toolbox marketplace for local development: ${MARKETPLACE_NAME}"
+      fi
+
+      echo "Registering local toolbox marketplace for development: $ROOT"
+      "$CODEX_BIN" plugin marketplace add "$ROOT" --json >/dev/null
+      ;;
+    *)
+      echo "Unsupported CODEX_TOOLBOX_MARKETPLACE_MODE=${TOOLBOX_MARKETPLACE_MODE}; use git or local" >&2
+      exit 2
+      ;;
+  esac
+}
+
+ensure_toolbox_marketplace
 
 plugin_installed() {
   local plugin_name="$1"
