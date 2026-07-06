@@ -185,6 +185,80 @@ toolbox_local_marketplace_registered() {
   "$CODEX_BIN" plugin marketplace list | awk 'NR > 1 {print $NF}' | grep -Fx "$ROOT" >/dev/null
 }
 
+remove_toolbox_marketplace_config_blocks() {
+  local source_to_remove="$1"
+  local description="$2"
+  local config_file="${CODEX_HOME:-$HOME/.codex}/config.toml"
+
+  [ -f "$config_file" ] || return 0
+
+  TOOLBOX_MARKETPLACE_SOURCE_TO_REMOVE="$source_to_remove" \
+    TOOLBOX_MARKETPLACE_REMOVE_DESCRIPTION="$description" \
+    python3 - "$config_file" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+source_to_remove = os.environ["TOOLBOX_MARKETPLACE_SOURCE_TO_REMOVE"]
+description = os.environ["TOOLBOX_MARKETPLACE_REMOVE_DESCRIPTION"]
+
+original = config_path.read_text()
+lines = original.splitlines(keepends=True)
+kept_lines = []
+removed_headers = []
+index = 0
+
+while index < len(lines):
+    line = lines[index]
+    stripped = line.strip()
+    if stripped.startswith("[marketplaces.") and stripped.endswith("]"):
+        block = [line]
+        index += 1
+        while index < len(lines):
+            next_stripped = lines[index].strip()
+            if next_stripped.startswith("[") and next_stripped.endswith("]"):
+                break
+            block.append(lines[index])
+            index += 1
+
+        if any(entry.strip() == f'source = "{source_to_remove}"' for entry in block):
+            removed_headers.append(stripped)
+            continue
+
+        kept_lines.extend(block)
+        continue
+
+    kept_lines.append(line)
+    index += 1
+
+if not removed_headers:
+    print(f"{description} config blocks not present")
+    raise SystemExit(0)
+
+backup_path = config_path.with_name(
+    config_path.name + ".backup-before-toolbox-marketplace-migration"
+)
+if not backup_path.exists():
+    backup_path.write_text(original)
+
+config_path.write_text("".join(kept_lines))
+print(f"Removed {description} config blocks: " + ", ".join(removed_headers))
+PY
+}
+
+remove_toolbox_marketplace_registration() {
+  local source_to_remove="$1"
+  local description="$2"
+
+  if "$CODEX_BIN" plugin marketplace remove "$MARKETPLACE_NAME" --json >/dev/null 2>&1; then
+    echo "Removed ${description}: ${MARKETPLACE_NAME}"
+    return
+  fi
+
+  remove_toolbox_marketplace_config_blocks "$source_to_remove" "$description"
+}
+
 ensure_toolbox_marketplace() {
   case "$TOOLBOX_MARKETPLACE_MODE" in
     git)
@@ -195,8 +269,7 @@ ensure_toolbox_marketplace() {
       fi
 
       if marketplace_registered "$MARKETPLACE_NAME"; then
-        "$CODEX_BIN" plugin marketplace remove "$MARKETPLACE_NAME" --json >/dev/null
-        echo "Removed stale toolbox marketplace registration: ${MARKETPLACE_NAME}"
+        remove_toolbox_marketplace_registration "$ROOT" "stale toolbox marketplace registration"
       fi
 
       echo "Registering upgradeable toolbox marketplace: ${TOOLBOX_MARKETPLACE_SOURCE} @ ${TOOLBOX_MARKETPLACE_REF}"
@@ -209,8 +282,7 @@ ensure_toolbox_marketplace() {
       fi
 
       if marketplace_registered "$MARKETPLACE_NAME"; then
-        "$CODEX_BIN" plugin marketplace remove "$MARKETPLACE_NAME" --json >/dev/null
-        echo "Removed Git toolbox marketplace for local development: ${MARKETPLACE_NAME}"
+        remove_toolbox_marketplace_registration "$TOOLBOX_MARKETPLACE_GIT_URL" "Git toolbox marketplace for local development"
       fi
 
       echo "Registering local toolbox marketplace for development: $ROOT"

@@ -161,6 +161,8 @@ def main() -> None:
         'TOOLBOX_MARKETPLACE_MODE="${CODEX_TOOLBOX_MARKETPLACE_MODE:-git}"',
         'plugin marketplace upgrade "$MARKETPLACE_NAME"',
         'plugin marketplace add "$TOOLBOX_MARKETPLACE_SOURCE" --ref "$TOOLBOX_MARKETPLACE_REF"',
+        "remove_toolbox_marketplace_config_blocks",
+        "TOOLBOX_MARKETPLACE_SOURCE_TO_REMOVE",
         "local)",
         "Registering local toolbox marketplace for development",
     ):
