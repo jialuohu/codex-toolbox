@@ -22,7 +22,7 @@ Use Vibe-Trading for research-heavy finance work: market data, backtests, factor
 
 ## Configuration
 
-The toolbox plugin launches the upstream PyPI package with `uvx --from vibe-trading-ai vibe-trading-mcp`, tracking the latest published version. Optional provider and data-source overrides may live in `CODEX_SECRETS_DIR/vibe-trading.env`. Native Vibe-Trading state, provider config, run history, and connector profiles live under `VIBE_TRADING_HOME/`.
+The toolbox plugin launches the upstream PyPI package with `uvx --from vibe-trading-ai vibe-trading-mcp`, tracking the latest published version. Optional provider and data-source overrides may live under `CODEX_SECRETS_DIR`. Native Vibe-Trading state, provider config, run history, and connector profiles live under `VIBE_TRADING_HOME`.
 
 Do not put API keys, OAuth state, broker credentials, or `.env` contents in the toolbox repo.
 
@@ -38,4 +38,4 @@ For live discovery, start the configured command through an MCP client and confi
 
 ## Safety
 
-Vibe-Trading's MCP surface is for research and read-oriented connector workflows; it is not the default path for direct broker order actions. Treat generated files, backtest runs, reports, connector selection, and swarm execution as local state changes under `VIBE_TRADING_HOME/`.
+Vibe-Trading's MCP surface is for research and read-oriented connector workflows; it is not the default path for direct broker order actions. Treat generated files, backtest runs, reports, connector selection, and swarm execution as local state changes under `VIBE_TRADING_HOME`.

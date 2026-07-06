@@ -6,8 +6,29 @@ docs/superpowers/
 .env
 .env.*
 !.env.example
+*.local
+*.local.*
+*.override
+*.override.*
 .vscode/
 .idea/
+
+# Credentials and private local state.
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.csr
+*.mobileprovision
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+known_hosts
+secrets/
+credentials/
+private/
 
 # Runtime caches and logs.
 .cache/

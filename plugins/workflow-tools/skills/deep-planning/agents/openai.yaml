@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deep Planning"
+  short_description: "Adversarial Plan Mode critique before implementation."
+  default_prompt: "Use $deep-planning to critique this plan before implementation."

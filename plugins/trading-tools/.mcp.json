@@ -5,7 +5,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "UVX=\"$(command -v uvx || true)\"; if [ -z \"$UVX\" ] && [ -x \"CODEX_LOCAL_BIN_DIR/uvx\" ]; then UVX=\"CODEX_LOCAL_BIN_DIR/uvx\"; fi; if [ -z \"$UVX\" ]; then echo \"uvx not found\" >&2; exit 127; fi; exec \"$UVX\" alpaca-mcp-server --env-file \"$CODEX_SECRETS_DIR/alpaca-live.env\""
+        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/alpaca-live.env\"; UVX=\"$(command -v uvx || true)\"; if [ -z \"$UVX\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/uvx\" ]; then UVX=\"$CODEX_LOCAL_BIN_DIR/uvx\"; fi; if [ -z \"$UVX\" ]; then echo \"uvx not found\" >&2; exit 127; fi; exec \"$UVX\" alpaca-mcp-server --env-file \"$SECRET_FILE\""
       ],
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 180,

@@ -5,7 +5,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "if [ ! -f \"$CODEX_SECRETS_DIR/pixellab.env\" ]; then echo \"Missing $CODEX_SECRETS_DIR/pixellab.env with AUTH_HEADER=Bearer <token>\" >&2; exit 1; fi; set -a; source \"$CODEX_SECRETS_DIR/pixellab.env\"; set +a; if [ -z \"${AUTH_HEADER:-}\" ]; then echo \"Missing AUTH_HEADER in $CODEX_SECRETS_DIR/pixellab.env\" >&2; exit 1; fi; exec npx -y mcp-remote@latest https://api.pixellab.ai/mcp --transport http-only --header 'Authorization:${AUTH_HEADER}'"
+        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/pixellab.env\"; if [ ! -f \"$SECRET_FILE\" ]; then echo \"Missing CODEX_SECRETS_DIR/pixellab.env with AUTH_HEADER=Bearer <token>\" >&2; exit 1; fi; set -a; source \"$SECRET_FILE\"; set +a; if [ -z \"${AUTH_HEADER:-}\" ]; then echo \"Missing AUTH_HEADER in CODEX_SECRETS_DIR/pixellab.env\" >&2; exit 1; fi; NPX=\"$(command -v npx || true)\"; if [ -z \"$NPX\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/npx\" ]; then NPX=\"$CODEX_LOCAL_BIN_DIR/npx\"; fi; if [ -z \"$NPX\" ]; then echo \"npx not found\" >&2; exit 127; fi; exec \"$NPX\" -y mcp-remote@latest https://api.pixellab.ai/mcp --transport http-only --header 'Authorization:${AUTH_HEADER}'"
       ],
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 300,

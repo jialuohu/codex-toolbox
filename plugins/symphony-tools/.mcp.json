@@ -5,7 +5,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "if [ ! -f \"$CODEX_SECRETS_DIR/symphony-linear.env\" ]; then echo \"Missing $CODEX_SECRETS_DIR/symphony-linear.env with LINEAR_API_KEY\" >&2; exit 1; fi; set -a; source \"$CODEX_SECRETS_DIR/symphony-linear.env\"; set +a; SYMPHONY=\"$(command -v symphony || true)\"; if [ -z \"$SYMPHONY\" ] && [ -x \"CODEX_LOCAL_BIN_DIR/symphony\" ]; then SYMPHONY=\"CODEX_LOCAL_BIN_DIR/symphony\"; fi; if [ -z \"$SYMPHONY\" ]; then echo \"symphony not found; run make install-local in SYMPHONY_ROOT\" >&2; exit 127; fi; exec \"$SYMPHONY\" mcp"
+        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/symphony-linear.env\"; if [ ! -f \"$SECRET_FILE\" ]; then echo \"Missing CODEX_SECRETS_DIR/symphony-linear.env with LINEAR_API_KEY\" >&2; exit 1; fi; set -a; source \"$SECRET_FILE\"; set +a; SYMPHONY=\"$(command -v symphony || true)\"; if [ -z \"$SYMPHONY\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/symphony\" ]; then SYMPHONY=\"$CODEX_LOCAL_BIN_DIR/symphony\"; fi; if [ -z \"$SYMPHONY\" ]; then echo \"symphony not found; install it or set CODEX_LOCAL_BIN_DIR\" >&2; exit 127; fi; exec \"$SYMPHONY\" mcp"
       ],
       "startup_timeout_sec": 30,
       "tool_timeout_sec": 180,

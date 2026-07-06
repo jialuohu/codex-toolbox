@@ -5,7 +5,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "if [ -f \"$CODEX_SECRETS_DIR/vibe-trading.env\" ]; then set -a; source \"$CODEX_SECRETS_DIR/vibe-trading.env\"; set +a; fi; UVX=\"$(command -v uvx || true)\"; if [ -z \"$UVX\" ] && [ -x \"CODEX_LOCAL_BIN_DIR/uvx\" ]; then UVX=\"CODEX_LOCAL_BIN_DIR/uvx\"; fi; if [ -z \"$UVX\" ]; then echo \"uvx not found\" >&2; exit 127; fi; exec \"$UVX\" --from vibe-trading-ai vibe-trading-mcp"
+        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/vibe-trading.env\"; if [ -f \"$SECRET_FILE\" ]; then set -a; source \"$SECRET_FILE\"; set +a; fi; UVX=\"$(command -v uvx || true)\"; if [ -z \"$UVX\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/uvx\" ]; then UVX=\"$CODEX_LOCAL_BIN_DIR/uvx\"; fi; if [ -z \"$UVX\" ]; then echo \"uvx not found\" >&2; exit 127; fi; exec \"$UVX\" --from vibe-trading-ai vibe-trading-mcp"
       ],
       "startup_timeout_sec": 300,
       "tool_timeout_sec": 3600,

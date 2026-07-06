@@ -4,9 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_CODEX="/Applications/Codex.app/Contents/Resources/codex"
 MARKETPLACE_NAME="jialuo-codex-toolbox"
-OLD_MARKETPLACE_NAMES=(
-  "jialuo-codex-toolbox"
-)
+declare -a OLD_MARKETPLACE_NAMES=()
 UI_UX_MARKETPLACE_NAME="ui-ux-pro-max-skill"
 UI_UX_MARKETPLACE_SOURCE="nextlevelbuilder/ui-ux-pro-max-skill"
 UI_UX_MARKETPLACE_REF="v2.10.0"
@@ -24,6 +22,7 @@ DEFAULT_PLUGINS=(
   "web-data-tools"
   "game-asset-tools"
   "symphony-tools"
+  "workflow-tools"
   "trading-tools"
   "vibe-trading-tools"
   "chronicle-tools"
@@ -35,7 +34,6 @@ CONTEXT7_DEFAULT_PLUGINS=(
   "context7"
 )
 RETIRED_PLUGINS=(
-  "legacy-toolbox"
   "lab-weekly-update"
   "context7-docs"
 )
@@ -223,6 +221,10 @@ remove_stale_plugin_config_blocks() {
   local default_plugins
 
   [ -f "$config_file" ] || return 0
+  if [ "${#OLD_MARKETPLACE_NAMES[@]}" -eq 0 ]; then
+    echo "Stale retired-marketplace plugin config blocks not present"
+    return 0
+  fi
 
   old_marketplaces="$(printf '%s\n' "${OLD_MARKETPLACE_NAMES[@]}")"
   default_plugins="$(printf '%s\n' "${DEFAULT_PLUGINS[@]}")"

@@ -8,7 +8,13 @@ For large or vague project requests, plan normally first, then choose the execut
 - In normal execution mode, create live Linear issues only after dry-run payload review and explicit approval. Scheduler refreshes and Linear closeout mutations also require confirmation.
 - After the user approves Symphony execution, do not stop at dry-runs. Write the reviewed project workflow, create the approved Linear issues, and start or refresh Symphony so workers actually run.
 - For greenfield apps or sites, do the serial bootstrap first when no repo exists or the shared foundation is not ready. Stop bootstrap at the stable shared foundation; split remaining frontend, backend, content, testing, and polish work into Symphony issues instead of continuing the whole build inline.
-- Use a project-specific Symphony workflow for unrelated projects. Do not run a new project through `SYMPHONY_WORKFLOW`; create or dry-run a workflow for that target repo first.
+- Use a project-specific Symphony workflow for unrelated projects. Do not run a new project through the Symphony source repo workflow from [jialuohu/symphony-go](https://github.com/jialuohu/symphony-go); create or dry-run a workflow for that target repo first.
+
+## Deep planning in Plan Mode
+
+In Plan Mode for non-trivial, ambiguous, architectural, high-risk, or multi-step work, use `$deep-planning` by default before presenting the final plan. If `$deep-planning` is unavailable, follow the same adversarial critique protocol inline: gather observed facts, state assumptions and material unknowns, draft the strongest plan, critique product value, architecture, implementation risk, edge cases, tests, rollout, and scope, revise the plan, then choose Codex-only, Superpowers, OpenSpec, or Symphony/Linear routing. For non-trivial plans, keep the final response ordered as Observed Facts, Assumptions / Unknowns, Strongest Plan, Adversarial Review, and Revised Plan / Routing unless the active Plan Mode format is stricter.
+
+Do not use deep planning for tiny edits, simple command-output checks, pure execution, post-code verification, or full Superpowers design-doc workflows. `deep-planning` must not write files, create issues, dispatch workers, refresh schedulers, or write `docs/superpowers/` artifacts.
 
 ## Superpowers workflow
 
@@ -36,12 +42,12 @@ Delegate when it improves reliability. Use subagents for broad research, indepen
 
 ## Codex toolbox repo
 
-The personal toolbox repo is `CODEX_TOOLBOX_ROOT` and its GitHub remote is `jialuohu/codex-toolbox`. It is a repo-scoped Codex plugin marketplace named `jialuo-codex-toolbox`.
+The personal toolbox repo is identified by `CODEX_TOOLBOX_ROOT` on each machine, and its GitHub remote is `jialuohu/codex-toolbox`. It is a repo-scoped Codex plugin marketplace named `jialuo-codex-toolbox`.
 
 - Keep plugins focused by domain. Current default plugins are `obsidian-tools`, `research-tools`, `web-data-tools`, `game-asset-tools`, `symphony-tools`, `trading-tools`, `vibe-trading-tools`, and `chronicle-tools`.
 - The setup script also manages third-party Git marketplaces: `ui-ux-pro-max-skill`, pinned to `v2.10.0` with sparse checkout limited to the core `ui-ux-pro-max` skill, and the official Context7 marketplace `context7-marketplace`. Do not vendor these third-party plugins into `codex-toolbox` unless explicitly asked.
 - Do not reintroduce the retired starter plugins `lab-weekly-update` or `context7-docs` unless explicitly asked.
-- Do not commit secrets, OAuth state, API keys, or env-file contents. MCP configs may reference local secret files under `CODEX_SECRETS_DIR/`, but the secret files remain per-device.
+- Do not commit secrets, OAuth state, API keys, or env-file contents. MCP configs may reference `CODEX_SECRETS_DIR`, but the secret files remain per-device.
 - Keep toolbox-managed MCP servers in the plugin `.mcp.json` files, not as duplicate direct `[mcp_servers.*]` tables in `~/.codex/config.toml`. The setup script migrates direct entries for managed servers out of the user config.
 - After changing the toolbox, run JSON validation for marketplace/plugin/MCP files, scan for sensitive keywords, run `scripts/setup-codex-toolbox.sh`, and verify `codex plugin list --marketplace jialuo-codex-toolbox --json` plus `codex mcp list`. If third-party marketplace management changed, also verify the relevant plugin list, such as `codex plugin list --marketplace ui-ux-pro-max-skill --json` or `codex plugin list --marketplace context7-marketplace --json`.
 - Keep `docs/superpowers/` out of the repo; those are local planning artifacts.
@@ -66,7 +72,7 @@ Use Zotero MCP for the user's saved research library: collections, item metadata
 
 Use `obsidian_files` for unattended local Obsidian vault reads, searches, note creation, and note edits under `CODEX_OBSIDIAN_VAULT`. Prefer line-based `edit_file` changes for existing notes; use whole-file overwrite only for new files or when explicitly requested. Never move, delete, or broadly rewrite vault files unless the user explicitly asks and the relevant tool is enabled. Prefer the installed Obsidian skills for Obsidian Markdown syntax, Bases, JSON Canvas, and official CLI guidance. Do not use a Local REST API Obsidian MCP unless it is explicitly re-enabled.
 
-Use Vibe-Trading MCP for finance research, backtests, factor analysis, market screening, research swarms, trade-journal analysis, and Shadow Account reports. Its optional Codex override file is `CODEX_SECRETS_DIR/vibe-trading.env`; native Vibe-Trading config, run history, connector profiles, and state live under `VIBE_TRADING_HOME/`. Treat Vibe-Trading connector setup, OAuth, broker-profile selection, and any live-trading adjacent action as explicit-confirmation work.
+Use Vibe-Trading MCP for finance research, backtests, factor analysis, market screening, research swarms, trade-journal analysis, and Shadow Account reports. Its optional Codex override file lives under `CODEX_SECRETS_DIR`; native Vibe-Trading config, run history, connector profiles, and state live under `VIBE_TRADING_HOME`. Treat Vibe-Trading connector setup, OAuth, broker-profile selection, and any live-trading adjacent action as explicit-confirmation work.
 
 Use Robinhood Trading MCP (`robinhood-trading`) for official Robinhood Agentic account workflows: connecting the Robinhood Trading MCP, reading Robinhood Agentic account data, and user-requested Agentic trading actions. Prefer Robinhood's official Streamable HTTP MCP endpoint over unofficial Robinhood packages or local wrappers unless the user explicitly asks for an unofficial package. Treat Robinhood order placement, cancellation, rebalance, strategy deployment, or account disconnection as live-financial actions; only perform them when the user explicitly asks for that action and accepts the execution risk.
 
@@ -82,4 +88,4 @@ Use `node_repl` for JavaScript execution, quick Node-based inspection, and brows
 
 For OpenAI/Codex product behavior, prefer official OpenAI/Codex docs over Context7 or generic web search.
 
-For MCP servers, keep API keys, tokens, passwords, and similar secrets in `CODEX_SECRETS_DIR/*.env` files and source those files from the MCP command wrapper. Do not put secrets directly in `Codex config files`.
+For MCP servers, keep API keys, tokens, passwords, and similar secrets in files under `CODEX_SECRETS_DIR` and source those files from the MCP command wrapper. Do not put secrets directly in Codex config files.

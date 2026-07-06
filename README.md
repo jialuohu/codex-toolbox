@@ -1,15 +1,14 @@
-# Personal Codex Toolbox
+# Codex Toolbox
 
-This repository is the portable source for a Codex plugin marketplace,
-managed MCP configuration, third-party marketplace pins, and global Codex
-instructions.
+This repository manages a Codex plugin marketplace, MCP configuration,
+third-party marketplace pins, and reusable Codex instructions.
 
 ## New Device Setup
 
 1. Clone the repository:
 
    ```bash
-   git clone git@github.com:jialuohu/codex-toolbox.git codex-toolbox
+   git clone <repo-url> codex-toolbox
    cd codex-toolbox
    ```
 
@@ -19,25 +18,20 @@ instructions.
    scripts/setup-codex-toolbox.sh
    ```
 
-   The script registers the `jialuo-codex-toolbox` marketplace, refreshes default
+   The script registers the configured toolbox marketplace, refreshes default
    plugins, installs third-party marketplace pins, removes stale direct MCP
    overrides for managed servers, and copies
    `config/codex/AGENTS.global.md` to `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`.
 
-3. Add per-device secrets under `CODEX_SECRETS_DIR/` as needed. Keep OAuth state,
-   API keys, tokens, and env-file contents out of this repo.
+3. Add per-device secrets outside the repository as needed. Keep OAuth state,
+   API keys, tokens, credential files, and env-file contents out of version
+   control.
 
-   Symphony Tools expects:
+   Connector-specific credential paths, account details, and companion tool
+   install locations should stay in local, untracked configuration.
 
-   - `CODEX_SECRETS_DIR/symphony-linear.env` with the local Linear credentials.
-   - `symphony` installed on `PATH` or at `~/.local/bin/symphony`, usually by
-     running `make install-local` in `SYMPHONY_ROOT`.
-   - Optional always-on operation uses `symphony service install/start`, which
-     sources the same env file at runtime and does not embed secrets in the
-     LaunchAgent plist.
-
-4. Run MCP login or connector setup commands for services that need local auth,
-   such as Robinhood Trading or other account-backed connectors.
+4. Run MCP login or connector setup commands for any services that need local
+   authentication.
 
 5. Start a fresh Codex session so the installed global `AGENTS.md`, plugins, and
    MCP servers are loaded from the beginning of the run.
@@ -62,7 +56,22 @@ workers run. Do not offer Codex-only as an equal path for Symphony-eligible
 plans unless the user explicitly asks for quick single-session execution or
 opts out of Symphony/Linear.
 
-For projects outside `SYMPHONY_ROOT`, create a project workflow first:
+## Deep Planning
+
+Plan Mode uses `$deep-planning` by default for non-trivial work before the
+final plan is presented. The skill is a critique gate: it gathers observed
+facts, states assumptions and material unknowns, drafts the strongest plan,
+challenges product value, architecture, implementation risk, edge cases, tests,
+rollout, and scope, then chooses Codex-only, Superpowers, OpenSpec, or
+Symphony/Linear routing.
+
+Superpowers remains the design and implementation workflow. Deep Planning does
+not write `docs/superpowers/` artifacts, create issues, dispatch workers, or
+perform verification after code changes.
+
+For projects outside the Symphony source repo
+([jialuohu/symphony-go](https://github.com/jialuohu/symphony-go)), create a
+project workflow first:
 
 ```bash
 symphony workflow init \

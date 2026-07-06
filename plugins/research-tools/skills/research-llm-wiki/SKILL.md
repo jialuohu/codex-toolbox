@@ -7,7 +7,7 @@ description: Maintain a Karpathy-style, source-backed research LLM Wiki in the u
 
 ## Overview
 
-Maintain a generated research wiki under `CODEX_RESEARCH_LLM_WIKI`. Treat raw sources as immutable and use the wiki as the compiled, source-backed synthesis layer that Codex owns.
+Maintain a generated research wiki under `CODEX_RESEARCH_LLM_WIKI` or `Research/LLM Wiki` inside `CODEX_OBSIDIAN_VAULT`. Treat raw sources as immutable and use the wiki as the compiled, source-backed synthesis layer that Codex owns.
 
 Use Obsidian Markdown conventions: internal links use `[[wikilinks]]`, external sources use Markdown links, and nontrivial claims carry source citations. Do not rewrite raw source notes, Zotero records, PDFs, or web clips during wiki maintenance.
 
@@ -67,7 +67,7 @@ Run a bounded health check over `Research/LLM Wiki`:
 1. Run the deterministic helper first:
 
    ```bash
-   python3 <skill-dir>/scripts/lint_research_llm_wiki.py --wiki-root "CODEX_RESEARCH_LLM_WIKI"
+   python3 <skill-dir>/scripts/lint_research_llm_wiki.py --wiki-root "$CODEX_RESEARCH_LLM_WIKI"
    ```
 
 2. Inspect any findings and then do a judgment pass for higher-level contradictions or synthesis gaps.

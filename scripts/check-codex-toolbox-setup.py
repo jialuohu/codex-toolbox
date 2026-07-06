@@ -32,6 +32,13 @@ RESEARCH_LLM_WIKI_LINT = (
     / "scripts"
     / "lint_research_llm_wiki.py"
 )
+WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
+DEEP_PLANNING_SKILL = (
+    ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "SKILL.md"
+)
+DEEP_PLANNING_OPENAI = (
+    ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "agents" / "openai.yaml"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -65,6 +72,16 @@ def main() -> None:
         "start or refresh Symphony",
     ):
         require(expected in global_agents_text, f"global AGENTS routing must mention {expected}")
+    for expected in (
+        "$deep-planning",
+        "adversarial critique protocol",
+        "If `$deep-planning` is unavailable",
+        "draft the strongest plan",
+        "OpenSpec",
+        "must not write files",
+        "docs/superpowers/",
+    ):
+        require(expected in global_agents_text, f"global AGENTS deep planning must mention {expected}")
     require(
         "## Superpowers workflow" in global_agents_text,
         "canonical global AGENTS file must preserve the Superpowers workflow section",
@@ -98,12 +115,16 @@ def main() -> None:
         RESEARCH_LLM_WIKI_LINT.exists(),
         "research-llm-wiki must include a deterministic lint helper",
     )
+    require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
+    require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
+    require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
     marketplace = json.loads(MARKETPLACE.read_text())
     game_asset_plugin = json.loads(GAME_ASSET_PLUGIN.read_text())
     game_asset_mcp = json.loads(GAME_ASSET_MCP.read_text())
     symphony_plugin = json.loads(SYMPHONY_PLUGIN.read_text())
     symphony_mcp = json.loads(SYMPHONY_MCP.read_text())
     research_plugin = json.loads(RESEARCH_PLUGIN.read_text())
+    workflow_plugin = json.loads(WORKFLOW_PLUGIN.read_text())
     trading_mcp = json.loads(TRADING_MCP.read_text())
     default_plugins = array_body(script, "DEFAULT_PLUGINS")
     managed_mcp_servers = array_body(script, "MANAGED_MCP_SERVERS")
@@ -116,12 +137,16 @@ def main() -> None:
         "marketplace must be named jialuo-codex-toolbox",
     )
     require(
+        marketplace.get("interface", {}).get("displayName") == "Jialuo's Codex Toolbox",
+        "marketplace display name must be Jialuo's Codex Toolbox",
+    )
+    require(
         'MARKETPLACE_NAME="jialuo-codex-toolbox"' in script,
         "setup script must register the jialuo-codex-toolbox marketplace",
     )
     require(
-        "OLD_MARKETPLACE_NAMES=(" in script and '"jialuo-codex-toolbox"' in script,
-        "setup script must track retired toolbox marketplace names",
+        "declare -a OLD_MARKETPLACE_NAMES=()" in script,
+        "setup script must not publish retired personal marketplace aliases",
     )
     require(
         "remove_stale_plugin_config_blocks" in script,
@@ -179,6 +204,10 @@ def main() -> None:
         "setup script must install the symphony-tools plugin",
     )
     require(
+        '  "workflow-tools"' in default_plugins,
+        "setup script must install the workflow-tools plugin",
+    )
+    require(
         '  "pixellab"' in managed_mcp_servers,
         "setup script must manage the pixellab MCP server cleanup list",
     )
@@ -211,6 +240,56 @@ def main() -> None:
         "marketplace must include symphony-tools",
     )
     require(
+        any(
+            plugin.get("name") == "workflow-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/workflow-tools"
+            for plugin in marketplace.get("plugins", [])
+        ),
+        "marketplace must include workflow-tools",
+    )
+    require(
+        workflow_plugin.get("skills") == "./skills/",
+        "workflow-tools must expose bundled planning skills",
+    )
+    require(
+        "mcpServers" not in workflow_plugin,
+        "workflow-tools must not expose an MCP server",
+    )
+    workflow_interface = workflow_plugin.get("interface", {})
+    require(
+        "Plan Mode" in workflow_interface.get("longDescription", ""),
+        "workflow-tools plugin description must mention Plan Mode",
+    )
+    require(
+        any("deep-planning" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools default prompts must surface deep-planning usage",
+    )
+    deep_planning_text = DEEP_PLANNING_SKILL.read_text()
+    for expected in (
+        "name: deep-planning",
+        "Plan Mode",
+        "adversarial critique",
+        "Observed Facts",
+        "Assumptions / Unknowns",
+        "Strongest Plan",
+        "Adversarial Review",
+        "Revised Plan / Routing",
+        "Do not edit or write files",
+        "docs/superpowers/",
+        "Codex-only",
+        "Superpowers",
+        "OpenSpec",
+        "Symphony/Linear",
+    ):
+        require(expected in deep_planning_text, f"deep-planning skill must mention {expected}")
+    deep_planning_openai = DEEP_PLANNING_OPENAI.read_text()
+    for expected in (
+        'display_name: "Deep Planning"',
+        'short_description: "Adversarial Plan Mode critique before implementation."',
+        'default_prompt: "Use $deep-planning to critique this plan before implementation."',
+    ):
+        require(expected in deep_planning_openai, f"deep-planning OpenAI metadata must mention {expected}")
+    require(
         symphony_plugin.get("skills") == "./skills/",
         "symphony-tools must expose its orchestration skill",
     )
@@ -233,9 +312,10 @@ def main() -> None:
     )
     symphony_launch = symphony_args[1] if len(symphony_args) == 2 else ""
     for expected in (
-        'source "$CODEX_SECRETS_DIR/symphony-linear.env"',
+        "CODEX_SECRETS_DIR",
+        'source "$SECRET_FILE"',
         'command -v symphony',
-        '"CODEX_LOCAL_BIN_DIR/symphony"',
+        "CODEX_LOCAL_BIN_DIR",
         'exec "$SYMPHONY" mcp',
     ):
         require(expected in symphony_launch, f"symphony launch must include {expected}")
@@ -272,6 +352,7 @@ def main() -> None:
         "symphony service",
         "large decomposable app/site/project builds",
         "Workflow Selection",
+        "https://github.com/jialuohu/symphony-go",
         "--concurrency 4",
         "route to the Symphony lane by default",
         "Do not offer Codex-only as an equal lane",
@@ -330,8 +411,9 @@ def main() -> None:
     )
     pixellab_launch = pixellab_args[1] if len(pixellab_args) == 2 else ""
     for expected in (
-        'source "$CODEX_SECRETS_DIR/pixellab.env"',
-        "npx -y mcp-remote@latest",
+        "CODEX_SECRETS_DIR",
+        'source "$SECRET_FILE"',
+        "mcp-remote@latest",
         "https://api.pixellab.ai/mcp",
         "--transport http-only",
         "--header 'Authorization:${AUTH_HEADER}'",

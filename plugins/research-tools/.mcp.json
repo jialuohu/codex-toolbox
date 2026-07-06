@@ -4,7 +4,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "set -a; source \"$CODEX_SECRETS_DIR/paper-search-mcp.env\"; set +a; exec uv run --directory \"PAPER_SEARCH_MCP_ROOT\" --python 3.12 -m paper_search_mcp.server"
+        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/paper-search-mcp.env\"; if [ -z \"${PAPER_SEARCH_MCP_ROOT:-}\" ]; then echo \"Set PAPER_SEARCH_MCP_ROOT to the local paper-search-mcp checkout\" >&2; exit 1; fi; if [ ! -f \"$SECRET_FILE\" ]; then echo \"Missing CODEX_SECRETS_DIR/paper-search-mcp.env\" >&2; exit 1; fi; set -a; source \"$SECRET_FILE\"; set +a; exec uv run --directory \"$PAPER_SEARCH_MCP_ROOT\" --python 3.12 -m paper_search_mcp.server"
       ]
     },
     "zotero": {
@@ -12,7 +12,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "set -a; source \"$CODEX_SECRETS_DIR/zotero.env\"; set +a; ZOTERO_MCP=\"$(command -v zotero-mcp || true)\"; if [ -z \"$ZOTERO_MCP\" ] && [ -x \"CODEX_LOCAL_BIN_DIR/zotero-mcp\" ]; then ZOTERO_MCP=\"CODEX_LOCAL_BIN_DIR/zotero-mcp\"; fi; if [ -z \"$ZOTERO_MCP\" ]; then echo \"zotero-mcp not found\" >&2; exit 127; fi; exec \"$ZOTERO_MCP\" serve --transport stdio"
+        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/zotero.env\"; if [ ! -f \"$SECRET_FILE\" ]; then echo \"Missing CODEX_SECRETS_DIR/zotero.env\" >&2; exit 1; fi; set -a; source \"$SECRET_FILE\"; set +a; ZOTERO_MCP=\"$(command -v zotero-mcp || true)\"; if [ -z \"$ZOTERO_MCP\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/zotero-mcp\" ]; then ZOTERO_MCP=\"$CODEX_LOCAL_BIN_DIR/zotero-mcp\"; fi; if [ -z \"$ZOTERO_MCP\" ]; then echo \"zotero-mcp not found\" >&2; exit 127; fi; exec \"$ZOTERO_MCP\" serve --transport stdio"
       ],
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 180,

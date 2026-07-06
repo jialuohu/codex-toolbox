@@ -5,7 +5,7 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "set -a; source \"$CODEX_SECRETS_DIR/firecrawl.env\"; set +a; exec npx -y firecrawl-mcp"
+        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/firecrawl.env\"; if [ ! -f \"$SECRET_FILE\" ]; then echo \"Missing CODEX_SECRETS_DIR/firecrawl.env\" >&2; exit 1; fi; set -a; source \"$SECRET_FILE\"; set +a; NPX=\"$(command -v npx || true)\"; if [ -z \"$NPX\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/npx\" ]; then NPX=\"$CODEX_LOCAL_BIN_DIR/npx\"; fi; if [ -z \"$NPX\" ]; then echo \"npx not found\" >&2; exit 127; fi; exec \"$NPX\" -y firecrawl-mcp"
       ],
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 240,

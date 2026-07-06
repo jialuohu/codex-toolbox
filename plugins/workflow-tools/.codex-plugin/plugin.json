@@ -1,0 +1,23 @@
+{
+  "name": "workflow-tools",
+  "version": "0.1.0",
+  "description": "Codex planning and workflow skills for non-mutating critique before implementation.",
+  "author": {
+    "name": "Jialuo Hu"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Workflow Tools",
+    "shortDescription": "Plan Mode critique and routing.",
+    "longDescription": "Workflow Tools packages Deep Planning for adversarial Plan Mode critique, material questions, and execution routing before implementation.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Use $deep-planning to critique this plan before implementation.",
+      "Review this Plan Mode request for assumptions, risks, and routing."
+    ]
+  }
+}

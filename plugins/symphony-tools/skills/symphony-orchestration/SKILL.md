@@ -36,12 +36,12 @@ Symphony/Linear or asks for a quick single-session build.
 
 ## Local Surfaces
 
-Use these defaults unless the current repo or user says otherwise:
+Use these per-machine environment variables unless the current repo or user says otherwise:
 
-- Symphony repo: `SYMPHONY_ROOT`
+- Symphony repo: [jialuohu/symphony-go](https://github.com/jialuohu/symphony-go), checked out at `SYMPHONY_ROOT`
 - Workflow: `SYMPHONY_WORKFLOW`
-- Linear secret file: `CODEX_SECRETS_DIR/symphony-linear.env`
-- Installed CLI: `CODEX_LOCAL_BIN_DIR/symphony` or `symphony`
+- Linear secret directory: `CODEX_SECRETS_DIR`
+- Installed CLI: `symphony` on `PATH`, or set `CODEX_LOCAL_BIN_DIR`
 - Daemon state: `http://127.0.0.1:4000/api/v1/state`
 - Workspace root: `SYMPHONY_WORKSPACE_ROOT/<issue-key>`
 
@@ -50,15 +50,15 @@ Do not print secrets. Source env files only for commands that need them.
 ## Workflow Selection
 
 Use the workflow that matches the target repository. The committed
-`SYMPHONY_WORKFLOW` is for Symphony Go itself and must not be used for an
-unrelated app or website project.
+`SYMPHONY_WORKFLOW` for [jialuohu/symphony-go](https://github.com/jialuohu/symphony-go)
+must not be used for an unrelated app or website project.
 
 For a new target repo, first dry-run a project workflow:
 
 ```bash
 symphony workflow init \
-  --target-root $TARGET_REPO_ROOT \
-  --output $TARGET_REPO_ROOT/WORKFLOW.md \
+  --target-root "$TARGET_REPO_ROOT" \
+  --output "$TARGET_REPO_ROOT/WORKFLOW.md" \
   --project-slug <PROJECT_SLUG> \
   --team-key <LINEAR_TEAM_KEY> \
   --port 4001 \
@@ -67,7 +67,7 @@ symphony workflow init \
 ```
 
 Write the workflow only after reviewing it. Use a separate port/logs root from the always-on
-`symphony-go` daemon when running an unrelated project.
+[jialuohu/symphony-go](https://github.com/jialuohu/symphony-go) daemon when running an unrelated project.
 
 ## Planner Workflow
 
@@ -76,7 +76,7 @@ Write the workflow only after reviewing it. Use a separate port/logs root from t
 3. For each issue, define title, exact scope, acceptance criteria, verification command, and expected
    files or non-overlap guarantee.
 4. Select or create a project-specific workflow before creating issues for any repo other than
-   Symphony Go.
+   [jialuohu/symphony-go](https://github.com/jialuohu/symphony-go).
 5. Confirm the repo has useful tests or review evidence before creating runnable issues.
 6. Preview issue creation first with dry-run/preflight tool calls.
 7. Review payloads for project slug, team key, labels, state, acceptance criteria, and verification.
@@ -119,9 +119,9 @@ If MCP tools are not visible, use the CLI fallback. Do not block a pilot on MCP 
 Dry-run one issue:
 
 ```bash
-source CODEX_SECRETS_DIR/symphony-linear.env
+source "$CODEX_SECRETS_DIR/symphony-linear.env"
 symphony issue create \
-  --workflow SYMPHONY_WORKFLOW \
+  --workflow "$SYMPHONY_WORKFLOW" \
   --title "<clear task title>" \
   --acceptance "<one concrete acceptance criterion>" \
   --verify "<repo verification command>" \
@@ -132,7 +132,7 @@ Create only after reviewing the dry-run payload:
 
 ```bash
 symphony issue create \
-  --workflow SYMPHONY_WORKFLOW \
+  --workflow "$SYMPHONY_WORKFLOW" \
   --title "<clear task title>" \
   --acceptance "<one concrete acceptance criterion>" \
   --verify "<repo verification command>"
@@ -141,10 +141,10 @@ symphony issue create \
 Run the daemon:
 
 ```bash
-source CODEX_SECRETS_DIR/symphony-linear.env
+source "$CODEX_SECRETS_DIR/symphony-linear.env"
 GOCACHE=/private/tmp/symphony-go-build-cache \
   symphony --logs-root /private/tmp/symphony-run-log --port 4000 \
-  SYMPHONY_WORKFLOW
+  "$SYMPHONY_WORKFLOW"
 ```
 
 Run it as a macOS LaunchAgent when always-on operation is intended:
@@ -159,8 +159,8 @@ Review handoff:
 
 ```bash
 symphony handoff \
-  --workspace SYMPHONY_WORKSPACE_ROOT/<issue-key> \
-  --target SYMPHONY_ROOT \
+  --workspace "$SYMPHONY_WORKSPACE_ROOT/<issue-key>" \
+  --target "$SYMPHONY_ROOT" \
   --include <relative-file> \
   --patch /private/tmp/<issue-key>.patch
 ```

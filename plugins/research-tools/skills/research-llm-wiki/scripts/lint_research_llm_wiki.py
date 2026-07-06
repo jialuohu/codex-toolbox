@@ -4,15 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_WIKI_ROOT = Path(
-    "CODEX_RESEARCH_LLM_WIKI"
-)
+DEFAULT_WIKI_ROOT = os.environ.get("CODEX_RESEARCH_LLM_WIKI")
 REQUIRED_PATHS = (
     "_schema.md",
     "index.md",
@@ -181,13 +180,19 @@ def lint(root: Path) -> list[Finding]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--wiki-root", type=Path, default=DEFAULT_WIKI_ROOT)
+    parser.add_argument(
+        "--wiki-root",
+        type=Path,
+        default=Path(DEFAULT_WIKI_ROOT) if DEFAULT_WIKI_ROOT else None,
+    )
     parser.add_argument(
         "--strict",
         action="store_true",
         help="Exit nonzero when any warning or error is found.",
     )
     args = parser.parse_args()
+    if args.wiki_root is None:
+        raise SystemExit("Pass --wiki-root or set CODEX_RESEARCH_LLM_WIKI")
 
     findings = lint(args.wiki_root)
     if findings:
