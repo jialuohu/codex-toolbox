@@ -40,6 +40,22 @@ DEEP_PLANNING_SKILL = (
 DEEP_PLANNING_OPENAI = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "agents" / "openai.yaml"
 )
+PAPER_FIGURE_PLUGIN = ROOT / "plugins" / "paper-figure-tools" / ".codex-plugin" / "plugin.json"
+PAPER_FIGURE_SKILL = (
+    ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
+)
+PAPER_FIGURE_OPENAI = (
+    ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "agents" / "openai.yaml"
+)
+PAPER_FIGURE_REFERENCE = (
+    ROOT
+    / "plugins"
+    / "paper-figure-tools"
+    / "skills"
+    / "paper-figure-workflow"
+    / "references"
+    / "templates.md"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -120,6 +136,10 @@ def main() -> None:
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
     require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
+    require(PAPER_FIGURE_PLUGIN.exists(), "paper-figure-tools plugin manifest must exist")
+    require(PAPER_FIGURE_SKILL.exists(), "paper-figure-tools must include paper-figure-workflow skill")
+    require(PAPER_FIGURE_OPENAI.exists(), "paper-figure-workflow must include OpenAI agent metadata")
+    require(PAPER_FIGURE_REFERENCE.exists(), "paper-figure-workflow must include figure templates reference")
     marketplace = json.loads(MARKETPLACE.read_text())
     game_asset_plugin = json.loads(GAME_ASSET_PLUGIN.read_text())
     game_asset_mcp = json.loads(GAME_ASSET_MCP.read_text())
@@ -127,6 +147,7 @@ def main() -> None:
     symphony_mcp = json.loads(SYMPHONY_MCP.read_text())
     research_plugin = json.loads(RESEARCH_PLUGIN.read_text())
     workflow_plugin = json.loads(WORKFLOW_PLUGIN.read_text())
+    paper_figure_plugin = json.loads(PAPER_FIGURE_PLUGIN.read_text())
     trading_mcp = json.loads(TRADING_MCP.read_text())
     default_plugins = array_body(script, "DEFAULT_PLUGINS")
     managed_mcp_servers = array_body(script, "MANAGED_MCP_SERVERS")
@@ -231,6 +252,10 @@ def main() -> None:
         "setup script must install the workflow-tools plugin",
     )
     require(
+        '  "paper-figure-tools"' in default_plugins,
+        "setup script must install the paper-figure-tools plugin",
+    )
+    require(
         '  "pixellab"' in managed_mcp_servers,
         "setup script must manage the pixellab MCP server cleanup list",
     )
@@ -269,6 +294,14 @@ def main() -> None:
             for plugin in marketplace.get("plugins", [])
         ),
         "marketplace must include workflow-tools",
+    )
+    require(
+        any(
+            plugin.get("name") == "paper-figure-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/paper-figure-tools"
+            for plugin in marketplace.get("plugins", [])
+        ),
+        "marketplace must include paper-figure-tools",
     )
     require(
         workflow_plugin.get("skills") == "./skills/",
@@ -312,6 +345,65 @@ def main() -> None:
         'default_prompt: "Use $deep-planning to critique this plan before implementation."',
     ):
         require(expected in deep_planning_openai, f"deep-planning OpenAI metadata must mention {expected}")
+    require(
+        paper_figure_plugin.get("skills") == "./skills/",
+        "paper-figure-tools must expose bundled figure workflow skills",
+    )
+    require(
+        "mcpServers" not in paper_figure_plugin,
+        "paper-figure-tools must not expose an MCP server",
+    )
+    paper_figure_interface = paper_figure_plugin.get("interface", {})
+    require(
+        "AI/systems paper" in paper_figure_interface.get("longDescription", ""),
+        "paper-figure-tools plugin description must mention AI/systems paper figures",
+    )
+    require(
+        any("paper-figure-workflow" in prompt for prompt in paper_figure_interface.get("defaultPrompt", [])),
+        "paper-figure-tools default prompts must surface paper-figure-workflow usage",
+    )
+    paper_figure_skill_text = PAPER_FIGURE_SKILL.read_text()
+    for expected in (
+        "name: paper-figure-workflow",
+        "AI/systems paper",
+        "draw.io",
+        "diagrams.net",
+        "figures_src/",
+        "figures/",
+        "SVG",
+        "PDF",
+        "Matplotlib",
+        "SciencePlots",
+        "import scienceplots",
+        "['science', 'no-latex']",
+        "Inkscape",
+        "make figures",
+        "no hard-coded absolute paths",
+        "Do not rasterize",
+        "Check that the generated figures build successfully",
+        "references/templates.md",
+    ):
+        require(expected in paper_figure_skill_text, f"paper-figure-workflow skill must mention {expected}")
+    paper_figure_openai = PAPER_FIGURE_OPENAI.read_text()
+    for expected in (
+        'display_name: "Paper Figure Workflow"',
+        'short_description: "Reproducible paper figure workflows."',
+        'default_prompt: "Use $paper-figure-workflow to set up editable diagrams and publication plots."',
+    ):
+        require(expected in paper_figure_openai, f"paper-figure OpenAI metadata must mention {expected}")
+    paper_figure_reference_text = PAPER_FIGURE_REFERENCE.read_text()
+    for expected in (
+        "make figures",
+        "python -m pip install matplotlib scienceplots pandas",
+        "fig.savefig",
+        "figure.svg",
+        "figure.pdf",
+        "inkscape",
+        "--export-type=pdf",
+        "drawio",
+        "--export",
+    ):
+        require(expected in paper_figure_reference_text, f"paper-figure reference must mention {expected}")
     require(
         symphony_plugin.get("skills") == "./skills/",
         "symphony-tools must expose its orchestration skill",

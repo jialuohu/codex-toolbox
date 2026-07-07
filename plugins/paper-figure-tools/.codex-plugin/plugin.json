@@ -1,0 +1,25 @@
+{
+  "name": "paper-figure-tools",
+  "version": "0.1.0",
+  "description": "Codex skills for reproducible AI/systems paper figure workflows.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Paper Figure Tools",
+    "shortDescription": "Editable diagrams and publication plots.",
+    "longDescription": "Paper Figure Tools helps Codex set up reproducible AI/systems paper figure workflows with editable draw.io diagrams, Matplotlib and SciencePlots plotting code, vector exports, and regeneration commands.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use $paper-figure-workflow to set up editable diagrams and publication plots.",
+      "Review this research repo's figure pipeline and make it reproducible."
+    ]
+  }
+}

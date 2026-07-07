@@ -98,6 +98,20 @@ symphony workflow init \
   --dry-run
 ```
 
+## Paper Figure Workflow
+
+Use `$paper-figure-workflow` when a research repo needs reproducible paper
+figures. The skill guides Codex to inspect the repo first, keep draw.io source
+diagrams editable, generate Matplotlib and SciencePlots result plots from repo
+data, export SVG/PDF figures, use Inkscape only for conversion or light cleanup,
+and add a command such as `make figures`.
+
+Example prompt:
+
+```text
+Use $paper-figure-workflow to set up clean, reproducible figures for this AI/systems paper repo.
+```
+
 ## AGENTS.md Sync
 
 The canonical global instructions live at `config/codex/AGENTS.global.md`.

@@ -27,6 +27,7 @@ DEFAULT_PLUGINS=(
   "game-asset-tools"
   "symphony-tools"
   "workflow-tools"
+  "paper-figure-tools"
   "trading-tools"
   "vibe-trading-tools"
   "chronicle-tools"
