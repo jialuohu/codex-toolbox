@@ -91,6 +91,16 @@ def main() -> None:
     ):
         require(expected in global_agents_text, f"global AGENTS routing must mention {expected}")
     for expected in (
+        "paper-figure-tools",
+        "$paper-figure-workflow",
+        "draw.io",
+        "SciencePlots",
+        "Inkscape",
+        "figures_src/",
+        "make figures",
+    ):
+        require(expected in global_agents_text, f"global AGENTS figure routing must mention {expected}")
+    for expected in (
         "$deep-planning",
         "adversarial critique protocol",
         "If `$deep-planning` is unavailable",

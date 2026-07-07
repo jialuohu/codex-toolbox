@@ -44,7 +44,7 @@ Delegate when it improves reliability. Use subagents for broad research, indepen
 
 The personal toolbox repo is identified by `CODEX_TOOLBOX_ROOT` on each machine, and its GitHub remote is `jialuohu/codex-toolbox`. It is a repo-scoped Codex plugin marketplace named `jialuo-codex-toolbox`.
 
-- Keep plugins focused by domain. Current default plugins are `obsidian-tools`, `research-tools`, `web-data-tools`, `game-asset-tools`, `symphony-tools`, `trading-tools`, `vibe-trading-tools`, and `chronicle-tools`.
+- Keep plugins focused by domain. Current default plugins are `obsidian-tools`, `research-tools`, `web-data-tools`, `game-asset-tools`, `symphony-tools`, `workflow-tools`, `paper-figure-tools`, `trading-tools`, `vibe-trading-tools`, and `chronicle-tools`.
 - The setup script also manages third-party Git marketplaces: `ui-ux-pro-max-skill`, pinned to `v2.10.0` with sparse checkout limited to the core `ui-ux-pro-max` skill, and the official Context7 marketplace `context7-marketplace`. Do not vendor these third-party plugins into `codex-toolbox` unless explicitly asked.
 - Do not reintroduce the retired starter plugins `lab-weekly-update` or `context7-docs` unless explicitly asked.
 - Do not commit secrets, OAuth state, API keys, or env-file contents. MCP configs may reference `CODEX_SECRETS_DIR`, but the secret files remain per-device.
@@ -65,6 +65,8 @@ Use Firecrawl as the default for public web search, current web pages, documenta
 Use PixelLab MCP (`pixellab`) only for pixel-art game asset workflows: sprites, character rotations, animations, top-down or sidescroller tilesets, isometric tiles, and map objects. Do not use PixelLab for web search, private/local files, normal coding, or generic image generation unless the user explicitly asks for PixelLab assets. Creation and destructive tools can spend credits or change saved assets, so keep them prompt-gated unless the user explicitly confirms the action.
 
 Use Symphony MCP (`symphony`) and the `symphony-orchestration` skill for durable Codex plus Linear orchestration: planning runnable Linear issues, dry-running reviewed issue payloads, monitoring Symphony daemon state, refreshing a scheduler tick, summarizing worker handoffs, and closing out Linear comments/state moves after review. Keep issue creation and closeout dry-run first; live issue creation, Linear closeout mutations, and dispatch refreshes require explicit confirmation. Symphony workers should not create more Linear issues or mutate Linear state from inside their issue workspace.
+
+Use `$paper-figure-workflow` for AI/systems paper figure workflows: editable draw.io or diagrams.net pipeline diagrams, Matplotlib and SciencePlots plots, Inkscape cleanup or SVG/PDF conversion, `figures_src/`, `figures/`, and reproducible commands such as `make figures`.
 
 Use `paper_search_mcp` for academic paper discovery across arXiv, Semantic Scholar, CORE, IEEE, Unpaywall, CrossRef, PubMed, BASE, and related sources. Prefer it when the user wants to find new papers, compare search results, inspect paper metadata, or download papers from public scholarly sources. Prefer Zotero MCP instead when the question is about papers the user has already saved.
 
