@@ -11,6 +11,7 @@ SETUP_SCRIPT = ROOT / "scripts" / "setup-codex-toolbox.sh"
 SYNC_AGENTS_SCRIPT = ROOT / "scripts" / "sync-agents.sh"
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
 README = ROOT / "README.md"
+MINERU_SETUP = ROOT / "scripts" / "setup-mineru.sh"
 MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
 GAME_ASSET_PLUGIN = ROOT / "plugins" / "game-asset-tools" / ".codex-plugin" / "plugin.json"
 GAME_ASSET_MCP = ROOT / "plugins" / "game-asset-tools" / ".mcp.json"
@@ -21,6 +22,7 @@ SYMPHONY_SKILL = (
 )
 TRADING_MCP = ROOT / "plugins" / "trading-tools" / ".mcp.json"
 RESEARCH_PLUGIN = ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json"
+RESEARCH_MCP = ROOT / "plugins" / "research-tools" / ".mcp.json"
 RESEARCH_LLM_WIKI_SKILL = (
     ROOT / "plugins" / "research-tools" / "skills" / "research-llm-wiki" / "SKILL.md"
 )
@@ -32,6 +34,27 @@ RESEARCH_LLM_WIKI_LINT = (
     / "research-llm-wiki"
     / "scripts"
     / "lint_research_llm_wiki.py"
+)
+MINERU_DOCUMENT_SKILL = (
+    ROOT
+    / "plugins"
+    / "research-tools"
+    / "skills"
+    / "mineru-document-extraction"
+    / "SKILL.md"
+)
+MINERU_WRAPPER = MINERU_DOCUMENT_SKILL.parent / "scripts" / "run_mineru.py"
+PAPER_LIBRARY_INTAKE_SKILL = (
+    ROOT
+    / "plugins"
+    / "research-tools"
+    / "skills"
+    / "paper-library-intake"
+    / "SKILL.md"
+)
+PAPER_LIBRARY_INTAKE_OPENAI = PAPER_LIBRARY_INTAKE_SKILL.parent / "agents" / "openai.yaml"
+PAPER_LIBRARY_ATTACHMENT = (
+    PAPER_LIBRARY_INTAKE_SKILL.parent / "scripts" / "zotero_attachment.py"
 )
 WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
 DEEP_PLANNING_SKILL = (
@@ -72,12 +95,14 @@ def array_body(script: str, name: str) -> str:
 def main() -> None:
     script = SETUP_SCRIPT.read_text()
     readme_text = README.read_text()
+    readme_normalized = " ".join(readme_text.split())
     require(GLOBAL_AGENTS.exists(), "canonical global AGENTS file must exist")
     require(
         GLOBAL_AGENTS.read_text().startswith("## Orchestration routing\n"),
         "canonical global AGENTS file must start with orchestration routing",
     )
     global_agents_text = GLOBAL_AGENTS.read_text()
+    global_agents_normalized = " ".join(global_agents_text.split())
     for expected in (
         "3 or more independent, testable implementation tasks",
         "Codex + Symphony + Linear",
@@ -100,6 +125,33 @@ def main() -> None:
         "make figures",
     ):
         require(expected in global_agents_text, f"global AGENTS figure routing must mention {expected}")
+    for expected in (
+        "$mineru-document-extraction",
+        "complex, scanned, OCR-heavy, or layout-sensitive local documents",
+        "`pdf` or `documents` skill",
+        "Zotero",
+        "Defuddle or Firecrawl",
+        "obsidian_files",
+        "scripts/setup-mineru.sh --check",
+        "not an MCP server",
+    ):
+        require(
+            expected in global_agents_normalized,
+            f"global AGENTS MinerU routing must mention {expected}",
+        )
+    for expected in (
+        "$paper-library-intake",
+        "Zotero first",
+        "Firecrawl first",
+        "Paper Search",
+        "Research/ReadLater",
+        "explicit `add`, `save`, or `import`",
+        "use_scihub=false",
+    ):
+        require(
+            expected in global_agents_normalized,
+            f"global AGENTS paper intake routing must mention {expected}",
+        )
     for expected in (
         "$deep-planning",
         "adversarial critique protocol",
@@ -132,16 +184,35 @@ def main() -> None:
         '"$ROOT/scripts/sync-agents.sh" --install' in script,
         "setup script must install global AGENTS instructions",
     )
+    require(MINERU_SETUP.exists(), "toolbox must include the optional MinerU setup helper")
     require(GAME_ASSET_PLUGIN.exists(), "game-asset-tools plugin manifest must exist")
     require(GAME_ASSET_MCP.exists(), "game-asset-tools must define an MCP config")
     require(SYMPHONY_PLUGIN.exists(), "symphony-tools plugin manifest must exist")
     require(SYMPHONY_MCP.exists(), "symphony-tools must define an MCP config")
     require(SYMPHONY_SKILL.exists(), "symphony-tools must bundle the symphony-orchestration skill")
     require(RESEARCH_PLUGIN.exists(), "research-tools plugin manifest must exist")
+    require(RESEARCH_MCP.exists(), "research-tools must define an MCP config")
     require(RESEARCH_LLM_WIKI_SKILL.exists(), "research-tools must include research-llm-wiki skill")
     require(
         RESEARCH_LLM_WIKI_LINT.exists(),
         "research-llm-wiki must include a deterministic lint helper",
+    )
+    require(
+        MINERU_DOCUMENT_SKILL.exists(),
+        "research-tools must include the mineru-document-extraction skill",
+    )
+    require(MINERU_WRAPPER.exists(), "MinerU document skill must include its local wrapper")
+    require(
+        PAPER_LIBRARY_INTAKE_SKILL.exists(),
+        "research-tools must include paper-library-intake skill",
+    )
+    require(
+        PAPER_LIBRARY_INTAKE_OPENAI.exists(),
+        "paper-library-intake must include OpenAI agent metadata",
+    )
+    require(
+        PAPER_LIBRARY_ATTACHMENT.exists(),
+        "paper-library-intake must include the WebDAV attachment helper",
     )
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
@@ -156,6 +227,7 @@ def main() -> None:
     symphony_plugin = json.loads(SYMPHONY_PLUGIN.read_text())
     symphony_mcp = json.loads(SYMPHONY_MCP.read_text())
     research_plugin = json.loads(RESEARCH_PLUGIN.read_text())
+    research_mcp = json.loads(RESEARCH_MCP.read_text())
     workflow_plugin = json.loads(WORKFLOW_PLUGIN.read_text())
     paper_figure_plugin = json.loads(PAPER_FIGURE_PLUGIN.read_text())
     trading_mcp = json.loads(TRADING_MCP.read_text())
@@ -169,6 +241,43 @@ def main() -> None:
         marketplace.get("name") == "jialuo-codex-toolbox",
         "marketplace must be named jialuo-codex-toolbox",
     )
+    for expected in (
+        "$mineru-document-extraction",
+        "complex, scanned, OCR-heavy, or layout-sensitive local documents",
+        "`pdf` or `documents` skill",
+        "Zotero",
+        "Defuddle or Firecrawl",
+        "obsidian_files",
+        "scripts/setup-mineru.sh --check",
+        "scripts/setup-mineru.sh --install",
+        "scripts/setup-mineru.sh --download-models",
+        "not an MCP server",
+    ):
+        require(
+            expected in readme_normalized,
+            f"README MinerU routing must mention {expected}",
+        )
+    for expected in (
+        "$paper-library-intake find",
+        "$paper-library-intake add",
+        "PAPER_SEARCH_MCP_ROOT",
+        "Koofr/WebDAV",
+        "metadata-only",
+        "use_scihub=false",
+    ):
+        require(expected in readme_text, f"README paper intake must mention {expected}")
+    for forbidden in (
+        "/Users/",
+        "/home/",
+        "MacBook",
+        "WRX90",
+        "RTX 5090",
+        "RTX 6000",
+    ):
+        require(
+            forbidden not in readme_text and forbidden not in global_agents_text,
+            f"public routing docs must not contain private path or hardware identifier: {forbidden}",
+        )
     require(
         marketplace.get("interface", {}).get("displayName") == "Jialuo's Codex Toolbox",
         "marketplace display name must be Jialuo's Codex Toolbox",
@@ -491,6 +600,141 @@ def main() -> None:
         research_plugin.get("skills") == "./skills/",
         "research-tools must expose bundled research skills",
     )
+    paper_search_server = research_mcp.get("mcpServers", {}).get("paper_search_mcp")
+    require(paper_search_server is not None, "research-tools must define paper_search_mcp")
+    paper_search_args = paper_search_server.get("args", [])
+    require(
+        len(paper_search_args) == 2 and paper_search_args[0] == "-lc",
+        "paper_search_mcp must run through zsh -lc",
+    )
+    paper_search_launch = paper_search_args[1] if len(paper_search_args) == 2 else ""
+    source_position = paper_search_launch.find('source "$SECRET_FILE"')
+    root_position = paper_search_launch.find("PAPER_SEARCH_MCP_ROOT")
+    require(
+        source_position >= 0 and root_position > source_position,
+        "paper_search_mcp must load its environment before validating PAPER_SEARCH_MCP_ROOT",
+    )
+    disabled_paper_downloads = set(paper_search_server.get("disabled_tools", []))
+    require(
+        {"download_scihub", "download_with_fallback"} <= disabled_paper_downloads,
+        "paper_search_mcp must disable direct and default-enabled Sci-Hub paths",
+    )
+    paper_intake_text = PAPER_LIBRARY_INTAKE_SKILL.read_text()
+    for expected in (
+        "name: paper-library-intake",
+        "$paper-library-intake find",
+        "$paper-library-intake add",
+        "Search Zotero first",
+        "Use Firecrawl first",
+        "Use Paper Search",
+        "Research/ReadLater",
+        'if_exists="file"',
+        "create_missing_collections=false",
+        'attach_mode="none"',
+        'attach_mode="auto"',
+        "attach-cloud",
+        "use_scihub=false",
+        "zotero_read_pdf_pages",
+        "metadata-only",
+        "reachable: true",
+        "authoritative auto-detection signal",
+        "Sync > File Syncing",
+    ):
+        require(expected in paper_intake_text, f"paper-library-intake must mention {expected}")
+    require(
+        "$paper-library-intake" in PAPER_LIBRARY_INTAKE_OPENAI.read_text(),
+        "paper-library-intake agent metadata must expose the skill trigger",
+    )
+    attachment_text = PAPER_LIBRARY_ATTACHMENT.read_text()
+    for expected in (
+        "incomplete_webdav_configuration",
+        "webdav_backend_required",
+        "ambiguous_attachment_children",
+        "attachment_checksum_conflict",
+        "AttachmentMutationError",
+        "_attachment_lock",
+        "_create_attachment_with_recovery",
+        "correlation_title",
+        "secrets.token_hex",
+        "attachment_metadata_create_outcome_unknown",
+        "concurrent_attachment_conflict",
+        "upload_attachment_to_webdav",
+        "attach_zotero_cloud",
+        "extract_bounded_webdav_zip",
+        "_download_webdav_attachment_bounded",
+        "webdav_checksum_mismatch",
+        "webdav_preflight_failed",
+        "invalid_webdav_preflight_response",
+        "PROPFIND",
+        "symlink_not_allowed",
+        "attachment_operation_failed",
+    ):
+        require(expected in attachment_text, f"paper attachment helper must mention {expected}")
+    require(
+        research_plugin.get("version") == "0.2.0",
+        "research-tools must use the paper-intake minor version",
+    )
+    mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
+    for expected in (
+        "name: mineru-document-extraction",
+        "one local document",
+        "complex, scanned, OCR-heavy, table/formula-rich, or layout-sensitive documents",
+        "mineru-run.json",
+        "Use Zotero tools instead",
+        "outside any Obsidian vault",
+        "setup-mineru.sh --check",
+        "Extraction is local-only",
+    ):
+        require(expected in mineru_skill_text, f"MinerU document skill must mention {expected}")
+    mineru_setup_text = MINERU_SETUP.read_text()
+    for expected in (
+        "scripts/setup-mineru.sh --check|--install|--download-models",
+        "MINERU_MODEL_CACHE_DIR",
+        "outside every Git checkout and Obsidian vault",
+        "Model downloads remain opt-in",
+        'get_vlm_engine("auto")',
+        "umask 077",
+        'chmod 600 "$CONFIG_FILE"',
+    ):
+        require(expected in mineru_setup_text, f"MinerU setup helper must mention {expected}")
+    mineru_wrapper_text = MINERU_WRAPPER.read_text()
+    for expected in (
+        'default="hybrid-engine"',
+        'default="high"',
+        '"observed_device_engine"',
+        '"duration_seconds"',
+        '"content_list_v2"',
+        '"MINERU_API_MAX_CONCURRENT_REQUESTS"',
+        '"MINERU_MODEL_SOURCE"',
+        '"HF_HUB_OFFLINE"',
+        '"local_only"',
+        "outside every Git checkout",
+        "configured Obsidian vault",
+        '"staged_copy_used"',
+        "model_configuration_error",
+        "CONTENT_LIST_V2_TYPES",
+        "CONTENT_LIST_V2_REQUIRED_VALUE_TYPES",
+        "TemporaryDirectory",
+        "llm-aided-config",
+        '"NO_PROXY"',
+        '"TORCH_HOME"',
+        '"FTLANG_CACHE"',
+        "dir=output",
+        "artifact_tree_error",
+        '"PYTHONUNBUFFERED"',
+    ):
+        require(expected in mineru_wrapper_text, f"MinerU wrapper must mention {expected}")
+    for mcp_file in ROOT.glob("plugins/*/.mcp.json"):
+        mcp_config = json.loads(mcp_file.read_text())
+        for server_name in mcp_config.get("mcpServers", {}):
+            require(
+                "mineru" not in server_name.lower(),
+                f"MinerU must remain a local skill, not an MCP server ({mcp_file})",
+            )
+    require(
+        '  "mineru"' not in managed_mcp_servers.lower(),
+        "setup script must not manage a MinerU MCP server",
+    )
     research_interface = research_plugin.get("interface", {})
     require(
         "LLM Wiki" in research_interface.get("longDescription", ""),
@@ -499,6 +743,10 @@ def main() -> None:
     require(
         any("wiki" in prompt.lower() for prompt in research_interface.get("defaultPrompt", [])),
         "research-tools default prompts must surface wiki usage",
+    )
+    require(
+        any("$paper-library-intake" in prompt for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must surface paper-library-intake",
     )
     research_skill_text = RESEARCH_LLM_WIKI_SKILL.read_text()
     for expected in (
@@ -511,6 +759,7 @@ def main() -> None:
         "Do not rewrite raw source notes",
         "index.md",
         "log.md",
+        "$paper-library-intake",
     ):
         require(expected in research_skill_text, f"research-llm-wiki skill must mention {expected}")
     lint_script_text = RESEARCH_LLM_WIKI_LINT.read_text()

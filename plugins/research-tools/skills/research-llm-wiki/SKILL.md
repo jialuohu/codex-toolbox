@@ -31,8 +31,8 @@ If `_schema.md` is missing or obviously incomplete, initialize it from `referenc
 Prefer the narrowest local or connected source:
 
 - Use `obsidian_files` or local filesystem reads for vault notes under `CODEX_OBSIDIAN_VAULT`.
+- Use `$paper-library-intake` when a public paper must be found, checked against Zotero, classified, added, or attachment-repaired before wiki ingestion. Do not duplicate its deduplication, filing, or storage logic here.
 - Use Zotero MCP for saved library metadata, notes, annotations, and PDFs.
-- Use `paper_search_mcp` for discovering or downloading public scholarly sources.
 - Use Firecrawl for public web pages or clean web extraction.
 - Use existing `Paper Notes/` pages as raw source notes; do not edit them unless the user explicitly asks.
 

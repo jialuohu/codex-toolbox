@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Library Intake"
+  short_description: "Find, deduplicate, file, and verify papers in Zotero."
+  default_prompt: "Use $paper-library-intake to find or add this paper, check Zotero first, file it under Research/ReadLater and suitable topics, and verify lawful attachment storage."

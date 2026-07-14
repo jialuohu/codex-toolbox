@@ -4,7 +4,14 @@
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/paper-search-mcp.env\"; if [ -z \"${PAPER_SEARCH_MCP_ROOT:-}\" ]; then echo \"Set PAPER_SEARCH_MCP_ROOT to the local paper-search-mcp checkout\" >&2; exit 1; fi; if [ ! -f \"$SECRET_FILE\" ]; then echo \"Missing CODEX_SECRETS_DIR/paper-search-mcp.env\" >&2; exit 1; fi; set -a; source \"$SECRET_FILE\"; set +a; exec uv run --directory \"$PAPER_SEARCH_MCP_ROOT\" --python 3.12 -m paper_search_mcp.server"
+        "SECRETS_DIR=\"${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}\"; SECRET_FILE=\"$SECRETS_DIR/paper-search-mcp.env\"; if [ ! -f \"$SECRET_FILE\" ]; then echo \"Missing CODEX_SECRETS_DIR/paper-search-mcp.env\" >&2; exit 1; fi; set -a; source \"$SECRET_FILE\"; set +a; PAPER_SEARCH_MCP_ROOT=\"${PAPER_SEARCH_MCP_ROOT:-${CODEX_PROJECTS_ROOT:-$HOME/codes}/paper-search-mcp}\"; if [ ! -d \"$PAPER_SEARCH_MCP_ROOT/paper_search_mcp\" ]; then echo \"Set PAPER_SEARCH_MCP_ROOT to the local paper-search-mcp checkout\" >&2; exit 1; fi; exec uv run --directory \"$PAPER_SEARCH_MCP_ROOT\" --python 3.12 -m paper_search_mcp.server"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 180,
+      "default_tools_approval_mode": "auto",
+      "disabled_tools": [
+        "download_scihub",
+        "download_with_fallback"
       ]
     },
     "zotero": {

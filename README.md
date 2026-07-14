@@ -50,6 +50,108 @@ third-party marketplace pins, and reusable Codex instructions.
 5. Start a fresh Codex session so the installed global `AGENTS.md`, plugins, and
    MCP servers are loaded from the beginning of the run.
 
+## Paper Library Intake
+
+Use one workflow for public discovery, Zotero deduplication, topical filing, and
+attachment verification:
+
+```text
+$paper-library-intake find <title|DOI|arXiv URL>
+$paper-library-intake add <title|DOI|arXiv URL>
+```
+
+`find` is read-only. `add` authorizes that paper's item, lawful attachment,
+suitable topical collection memberships, and `Research/ReadLater`. The workflow
+checks Zotero first, uses Firecrawl first for public discovery and canonical
+pages, then uses Paper Search for cross-source validation and open-access PDF
+retrieval. It never merges on title alone, enables semantic indexing, or uses
+Sci-Hub. The toolbox disables the direct Sci-Hub tool and the unsafe upstream
+generic fallback; any separately installed fallback must pass
+`use_scihub=false`.
+
+The paper-search launcher loads its per-device environment before resolving the
+checkout. Its portable default is
+`${CODEX_PROJECTS_ROOT:-$HOME/codes}/paper-search-mcp`; override it in the local
+secret environment when needed:
+
+```bash
+PAPER_SEARCH_MCP_ROOT=<paper-search-mcp-checkout>
+```
+
+Attachment storage is detected from the three `ZOTERO_WEBDAV_*` variables. A
+complete set selects Koofr/WebDAV, an absent set selects official Zotero
+Storage, and a partial set blocks before any library mutation. Configured
+WebDAV never silently falls back to Zotero Storage. These variables are the
+authoritative auto-detection signal and must match Zotero's **Sync > File
+Syncing** setting; endpoint reachability cannot prove that desktop setting. The provider-neutral helper
+creates or repairs the same attachment child, verifies the uploaded checksum,
+and requires a readable PDF page before success. If no lawful PDF is available,
+the receipt says `metadata-only`. For an existing parent with a missing or
+broken official-storage child, the same helper exposes `attach-cloud`; it keeps
+retries on one attachment key and still requires final
+`zotero_read_pdf_pages` verification. A per-parent local-host lock, correlated
+lost-create response reconciliation, and same-name post-create checks reduce
+duplicate children; definitive API rejections never adopt another host's child,
+and final Zotero rechecks still detect concurrency from another host.
+
+Run the redacted storage and WebDAV-connectivity check after loading the local
+Zotero environment. In WebDAV mode it returns `reachable: true` before any
+library mutation; the helper automatically selects the installed Zotero-MCP
+Python runtime when necessary:
+
+```bash
+set -a
+source "${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/zotero.env"
+set +a
+python3 plugins/research-tools/skills/paper-library-intake/scripts/zotero_attachment.py detect
+```
+
+Do not print or commit the secret environment. A real Zotero write canary should
+only be performed for a paper the user explicitly asks to add.
+
+## Optional MinerU Document Extraction
+
+Use `$mineru-document-extraction` for complex, scanned, OCR-heavy, or
+layout-sensitive local documents when columns, tables, formulas, figures, or
+page structure matter. Keep the source boundary explicit:
+
+- For straightforward born-digital files and simple reads, use the installed
+  `pdf` or `documents` skill.
+- For an item already saved in the research library, use Zotero.
+- For web content, use Defuddle or Firecrawl rather than MinerU.
+- For vault reads or writes, use `obsidian_files`. Extract first to a separate
+  `<review-directory>` outside the vault, review the artifacts, and only then
+  perform a separately requested vault write.
+
+MinerU is a local skill and setup helper, not an MCP server. Check the optional
+runtime before extraction:
+
+```bash
+scripts/setup-mineru.sh --check
+```
+
+If local setup is wanted, install the isolated runtime and opt in to model
+downloads as separate steps:
+
+```bash
+scripts/setup-mineru.sh --install
+scripts/setup-mineru.sh --download-models
+```
+
+The extraction skill starts with its quality-first hybrid/high settings. If
+resource or latency limits prevent completion, retry hybrid/medium; if the
+hybrid accelerator runtime is unavailable, retry pipeline/medium. Preserve OCR
+mode across retries for a known scan, use a fresh `<review-directory>` for each
+attempt, and do not silently replace MinerU with a simple reader when the
+document needs layout reconstruction.
+
+The wrapper requires the managed MinerU 3.4.4 runtime, processes a private
+read-only copy instead of the original, uses configured local models with
+offline hub behavior, and writes private checksum-verified artifacts.
+
+Keep model caches, extracted outputs, benchmark artifacts, and machine-local
+Symphony workflow overrides outside this repository and untracked.
+
 ## Symphony Routing
 
 For large decomposable projects, start naturally in Plan mode. For example:
