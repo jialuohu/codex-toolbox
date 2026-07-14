@@ -1,0 +1,4 @@
+interface:
+  display_name: "MinerU Document Extraction"
+  short_description: "Extract complex local documents with MinerU."
+  default_prompt: "Use $mineru-document-extraction to extract this local document into a reviewed output directory."
