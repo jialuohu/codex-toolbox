@@ -2,8 +2,10 @@
 """Small, durable local state helper for the BestBlogs WeChat digest skill."""
 
 import argparse
+import errno
 import fcntl
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -24,9 +26,11 @@ except ImportError:  # pragma: no cover - Python 3.9+ supplies zoneinfo
 
 
 API_ORIGIN = "https://api.bestblogs.dev/openapi/v2"
-STATE_VERSION = 1
+LEGACY_STATE_VERSION = 1
+STATE_VERSION = 2
 MAX_BODY_BYTES = 1_000_000
 BODY_DAILY_LIMIT = 35
+TOTAL_DAILY_LIMIT = 50
 MAX_RECENT = 500
 MAX_FEED_PAGES = 14
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -46,6 +50,10 @@ class StateError(RuntimeError):
 
 
 class BodyBudgetExhausted(StateError):
+    pass
+
+
+class TotalBudgetExhausted(StateError):
     pass
 
 
@@ -123,15 +131,16 @@ class BestBlogsClient:
                     time.sleep(delay)
                     continue
                 raise APIError("BestBlogs HTTP request failed") from error
-            except URLError as error:
+            except (URLError, http.client.HTTPException, OSError) as error:
                 raise APIError("BestBlogs network request failed") from error
         raise APIError("BestBlogs rate limit retry exhausted")
 
-    def me(self):
-        return self.get("/me")
+    def me(self, before_attempt=None):
+        return self.get("/me", before_attempt=before_attempt)
 
-    def subscription_page(self, page, page_size):
-        return self.get("/me/feeds/subscriptions", {"page": page, "pageSize": page_size, "timeFilter": "week"})
+    def subscription_page(self, page, page_size, before_attempt=None):
+        return self.get("/me/feeds/subscriptions", {"page": page, "pageSize": page_size, "timeFilter": "week"},
+                        before_attempt=before_attempt)
 
     def markdown(self, resource_id, before_attempt=None):
         data = self.get("/resources/%s/markdown" % resource_id, before_attempt=before_attempt)
@@ -220,28 +229,36 @@ def parse_article(raw):
 
 
 def new_state():
-    return {"version": STATE_VERSION, "sources": {}, "pending": {}, "body_budget": {"day": "", "count": 0},
+    return {"version": STATE_VERSION, "sources": {}, "pending": {},
+            "body_budget": {"day": "", "count": 0}, "total_budget": {"day": "", "count": 0},
             "last_successful_scan": None, "api_calls": {}, "warnings": [],
+            "scan_generation": 0,
             "scan_health": {"pages": 0, "records": 0, "complete": False, "skipped": {"invalid_or_non_wechat": 0}}}
 
 
 def _validate_state(state):
     if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
         raise StateError("unsupported or malformed state schema")
-    required = ("sources", "pending", "body_budget", "api_calls", "warnings", "scan_health")
+    required = ("sources", "pending", "body_budget", "total_budget", "api_calls", "warnings", "scan_generation", "scan_health")
     if any(key not in state for key in required) or not isinstance(state["sources"], dict) or not isinstance(state["pending"], dict):
         raise StateError("unsupported or malformed state schema")
-    if not isinstance(state["body_budget"], dict) or not isinstance(state["api_calls"], dict) or not isinstance(state["warnings"], list) or not isinstance(state["scan_health"], dict):
+    if not isinstance(state["body_budget"], dict) or not isinstance(state["total_budget"], dict) or \
+            not isinstance(state["api_calls"], dict) or not isinstance(state["warnings"], list) or not isinstance(state["scan_health"], dict):
         raise StateError("unsupported or malformed state schema")
-    budget = state["body_budget"]
-    if set(budget) != {"day", "count"} or not isinstance(budget["day"], str) or not isinstance(budget["count"], int) or not 0 <= budget["count"] <= BODY_DAILY_LIMIT:
-        raise StateError("unsupported or malformed state schema")
-    if budget["day"]:
-        try:
-            datetime.fromisoformat(budget["day"])
-        except ValueError as error:
-            raise StateError("unsupported or malformed state schema") from error
+    for budget_name, limit in (("body_budget", BODY_DAILY_LIMIT), ("total_budget", TOTAL_DAILY_LIMIT)):
+        budget = state[budget_name]
+        if set(budget) != {"day", "count"} or not isinstance(budget["day"], str) or \
+                not isinstance(budget["count"], int) or isinstance(budget["count"], bool) or \
+                not 0 <= budget["count"] <= limit:
+            raise StateError("unsupported or malformed state schema")
+        if budget["day"]:
+            try:
+                datetime.fromisoformat(budget["day"])
+            except ValueError as error:
+                raise StateError("unsupported or malformed state schema") from error
     if state.get("last_successful_scan") is not None and not isinstance(state["last_successful_scan"], str):
+        raise StateError("unsupported or malformed state schema")
+    if not isinstance(state["scan_generation"], int) or isinstance(state["scan_generation"], bool) or state["scan_generation"] < 0:
         raise StateError("unsupported or malformed state schema")
     if any(not isinstance(key, str) or not isinstance(value, int) or value < 0 for key, value in state["api_calls"].items()) or \
             any(not isinstance(item, str) for item in state["warnings"]):
@@ -284,14 +301,38 @@ def default_state_path():
     return Path(home) / "state" / "wechat-digest.json"
 
 
-def load_state(path=None):
+def _migrate_legacy_state(state):
+    if not isinstance(state, dict) or state.get("version") != LEGACY_STATE_VERSION or "total_budget" in state:
+        raise StateError("unsupported or malformed state schema")
+    migrated = dict(state)
+    migrated["version"] = STATE_VERSION
+    migrated["total_budget"] = {"day": _beijing_day(), "count": TOTAL_DAILY_LIMIT}
+    migrated["scan_generation"] = 0
+    return _validate_state(migrated)
+
+
+def _read_state(path=None):
     path = Path(path or default_state_path())
     if not path.exists():
-        return new_state()
+        return new_state(), False
     try:
-        return _validate_state(json.loads(path.read_text(encoding="utf-8")))
+        state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise StateError("state cannot be read safely") from error
+    if isinstance(state, dict) and state.get("version") == LEGACY_STATE_VERSION:
+        return _migrate_legacy_state(state), True
+    return _validate_state(state), False
+
+
+def load_state(path=None):
+    return _read_state(path)[0]
+
+
+def _load_locked_state(path):
+    state, migrated = _read_state(path)
+    if migrated:
+        save_state(path, state)
+    return state
 
 
 @contextmanager
@@ -348,6 +389,15 @@ def save_state(path, state):
             os.fsync(handle.fileno())
         os.replace(temporary, path)
         os.chmod(path, 0o600)
+        directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+        try:
+            try:
+                os.fsync(directory)
+            except OSError as error:
+                if error.errno not in (errno.EINVAL, getattr(errno, "ENOTSUP", errno.EINVAL)):
+                    raise
+        finally:
+            os.close(directory)
     except Exception:
         try:
             os.unlink(temporary)
@@ -372,10 +422,10 @@ def _page_items(data):
     return [], {}
 
 
-def _feed_pages(client, page_size=100):
+def _feed_pages(client, page_size=100, before_attempt=None):
     all_items, warnings, page, expected = [], [], 1, None
     while page <= MAX_FEED_PAGES:
-        data = client.subscription_page(page, page_size)
+        data = client.subscription_page(page, page_size, before_attempt=before_attempt)
         items, meta = _page_items(data)
         if expected is None:
             for counter in ("total", "totalCount", "count"):
@@ -401,8 +451,8 @@ def _merge_calls(state, client):
     client._wechat_calls_seen = dict(getattr(client, "calls", {}))
 
 
-def list_sources(client, page_size=100):
-    records, complete, warnings, _ = _feed_pages(client, page_size)
+def list_sources(client, page_size=100, before_attempt=None):
+    records, complete, warnings, _ = _feed_pages(client, page_size, before_attempt=before_attempt)
     sources = {}
     malformed = 0
     for raw in records:
@@ -431,8 +481,16 @@ def _remember(source, identity):
         recent.pop(next(iter(recent)))
 
 
-def scan(state, client, page_size=100):
-    records, complete, warnings, pages = _feed_pages(client, page_size)
+def _scan_observation(client, page_size=100, before_attempt=None):
+    records, complete, warnings, pages = _feed_pages(client, page_size, before_attempt=before_attempt)
+    return {"records": records, "complete": complete, "warnings": warnings, "pages": pages}
+
+
+def _apply_scan_observation(state, observation):
+    records = observation["records"]
+    complete = observation["complete"]
+    warnings = list(observation["warnings"])
+    pages = observation["pages"]
     selected = state["sources"]
     parsed, malformed = [], 0
     for raw in records:
@@ -469,9 +527,16 @@ def scan(state, client, page_size=100):
     state["warnings"] = warnings
     state["scan_health"] = {"pages": pages, "records": len(records), "complete": complete,
                             "skipped": {"invalid_or_non_wechat": malformed}}
-    _merge_calls(state, client)
     return {"complete": complete, "enqueued": enqueued,
             "skipped": {"invalid_or_non_wechat": malformed}, "warnings": warnings}
+
+
+def scan(state, client, page_size=100, before_attempt=None):
+    observation = _scan_observation(client, page_size, before_attempt=before_attempt)
+    result = _apply_scan_observation(state, observation)
+    if before_attempt is None:
+        _merge_calls(state, client)
+    return result
 
 
 def pending(state):
@@ -523,14 +588,33 @@ def _beijing_day(now=None):
     return now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
-def _reserve_body_attempt(state, now=None):
+def _reserve_api_attempt(state, now=None, body=False):
     day = _beijing_day(now)
-    budget = state["body_budget"]
-    if budget.get("day") != day:
-        budget.update({"day": day, "count": 0})
-    if int(budget.get("count", 0)) >= BODY_DAILY_LIMIT:
+    total_budget = state["total_budget"]
+    body_budget = state["body_budget"]
+    total_count = 0 if total_budget.get("day") != day else int(total_budget.get("count", 0))
+    body_count = 0 if body_budget.get("day") != day else int(body_budget.get("count", 0))
+    if total_count >= TOTAL_DAILY_LIMIT:
+        raise TotalBudgetExhausted("daily total budget exhausted")
+    if body and body_count >= BODY_DAILY_LIMIT:
         raise BodyBudgetExhausted("daily body budget exhausted")
-    budget["count"] = int(budget.get("count", 0)) + 1
+    total_budget.update({"day": day, "count": total_count + 1})
+    if body:
+        body_budget.update({"day": day, "count": body_count + 1})
+
+
+def _reserve_body_attempt(state, now=None):
+    _reserve_api_attempt(state, now=now, body=True)
+
+
+def _durable_reservation(path, endpoint, body=False, now=None):
+    def reserve_attempt():
+        with state_lock(path):
+            state = _load_locked_state(path)
+            _reserve_api_attempt(state, now=now, body=body)
+            state["api_calls"][endpoint] = int(state["api_calls"].get(endpoint, 0)) + 1
+            save_state(path, state)
+    return reserve_attempt
 
 
 def markdown(state, client, identity, now=None, reserve_attempt=None):
@@ -544,25 +628,34 @@ def markdown(state, client, identity, now=None, reserve_attempt=None):
         _beijing_day(now)
     except StateError:
         return {"fallback_reason": "beijing_timezone_unavailable"}
+    durable_reservation = reserve_attempt is not None
     if reserve_attempt is None:
         reserve_attempt = lambda: _reserve_body_attempt(state, now)
     try:
         body = client.markdown(entry["resource_id"], before_attempt=reserve_attempt)
+    except TotalBudgetExhausted:
+        if not durable_reservation:
+            _merge_calls(state, client)
+        return {"fallback_reason": "daily_total_budget_exhausted"}
     except BodyBudgetExhausted:
-        _merge_calls(state, client)
+        if not durable_reservation:
+            _merge_calls(state, client)
         return {"fallback_reason": "daily_body_budget_exhausted"}
-    except (APIError, OSError, ValueError):
-        _merge_calls(state, client)
+    except (APIError, ValueError):
+        if not durable_reservation:
+            _merge_calls(state, client)
         return {"fallback_reason": "bestblogs_markdown_unavailable"}
     if not isinstance(body, str):
-        _merge_calls(state, client)
+        if not durable_reservation:
+            _merge_calls(state, client)
         return {"fallback_reason": "bestblogs_markdown_unavailable"}
-    _merge_calls(state, client)
+    if not durable_reservation:
+        _merge_calls(state, client)
     return {"markdown": body, "source": "bestblogs"}
 
 
-def doctor(client, api_key=None):
-    profile = client.me()
+def doctor(client, api_key=None, before_attempt=None):
+    profile = client.me(before_attempt=before_attempt)
     return {"ready": True, "tier": str(profile.get("userTier", profile.get("tier", "unknown")))[:80] if isinstance(profile, dict) else "unknown",
             "profile_ready": bool(profile)}
 
@@ -575,7 +668,9 @@ def status(state):
             "last_successful_scan": state.get("last_successful_scan"), "api_calls": state.get("api_calls", {}),
             "warnings": state.get("warnings", []), "scan_health": state.get("scan_health", {}),
             "body_budget": {"day": state["body_budget"]["day"], "used": state["body_budget"]["count"],
-                            "limit": BODY_DAILY_LIMIT}}
+                            "limit": BODY_DAILY_LIMIT},
+            "total_budget": {"day": state["total_budget"]["day"], "used": state["total_budget"]["count"],
+                             "limit": TOTAL_DAILY_LIMIT}}
 
 
 def _client_from_env():
@@ -607,8 +702,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     path = Path(args.state_file) if args.state_file else default_state_path()
     try:
+        state = None
+        scan_generation = None
         with state_lock(path):
-            state = load_state(path)
+            state = _load_locked_state(path)
             if args.command == "configure":
                 result = configure_sources(state, args.source_id)
                 save_state(path, state)
@@ -621,23 +718,35 @@ def main(argv=None):
             elif args.command == "status":
                 result = status(state)
             else:
-                client = _client_from_env()
-                if args.command == "doctor":
-                    result = doctor(client)
-                    _merge_calls(state, client)
+                if args.command == "scan":
+                    state["scan_generation"] += 1
+                    scan_generation = state["scan_generation"]
                     save_state(path, state)
-                elif args.command == "sources":
-                    result = list_sources(client)
-                    _merge_calls(state, client)
-                    save_state(path, state)
-                elif args.command == "scan": result = scan(state, client); save_state(path, state)
-                else:
-                    def reserve_attempt():
-                        _reserve_body_attempt(state)
-                        save_state(path, state)
-
-                    result = markdown(state, client, args.article_id, reserve_attempt=reserve_attempt)
-                    save_state(path, state)
+                result = None
+        if result is None:
+            client = _client_from_env()
+            if args.command == "doctor":
+                result = doctor(client, before_attempt=_durable_reservation(path, "me"))
+            elif args.command == "sources":
+                result = list_sources(client, before_attempt=_durable_reservation(path, "subscription"))
+            elif args.command == "scan":
+                observation = _scan_observation(
+                    client, before_attempt=_durable_reservation(path, "subscription"),
+                )
+                with state_lock(path):
+                    fresh_state = _load_locked_state(path)
+                    if fresh_state["scan_generation"] != scan_generation:
+                        result = {"complete": False, "enqueued": 0,
+                                  "skipped": {"invalid_or_non_wechat": 0},
+                                  "warnings": ["superseded_scan"], "superseded": True}
+                    else:
+                        result = _apply_scan_observation(fresh_state, observation)
+                        save_state(path, fresh_state)
+            else:
+                result = markdown(
+                    state, client, args.article_id,
+                    reserve_attempt=_durable_reservation(path, "markdown", body=True),
+                )
     except OSError:
         result = {"error": "state operation failed safely"}
     except (APIError, StateError, ValueError, KeyError) as error:

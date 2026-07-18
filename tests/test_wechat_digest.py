@@ -1,4 +1,5 @@
 import importlib.util
+import http.client
 import io
 import json
 import tempfile
@@ -25,7 +26,9 @@ class FakeClient:
         self.markdown_body = markdown
         self.calls = {}
 
-    def subscription_page(self, page, page_size):
+    def subscription_page(self, page, page_size, before_attempt=None):
+        if before_attempt is not None:
+            before_attempt()
         self.calls["subscription"] = self.calls.get("subscription", 0) + 1
         return self.pages[page - 1] if page <= len(self.pages) else {"dataList": []}
 
@@ -35,7 +38,9 @@ class FakeClient:
         self.calls["markdown"] = self.calls.get("markdown", 0) + 1
         return self.markdown_body
 
-    def me(self):
+    def me(self, before_attempt=None):
+        if before_attempt is not None:
+            before_attempt()
         self.calls["me"] = self.calls.get("me", 0) + 1
         return {"userTier": "pro", "id": "private-user", "email": "secret@example.com"}
 
@@ -357,28 +362,31 @@ class WechatDigestTests(unittest.TestCase):
                 with wechat.state_lock(path, timeout=0.01):
                     self.fail("a second writer acquired the state lock")
 
-    def test_cli_markdown_holds_state_lock_while_reserving_and_fetching(self):
+    def test_cli_markdown_releases_state_lock_before_fetching(self):
         path = self.state_file()
         state = wechat.new_state()
         entry = wechat.parse_article(record("r1"))
         state["pending"][entry["identity"]] = entry
         wechat.save_state(path, state)
 
-        class LockCheckingClient(FakeClient):
+        body = json.dumps({
+            "success": True, "code": None, "message": None, "requestId": "request-1", "data": "# body",
+        }).encode()
+
+        class LockCheckingOpener(FakeOpener):
             def __init__(self):
-                super().__init__()
-                self.lock_was_held = False
+                super().__init__([FakeResponse(body, wechat.API_ORIGIN + "/resources/r1/markdown")])
+                self.lock_was_available = False
 
-            def markdown(self, resource_id, before_attempt=None):
-                before_attempt()
-                try:
-                    with wechat.state_lock(path, timeout=0):
-                        pass
-                except wechat.StateError:
-                    self.lock_was_held = True
-                return self.markdown_body
+            def open(self, request, timeout):
+                with wechat.state_lock(path, timeout=0):
+                    self.lock_was_available = True
+                    self.status_during_fetch = wechat.status(wechat.load_state(path))
+                return super().open(request, timeout)
 
-        client = LockCheckingClient()
+        client = wechat.BestBlogsClient("valid-key")
+        opener = LockCheckingOpener()
+        client._opener = opener
         original_client = wechat._client_from_env
         wechat._client_from_env = lambda: client
         try:
@@ -387,7 +395,232 @@ class WechatDigestTests(unittest.TestCase):
         finally:
             wechat._client_from_env = original_client
         self.assertEqual(result, 0)
-        self.assertTrue(client.lock_was_held)
+        self.assertTrue(opener.lock_was_available)
+        self.assertEqual(opener.status_during_fetch["total_budget"]["used"], 1)
+
+    def test_every_non_markdown_attempt_is_durably_reserved_before_network(self):
+        path = self.state_file()
+        wechat.save_state(path, wechat.new_state())
+        envelope = json.dumps({
+            "success": True, "code": None, "message": None, "requestId": "request-1",
+            "data": {"userTier": "free"},
+        }).encode()
+        rate_limited = HTTPError(wechat.API_ORIGIN + "/me", 429, "slow", {"Retry-After": "0"}, None)
+
+        class PersistedTotalOpener(FakeOpener):
+            def __init__(self, responses):
+                super().__init__(responses)
+                self.persisted = []
+
+            def open(self, request, timeout):
+                state = wechat.load_state(path)
+                self.persisted.append((state["total_budget"]["count"], state["api_calls"].get("me")))
+                return super().open(request, timeout)
+
+        client = wechat.BestBlogsClient("valid-key")
+        opener = PersistedTotalOpener([rate_limited, FakeResponse(envelope, wechat.API_ORIGIN + "/me")])
+        client._opener = opener
+        original_client = wechat._client_from_env
+        original_sleep = wechat.time.sleep
+        wechat._client_from_env = lambda: client
+        wechat.time.sleep = lambda delay: None
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = wechat.main(["--state-file", str(path), "doctor"])
+        finally:
+            wechat._client_from_env = original_client
+            wechat.time.sleep = original_sleep
+        self.assertEqual(result, 0)
+        self.assertEqual(opener.persisted, [(1, 1), (2, 2)])
+        self.assertEqual(wechat.load_state(path)["total_budget"]["count"], 2)
+
+    def test_fourteen_rate_limited_feed_pages_cannot_exceed_total_budget(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        day = wechat._beijing_day()
+        state["total_budget"] = {"day": day, "count": 22}
+        state["body_budget"] = {"day": day, "count": 10}
+        wechat.save_state(path, state)
+
+        class RateLimitedPagesOpener:
+            def __init__(self):
+                self.requests = []
+
+            def open(self, request, timeout):
+                self.requests.append(request)
+                if len(self.requests) % 2:
+                    raise HTTPError(request.full_url, 429, "slow", {"Retry-After": "0"}, None)
+                page = len(self.requests) // 2
+                records = [record("p%d-%d" % (page, index)) for index in range(100)]
+                payload = json.dumps({
+                    "success": True, "code": None, "message": None, "requestId": "r%d" % page,
+                    "data": {"dataList": records, "total": 1500},
+                }).encode()
+                return FakeResponse(payload, request.full_url)
+
+        client = wechat.BestBlogsClient("valid-key")
+        opener = RateLimitedPagesOpener()
+        client._opener = opener
+        original_client = wechat._client_from_env
+        original_sleep = wechat.time.sleep
+        wechat._client_from_env = lambda: client
+        wechat.time.sleep = lambda delay: None
+        try:
+            output = io.StringIO()
+            with redirect_stdout(output):
+                result = wechat.main(["--state-file", str(path), "scan"])
+        finally:
+            wechat._client_from_env = original_client
+            wechat.time.sleep = original_sleep
+        self.assertEqual(result, 0)
+        self.assertFalse(json.loads(output.getvalue())["complete"])
+        self.assertEqual(len(opener.requests), 28)
+        persisted = wechat.load_state(path)
+        self.assertEqual(persisted["total_budget"], {"day": day, "count": 50})
+        self.assertEqual(persisted["api_calls"]["subscription"], 28)
+
+    def test_markdown_budget_boundaries_block_before_network_atomically(self):
+        for total_count, body_count, reason in (
+            (50, 34, "daily_total_budget_exhausted"),
+            (49, 35, "daily_body_budget_exhausted"),
+        ):
+            with self.subTest(total_count=total_count, body_count=body_count):
+                path = self.state_file()
+                state = wechat.new_state()
+                entry = wechat.parse_article(record("r1"))
+                state["pending"][entry["identity"]] = entry
+                day = wechat._beijing_day()
+                state["total_budget"] = {"day": day, "count": total_count}
+                state["body_budget"] = {"day": day, "count": body_count}
+                wechat.save_state(path, state)
+                client = wechat.BestBlogsClient("valid-key")
+                opener = FakeOpener([])
+                client._opener = opener
+                original_client = wechat._client_from_env
+                wechat._client_from_env = lambda: client
+                try:
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        result = wechat.main(["--state-file", str(path), "markdown", "r1"])
+                finally:
+                    wechat._client_from_env = original_client
+                self.assertEqual(result, 0)
+                self.assertEqual(json.loads(output.getvalue()), {"fallback_reason": reason})
+                self.assertEqual(opener.requests, [])
+                persisted = wechat.load_state(path)
+                self.assertEqual(persisted["total_budget"]["count"], total_count)
+                self.assertEqual(persisted["body_budget"]["count"], body_count)
+
+    def test_protocol_read_errors_are_safe_json_and_markdown_fallback(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        entry = wechat.parse_article(record("r1"))
+        state["pending"][entry["identity"]] = entry
+        wechat.save_state(path, state)
+
+        class BrokenResponse(FakeResponse):
+            def read(self, unused_limit):
+                raise http.client.IncompleteRead(b"partial-secret", 100)
+
+        original_client = wechat._client_from_env
+        try:
+            doctor_client = wechat.BestBlogsClient("valid-key")
+            doctor_client._opener = FakeOpener([BrokenResponse(b"", wechat.API_ORIGIN + "/me")])
+            wechat._client_from_env = lambda: doctor_client
+            doctor_output = io.StringIO()
+            with redirect_stdout(doctor_output), redirect_stderr(io.StringIO()):
+                doctor_result = wechat.main(["--state-file", str(path), "doctor"])
+            self.assertEqual(doctor_result, 2)
+            self.assertEqual(json.loads(doctor_output.getvalue()), {"error": "BestBlogs network request failed"})
+            self.assertNotIn("partial-secret", doctor_output.getvalue())
+
+            markdown_client = wechat.BestBlogsClient("valid-key")
+            markdown_client._opener = FakeOpener([
+                BrokenResponse(b"", wechat.API_ORIGIN + "/resources/r1/markdown"),
+            ])
+            wechat._client_from_env = lambda: markdown_client
+            markdown_output = io.StringIO()
+            with redirect_stdout(markdown_output), redirect_stderr(io.StringIO()):
+                markdown_result = wechat.main(["--state-file", str(path), "markdown", "r1"])
+            self.assertEqual(markdown_result, 0)
+            self.assertEqual(json.loads(markdown_output.getvalue()), {
+                "fallback_reason": "bestblogs_markdown_unavailable",
+            })
+        finally:
+            wechat._client_from_env = original_client
+
+    def test_scan_result_merge_preserves_concurrent_ack_and_configure(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        state["sources"]["s1"]["initialized"] = True
+        old = wechat.parse_article(record("old"))
+        state["pending"][old["identity"]] = old
+        wechat.save_state(path, state)
+
+        class ConcurrentMutationClient(FakeClient):
+            def subscription_page(self, page, page_size, before_attempt=None):
+                before_attempt()
+                with wechat.state_lock(path):
+                    current = wechat.load_state(path)
+                    wechat.ack(current, "old")
+                    wechat.configure_sources(current, ["s2"])
+                    wechat.save_state(path, current)
+                self.calls["subscription"] = self.calls.get("subscription", 0) + 1
+                return {"dataList": [record("new", "s1")]}
+
+        client = ConcurrentMutationClient()
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = wechat.main(["--state-file", str(path), "scan"])
+        finally:
+            wechat._client_from_env = original_client
+        self.assertEqual(result, 0)
+        persisted = wechat.load_state(path)
+        self.assertEqual(list(persisted["sources"]), ["s2"])
+        self.assertNotIn("resource:old", persisted["pending"])
+        self.assertNotIn("resource:new", persisted["pending"])
+
+    def test_older_scan_result_does_not_overwrite_newer_scan_state(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        state["sources"]["s1"]["initialized"] = True
+        wechat.save_state(path, state)
+
+        class SupersededScanClient(FakeClient):
+            def subscription_page(self, page, page_size, before_attempt=None):
+                before_attempt()
+                with wechat.state_lock(path):
+                    current = wechat.load_state(path)
+                    current["scan_generation"] += 1
+                    current["scan_health"] = {
+                        "pages": 9, "records": 9, "complete": True,
+                        "skipped": {"invalid_or_non_wechat": 0},
+                    }
+                    current["warnings"] = ["newer_scan_won"]
+                    wechat.save_state(path, current)
+                self.calls["subscription"] = self.calls.get("subscription", 0) + 1
+                return {"dataList": [record("stale", "s1")]}
+
+        client = SupersededScanClient()
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                result = wechat.main(["--state-file", str(path), "scan"])
+        finally:
+            wechat._client_from_env = original_client
+        self.assertEqual(result, 0)
+        self.assertTrue(json.loads(output.getvalue())["superseded"])
+        persisted = wechat.load_state(path)
+        self.assertEqual(persisted["scan_health"]["records"], 9)
+        self.assertEqual(persisted["warnings"], ["newer_scan_won"])
+        self.assertNotIn("resource:stale", persisted["pending"])
 
     def test_cli_markdown_reservation_write_failure_prevents_outbound_fetch(self):
         path = self.state_file()
@@ -475,6 +708,31 @@ class WechatDigestTests(unittest.TestCase):
         self.assertNotIn("secret@example.com", json.dumps(output))
         self.assertEqual(output["tier"], "pro")
 
+    def test_well_formed_v1_state_migrates_to_v2_with_fail_closed_total_budget(self):
+        path = self.state_file()
+        legacy = wechat.new_state()
+        legacy["version"] = 1
+        legacy.pop("total_budget", None)
+        legacy.pop("scan_generation", None)
+        legacy["body_budget"] = {"day": wechat._beijing_day(), "count": 7}
+        legacy["pending"]["resource:r1"] = wechat.parse_article(record("r1"))
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        migrated = wechat.load_state(path)
+        self.assertEqual(migrated["version"], 2)
+        self.assertEqual(migrated["total_budget"], {
+            "day": wechat._beijing_day(), "count": wechat.TOTAL_DAILY_LIMIT,
+        })
+        self.assertEqual(migrated["body_budget"]["count"], 7)
+        self.assertIn("resource:r1", migrated["pending"])
+
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(wechat.main(["--state-file", str(path), "status"]), 0)
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["version"], 2)
+        self.assertEqual(persisted["total_budget"]["count"], 50)
+
     def test_pending_state_rejects_unexpected_content_fields_without_rewriting(self):
         path = self.state_file()
         path.parent.mkdir(parents=True)
@@ -545,8 +803,12 @@ class WechatDigestTests(unittest.TestCase):
     def test_status_exposes_safe_body_budget_details(self):
         state = wechat.new_state()
         state["body_budget"] = {"day": "2026-07-18", "count": 17}
+        state["total_budget"] = {"day": "2026-07-18", "count": 21}
         self.assertEqual(wechat.status(state)["body_budget"], {
             "day": "2026-07-18", "used": 17, "limit": 35,
+        })
+        self.assertEqual(wechat.status(state)["total_budget"], {
+            "day": "2026-07-18", "used": 21, "limit": 50,
         })
 
 
@@ -560,6 +822,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
             "first", "baseline", "scan", "pending", "summarize", "ack",
             "35", "15", "three", "BestBlogs", "Firecrawl", "mp.weixin.qq.com",
             "untrusted", "health", "JSON", "fail", "body_budget",
+            "total_budget",
         ):
             self.assertIn(clause, text, clause)
         self.assertIn("never scrape arbitrary hosts or use browser cookies", text.lower())
@@ -585,6 +848,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
             "never select tools", "trigger additional calls", "prepare a complete article output block",
             "then call `ack <article_id>`", "then include the prepared block in the final digest",
             "run `status` directly", "body_budget", "day", "used", "limit",
+            "total_budget",
         ):
             self.assertIn(clause, text, clause)
         self.assertNotIn("python3 -c", text)
