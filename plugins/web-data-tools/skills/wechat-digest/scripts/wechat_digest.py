@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 import time
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -20,11 +21,12 @@ except ImportError:  # pragma: no cover - Python 3.9+ supplies zoneinfo
     ZoneInfo = None
 
 
-API_ORIGIN = "https://api.bestblogs.dev"
+API_ORIGIN = "https://api.bestblogs.dev/openapi/v2"
 STATE_VERSION = 1
 MAX_BODY_BYTES = 1_000_000
-BODY_DAILY_LIMIT = 10
+BODY_DAILY_LIMIT = 35
 MAX_RECENT = 500
+MAX_FEED_PAGES = 14
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SAFE_REASON = re.compile(r"^[A-Z0-9][A-Z0-9_:-]{0,63}$")
 
@@ -51,7 +53,9 @@ def validate_envelope(payload):
         raise APIError("invalid BestBlogs response envelope")
     if payload["success"] is not True:
         raise APIError("BestBlogs request was not successful")
-    if not isinstance(payload["code"], (int, str)) or not isinstance(payload["message"], str) or not isinstance(payload["requestId"], str):
+    if (payload["code"] is not None and not isinstance(payload["code"], (int, str))) or \
+            (payload["message"] is not None and not isinstance(payload["message"], str)) or \
+            not isinstance(payload["requestId"], str):
         raise APIError("invalid BestBlogs response envelope")
     return payload["data"]
 
@@ -113,7 +117,7 @@ class BestBlogsClient:
         return self.get("/me")
 
     def subscription_page(self, page, page_size):
-        return self.get("/resources/subscription", {"page": page, "pageSize": page_size, "days": 7})
+        return self.get("/me/feeds/subscriptions", {"page": page, "pageSize": page_size, "timeFilter": "week"})
 
     def markdown(self, resource_id):
         data = self.get("/resources/%s/markdown" % resource_id)
@@ -127,18 +131,28 @@ def canonical_wechat_url(value):
         return None
     parsed = urlparse(value.strip())
     host = (parsed.hostname or "").lower()
-    if parsed.scheme not in ("http", "https") or not host or not (host == "mp.weixin.qq.com" or host.endswith(".weixin.qq.com")):
+    if parsed.scheme != "https" or host != "mp.weixin.qq.com" or parsed.username is not None or parsed.password is not None:
+        return None
+    try:
+        if parsed.port is not None or parsed.netloc.lower() != "mp.weixin.qq.com":
+            return None
+    except ValueError:
         return None
     if not parsed.path.startswith("/"):
         return None
     pairs = [(key, item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)
              if not key.lower().startswith("utm_") and key.lower() not in {"from", "scene", "src"}]
-    return urlunparse(("https", host, parsed.path, "", urlencode(sorted(pairs)), ""))
+    return urlunparse(("https", "mp.weixin.qq.com", parsed.path, "", urlencode(sorted(pairs)), ""))
 
 
 def _publication_time(value):
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return datetime.fromtimestamp(value / (1000 if value > 10_000_000_000 else 1), tz=timezone.utc).isoformat()
+        if not math.isfinite(value):
+            return None
+        try:
+            return datetime.fromtimestamp(value / (1000 if abs(value) > 10_000_000_000 else 1), tz=timezone.utc).isoformat()
+        except (OverflowError, OSError, ValueError):
+            return None
     if isinstance(value, str):
         value = value.strip()
         if value.isdigit():
@@ -146,7 +160,7 @@ def _publication_time(value):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).isoformat()
-        except ValueError:
+        except (OverflowError, ValueError):
             return None
     return None
 
@@ -157,7 +171,8 @@ def parse_article(raw):
     kind = raw.get("resourceType", raw.get("type", "article"))
     if isinstance(kind, str) and kind.lower() not in ("article", "wechat", "weixin"):
         return None
-    source = raw.get("sourceId") or (raw.get("source") or {}).get("id")
+    source_object = raw.get("source") if isinstance(raw.get("source"), dict) else {}
+    source = raw.get("sourceId") or source_object.get("id")
     if not _safe_id(source):
         return None
     resource_id = raw.get("id") or raw.get("resourceId")
@@ -168,36 +183,77 @@ def parse_article(raw):
         return None
     identity = "resource:" + resource_id if resource_id else "url:" + hashlib.sha256(url.encode("utf-8")).hexdigest()
     timestamp = None
-    for field in ("publishTime", "publishDateTimeStr", "publishDateStr"):
-        timestamp = _publication_time(raw.get(field))
+    supplied_time = False
+    for field in ("publishTimeStamp", "publishTime", "publishDateTimeStr", "publishDateStr"):
+        value = raw.get(field)
+        supplied_time = supplied_time or value is not None
+        timestamp = _publication_time(value)
         if timestamp:
             break
+    if supplied_time and not timestamp:
+        return None
     return {"identity": identity, "resource_id": resource_id, "source_id": source,
-            "source_name": str(raw.get("sourceName") or (raw.get("source") or {}).get("name") or source)[:200],
+            "source_name": str(raw.get("sourceName") or source_object.get("name") or source)[:200],
             "title": str(raw.get("title") or "Untitled")[:500], "url": url,
             "published_at": timestamp or "", "attempts": 0}
 
 
 def new_state():
     return {"version": STATE_VERSION, "sources": {}, "pending": {}, "body_budget": {"day": "", "count": 0},
-            "last_successful_scan": None, "api_calls": {}, "warnings": []}
+            "last_successful_scan": None, "api_calls": {}, "warnings": [],
+            "scan_health": {"pages": 0, "records": 0, "complete": False, "skipped": {"invalid_or_non_wechat": 0}}}
 
 
 def _validate_state(state):
     if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
         raise StateError("unsupported or malformed state schema")
-    required = ("sources", "pending", "body_budget", "api_calls", "warnings")
+    required = ("sources", "pending", "body_budget", "api_calls", "warnings", "scan_health")
     if any(key not in state for key in required) or not isinstance(state["sources"], dict) or not isinstance(state["pending"], dict):
         raise StateError("unsupported or malformed state schema")
-    if not isinstance(state["body_budget"], dict) or not isinstance(state["api_calls"], dict) or not isinstance(state["warnings"], list):
+    if not isinstance(state["body_budget"], dict) or not isinstance(state["api_calls"], dict) or not isinstance(state["warnings"], list) or not isinstance(state["scan_health"], dict):
+        raise StateError("unsupported or malformed state schema")
+    budget = state["body_budget"]
+    if set(budget) != {"day", "count"} or not isinstance(budget["day"], str) or not isinstance(budget["count"], int) or not 0 <= budget["count"] <= BODY_DAILY_LIMIT:
+        raise StateError("unsupported or malformed state schema")
+    if budget["day"]:
+        try:
+            datetime.fromisoformat(budget["day"])
+        except ValueError as error:
+            raise StateError("unsupported or malformed state schema") from error
+    if state.get("last_successful_scan") is not None and not isinstance(state["last_successful_scan"], str):
+        raise StateError("unsupported or malformed state schema")
+    if any(not isinstance(key, str) or not isinstance(value, int) or value < 0 for key, value in state["api_calls"].items()) or \
+            any(not isinstance(item, str) for item in state["warnings"]):
+        raise StateError("unsupported or malformed state schema")
+    health = state["scan_health"]
+    if not isinstance(health.get("pages"), int) or not 0 <= health["pages"] <= MAX_FEED_PAGES or \
+            not isinstance(health.get("records"), int) or health["records"] < 0 or not isinstance(health.get("complete"), bool) or \
+            not isinstance(health.get("skipped"), dict) or not isinstance(health["skipped"].get("invalid_or_non_wechat"), int):
         raise StateError("unsupported or malformed state schema")
     for source_id, source in state["sources"].items():
-        if not _safe_id(source_id) or not isinstance(source, dict) or not isinstance(source.get("initialized", False), bool):
+        if not _safe_id(source_id) or not isinstance(source, dict) or source.get("id") != source_id or not isinstance(source.get("name"), str) or not isinstance(source.get("initialized"), bool):
             raise StateError("unsupported or malformed state schema")
-        if "recent" in source and not isinstance(source["recent"], dict):
+        if not isinstance(source.get("recent"), dict) or len(source["recent"]) > MAX_RECENT or not isinstance(source.get("health"), dict):
+            raise StateError("unsupported or malformed state schema")
+        if any(not isinstance(identity, str) or value is not True for identity, value in source["recent"].items()):
+            raise StateError("unsupported or malformed state schema")
+        source_health = source["health"]
+        if source_health and (not isinstance(source_health.get("records"), int) or source_health["records"] < 0 or
+                              not isinstance(source_health.get("complete"), bool) or not isinstance(source_health.get("skipped"), dict) or
+                              not isinstance(source_health["skipped"].get("invalid_or_non_wechat"), int)):
             raise StateError("unsupported or malformed state schema")
     for identity, entry in state["pending"].items():
-        if not isinstance(identity, str) or not isinstance(entry, dict) or entry.get("identity") != identity:
+        if not isinstance(identity, str) or not isinstance(entry, dict) or entry.get("identity") != identity or \
+                not _safe_id(entry.get("source_id")) or canonical_wechat_url(entry.get("url")) != entry.get("url") or \
+                entry.get("resource_id") is not None and not _safe_id(entry.get("resource_id")) or \
+                not isinstance(entry.get("attempts"), int) or not 0 <= entry["attempts"] <= 3 or \
+                not isinstance(entry.get("title"), str) or not isinstance(entry.get("source_name"), str) or not isinstance(entry.get("published_at"), str):
+            raise StateError("unsupported or malformed state schema")
+        if entry.get("resource_id") and identity != "resource:" + entry["resource_id"]:
+            raise StateError("unsupported or malformed state schema")
+        if not entry.get("resource_id") and identity != "url:" + hashlib.sha256(entry["url"].encode("utf-8")).hexdigest():
+            raise StateError("unsupported or malformed state schema")
+        if entry.get("last_failure_reason") is not None and (not isinstance(entry["last_failure_reason"], str) or not SAFE_REASON.fullmatch(entry["last_failure_reason"])):
             raise StateError("unsupported or malformed state schema")
     return state
 
@@ -256,7 +312,7 @@ def _page_items(data):
 
 def _feed_pages(client, page_size=100):
     all_items, warnings, page, expected = [], [], 1, None
-    while page <= 100:
+    while page <= MAX_FEED_PAGES:
         data = client.subscription_page(page, page_size)
         items, meta = _page_items(data)
         if expected is None:
@@ -266,13 +322,13 @@ def _feed_pages(client, page_size=100):
                     break
         all_items.extend(items)
         if expected is not None and len(all_items) >= expected:
-            return all_items[:expected], True, warnings
+            return all_items[:expected], True, warnings, page
         if not items:
-            return all_items, expected is None or len(all_items) >= expected, warnings + (["feed ended before advertised total"] if expected is not None else [])
+            return all_items, expected is None or len(all_items) >= expected, warnings + (["feed ended before advertised total"] if expected is not None else []), page
         if len(items) < page_size:
-            return all_items, expected is None or len(all_items) >= expected, warnings + (["feed shorter than advertised total"] if expected is not None and len(all_items) < expected else [])
+            return all_items, expected is None or len(all_items) >= expected, warnings + (["feed shorter than advertised total"] if expected is not None and len(all_items) < expected else []), page
         page += 1
-    return all_items, False, warnings + ["pagination safety limit reached"]
+    return all_items, False, warnings + ["feed page cap reached"], MAX_FEED_PAGES
 
 
 def _merge_calls(state, client):
@@ -284,7 +340,7 @@ def _merge_calls(state, client):
 
 
 def list_sources(client, page_size=100):
-    records, complete, warnings = _feed_pages(client, page_size)
+    records, complete, warnings, _ = _feed_pages(client, page_size)
     sources = {}
     malformed = 0
     for raw in records:
@@ -292,8 +348,9 @@ def list_sources(client, page_size=100):
         if not article:
             malformed += 1
             if isinstance(raw, dict):
-                source_id = raw.get("sourceId") or (raw.get("source") or {}).get("id")
-                source_name = raw.get("sourceName") or (raw.get("source") or {}).get("name") or source_id
+                source_object = raw.get("source") if isinstance(raw.get("source"), dict) else {}
+                source_id = raw.get("sourceId") or source_object.get("id")
+                source_name = raw.get("sourceName") or source_object.get("name") or source_id
                 if _safe_id(source_id):
                     sources.setdefault(source_id, {"id": source_id, "name": str(source_name)[:200]})
             continue
@@ -313,7 +370,7 @@ def _remember(source, identity):
 
 
 def scan(state, client, page_size=100):
-    records, complete, warnings = _feed_pages(client, page_size)
+    records, complete, warnings, pages = _feed_pages(client, page_size)
     selected = state["sources"]
     parsed, malformed = [], 0
     for raw in records:
@@ -348,6 +405,8 @@ def scan(state, client, page_size=100):
     else:
         warnings.append("partial_feed")
     state["warnings"] = warnings
+    state["scan_health"] = {"pages": pages, "records": len(records), "complete": complete,
+                            "skipped": {"invalid_or_non_wechat": malformed}}
     _merge_calls(state, client)
     return {"complete": complete, "enqueued": enqueued,
             "skipped": {"invalid_or_non_wechat": malformed}, "warnings": warnings}
@@ -389,6 +448,8 @@ def fail(state, identity, reason):
 
 
 def _beijing_day(now=None):
+    if ZoneInfo is None:
+        raise StateError("Beijing timezone support is unavailable")
     now = now or datetime.now(timezone.utc)
     return now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
@@ -400,23 +461,31 @@ def markdown(state, client, identity, now=None):
         return {"fallback_reason": "unknown_or_not_pending"}
     if not entry.get("resource_id"):
         return {"fallback_reason": "missing_resource_id"}
-    day = _beijing_day(now)
+    try:
+        day = _beijing_day(now)
+    except StateError:
+        return {"fallback_reason": "beijing_timezone_unavailable"}
     budget = state["body_budget"]
     if budget.get("day") != day:
         budget.update({"day": day, "count": 0})
     if int(budget.get("count", 0)) >= BODY_DAILY_LIMIT:
         return {"fallback_reason": "daily_body_budget_exhausted"}
-    body = client.markdown(entry["resource_id"])
-    if not isinstance(body, str):
-        return {"fallback_reason": "bestblogs_markdown_unavailable"}
     budget["count"] = int(budget.get("count", 0)) + 1
+    try:
+        body = client.markdown(entry["resource_id"])
+    except (APIError, OSError, ValueError):
+        _merge_calls(state, client)
+        return {"fallback_reason": "bestblogs_markdown_unavailable"}
+    if not isinstance(body, str):
+        _merge_calls(state, client)
+        return {"fallback_reason": "bestblogs_markdown_unavailable"}
     _merge_calls(state, client)
     return {"markdown": body, "source": "bestblogs"}
 
 
 def doctor(client, api_key=None):
     profile = client.me()
-    return {"ready": True, "tier": str(profile.get("tier", "unknown"))[:80] if isinstance(profile, dict) else "unknown",
+    return {"ready": True, "tier": str(profile.get("userTier", profile.get("tier", "unknown")))[:80] if isinstance(profile, dict) else "unknown",
             "profile_ready": bool(profile)}
 
 
@@ -426,7 +495,7 @@ def status(state):
             "initialized_sources": sum(bool(source.get("initialized")) for source in state["sources"].values()),
             "pending": len(state["pending"]), "retryable": len(items["retryable"]), "exhausted": len(items["exhausted"]),
             "last_successful_scan": state.get("last_successful_scan"), "api_calls": state.get("api_calls", {}),
-            "warnings": state.get("warnings", [])}
+            "warnings": state.get("warnings", []), "scan_health": state.get("scan_health", {})}
 
 
 def _client_from_env():
@@ -457,8 +526,8 @@ def main(argv=None):
     sub.add_parser("status")
     args = parser.parse_args(argv)
     path = Path(args.state_file) if args.state_file else default_state_path()
-    state = load_state(path)
     try:
+        state = load_state(path)
         if args.command == "configure":
             result = configure_sources(state, args.source_id)
             save_state(path, state)
