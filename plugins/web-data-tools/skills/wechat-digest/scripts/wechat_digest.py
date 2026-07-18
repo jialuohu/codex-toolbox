@@ -499,7 +499,9 @@ def status(state):
             "initialized_sources": sum(bool(source.get("initialized")) for source in state["sources"].values()),
             "pending": len(state["pending"]), "retryable": len(items["retryable"]), "exhausted": len(items["exhausted"]),
             "last_successful_scan": state.get("last_successful_scan"), "api_calls": state.get("api_calls", {}),
-            "warnings": state.get("warnings", []), "scan_health": state.get("scan_health", {})}
+            "warnings": state.get("warnings", []), "scan_health": state.get("scan_health", {}),
+            "body_budget": {"day": state["body_budget"]["day"], "used": state["body_budget"]["count"],
+                            "limit": BODY_DAILY_LIMIT}}
 
 
 def _client_from_env():

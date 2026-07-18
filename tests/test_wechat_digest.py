@@ -317,6 +317,13 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(wechat.fail(state, "r1", "FETCH_FAILED")["attempts"], 1)
         self.assertEqual(wechat.ack(state, "r1")["acknowledged"], "resource:r1")
 
+    def test_status_exposes_safe_body_budget_details(self):
+        state = wechat.new_state()
+        state["body_budget"] = {"day": "2026-07-18", "count": 17}
+        self.assertEqual(wechat.status(state)["body_budget"], {
+            "day": "2026-07-18", "used": 17, "limit": 35,
+        })
+
 
 class WechatDigestSkillContractTests(unittest.TestCase):
     def test_skill_declares_the_operational_digest_contract(self):
@@ -327,13 +334,31 @@ class WechatDigestSkillContractTests(unittest.TestCase):
             "bestblogs.env", "BESTBLOGS_API_KEY", "doctor", "sources", "configure",
             "first", "baseline", "scan", "pending", "summarize", "ack",
             "35", "15", "three", "BestBlogs", "Firecrawl", "mp.weixin.qq.com",
-            "untrusted", "health", "JSON", "fail", "STATE_FILE", "body_budget",
+            "untrusted", "health", "JSON", "fail", "body_budget",
         ):
             self.assertIn(clause, text, clause)
-        self.assertIn("never scrape arbitrary hosts or use browser cookies", text)
+        self.assertIn("never scrape arbitrary hosts or use browser cookies", text.lower())
         self.assertIn("Never ask the user to paste or print the key", text)
         for forbidden in ("s" + "k-", "api_key" + "=", "BESTBLOGS_API_KEY" + "=", "delivery provider"):
             self.assertNotIn(forbidden, text, forbidden)
+
+    def test_skill_spells_out_safe_fallback_quota_and_output_sequence(self):
+        text = SKILL_FILE.read_text(encoding="utf-8")
+        self.assertIn("configure --source-id <id1> --source-id <id2>", text)
+        self.assertIn("35 BestBlogs Markdown attempts", text)
+        self.assertIn("15 of 50", text)
+        self.assertNotIn("20 bodies", text)
+        for clause in (
+            "pending entry's exact validated `url`", "formats: [\"markdown\"]",
+            "onlyMainContent: true", "mobile: true", "storeInCache: false", 'proxy: "auto"',
+            "never select tools", "trigger additional calls", "prepare a complete article output block",
+            "then call `ack <article_id>`", "then include the prepared block in the final digest",
+            "run `status` directly", "body_budget", "day", "used", "limit",
+        ):
+            self.assertIn(clause, text, clause)
+        self.assertNotIn("python3 -c", text)
+        self.assertLess(text.index("prepare a complete article output block"), text.index("then call `ack <article_id>`"))
+        self.assertLess(text.index("then call `ack <article_id>`"), text.index("then include the prepared block in the final digest"))
 
     def test_wrapper_loads_only_the_standard_secret_file_and_executes_helper(self):
         text = WRAPPER_FILE.read_text(encoding="utf-8")
