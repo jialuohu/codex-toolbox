@@ -9,11 +9,12 @@ import http.client
 import json
 import os
 import re
+import secrets
 import tempfile
 import time
 import math
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
@@ -27,17 +28,30 @@ except ImportError:  # pragma: no cover - Python 3.9+ supplies zoneinfo
 
 API_ORIGIN = "https://api.bestblogs.dev/openapi/v2"
 LEGACY_STATE_VERSION = 1
-STATE_VERSION = 2
+PREVIOUS_STATE_VERSION = 2
+STATE_VERSION = 3
 MAX_BODY_BYTES = 1_000_000
 BODY_DAILY_LIMIT = 35
 TOTAL_DAILY_LIMIT = 50
 MAX_RECENT = 500
+MAX_TOMBSTONES = 5000
 MAX_FEED_PAGES = 14
+DEFAULT_PAGE_SIZE = 100
+CLAIM_LEASE_SECONDS = 15 * 60
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SAFE_REASON = re.compile(r"^[A-Z0-9][A-Z0-9_:-]{0,63}$")
+API_KEY = re.compile(r"^bb_[0-9A-Fa-f]{32}$")
+CLAIM_TOKEN = re.compile(r"^[0-9a-f]{32}$")
+CANONICAL_DAY = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 PENDING_FIELDS = frozenset((
     "identity", "resource_id", "source_id", "source_name", "title", "url",
-    "published_at", "attempts", "last_failure_reason",
+    "published_at", "attempts", "last_failure_reason", "claim_id", "claim_expires_at",
+    "claim_fetch_started",
+))
+STATE_FIELDS = frozenset((
+    "version", "sources", "pending", "body_budget", "total_budget",
+    "last_successful_scan", "api_calls", "warnings", "next_scan_seq",
+    "last_applied_scan_generation", "ack_tombstones", "scan_health",
 ))
 
 
@@ -54,6 +68,10 @@ class BodyBudgetExhausted(StateError):
 
 
 class TotalBudgetExhausted(StateError):
+    pass
+
+
+class ClaimUnavailable(StateError):
     pass
 
 
@@ -82,8 +100,8 @@ class BestBlogsClient:
     """GET-only client deliberately constrained to the fixed BestBlogs origin."""
 
     def __init__(self, api_key, origin=API_ORIGIN, timeout=20):
-        if not isinstance(api_key, str) or len(api_key) < 8:
-            raise ValueError("a valid API key is required")
+        if not isinstance(api_key, str) or not API_KEY.fullmatch(api_key):
+            raise ValueError("invalid BestBlogs API key")
         if origin != API_ORIGIN:
             raise ValueError("BestBlogs origin is fixed")
         self.api_key = api_key
@@ -119,7 +137,7 @@ class BestBlogsClient:
                         raise APIError("BestBlogs response exceeds size limit")
                     try:
                         return validate_envelope(json.loads(body.decode("utf-8")))
-                    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
                         raise APIError("invalid JSON response from BestBlogs") from error
             except HTTPError as error:
                 if error.code == 429 and attempt == 0:
@@ -232,59 +250,109 @@ def new_state():
     return {"version": STATE_VERSION, "sources": {}, "pending": {},
             "body_budget": {"day": "", "count": 0}, "total_budget": {"day": "", "count": 0},
             "last_successful_scan": None, "api_calls": {}, "warnings": [],
-            "scan_generation": 0,
+            "next_scan_seq": 0, "last_applied_scan_generation": 0, "ack_tombstones": {},
             "scan_health": {"pages": 0, "records": 0, "complete": False, "skipped": {"invalid_or_non_wechat": 0}}}
 
 
-def _validate_state(state):
-    if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
+def _validate_day_budget(budget, limit):
+    if not isinstance(budget, dict) or set(budget) != {"day", "count"} or \
+            not isinstance(budget.get("day"), str) or not isinstance(budget.get("count"), int) or \
+            isinstance(budget.get("count"), bool) or not 0 <= budget["count"] <= limit:
         raise StateError("unsupported or malformed state schema")
-    required = ("sources", "pending", "body_budget", "total_budget", "api_calls", "warnings", "scan_generation", "scan_health")
-    if any(key not in state for key in required) or not isinstance(state["sources"], dict) or not isinstance(state["pending"], dict):
-        raise StateError("unsupported or malformed state schema")
-    if not isinstance(state["body_budget"], dict) or not isinstance(state["total_budget"], dict) or \
-            not isinstance(state["api_calls"], dict) or not isinstance(state["warnings"], list) or not isinstance(state["scan_health"], dict):
-        raise StateError("unsupported or malformed state schema")
-    for budget_name, limit in (("body_budget", BODY_DAILY_LIMIT), ("total_budget", TOTAL_DAILY_LIMIT)):
-        budget = state[budget_name]
-        if set(budget) != {"day", "count"} or not isinstance(budget["day"], str) or \
-                not isinstance(budget["count"], int) or isinstance(budget["count"], bool) or \
-                not 0 <= budget["count"] <= limit:
+    day = budget["day"]
+    if not day:
+        if budget["count"] != 0:
             raise StateError("unsupported or malformed state schema")
-        if budget["day"]:
-            try:
-                datetime.fromisoformat(budget["day"])
-            except ValueError as error:
-                raise StateError("unsupported or malformed state schema") from error
+        return
+    if not CANONICAL_DAY.fullmatch(day):
+        raise StateError("unsupported or malformed state schema")
+    try:
+        if datetime.strptime(day, "%Y-%m-%d").date().isoformat() != day:
+            raise ValueError
+    except ValueError as error:
+        raise StateError("unsupported or malformed state schema") from error
+
+
+def _parse_claim_expiry(value):
+    if not isinstance(value, str) or len(value) > 32 or not value.endswith("Z"):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        return None
+    return parsed.astimezone(timezone.utc)
+
+
+def _valid_health(health, allow_empty=False, include_pages=False):
+    if allow_empty and health == {}:
+        return True
+    expected = {"records", "complete", "skipped"} | ({"pages"} if include_pages else set())
+    return isinstance(health, dict) and set(health) == expected and \
+        isinstance(health.get("records"), int) and not isinstance(health.get("records"), bool) and health["records"] >= 0 and \
+        isinstance(health.get("complete"), bool) and isinstance(health.get("skipped"), dict) and \
+        set(health["skipped"]) == {"invalid_or_non_wechat"} and \
+        isinstance(health["skipped"].get("invalid_or_non_wechat"), int) and \
+        not isinstance(health["skipped"].get("invalid_or_non_wechat"), bool) and \
+        health["skipped"]["invalid_or_non_wechat"] >= 0 and \
+        (not include_pages or isinstance(health.get("pages"), int) and not isinstance(health.get("pages"), bool) and
+         0 <= health["pages"] <= MAX_FEED_PAGES)
+
+
+def _valid_identity(identity):
+    if not isinstance(identity, str) or len(identity) > 200:
+        return False
+    if identity.startswith("resource:"):
+        return _safe_id(identity[len("resource:"):])
+    return bool(re.fullmatch(r"url:[0-9a-f]{64}", identity))
+
+
+def _validate_state(state):
+    if not isinstance(state, dict) or set(state) != STATE_FIELDS or state.get("version") != STATE_VERSION:
+        raise StateError("unsupported or malformed state schema")
+    if not isinstance(state["sources"], dict) or not isinstance(state["pending"], dict) or \
+            not isinstance(state["api_calls"], dict) or not isinstance(state["warnings"], list) or \
+            not isinstance(state["ack_tombstones"], dict) or len(state["ack_tombstones"]) > MAX_TOMBSTONES:
+        raise StateError("unsupported or malformed state schema")
+    _validate_day_budget(state["body_budget"], BODY_DAILY_LIMIT)
+    _validate_day_budget(state["total_budget"], TOTAL_DAILY_LIMIT)
+    if state["body_budget"]["day"] and state["body_budget"]["day"] == state["total_budget"]["day"] and \
+            state["body_budget"]["count"] > state["total_budget"]["count"]:
+        raise StateError("unsupported or malformed state schema")
     if state.get("last_successful_scan") is not None and not isinstance(state["last_successful_scan"], str):
         raise StateError("unsupported or malformed state schema")
-    if not isinstance(state["scan_generation"], int) or isinstance(state["scan_generation"], bool) or state["scan_generation"] < 0:
+    for sequence in ("next_scan_seq", "last_applied_scan_generation"):
+        if not isinstance(state[sequence], int) or isinstance(state[sequence], bool) or state[sequence] < 0:
+            raise StateError("unsupported or malformed state schema")
+    if state["last_applied_scan_generation"] > state["next_scan_seq"]:
         raise StateError("unsupported or malformed state schema")
-    if any(not isinstance(key, str) or not isinstance(value, int) or value < 0 for key, value in state["api_calls"].items()) or \
+    if any(not isinstance(key, str) or not isinstance(value, int) or isinstance(value, bool) or value < 0
+           for key, value in state["api_calls"].items()) or \
             any(not isinstance(item, str) for item in state["warnings"]):
         raise StateError("unsupported or malformed state schema")
     health = state["scan_health"]
-    if not isinstance(health.get("pages"), int) or not 0 <= health["pages"] <= MAX_FEED_PAGES or \
-            not isinstance(health.get("records"), int) or health["records"] < 0 or not isinstance(health.get("complete"), bool) or \
-            not isinstance(health.get("skipped"), dict) or not isinstance(health["skipped"].get("invalid_or_non_wechat"), int):
+    if not _valid_health(health, include_pages=True):
         raise StateError("unsupported or malformed state schema")
     for source_id, source in state["sources"].items():
-        if not _safe_id(source_id) or not isinstance(source, dict) or source.get("id") != source_id or not isinstance(source.get("name"), str) or not isinstance(source.get("initialized"), bool):
+        if not _safe_id(source_id) or not isinstance(source, dict) or \
+                set(source) != {"id", "name", "initialized", "recent", "health"} or \
+                source.get("id") != source_id or not isinstance(source.get("name"), str) or \
+                not isinstance(source.get("initialized"), bool):
             raise StateError("unsupported or malformed state schema")
         if not isinstance(source.get("recent"), dict) or len(source["recent"]) > MAX_RECENT or not isinstance(source.get("health"), dict):
             raise StateError("unsupported or malformed state schema")
-        if any(not isinstance(identity, str) or value is not True for identity, value in source["recent"].items()):
+        if any(not _valid_identity(identity) or value is not True for identity, value in source["recent"].items()):
             raise StateError("unsupported or malformed state schema")
-        source_health = source["health"]
-        if source_health and (not isinstance(source_health.get("records"), int) or source_health["records"] < 0 or
-                              not isinstance(source_health.get("complete"), bool) or not isinstance(source_health.get("skipped"), dict) or
-                              not isinstance(source_health["skipped"].get("invalid_or_non_wechat"), int)):
+        if not _valid_health(source["health"], allow_empty=True):
             raise StateError("unsupported or malformed state schema")
     for identity, entry in state["pending"].items():
-        if not isinstance(identity, str) or not isinstance(entry, dict) or not set(entry).issubset(PENDING_FIELDS) or entry.get("identity") != identity or \
+        required = {"identity", "resource_id", "source_id", "source_name", "title", "url", "published_at", "attempts"}
+        if not _valid_identity(identity) or not isinstance(entry, dict) or not required.issubset(entry) or \
+                not set(entry).issubset(PENDING_FIELDS) or entry.get("identity") != identity or \
                 not _safe_id(entry.get("source_id")) or canonical_wechat_url(entry.get("url")) != entry.get("url") or \
                 entry.get("resource_id") is not None and not _safe_id(entry.get("resource_id")) or \
-                not isinstance(entry.get("attempts"), int) or not 0 <= entry["attempts"] <= 3 or \
+                not isinstance(entry.get("attempts"), int) or isinstance(entry.get("attempts"), bool) or not 0 <= entry["attempts"] <= 3 or \
                 not isinstance(entry.get("title"), str) or not isinstance(entry.get("source_name"), str) or not isinstance(entry.get("published_at"), str):
             raise StateError("unsupported or malformed state schema")
         if entry.get("resource_id") and identity != "resource:" + entry["resource_id"]:
@@ -292,6 +360,22 @@ def _validate_state(state):
         if not entry.get("resource_id") and identity != "url:" + hashlib.sha256(entry["url"].encode("utf-8")).hexdigest():
             raise StateError("unsupported or malformed state schema")
         if entry.get("last_failure_reason") is not None and (not isinstance(entry["last_failure_reason"], str) or not SAFE_REASON.fullmatch(entry["last_failure_reason"])):
+            raise StateError("unsupported or malformed state schema")
+        has_claim_id = "claim_id" in entry
+        has_claim_expiry = "claim_expires_at" in entry
+        if has_claim_id != has_claim_expiry or has_claim_id and \
+                (not isinstance(entry["claim_id"], str) or not CLAIM_TOKEN.fullmatch(entry["claim_id"]) or
+                 _parse_claim_expiry(entry["claim_expires_at"]) is None):
+            raise StateError("unsupported or malformed state schema")
+        if "claim_fetch_started" in entry and (not has_claim_id or entry["claim_fetch_started"] is not True):
+            raise StateError("unsupported or malformed state schema")
+    for identity, tombstone in state["ack_tombstones"].items():
+        if not _valid_identity(identity) or not isinstance(tombstone, dict) or \
+                set(tombstone) != {"source_id", "ack_after_scan_seq"} or \
+                not _safe_id(tombstone.get("source_id")) or \
+                not isinstance(tombstone.get("ack_after_scan_seq"), int) or \
+                isinstance(tombstone.get("ack_after_scan_seq"), bool) or \
+                not 0 <= tombstone["ack_after_scan_seq"] <= state["next_scan_seq"]:
             raise StateError("unsupported or malformed state schema")
     return state
 
@@ -301,13 +385,31 @@ def default_state_path():
     return Path(home) / "state" / "wechat-digest.json"
 
 
-def _migrate_legacy_state(state):
-    if not isinstance(state, dict) or state.get("version") != LEGACY_STATE_VERSION or "total_budget" in state:
+def _migrate_state(state):
+    if not isinstance(state, dict):
         raise StateError("unsupported or malformed state schema")
-    migrated = dict(state)
+    version = state.get("version")
+    if version == LEGACY_STATE_VERSION:
+        expected = {"version", "sources", "pending", "body_budget", "last_successful_scan",
+                    "api_calls", "warnings", "scan_health"}
+        if set(state) != expected:
+            raise StateError("unsupported or malformed state schema")
+        migrated = dict(state)
+        migrated["total_budget"] = {"day": _beijing_day(), "count": TOTAL_DAILY_LIMIT}
+        next_sequence = 0
+    elif version == PREVIOUS_STATE_VERSION:
+        expected = {"version", "sources", "pending", "body_budget", "total_budget",
+                    "last_successful_scan", "api_calls", "warnings", "scan_generation", "scan_health"}
+        if set(state) != expected:
+            raise StateError("unsupported or malformed state schema")
+        migrated = dict(state)
+        next_sequence = migrated.pop("scan_generation")
+    else:
+        raise StateError("unsupported or malformed state schema")
     migrated["version"] = STATE_VERSION
-    migrated["total_budget"] = {"day": _beijing_day(), "count": TOTAL_DAILY_LIMIT}
-    migrated["scan_generation"] = 0
+    migrated["next_scan_seq"] = next_sequence
+    migrated["last_applied_scan_generation"] = 0
+    migrated["ack_tombstones"] = {}
     return _validate_state(migrated)
 
 
@@ -317,10 +419,10 @@ def _read_state(path=None):
         return new_state(), False
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
+    except (OSError, json.JSONDecodeError, RecursionError) as error:
         raise StateError("state cannot be read safely") from error
-    if isinstance(state, dict) and state.get("version") == LEGACY_STATE_VERSION:
-        return _migrate_legacy_state(state), True
+    if isinstance(state, dict) and state.get("version") in (LEGACY_STATE_VERSION, PREVIOUS_STATE_VERSION):
+        return _migrate_state(state), True
     return _validate_state(state), False
 
 
@@ -398,6 +500,12 @@ def save_state(path, state):
                     raise
         finally:
             os.close(directory)
+    except RecursionError as error:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise StateError("state cannot be serialized safely") from error
     except Exception:
         try:
             os.unlink(temporary)
@@ -416,29 +524,52 @@ def configure_sources(state, source_ids):
 
 
 def _page_items(data):
-    if isinstance(data, dict):
-        items = data.get("dataList", [])
-        return items if isinstance(items, list) else [], data
-    return [], {}
+    if not isinstance(data, dict):
+        return [], None, "feed_page_not_object"
+    if "dataList" not in data or not isinstance(data["dataList"], list):
+        return [], None, "feed_data_list_invalid"
+    counters = []
+    for name in ("total", "totalCount", "count"):
+        if name not in data:
+            continue
+        value = data[name]
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            return data["dataList"], None, "feed_counter_invalid"
+        counters.append(value)
+    if len(set(counters)) > 1:
+        return data["dataList"], None, "feed_counters_conflict"
+    return data["dataList"], counters[0] if counters else None, None
 
 
-def _feed_pages(client, page_size=100, before_attempt=None):
+def _feed_pages(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
     all_items, warnings, page, expected = [], [], 1, None
+    counter_presence = None
+    previous_full_page = None
     while page <= MAX_FEED_PAGES:
         data = client.subscription_page(page, page_size, before_attempt=before_attempt)
-        items, meta = _page_items(data)
-        if expected is None:
-            for counter in ("total", "totalCount", "count"):
-                if isinstance(meta.get(counter), int) and meta[counter] >= 0:
-                    expected = meta[counter]
-                    break
+        items, counter, schema_error = _page_items(data)
         all_items.extend(items)
-        if expected is not None and len(all_items) >= expected:
-            return all_items[:expected], True, warnings, page
+        if schema_error:
+            return all_items, False, warnings + [schema_error], page
+        has_counter = counter is not None
+        if counter_presence is None:
+            counter_presence = has_counter
+            expected = counter
+        elif counter_presence != has_counter or has_counter and counter != expected:
+            return all_items, False, warnings + ["feed_counter_changed"], page
+        if expected is not None and len(all_items) > expected:
+            return all_items, False, warnings + ["feed_total_less_than_observed"], page
+        if previous_full_page is not None and len(items) == page_size and items == previous_full_page:
+            return all_items, False, warnings + ["feed_repeated_full_page"], page
+        previous_full_page = list(items) if len(items) == page_size else None
+        if expected is not None and len(all_items) == expected:
+            return all_items, True, warnings, page
         if not items:
-            return all_items, expected is None or len(all_items) >= expected, warnings + (["feed ended before advertised total"] if expected is not None else []), page
+            complete = expected is None or len(all_items) == expected
+            return all_items, complete, warnings + ([] if complete else ["feed_ended_before_total"]), page
         if len(items) < page_size:
-            return all_items, expected is None or len(all_items) >= expected, warnings + (["feed shorter than advertised total"] if expected is not None and len(all_items) < expected else []), page
+            complete = expected is None or len(all_items) == expected
+            return all_items, complete, warnings + ([] if complete else ["feed_shorter_than_total"]), page
         page += 1
     return all_items, False, warnings + ["feed page cap reached"], MAX_FEED_PAGES
 
@@ -451,7 +582,7 @@ def _merge_calls(state, client):
     client._wechat_calls_seen = dict(getattr(client, "calls", {}))
 
 
-def list_sources(client, page_size=100, before_attempt=None):
+def list_sources(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
     records, complete, warnings, _ = _feed_pages(client, page_size, before_attempt=before_attempt)
     sources = {}
     malformed = 0
@@ -481,12 +612,15 @@ def _remember(source, identity):
         recent.pop(next(iter(recent)))
 
 
-def _scan_observation(client, page_size=100, before_attempt=None):
+def _scan_observation(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
     records, complete, warnings, pages = _feed_pages(client, page_size, before_attempt=before_attempt)
     return {"records": records, "complete": complete, "warnings": warnings, "pages": pages}
 
 
-def _apply_scan_observation(state, observation):
+def _apply_scan_observation(state, observation, generation=None):
+    if generation is not None and generation <= state["last_applied_scan_generation"]:
+        return {"complete": False, "enqueued": 0, "skipped": {"invalid_or_non_wechat": 0},
+                "warnings": ["superseded_scan"], "superseded": True}
     records = observation["records"]
     complete = observation["complete"]
     warnings = list(observation["warnings"])
@@ -499,39 +633,60 @@ def _apply_scan_observation(state, observation):
             malformed += 1
         elif article["source_id"] in selected:
             parsed.append(article)
-    enqueued = 0
-    by_source = {source: [] for source in selected}
+    by_source = {source: {} for source in selected}
     for article in parsed:
-        by_source[article["source_id"]].append(article)
-    for source_id, source in selected.items():
-        articles = by_source[source_id]
-        source["health"] = {"records": len(articles), "complete": complete,
-                            "skipped": {"invalid_or_non_wechat": malformed}}
-        if not source.get("initialized"):
-            if complete:
-                for article in articles:
-                    _remember(source, article["identity"])
-                source["initialized"] = True
-            continue
-        for article in articles:
-            if article["identity"] not in source.setdefault("recent", {}) and article["identity"] not in state["pending"]:
-                state["pending"][article["identity"]] = article
-                enqueued += 1
-            _remember(source, article["identity"])
+        by_source[article["source_id"]].setdefault(article["identity"], article)
     if malformed:
         warnings.append("skipped_malformed_records:%d" % malformed)
-    if complete:
-        state["last_successful_scan"] = datetime.now(timezone.utc).isoformat()
-    else:
-        warnings.append("partial_feed")
-    state["warnings"] = warnings
-    state["scan_health"] = {"pages": pages, "records": len(records), "complete": complete,
+        complete = False
+    for source_id, articles in by_source.items():
+        if len(articles) > MAX_RECENT:
+            warnings.append("source_snapshot_limit_exceeded:%s:%d" % (source_id, len(articles)))
+            complete = False
+    if not complete:
+        if "partial_feed" not in warnings:
+            warnings.append("partial_feed")
+        for source_id, source in selected.items():
+            source["health"] = {"records": len(by_source[source_id]), "complete": False,
+                                "skipped": {"invalid_or_non_wechat": malformed}}
+        state["warnings"] = warnings
+        state["scan_health"] = {"pages": pages, "records": len(records), "complete": False,
+                                "skipped": {"invalid_or_non_wechat": malformed}}
+        return {"complete": False, "enqueued": 0,
+                "skipped": {"invalid_or_non_wechat": malformed}, "warnings": warnings}
+
+    enqueued = 0
+    for source_id, source in selected.items():
+        articles = by_source[source_id]
+        source["health"] = {"records": len(articles), "complete": True,
                             "skipped": {"invalid_or_non_wechat": malformed}}
-    return {"complete": complete, "enqueued": enqueued,
+        if not source.get("initialized"):
+            source["recent"] = {identity: True for identity in articles}
+            source["initialized"] = True
+            continue
+        seen_before = frozenset(source.get("recent", {}))
+        pending_before = frozenset(state["pending"])
+        tombstones = state["ack_tombstones"]
+        for identity, article in articles.items():
+            if identity not in seen_before and identity not in pending_before and identity not in tombstones:
+                state["pending"][identity] = article
+                enqueued += 1
+        source["recent"] = {identity: True for identity in articles}
+    if generation is not None:
+        for identity, tombstone in list(state["ack_tombstones"].items()):
+            source_id = tombstone["source_id"]
+            if source_id in by_source and generation > tombstone["ack_after_scan_seq"] and identity not in by_source[source_id]:
+                del state["ack_tombstones"][identity]
+        state["last_applied_scan_generation"] = generation
+    state["last_successful_scan"] = datetime.now(timezone.utc).isoformat()
+    state["warnings"] = warnings
+    state["scan_health"] = {"pages": pages, "records": len(records), "complete": True,
+                            "skipped": {"invalid_or_non_wechat": malformed}}
+    return {"complete": True, "enqueued": enqueued,
             "skipped": {"invalid_or_non_wechat": malformed}, "warnings": warnings}
 
 
-def scan(state, client, page_size=100, before_attempt=None):
+def scan(state, client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
     observation = _scan_observation(client, page_size, before_attempt=before_attempt)
     result = _apply_scan_observation(state, observation)
     if before_attempt is None:
@@ -539,7 +694,31 @@ def scan(state, client, page_size=100, before_attempt=None):
     return result
 
 
-def pending(state):
+def _utc_now(now=None):
+    now = now or datetime.now(timezone.utc)
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise StateError("timezone-aware time is required")
+    return now.astimezone(timezone.utc)
+
+
+def _claim_active(entry, now=None):
+    expiry = _parse_claim_expiry(entry.get("claim_expires_at"))
+    return bool(entry.get("claim_id") and expiry and expiry > _utc_now(now))
+
+
+def _require_claim(entry, claim_id, now=None, require_active=False):
+    stored = entry.get("claim_id")
+    if stored is None:
+        if claim_id is None and not require_active:
+            return
+        raise ClaimUnavailable("claim is unavailable")
+    if not isinstance(claim_id, str) or not CLAIM_TOKEN.fullmatch(claim_id) or not secrets.compare_digest(stored, claim_id):
+        raise ClaimUnavailable("claim is unavailable")
+    if require_active and not _claim_active(entry, now):
+        raise ClaimUnavailable("claim is unavailable")
+
+
+def pending(state, now=None):
     def order_key(item):
         normalized = _publication_time(item.get("published_at"))
         if not normalized:
@@ -548,8 +727,16 @@ def pending(state):
         return (1, instant, item["identity"])
 
     entries = sorted(state["pending"].values(), key=order_key)
-    return {"retryable": [entry for entry in entries if entry.get("attempts", 0) < 3],
-            "exhausted": [entry for entry in entries if entry.get("attempts", 0) >= 3]}
+    current = _utc_now(now)
+    result = {"retryable": [], "claimed": [], "exhausted": []}
+    for entry in entries:
+        if entry.get("attempts", 0) >= 3:
+            result["exhausted"].append(entry)
+        elif _claim_active(entry, current):
+            result["claimed"].append(entry)
+        else:
+            result["retryable"].append(entry)
+    return result
 
 
 def _identity_for(state, article_id):
@@ -561,23 +748,58 @@ def _identity_for(state, article_id):
     return article_id
 
 
-def ack(state, identity):
+def claim(state, identity, now=None):
+    identity = _identity_for(state, identity)
+    entry = state["pending"].get(identity)
+    if not entry:
+        raise KeyError("unknown pending article")
+    if entry.get("attempts", 0) >= 3:
+        return {"claim_status": "exhausted"}
+    if _claim_active(entry, now):
+        return {"claim_status": "already_claimed"}
+    issued_at = _utc_now(now)
+    claim_id = secrets.token_hex(16)
+    expiry = (issued_at + timedelta(seconds=CLAIM_LEASE_SECONDS)).replace(microsecond=0)
+    entry["claim_id"] = claim_id
+    entry["claim_expires_at"] = expiry.isoformat().replace("+00:00", "Z")
+    entry.pop("claim_fetch_started", None)
+    return {"claim_id": claim_id, "claim_expires_at": entry["claim_expires_at"]}
+
+
+def ack(state, identity, claim_id=None):
     identity = _identity_for(state, identity)
     if identity not in state["pending"]:
         raise KeyError("unknown pending article")
+    entry = state["pending"][identity]
+    _require_claim(entry, claim_id)
+    source_id = entry.get("source_id")
+    if _safe_id(source_id) and identity not in state.get("ack_tombstones", {}) and \
+            len(state.get("ack_tombstones", {})) >= MAX_TOMBSTONES:
+        raise StateError("ack tombstone capacity exhausted")
+    source = state.get("sources", {}).get(source_id)
+    if source is not None:
+        _remember(source, identity)
+    if _safe_id(source_id):
+        state["ack_tombstones"][identity] = {
+            "source_id": source_id, "ack_after_scan_seq": state["next_scan_seq"],
+        }
     del state["pending"][identity]
     return {"acknowledged": identity}
 
 
-def fail(state, identity, reason):
+def fail(state, identity, reason, claim_id=None):
     identity = _identity_for(state, identity)
     if identity not in state["pending"]:
         raise KeyError("unknown pending article")
     if not isinstance(reason, str) or not SAFE_REASON.fullmatch(reason):
         raise ValueError("reason must be a bounded safe code")
     entry = state["pending"][identity]
+    _require_claim(entry, claim_id)
     entry["attempts"] = min(3, int(entry.get("attempts", 0)) + 1)
     entry["last_failure_reason"] = reason
+    entry.pop("claim_id", None)
+    entry.pop("claim_expires_at", None)
+    entry.pop("claim_fetch_started", None)
     return {"identity": identity, "attempts": entry["attempts"], "exhausted": entry["attempts"] >= 3}
 
 
@@ -585,6 +807,8 @@ def _beijing_day(now=None):
     if ZoneInfo is None:
         raise StateError("Beijing timezone support is unavailable")
     now = now or datetime.now(timezone.utc)
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise StateError("timezone-aware time is required")
     return now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
@@ -592,25 +816,37 @@ def _reserve_api_attempt(state, now=None, body=False):
     day = _beijing_day(now)
     total_budget = state["total_budget"]
     body_budget = state["body_budget"]
+    for budget in (total_budget, body_budget):
+        if budget.get("day") and budget["day"] > day:
+            raise StateError("budget clock rollback detected")
     total_count = 0 if total_budget.get("day") != day else int(total_budget.get("count", 0))
     body_count = 0 if body_budget.get("day") != day else int(body_budget.get("count", 0))
     if total_count >= TOTAL_DAILY_LIMIT:
         raise TotalBudgetExhausted("daily total budget exhausted")
     if body and body_count >= BODY_DAILY_LIMIT:
         raise BodyBudgetExhausted("daily body budget exhausted")
-    total_budget.update({"day": day, "count": total_count + 1})
+    new_total_count = total_count + 1
+    new_body_count = body_count + (1 if body else 0)
+    if body_budget.get("day") == day and new_body_count > new_total_count:
+        raise StateError("inconsistent daily budgets")
+    total_budget.update({"day": day, "count": new_total_count})
     if body:
-        body_budget.update({"day": day, "count": body_count + 1})
+        body_budget.update({"day": day, "count": new_body_count})
 
 
 def _reserve_body_attempt(state, now=None):
     _reserve_api_attempt(state, now=now, body=True)
 
 
-def _durable_reservation(path, endpoint, body=False, now=None):
+def _durable_reservation(path, endpoint, body=False, now=None, identity=None, resource_id=None, claim_id=None):
     def reserve_attempt():
         with state_lock(path):
             state = _load_locked_state(path)
+            if identity is not None:
+                entry = state["pending"].get(identity)
+                if not entry or entry.get("resource_id") != resource_id or entry.get("claim_fetch_started") is not True:
+                    raise ClaimUnavailable("claim is unavailable")
+                _require_claim(entry, claim_id, now=now, require_active=True)
             _reserve_api_attempt(state, now=now, body=body)
             state["api_calls"][endpoint] = int(state["api_calls"].get(endpoint, 0)) + 1
             save_state(path, state)
@@ -633,6 +869,8 @@ def markdown(state, client, identity, now=None, reserve_attempt=None):
         reserve_attempt = lambda: _reserve_body_attempt(state, now)
     try:
         body = client.markdown(entry["resource_id"], before_attempt=reserve_attempt)
+    except ClaimUnavailable:
+        return {"claim_status": "claim_lost"}
     except TotalBudgetExhausted:
         if not durable_reservation:
             _merge_calls(state, client)
@@ -664,7 +902,8 @@ def status(state):
     items = pending(state)
     return {"configured_sources": len(state["sources"]),
             "initialized_sources": sum(bool(source.get("initialized")) for source in state["sources"].values()),
-            "pending": len(state["pending"]), "retryable": len(items["retryable"]), "exhausted": len(items["exhausted"]),
+            "pending": len(state["pending"]), "retryable": len(items["retryable"]),
+            "claimed": len(items["claimed"]), "exhausted": len(items["exhausted"]),
             "last_successful_scan": state.get("last_successful_scan"), "api_calls": state.get("api_calls", {}),
             "warnings": state.get("warnings", []), "scan_health": state.get("scan_health", {}),
             "body_budget": {"day": state["body_budget"]["day"], "used": state["body_budget"]["count"],
@@ -689,40 +928,74 @@ def main(argv=None):
     configure = sub.add_parser("configure")
     configure.add_argument("--source-id", action="append", required=True)
     sub.add_parser("scan")
+    claim_parser = sub.add_parser("claim")
+    claim_parser.add_argument("article_id")
     pending_parser = sub.add_parser("pending")
     pending_parser.set_defaults(command="pending")
     markdown_parser = sub.add_parser("markdown")
     markdown_parser.add_argument("article_id")
+    markdown_parser.add_argument("--claim-id", required=True)
     ack_parser = sub.add_parser("ack")
     ack_parser.add_argument("article_id")
+    ack_parser.add_argument("--claim-id")
     fail_parser = sub.add_parser("fail")
     fail_parser.add_argument("article_id")
     fail_parser.add_argument("--reason", required=True)
+    fail_parser.add_argument("--claim-id")
     sub.add_parser("status")
     args = parser.parse_args(argv)
     path = Path(args.state_file) if args.state_file else default_state_path()
     try:
+        result = None
         state = None
         scan_generation = None
+        markdown_identity = None
+        markdown_resource_id = None
         with state_lock(path):
             state = _load_locked_state(path)
             if args.command == "configure":
                 result = configure_sources(state, args.source_id)
                 save_state(path, state)
+            elif args.command == "claim":
+                result = claim(state, args.article_id)
+                if "claim_id" in result:
+                    save_state(path, state)
             elif args.command == "pending":
                 result = pending(state)
             elif args.command == "ack":
-                result = ack(state, args.article_id); save_state(path, state)
+                result = ack(state, args.article_id, claim_id=args.claim_id); save_state(path, state)
             elif args.command == "fail":
-                result = fail(state, args.article_id, args.reason); save_state(path, state)
+                result = fail(state, args.article_id, args.reason, claim_id=args.claim_id); save_state(path, state)
             elif args.command == "status":
                 result = status(state)
             else:
                 if args.command == "scan":
-                    state["scan_generation"] += 1
-                    scan_generation = state["scan_generation"]
+                    state["next_scan_seq"] += 1
+                    scan_generation = state["next_scan_seq"]
                     save_state(path, state)
-                result = None
+                elif args.command == "markdown":
+                    markdown_identity = _identity_for(state, args.article_id)
+                    entry = state["pending"].get(markdown_identity)
+                    try:
+                        if not entry:
+                            raise ClaimUnavailable("claim is unavailable")
+                        _require_claim(entry, args.claim_id, require_active=True)
+                        if entry.get("claim_fetch_started") is True:
+                            result = {"claim_status": "already_fetching"}
+                            entry = None
+                        else:
+                            entry["claim_fetch_started"] = True
+                            markdown_resource_id = entry.get("resource_id")
+                            save_state(path, state)
+                    except ClaimUnavailable:
+                        result = {"claim_status": "claim_lost"}
+                        entry = None
+                    if entry is None:
+                        pass
+                    else:
+                        result = None
+                else:
+                    result = None
         if result is None:
             client = _client_from_env()
             if args.command == "doctor":
@@ -735,23 +1008,28 @@ def main(argv=None):
                 )
                 with state_lock(path):
                     fresh_state = _load_locked_state(path)
-                    if fresh_state["scan_generation"] != scan_generation:
-                        result = {"complete": False, "enqueued": 0,
-                                  "skipped": {"invalid_or_non_wechat": 0},
-                                  "warnings": ["superseded_scan"], "superseded": True}
-                    else:
-                        result = _apply_scan_observation(fresh_state, observation)
-                        save_state(path, fresh_state)
+                    result = _apply_scan_observation(fresh_state, observation, generation=scan_generation)
+                    save_state(path, fresh_state)
             else:
                 result = markdown(
                     state, client, args.article_id,
-                    reserve_attempt=_durable_reservation(path, "markdown", body=True),
+                    reserve_attempt=_durable_reservation(
+                        path, "markdown", body=True, identity=markdown_identity,
+                        resource_id=markdown_resource_id, claim_id=args.claim_id,
+                    ),
                 )
     except OSError:
         result = {"error": "state operation failed safely"}
     except (APIError, StateError, ValueError, KeyError) as error:
         result = {"error": str(error)}
-    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    except RecursionError:
+        result = {"error": "operation failed safely"}
+    try:
+        output = json.dumps(result, ensure_ascii=False, sort_keys=True)
+    except (RecursionError, TypeError, ValueError):
+        result = {"error": "output serialization failed safely"}
+        output = '{"error": "output serialization failed safely"}'
+    print(output)
     return 0 if "error" not in result else 2
 
 
