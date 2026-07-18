@@ -2,6 +2,7 @@
 """Small, durable local state helper for the BestBlogs WeChat digest skill."""
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import re
 import tempfile
 import time
 import math
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -40,6 +42,10 @@ class APIError(RuntimeError):
 
 
 class StateError(RuntimeError):
+    pass
+
+
+class BodyBudgetExhausted(StateError):
     pass
 
 
@@ -78,18 +84,22 @@ class BestBlogsClient:
         self.calls = {}
         self._opener = build_opener(_NoRedirect())
 
-    def get(self, path, query=None):
+    def get(self, path, query=None, before_attempt=None):
         if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
             raise ValueError("API path must be an origin-relative path")
+        if before_attempt is not None and not callable(before_attempt):
+            raise ValueError("before_attempt must be callable")
         url = self.origin + path
         if query:
             url += "?" + urlencode(query)
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.netloc != urlparse(self.origin).netloc:
             raise ValueError("request origin is not allowed")
-        self.calls[path] = self.calls.get(path, 0) + 1
         request = Request(url, headers={"X-API-KEY": self.api_key, "Accept": "application/json"}, method="GET")
         for attempt in range(2):
+            if before_attempt is not None:
+                before_attempt()
+            self.calls[path] = self.calls.get(path, 0) + 1
             try:
                 with self._opener.open(request, timeout=self.timeout) as response:
                     if response.geturl() != url:
@@ -123,8 +133,8 @@ class BestBlogsClient:
     def subscription_page(self, page, page_size):
         return self.get("/me/feeds/subscriptions", {"page": page, "pageSize": page_size, "timeFilter": "week"})
 
-    def markdown(self, resource_id):
-        data = self.get("/resources/%s/markdown" % resource_id)
+    def markdown(self, resource_id, before_attempt=None):
+        data = self.get("/resources/%s/markdown" % resource_id, before_attempt=before_attempt)
         if isinstance(data, dict):
             data = data.get("markdown", data.get("content"))
         return data
@@ -142,7 +152,7 @@ def canonical_wechat_url(value):
             return None
     except ValueError:
         return None
-    if not parsed.path.startswith("/"):
+    if parsed.path != "/s" and not re.fullmatch(r"/s/.+", parsed.path):
         return None
     pairs = [(key, item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)
              if not key.lower().startswith("utm_") and key.lower() not in {"from", "scene", "src"}]
@@ -275,6 +285,47 @@ def load_state(path=None):
         return _validate_state(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError) as error:
         raise StateError("state cannot be read safely") from error
+
+
+@contextmanager
+def state_lock(path, timeout=5.0):
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or timeout < 0:
+        raise ValueError("lock timeout must be a bounded non-negative number")
+    path = Path(path)
+    lock_path = path.with_name(path.name + ".lock")
+    descriptor = None
+    acquired = False
+    try:
+        try:
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(lock_path, flags, 0o600)
+            os.fchmod(descriptor, 0o600)
+            deadline = time.monotonic() + float(timeout)
+            while True:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                    break
+                except BlockingIOError:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise StateError("state is busy; retry later")
+                    time.sleep(min(0.05, remaining))
+        except OSError as error:
+            raise StateError("state lock is unavailable") from error
+        yield
+    finally:
+        if descriptor is not None:
+            if acquired:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 
 def save_state(path, state):
@@ -417,7 +468,14 @@ def scan(state, client, page_size=100):
 
 
 def pending(state):
-    entries = sorted(state["pending"].values(), key=lambda item: (item.get("published_at") or "", item["identity"]))
+    def order_key(item):
+        normalized = _publication_time(item.get("published_at"))
+        if not normalized:
+            return (0, datetime.min.replace(tzinfo=timezone.utc), item["identity"])
+        instant = datetime.fromisoformat(normalized).astimezone(timezone.utc)
+        return (1, instant, item["identity"])
+
+    entries = sorted(state["pending"].values(), key=order_key)
     return {"retryable": [entry for entry in entries if entry.get("attempts", 0) < 3],
             "exhausted": [entry for entry in entries if entry.get("attempts", 0) >= 3]}
 
@@ -458,7 +516,17 @@ def _beijing_day(now=None):
     return now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
-def markdown(state, client, identity, now=None):
+def _reserve_body_attempt(state, now=None):
+    day = _beijing_day(now)
+    budget = state["body_budget"]
+    if budget.get("day") != day:
+        budget.update({"day": day, "count": 0})
+    if int(budget.get("count", 0)) >= BODY_DAILY_LIMIT:
+        raise BodyBudgetExhausted("daily body budget exhausted")
+    budget["count"] = int(budget.get("count", 0)) + 1
+
+
+def markdown(state, client, identity, now=None, reserve_attempt=None):
     identity = _identity_for(state, identity)
     entry = state["pending"].get(identity)
     if not entry:
@@ -466,17 +534,16 @@ def markdown(state, client, identity, now=None):
     if not entry.get("resource_id"):
         return {"fallback_reason": "missing_resource_id"}
     try:
-        day = _beijing_day(now)
+        _beijing_day(now)
     except StateError:
         return {"fallback_reason": "beijing_timezone_unavailable"}
-    budget = state["body_budget"]
-    if budget.get("day") != day:
-        budget.update({"day": day, "count": 0})
-    if int(budget.get("count", 0)) >= BODY_DAILY_LIMIT:
-        return {"fallback_reason": "daily_body_budget_exhausted"}
-    budget["count"] = int(budget.get("count", 0)) + 1
+    if reserve_attempt is None:
+        reserve_attempt = lambda: _reserve_body_attempt(state, now)
     try:
-        body = client.markdown(entry["resource_id"])
+        body = client.markdown(entry["resource_id"], before_attempt=reserve_attempt)
+    except BodyBudgetExhausted:
+        _merge_calls(state, client)
+        return {"fallback_reason": "daily_body_budget_exhausted"}
     except (APIError, OSError, ValueError):
         _merge_calls(state, client)
         return {"fallback_reason": "bestblogs_markdown_unavailable"}
@@ -533,30 +600,39 @@ def main(argv=None):
     args = parser.parse_args(argv)
     path = Path(args.state_file) if args.state_file else default_state_path()
     try:
-        state = load_state(path)
-        if args.command == "configure":
-            result = configure_sources(state, args.source_id)
-            save_state(path, state)
-        elif args.command == "pending":
-            result = pending(state)
-        elif args.command == "ack":
-            result = ack(state, args.article_id); save_state(path, state)
-        elif args.command == "fail":
-            result = fail(state, args.article_id, args.reason); save_state(path, state)
-        elif args.command == "status":
-            result = status(state)
-        else:
-            client = _client_from_env()
-            if args.command == "doctor":
-                result = doctor(client)
-                _merge_calls(state, client)
+        with state_lock(path):
+            state = load_state(path)
+            if args.command == "configure":
+                result = configure_sources(state, args.source_id)
                 save_state(path, state)
-            elif args.command == "sources":
-                result = list_sources(client)
-                _merge_calls(state, client)
-                save_state(path, state)
-            elif args.command == "scan": result = scan(state, client); save_state(path, state)
-            else: result = markdown(state, client, args.article_id); save_state(path, state)
+            elif args.command == "pending":
+                result = pending(state)
+            elif args.command == "ack":
+                result = ack(state, args.article_id); save_state(path, state)
+            elif args.command == "fail":
+                result = fail(state, args.article_id, args.reason); save_state(path, state)
+            elif args.command == "status":
+                result = status(state)
+            else:
+                client = _client_from_env()
+                if args.command == "doctor":
+                    result = doctor(client)
+                    _merge_calls(state, client)
+                    save_state(path, state)
+                elif args.command == "sources":
+                    result = list_sources(client)
+                    _merge_calls(state, client)
+                    save_state(path, state)
+                elif args.command == "scan": result = scan(state, client); save_state(path, state)
+                else:
+                    def reserve_attempt():
+                        _reserve_body_attempt(state)
+                        save_state(path, state)
+
+                    result = markdown(state, client, args.article_id, reserve_attempt=reserve_attempt)
+                    save_state(path, state)
+    except OSError:
+        result = {"error": "state operation failed safely"}
     except (APIError, StateError, ValueError, KeyError) as error:
         result = {"error": str(error)}
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))

@@ -3,7 +3,7 @@ import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from urllib.error import HTTPError
 
@@ -29,7 +29,9 @@ class FakeClient:
         self.calls["subscription"] = self.calls.get("subscription", 0) + 1
         return self.pages[page - 1] if page <= len(self.pages) else {"dataList": []}
 
-    def markdown(self, resource_id):
+    def markdown(self, resource_id, before_attempt=None):
+        if before_attempt is not None:
+            before_attempt()
         self.calls["markdown"] = self.calls.get("markdown", 0) + 1
         return self.markdown_body
 
@@ -127,6 +129,7 @@ class WechatDigestTests(unittest.TestCase):
         finally:
             wechat.time.sleep = original_sleep
         self.assertEqual(len(opener.requests), 2)
+        self.assertEqual(client.calls["/me"], 4)
 
     def test_normalizes_safe_wechat_identity_and_schema_drift(self):
         article = wechat.parse_article(record(resource_id=None, when="2024-03-09T12:00:00Z"))
@@ -148,6 +151,23 @@ class WechatDigestTests(unittest.TestCase):
         for unsafe in ("http://mp.weixin.qq.com/s/a", "https://user@mp.weixin.qq.com/s/a", "https://mp.weixin.qq.com:444/s/a", "https://foo.weixin.qq.com/s/a"):
             self.assertIsNone(wechat.canonical_wechat_url(unsafe))
         self.assertIsNone(wechat.parse_article({"source": [], "url": "https://mp.weixin.qq.com/s/a"}))
+
+    def test_canonical_wechat_url_accepts_only_article_paths(self):
+        self.assertEqual(
+            wechat.canonical_wechat_url("https://mp.weixin.qq.com/s?__biz=abc&scene=1"),
+            "https://mp.weixin.qq.com/s?__biz=abc",
+        )
+        self.assertEqual(
+            wechat.canonical_wechat_url("https://mp.weixin.qq.com/s/article-token"),
+            "https://mp.weixin.qq.com/s/article-token",
+        )
+        for non_article in (
+            "https://mp.weixin.qq.com/",
+            "https://mp.weixin.qq.com/mp/profile_ext?action=home",
+            "https://mp.weixin.qq.com/s/",
+            "https://mp.weixin.qq.com/something",
+        ):
+            self.assertIsNone(wechat.canonical_wechat_url(non_article), non_article)
 
     def test_paginate_terminates_and_reports_unique_sources(self):
         client = FakeClient([
@@ -213,6 +233,25 @@ class WechatDigestTests(unittest.TestCase):
         wechat.ack(loaded, "resource:new")
         self.assertFalse(loaded["pending"])
 
+    def test_pending_orders_oldest_by_instant_across_timezone_offsets(self):
+        state = wechat.new_state()
+        state["pending"] = {
+            "resource:older": {
+                "identity": "resource:older", "resource_id": "older", "source_id": "s1",
+                "source_name": "Source", "title": "Older", "url": "https://mp.weixin.qq.com/s/older",
+                "published_at": "2024-01-01T00:30:00+01:00", "attempts": 0,
+            },
+            "resource:newer": {
+                "identity": "resource:newer", "resource_id": "newer", "source_id": "s1",
+                "source_name": "Source", "title": "Newer", "url": "https://mp.weixin.qq.com/s/newer",
+                "published_at": "2023-12-31T23:45:00+00:00", "attempts": 0,
+            },
+        }
+        self.assertEqual(
+            [entry["identity"] for entry in wechat.pending(state)["retryable"]],
+            ["resource:older", "resource:newer"],
+        )
+
     def test_markdown_budget_beijing_reset_and_never_persists_body(self):
         state = wechat.new_state()
         state["pending"]["resource:r1"] = {"identity": "resource:r1", "resource_id": "r1", "published_at": "2024-01-01T00:00:00+00:00"}
@@ -231,7 +270,11 @@ class WechatDigestTests(unittest.TestCase):
         state = wechat.new_state()
         state["pending"]["resource:r1"] = {"identity": "resource:r1", "resource_id": "r1", "source_id": "s1", "url": "https://mp.weixin.qq.com/s/a", "attempts": 0}
         client = FakeClient()
-        client.markdown = lambda resource_id: (_ for _ in ()).throw(wechat.APIError("safe"))
+        def failed_markdown(resource_id, before_attempt=None):
+            before_attempt()
+            raise wechat.APIError("safe")
+
+        client.markdown = failed_markdown
         result = wechat.markdown(state, client, "r1")
         self.assertEqual(result["fallback_reason"], "bestblogs_markdown_unavailable")
         self.assertEqual(state["body_budget"]["count"], 1)
@@ -241,6 +284,144 @@ class WechatDigestTests(unittest.TestCase):
             self.assertEqual(wechat.markdown(state, FakeClient(), "r1")["fallback_reason"], "beijing_timezone_unavailable")
         finally:
             wechat.ZoneInfo = original
+
+    def test_cli_markdown_durably_reserves_each_429_attempt_before_network(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        entry = wechat.parse_article(record("r1"))
+        state["pending"][entry["identity"]] = entry
+        wechat.save_state(path, state)
+        body = json.dumps({
+            "success": True, "code": None, "message": None, "requestId": "request-1", "data": "# body",
+        }).encode()
+        rate_limited = HTTPError(
+            wechat.API_ORIGIN + "/resources/r1/markdown", 429, "slow", {"Retry-After": "0"}, None,
+        )
+
+        class PersistedBudgetOpener(FakeOpener):
+            def __init__(self, responses):
+                super().__init__(responses)
+                self.persisted_counts = []
+
+            def open(self, request, timeout):
+                self.persisted_counts.append(wechat.load_state(path)["body_budget"]["count"])
+                return super().open(request, timeout)
+
+        client = wechat.BestBlogsClient("valid-key")
+        opener = PersistedBudgetOpener([
+            rate_limited,
+            FakeResponse(body, wechat.API_ORIGIN + "/resources/r1/markdown"),
+        ])
+        client._opener = opener
+        original_client = wechat._client_from_env
+        original_sleep = wechat.time.sleep
+        wechat._client_from_env = lambda: client
+        wechat.time.sleep = lambda delay: None
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = wechat.main(["--state-file", str(path), "markdown", "r1"])
+        finally:
+            wechat._client_from_env = original_client
+            wechat.time.sleep = original_sleep
+        self.assertEqual(result, 0)
+        self.assertEqual(opener.persisted_counts, [1, 2])
+        self.assertEqual(wechat.load_state(path)["body_budget"]["count"], 2)
+        self.assertEqual(client.calls["/resources/r1/markdown"], 2)
+
+    def test_state_lock_excludes_a_second_writer_with_a_bounded_safe_error(self):
+        path = self.state_file()
+        self.assertTrue(hasattr(wechat, "state_lock"), "state_lock is required")
+        with wechat.state_lock(path, timeout=0.05):
+            with self.assertRaisesRegex(wechat.StateError, "state is busy"):
+                with wechat.state_lock(path, timeout=0.01):
+                    self.fail("a second writer acquired the state lock")
+
+    def test_cli_markdown_holds_state_lock_while_reserving_and_fetching(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        entry = wechat.parse_article(record("r1"))
+        state["pending"][entry["identity"]] = entry
+        wechat.save_state(path, state)
+
+        class LockCheckingClient(FakeClient):
+            def __init__(self):
+                super().__init__()
+                self.lock_was_held = False
+
+            def markdown(self, resource_id, before_attempt=None):
+                before_attempt()
+                try:
+                    with wechat.state_lock(path, timeout=0):
+                        pass
+                except wechat.StateError:
+                    self.lock_was_held = True
+                return self.markdown_body
+
+        client = LockCheckingClient()
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client
+        try:
+            with redirect_stdout(io.StringIO()):
+                result = wechat.main(["--state-file", str(path), "markdown", "r1"])
+        finally:
+            wechat._client_from_env = original_client
+        self.assertEqual(result, 0)
+        self.assertTrue(client.lock_was_held)
+
+    def test_cli_markdown_reservation_write_failure_prevents_outbound_fetch(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        entry = wechat.parse_article(record("r1"))
+        state["pending"][entry["identity"]] = entry
+        wechat.save_state(path, state)
+        client = FakeClient()
+        original_client = wechat._client_from_env
+        original_save = wechat.save_state
+
+        def fail_write(unused_path, unused_state):
+            raise OSError("cannot write /private/secret-owner/reservation.json")
+
+        wechat._client_from_env = lambda: client
+        wechat.save_state = fail_write
+        stream = io.StringIO()
+        try:
+            with redirect_stdout(stream):
+                result = wechat.main(["--state-file", str(path), "markdown", "r1"])
+        finally:
+            wechat._client_from_env = original_client
+            wechat.save_state = original_save
+        self.assertEqual(result, 2)
+        self.assertEqual(client.calls.get("markdown", 0), 0)
+        self.assertEqual(json.loads(stream.getvalue()), {"error": "state operation failed safely"})
+        self.assertNotIn("secret-owner", stream.getvalue())
+
+    def test_429_retry_never_exceeds_daily_markdown_attempt_limit(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        entry = wechat.parse_article(record("r1"))
+        state["pending"][entry["identity"]] = entry
+        state["body_budget"] = {"day": wechat._beijing_day(), "count": wechat.BODY_DAILY_LIMIT - 1}
+        wechat.save_state(path, state)
+        rate_limited = HTTPError(
+            wechat.API_ORIGIN + "/resources/r1/markdown", 429, "slow", {"Retry-After": "0"}, None,
+        )
+        client = wechat.BestBlogsClient("valid-key")
+        client._opener = FakeOpener([rate_limited])
+        original_client = wechat._client_from_env
+        original_sleep = wechat.time.sleep
+        wechat._client_from_env = lambda: client
+        wechat.time.sleep = lambda delay: None
+        stream = io.StringIO()
+        try:
+            with redirect_stdout(stream):
+                result = wechat.main(["--state-file", str(path), "markdown", "r1"])
+        finally:
+            wechat._client_from_env = original_client
+            wechat.time.sleep = original_sleep
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(stream.getvalue()), {"fallback_reason": "daily_body_budget_exhausted"})
+        self.assertEqual(client.calls["/resources/r1/markdown"], 1)
+        self.assertEqual(wechat.load_state(path)["body_budget"]["count"], wechat.BODY_DAILY_LIMIT)
 
     def test_source_cap_corrupt_state_and_secret_redaction(self):
         state = wechat.new_state()
@@ -310,6 +491,29 @@ class WechatDigestTests(unittest.TestCase):
             result = wechat.main(["--state-file", str(path), "status"])
         self.assertEqual(result, 2)
         self.assertIn("state cannot be read safely", stream.getvalue())
+
+    def test_cli_reports_state_write_oserror_as_redacted_json(self):
+        path = self.state_file()
+        original_save = wechat.save_state
+
+        def fail_write(unused_path, unused_state):
+            raise OSError("cannot write /private/secret-owner/state.json")
+
+        wechat.save_state = fail_write
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        try:
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                try:
+                    result = wechat.main(["--state-file", str(path), "configure", "--source-id", "s1"])
+                except OSError:
+                    result = None
+        finally:
+            wechat.save_state = original_save
+        self.assertEqual(result, 2)
+        self.assertEqual(json.loads(stdout.getvalue()), {"error": "state operation failed safely"})
+        self.assertNotIn("secret-owner", stdout.getvalue() + stderr.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
 
     def test_article_resource_id_aliases_work_for_pending_actions(self):
         state = wechat.new_state()
