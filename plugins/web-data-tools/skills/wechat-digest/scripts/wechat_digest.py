@@ -152,10 +152,17 @@ def canonical_wechat_url(value):
             return None
     except ValueError:
         return None
-    if parsed.path != "/s" and not re.fullmatch(r"/s/.+", parsed.path):
+    if parsed.params:
         return None
     pairs = [(key, item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)
              if not key.lower().startswith("utm_") and key.lower() not in {"from", "scene", "src"}]
+    if parsed.path == "/s":
+        for required in ("__biz", "mid", "idx", "sn"):
+            values = [item for key, item in pairs if key == required]
+            if len(values) != 1 or not values[0]:
+                return None
+    elif not re.fullmatch(r"/s/[A-Za-z0-9_-]+", parsed.path):
+        return None
     return urlunparse(("https", "mp.weixin.qq.com", parsed.path, "", urlencode(sorted(pairs)), ""))
 
 

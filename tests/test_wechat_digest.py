@@ -154,12 +154,14 @@ class WechatDigestTests(unittest.TestCase):
 
     def test_canonical_wechat_url_accepts_only_article_paths(self):
         self.assertEqual(
-            wechat.canonical_wechat_url("https://mp.weixin.qq.com/s?__biz=abc&scene=1"),
-            "https://mp.weixin.qq.com/s?__biz=abc",
+            wechat.canonical_wechat_url(
+                "https://mp.weixin.qq.com/s?sn=deadbeef&idx=1&scene=1&mid=123&__biz=MzA123"
+            ),
+            "https://mp.weixin.qq.com/s?__biz=MzA123&idx=1&mid=123&sn=deadbeef",
         )
         self.assertEqual(
-            wechat.canonical_wechat_url("https://mp.weixin.qq.com/s/article-token"),
-            "https://mp.weixin.qq.com/s/article-token",
+            wechat.canonical_wechat_url("https://mp.weixin.qq.com/s/Article_token-123"),
+            "https://mp.weixin.qq.com/s/Article_token-123",
         )
         for non_article in (
             "https://mp.weixin.qq.com/",
@@ -168,6 +170,25 @@ class WechatDigestTests(unittest.TestCase):
             "https://mp.weixin.qq.com/something",
         ):
             self.assertIsNone(wechat.canonical_wechat_url(non_article), non_article)
+
+    def test_canonical_wechat_url_rejects_ambiguous_and_encoded_article_paths(self):
+        for unsafe in (
+            "https://mp.weixin.qq.com/s",
+            "https://mp.weixin.qq.com/s?__biz=MzA123&mid=123&idx=1",
+            "https://mp.weixin.qq.com/s?__biz=MzA123&mid=123&idx=1&sn=",
+            "https://mp.weixin.qq.com/s/..",
+            "https://mp.weixin.qq.com/s/../",
+            "https://mp.weixin.qq.com/s//",
+            "https://mp.weixin.qq.com/s/a/b",
+            "https://mp.weixin.qq.com/s/a.b",
+            "https://mp.weixin.qq.com/s;ignored?__biz=MzA123&mid=123&idx=1&sn=deadbeef",
+            "https://mp.weixin.qq.com/s/token;ignored",
+            "https://mp.weixin.qq.com/s/%2e%2e",
+            "https://mp.weixin.qq.com/s/%252e%252e",
+            "https://mp.weixin.qq.com/s/%2F",
+            "https://mp.weixin.qq.com/s/a%2Fb",
+        ):
+            self.assertIsNone(wechat.canonical_wechat_url(unsafe), unsafe)
 
     def test_paginate_terminates_and_reports_unique_sources(self):
         client = FakeClient([
