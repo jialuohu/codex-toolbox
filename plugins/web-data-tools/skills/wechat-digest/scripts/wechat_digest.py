@@ -31,6 +31,7 @@ LEGACY_STATE_VERSION = 1
 PREVIOUS_STATE_VERSION = 2
 STATE_VERSION = 3
 MAX_BODY_BYTES = 1_000_000
+MAX_STATE_BYTES = 16 * 1024 * 1024
 BODY_DAILY_LIMIT = 35
 TOTAL_DAILY_LIMIT = 50
 MAX_RECENT = 500
@@ -43,6 +44,7 @@ SAFE_REASON = re.compile(r"^[A-Z0-9][A-Z0-9_:-]{0,63}$")
 API_KEY = re.compile(r"^bb_[0-9A-Fa-f]{32}$")
 CLAIM_TOKEN = re.compile(r"^[0-9a-f]{32}$")
 CANONICAL_DAY = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+NON_TARGET_RESOURCE_TYPES = frozenset(("blog", "newsletter", "podcast", "tweet", "video"))
 PENDING_FIELDS = frozenset((
     "identity", "resource_id", "source_id", "source_name", "title", "url",
     "published_at", "attempts", "last_failure_reason", "claim_id", "claim_expires_at",
@@ -390,11 +392,14 @@ def _migrate_state(state):
         raise StateError("unsupported or malformed state schema")
     version = state.get("version")
     if version == LEGACY_STATE_VERSION:
-        expected = {"version", "sources", "pending", "body_budget", "last_successful_scan",
-                    "api_calls", "warnings", "scan_health"}
-        if set(state) != expected:
+        earliest = {"version", "sources", "pending", "body_budget", "last_successful_scan",
+                    "api_calls", "warnings"}
+        with_health = earliest | {"scan_health"}
+        if set(state) not in (earliest, with_health):
             raise StateError("unsupported or malformed state schema")
         migrated = dict(state)
+        if set(state) == earliest:
+            migrated["scan_health"] = new_state()["scan_health"]
         migrated["total_budget"] = {"day": _beijing_day(), "count": TOTAL_DAILY_LIMIT}
         next_sequence = 0
     elif version == PREVIOUS_STATE_VERSION:
@@ -418,8 +423,15 @@ def _read_state(path=None):
     if not path.exists():
         return new_state(), False
     try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, RecursionError) as error:
+        with path.open("rb") as handle:
+            encoded = handle.read(MAX_STATE_BYTES + 1)
+    except OSError as error:
+        raise StateError("state cannot be read safely") from error
+    if len(encoded) > MAX_STATE_BYTES:
+        raise StateError("state exceeds size limit")
+    try:
+        state = json.loads(encoded.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
         raise StateError("state cannot be read safely") from error
     if isinstance(state, dict) and state.get("version") in (LEGACY_STATE_VERSION, PREVIOUS_STATE_VERSION):
         return _migrate_state(state), True
@@ -488,6 +500,8 @@ def save_state(path, state):
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(state, handle, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             handle.flush()
+            if os.fstat(handle.fileno()).st_size > MAX_STATE_BYTES:
+                raise StateError("state exceeds size limit")
             os.fsync(handle.fileno())
         os.replace(temporary, path)
         os.chmod(path, 0o600)
@@ -541,10 +555,32 @@ def _page_items(data):
     return data["dataList"], counters[0] if counters else None, None
 
 
+def _json_fingerprint(value):
+    try:
+        encoded = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+    except (RecursionError, TypeError, ValueError):
+        return None
+    return hashlib.sha256(encoded).digest()
+
+
+def _feed_identity(raw):
+    if not isinstance(raw, dict):
+        return None
+    resource_id = raw.get("id") or raw.get("resourceId")
+    if resource_id is not None:
+        return "resource:" + resource_id if _safe_id(resource_id) else None
+    url = canonical_wechat_url(raw.get("url") or raw.get("link") or raw.get("originalUrl"))
+    return "url:" + hashlib.sha256(url.encode("utf-8")).hexdigest() if url else None
+
+
 def _feed_pages(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
     all_items, warnings, page, expected = [], [], 1, None
     counter_presence = None
-    previous_full_page = None
+    full_pages = set()
+    prior_records = set()
+    prior_identities = set()
     while page <= MAX_FEED_PAGES:
         data = client.subscription_page(page, page_size, before_attempt=before_attempt)
         items, counter, schema_error = _page_items(data)
@@ -559,9 +595,23 @@ def _feed_pages(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
             return all_items, False, warnings + ["feed_counter_changed"], page
         if expected is not None and len(all_items) > expected:
             return all_items, False, warnings + ["feed_total_less_than_observed"], page
-        if previous_full_page is not None and len(items) == page_size and items == previous_full_page:
+        page_fingerprint = _json_fingerprint(items)
+        record_fingerprints = [_json_fingerprint(item) for item in items]
+        if page_fingerprint is None or any(fingerprint is None for fingerprint in record_fingerprints):
+            return [], False, warnings + ["feed_json_too_deep"], page
+        if len(items) == page_size and page_fingerprint in full_pages:
             return all_items, False, warnings + ["feed_repeated_full_page"], page
-        previous_full_page = list(items) if len(items) == page_size else None
+        if len(set(record_fingerprints)) != len(record_fingerprints) or \
+                any(fingerprint in prior_records for fingerprint in record_fingerprints):
+            return all_items, False, warnings + ["feed_duplicate_record"], page
+        page_identities = [identity for identity in map(_feed_identity, items) if identity is not None]
+        if len(set(page_identities)) != len(page_identities) or \
+                any(identity in prior_identities for identity in page_identities):
+            return all_items, False, warnings + ["feed_duplicate_identity"], page
+        if len(items) == page_size:
+            full_pages.add(page_fingerprint)
+        prior_records.update(record_fingerprints)
+        prior_identities.update(page_identities)
         if expected is not None and len(all_items) == expected:
             return all_items, True, warnings, page
         if not items:
@@ -605,13 +655,6 @@ def list_sources(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
     return {"sources": list(sources.values()), "skipped": {"invalid_or_non_wechat": malformed}, "warnings": warnings}
 
 
-def _remember(source, identity):
-    recent = source.setdefault("recent", {})
-    recent[identity] = True
-    while len(recent) > MAX_RECENT:
-        recent.pop(next(iter(recent)))
-
-
 def _scan_observation(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
     records, complete, warnings, pages = _feed_pages(client, page_size, before_attempt=before_attempt)
     return {"records": records, "complete": complete, "warnings": warnings, "pages": pages}
@@ -626,16 +669,27 @@ def _apply_scan_observation(state, observation, generation=None):
     warnings = list(observation["warnings"])
     pages = observation["pages"]
     selected = state["sources"]
-    parsed, malformed = [], 0
+    parsed, malformed, non_target = [], 0, 0
     for raw in records:
         article = parse_article(raw)
         if article is None:
-            malformed += 1
+            source_object = raw.get("source") if isinstance(raw, dict) and isinstance(raw.get("source"), dict) else {}
+            raw_source_id = raw.get("sourceId") or source_object.get("id") if isinstance(raw, dict) else None
+            kind = raw.get("resourceType", raw.get("type")) if isinstance(raw, dict) else None
+            if _safe_id(raw_source_id) and raw_source_id not in selected:
+                continue
+            if _safe_id(raw_source_id) and isinstance(kind, str) and kind.lower() in NON_TARGET_RESOURCE_TYPES:
+                non_target += 1
+            else:
+                malformed += 1
         elif article["source_id"] in selected:
             parsed.append(article)
     by_source = {source: {} for source in selected}
     for article in parsed:
         by_source[article["source_id"]].setdefault(article["identity"], article)
+    skipped = malformed + non_target
+    if non_target:
+        warnings.append("skipped_non_target_records:%d" % non_target)
     if malformed:
         warnings.append("skipped_malformed_records:%d" % malformed)
         complete = False
@@ -648,18 +702,18 @@ def _apply_scan_observation(state, observation, generation=None):
             warnings.append("partial_feed")
         for source_id, source in selected.items():
             source["health"] = {"records": len(by_source[source_id]), "complete": False,
-                                "skipped": {"invalid_or_non_wechat": malformed}}
+                                "skipped": {"invalid_or_non_wechat": skipped}}
         state["warnings"] = warnings
         state["scan_health"] = {"pages": pages, "records": len(records), "complete": False,
-                                "skipped": {"invalid_or_non_wechat": malformed}}
+                                "skipped": {"invalid_or_non_wechat": skipped}}
         return {"complete": False, "enqueued": 0,
-                "skipped": {"invalid_or_non_wechat": malformed}, "warnings": warnings}
+                "skipped": {"invalid_or_non_wechat": skipped}, "warnings": warnings}
 
     enqueued = 0
     for source_id, source in selected.items():
         articles = by_source[source_id]
         source["health"] = {"records": len(articles), "complete": True,
-                            "skipped": {"invalid_or_non_wechat": malformed}}
+                            "skipped": {"invalid_or_non_wechat": skipped}}
         if not source.get("initialized"):
             source["recent"] = {identity: True for identity in articles}
             source["initialized"] = True
@@ -681,9 +735,9 @@ def _apply_scan_observation(state, observation, generation=None):
     state["last_successful_scan"] = datetime.now(timezone.utc).isoformat()
     state["warnings"] = warnings
     state["scan_health"] = {"pages": pages, "records": len(records), "complete": True,
-                            "skipped": {"invalid_or_non_wechat": malformed}}
+                            "skipped": {"invalid_or_non_wechat": skipped}}
     return {"complete": True, "enqueued": enqueued,
-            "skipped": {"invalid_or_non_wechat": malformed}, "warnings": warnings}
+            "skipped": {"invalid_or_non_wechat": skipped}, "warnings": warnings}
 
 
 def scan(state, client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
@@ -766,19 +820,28 @@ def claim(state, identity, now=None):
     return {"claim_id": claim_id, "claim_expires_at": entry["claim_expires_at"]}
 
 
+def renew(state, identity, claim_id, now=None):
+    identity = _identity_for(state, identity)
+    entry = state["pending"].get(identity)
+    if not entry:
+        raise KeyError("unknown pending article")
+    current = _utc_now(now)
+    _require_claim(entry, claim_id, now=current, require_active=True)
+    expiry = (current + timedelta(seconds=CLAIM_LEASE_SECONDS)).replace(microsecond=0)
+    entry["claim_expires_at"] = expiry.isoformat().replace("+00:00", "Z")
+    return {"claim_id": entry["claim_id"], "claim_expires_at": entry["claim_expires_at"]}
+
+
 def ack(state, identity, claim_id=None):
     identity = _identity_for(state, identity)
     if identity not in state["pending"]:
         raise KeyError("unknown pending article")
     entry = state["pending"][identity]
-    _require_claim(entry, claim_id)
+    _require_claim(entry, claim_id, require_active=True)
     source_id = entry.get("source_id")
     if _safe_id(source_id) and identity not in state.get("ack_tombstones", {}) and \
             len(state.get("ack_tombstones", {})) >= MAX_TOMBSTONES:
         raise StateError("ack tombstone capacity exhausted")
-    source = state.get("sources", {}).get(source_id)
-    if source is not None:
-        _remember(source, identity)
     if _safe_id(source_id):
         state["ack_tombstones"][identity] = {
             "source_id": source_id, "ack_after_scan_seq": state["next_scan_seq"],
@@ -794,7 +857,7 @@ def fail(state, identity, reason, claim_id=None):
     if not isinstance(reason, str) or not SAFE_REASON.fullmatch(reason):
         raise ValueError("reason must be a bounded safe code")
     entry = state["pending"][identity]
-    _require_claim(entry, claim_id)
+    _require_claim(entry, claim_id, require_active=True)
     entry["attempts"] = min(3, int(entry.get("attempts", 0)) + 1)
     entry["last_failure_reason"] = reason
     entry.pop("claim_id", None)
@@ -883,7 +946,7 @@ def markdown(state, client, identity, now=None, reserve_attempt=None):
         if not durable_reservation:
             _merge_calls(state, client)
         return {"fallback_reason": "bestblogs_markdown_unavailable"}
-    if not isinstance(body, str):
+    if not isinstance(body, str) or not body.strip():
         if not durable_reservation:
             _merge_calls(state, client)
         return {"fallback_reason": "bestblogs_markdown_unavailable"}
@@ -930,6 +993,9 @@ def main(argv=None):
     sub.add_parser("scan")
     claim_parser = sub.add_parser("claim")
     claim_parser.add_argument("article_id")
+    renew_parser = sub.add_parser("renew")
+    renew_parser.add_argument("article_id")
+    renew_parser.add_argument("--claim-id", required=True)
     pending_parser = sub.add_parser("pending")
     pending_parser.set_defaults(command="pending")
     markdown_parser = sub.add_parser("markdown")
@@ -937,11 +1003,11 @@ def main(argv=None):
     markdown_parser.add_argument("--claim-id", required=True)
     ack_parser = sub.add_parser("ack")
     ack_parser.add_argument("article_id")
-    ack_parser.add_argument("--claim-id")
+    ack_parser.add_argument("--claim-id", required=True)
     fail_parser = sub.add_parser("fail")
     fail_parser.add_argument("article_id")
     fail_parser.add_argument("--reason", required=True)
-    fail_parser.add_argument("--claim-id")
+    fail_parser.add_argument("--claim-id", required=True)
     sub.add_parser("status")
     args = parser.parse_args(argv)
     path = Path(args.state_file) if args.state_file else default_state_path()
@@ -960,6 +1026,9 @@ def main(argv=None):
                 result = claim(state, args.article_id)
                 if "claim_id" in result:
                     save_state(path, state)
+            elif args.command == "renew":
+                result = renew(state, args.article_id, args.claim_id)
+                save_state(path, state)
             elif args.command == "pending":
                 result = pending(state)
             elif args.command == "ack":

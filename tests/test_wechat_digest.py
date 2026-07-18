@@ -340,6 +340,115 @@ class WechatDigestTests(unittest.TestCase):
                 self.assertEqual(state["pending"], {})
                 self.assertEqual(state["sources"]["s1"]["recent"], {})
 
+    def test_nonadjacent_repeated_full_feed_page_is_incomplete(self):
+        page_a = [record("r1"), record("r2")]
+        page_b = [record("r3"), record("r4")]
+        pages = [
+            {"dataList": page_a, "total": 6},
+            {"dataList": page_b, "total": 6},
+            {"dataList": copy.deepcopy(page_a), "total": 6},
+        ]
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        result = wechat.scan(state, FakeClient(pages), page_size=2)
+        self.assertFalse(result["complete"])
+        self.assertIn("feed_repeated_full_page", result["warnings"])
+        self.assertFalse(state["sources"]["s1"]["initialized"])
+        self.assertEqual(state["sources"]["s1"]["recent"], {})
+
+    def test_cross_page_duplicate_raw_record_is_incomplete(self):
+        duplicate = record("r2")
+        pages = [
+            {"dataList": [record("r1"), duplicate], "total": 4},
+            {"dataList": [copy.deepcopy(duplicate), record("r3")], "total": 4},
+        ]
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        result = wechat.scan(state, FakeClient(pages), page_size=2)
+        self.assertFalse(result["complete"])
+        self.assertIn("feed_duplicate_record", result["warnings"])
+        self.assertFalse(state["sources"]["s1"]["initialized"])
+
+    def test_same_page_duplicate_raw_record_cannot_fill_advertised_total(self):
+        duplicate = record("same")
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        result = wechat.scan(state, FakeClient([{
+            "dataList": [duplicate, copy.deepcopy(duplicate)], "total": 2,
+        }]), page_size=2)
+        self.assertFalse(result["complete"])
+        self.assertIn("feed_duplicate_record", result["warnings"])
+        self.assertFalse(state["sources"]["s1"]["initialized"])
+
+    def test_same_page_duplicate_identity_with_changed_metadata_is_incomplete(self):
+        first = record("same")
+        second = record("same")
+        second["title"] = "changed metadata"
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        result = wechat.scan(state, FakeClient([{
+            "dataList": [first, second], "total": 2,
+        }]), page_size=2)
+        self.assertFalse(result["complete"])
+        self.assertIn("feed_duplicate_identity", result["warnings"])
+        self.assertFalse(state["sources"]["s1"]["initialized"])
+
+    def test_cross_page_duplicate_article_identity_is_incomplete(self):
+        first_r2 = record("r2")
+        second_r2 = record("r2")
+        second_r2["title"] = "same identity, changed metadata"
+        pages = [
+            {"dataList": [record("r1"), first_r2], "total": 4},
+            {"dataList": [second_r2, record("r3")], "total": 4},
+        ]
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        result = wechat.scan(state, FakeClient(pages), page_size=2)
+        self.assertFalse(result["complete"])
+        self.assertIn("feed_duplicate_identity", result["warnings"])
+        self.assertFalse(state["sources"]["s1"]["initialized"])
+
+    def test_cross_page_duplicate_safe_resource_id_is_global_even_for_non_targets(self):
+        first = {
+            "id": "shared", "sourceId": "s2", "resourceType": "video",
+            "title": "first", "url": "https://example.com/first",
+        }
+        second = copy.deepcopy(first)
+        second["title"] = "changed metadata"
+        pages = [
+            {"dataList": [record("r1"), first], "total": 4},
+            {"dataList": [record("r2"), second], "total": 4},
+        ]
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        result = wechat.scan(state, FakeClient(pages), page_size=2)
+        self.assertFalse(result["complete"])
+        self.assertIn("feed_duplicate_identity", result["warnings"])
+        self.assertFalse(state["sources"]["s1"]["initialized"])
+
+    def test_deep_feed_records_fail_closed_without_recursion_escape(self):
+        deep_a = "a"
+        deep_b = "b"
+        for _ in range(1100):
+            deep_a = [deep_a]
+            deep_b = [deep_b]
+        first = record("r1")
+        second = record("r1")
+        first["extra"] = deep_a
+        second["extra"] = deep_b
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        try:
+            result = wechat.scan(state, FakeClient([
+                {"dataList": [first], "total": 2},
+                {"dataList": [second], "total": 2},
+            ]), page_size=1)
+        except RecursionError as error:
+            self.fail("deep feed JSON escaped fail-safe handling: %s" % error)
+        self.assertFalse(result["complete"])
+        self.assertIn("feed_json_too_deep", result["warnings"])
+        self.assertFalse(state["sources"]["s1"]["initialized"])
+
     def test_malformed_article_makes_complete_transport_partial_without_state_advance(self):
         state = wechat.new_state()
         wechat.configure_sources(state, ["s1"])
@@ -351,6 +460,54 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(state["pending"], {})
         self.assertEqual(state["sources"]["s1"]["recent"], {"resource:old": True})
         self.assertIn("skipped_malformed_records:1", state["warnings"])
+
+    def test_known_unselected_non_wechat_record_does_not_poison_selected_scan(self):
+        ordinary_blog = {
+            "id": "blog1", "sourceId": "s2", "resourceType": "blog",
+            "title": "ordinary blog", "url": "https://example.com/post",
+        }
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        result = wechat.scan(state, FakeClient([{
+            "dataList": [record("selected"), ordinary_blog],
+        }]))
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["skipped"], {"invalid_or_non_wechat": 0})
+        self.assertTrue(state["sources"]["s1"]["initialized"])
+        self.assertEqual(state["sources"]["s1"]["recent"], {"resource:selected": True})
+
+    def test_selected_explicit_non_target_resource_types_are_diagnostic_not_partial(self):
+        for resource_type in ("video", "podcast", "tweet", "newsletter"):
+            with self.subTest(resource_type=resource_type):
+                non_target = {
+                    "id": "other", "sourceId": "s1", "resourceType": resource_type,
+                    "title": "non-target", "url": "https://example.com/non-target",
+                }
+                state = wechat.new_state()
+                wechat.configure_sources(state, ["s1"])
+                result = wechat.scan(state, FakeClient([{
+                    "dataList": [record("selected"), non_target],
+                }]))
+                self.assertTrue(result["complete"])
+                self.assertEqual(result["skipped"], {"invalid_or_non_wechat": 1})
+                self.assertTrue(state["sources"]["s1"]["initialized"])
+                self.assertEqual(state["sources"]["s1"]["recent"], {"resource:selected": True})
+
+    def test_selected_claimed_articles_with_invalid_identity_url_or_time_are_partial(self):
+        invalid_url = record("bad-url")
+        invalid_url["url"] = "https://example.com/not-wechat"
+        invalid_id = record("bad-id")
+        invalid_id["id"] = "unsafe id"
+        invalid_time = record("bad-time")
+        invalid_time["publishTime"] = "not-a-time"
+        for malformed in (invalid_url, invalid_id, invalid_time):
+            with self.subTest(malformed=malformed):
+                state = wechat.new_state()
+                wechat.configure_sources(state, ["s1"])
+                result = wechat.scan(state, FakeClient([{"dataList": [malformed]}]))
+                self.assertFalse(result["complete"])
+                self.assertIn("skipped_malformed_records:1", result["warnings"])
+                self.assertFalse(state["sources"]["s1"]["initialized"])
 
     def test_six_page_501_record_snapshot_fails_closed_without_cache_cascade(self):
         records = [record("r%d" % index) for index in range(501)]
@@ -385,24 +542,48 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(second["enqueued"], 0)
         self.assertEqual(len(state["sources"]["s1"]["recent"]), 500)
 
-    def test_ack_re_remembers_identity_before_removing_pending_entry(self):
+    def test_ack_uses_tombstone_without_mutating_recent_snapshot(self):
         state = wechat.new_state()
         wechat.configure_sources(state, ["s1"])
         state["sources"]["s1"]["initialized"] = True
-        entry = wechat.parse_article(record("acked"))
+        state["sources"]["s1"]["recent"] = {"resource:current": True}
+        entry = add_claim(
+            wechat.parse_article(record("acked")),
+            expires_at="2999-01-01T00:00:00Z",
+        )
         state["pending"][entry["identity"]] = entry
-        wechat.ack(state, "acked")
+        before = copy.deepcopy(state["sources"]["s1"]["recent"])
+        wechat.ack(state, "acked", claim_id=CLAIM_ID)
         self.assertNotIn(entry["identity"], state["pending"])
-        self.assertIn(entry["identity"], state["sources"]["s1"]["recent"])
+        self.assertEqual(state["sources"]["s1"]["recent"], before)
+        self.assertIn(entry["identity"], state["ack_tombstones"])
+
+    def test_ack_does_not_evict_any_identity_from_a_full_current_snapshot(self):
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        state["sources"]["s1"]["initialized"] = True
+        recent = {"resource:r%d" % index: True for index in range(wechat.MAX_RECENT)}
+        state["sources"]["s1"]["recent"] = copy.deepcopy(recent)
+        entry = add_claim(
+            wechat.parse_article(record("acked")),
+            expires_at="2999-01-01T00:00:00Z",
+        )
+        state["pending"][entry["identity"]] = entry
+        wechat.ack(state, "acked", claim_id=CLAIM_ID)
+        self.assertEqual(state["sources"]["s1"]["recent"], recent)
+        self.assertIn(entry["identity"], state["ack_tombstones"])
 
     def test_ack_tombstone_prunes_only_after_newer_complete_scan_observes_absence(self):
         path = self.state_file()
         state = wechat.new_state()
         wechat.configure_sources(state, ["s1"])
         state["sources"]["s1"]["initialized"] = True
-        entry = wechat.parse_article(record("acked"))
+        entry = add_claim(
+            wechat.parse_article(record("acked")),
+            expires_at="2999-01-01T00:00:00Z",
+        )
         state["pending"][entry["identity"]] = entry
-        wechat.ack(state, "acked")
+        wechat.ack(state, "acked", claim_id=CLAIM_ID)
         self.assertIn(entry["identity"], state["ack_tombstones"])
         wechat.save_state(path, state)
         original_client = wechat._client_from_env
@@ -435,13 +616,16 @@ class WechatDigestTests(unittest.TestCase):
         state["ack_tombstones"]["resource:older"] = {
             "source_id": "s1", "ack_after_scan_seq": 0,
         }
-        entry = wechat.parse_article(record("newer"))
+        entry = add_claim(
+            wechat.parse_article(record("newer")),
+            expires_at="2999-01-01T00:00:00Z",
+        )
         state["pending"][entry["identity"]] = entry
         original_limit = wechat.MAX_TOMBSTONES
         wechat.MAX_TOMBSTONES = 1
         try:
             with self.assertRaisesRegex(wechat.StateError, "capacity"):
-                wechat.ack(state, "newer")
+                wechat.ack(state, "newer", claim_id=CLAIM_ID)
         finally:
             wechat.MAX_TOMBSTONES = original_limit
         self.assertIn(entry["identity"], state["pending"])
@@ -457,10 +641,10 @@ class WechatDigestTests(unittest.TestCase):
         loaded = wechat.load_state(path)
         self.assertEqual(wechat.pending(loaded)["retryable"][0]["identity"], "resource:new")
         for _ in range(3):
-            wechat.fail(loaded, "resource:new", "FETCH_FAILED")
+            issued = wechat.claim(loaded, "resource:new")
+            wechat.fail(loaded, "resource:new", "FETCH_FAILED", claim_id=issued["claim_id"])
         self.assertEqual(len(wechat.pending(loaded)["exhausted"]), 1)
-        wechat.ack(loaded, "resource:new")
-        self.assertFalse(loaded["pending"])
+        self.assertIn("resource:new", loaded["pending"])
 
     def test_pending_orders_oldest_by_instant_across_timezone_offsets(self):
         state = wechat.new_state()
@@ -540,6 +724,74 @@ class WechatDigestTests(unittest.TestCase):
             wechat.ack(state, "r1", claim_id=CLAIM_ID)
         self.assertIn(entry["identity"], state["pending"])
 
+    def test_ack_and_fail_require_a_current_active_claim_in_functions_and_cli(self):
+        state = wechat.new_state()
+        expired = add_claim(
+            wechat.parse_article(record("r1")),
+            expires_at="2020-01-01T00:00:00Z",
+        )
+        state["pending"][expired["identity"]] = expired
+        before = copy.deepcopy(state)
+        with self.assertRaises(wechat.ClaimUnavailable):
+            wechat.ack(state, "r1", claim_id=CLAIM_ID)
+        with self.assertRaises(wechat.ClaimUnavailable):
+            wechat.fail(state, "r1", "FETCH_FAILED", claim_id=CLAIM_ID)
+        self.assertEqual(state, before)
+
+        for argv in (
+            ["renew", "r1"], ["ack", "r1"],
+            ["fail", "r1", "--reason", "FETCH_FAILED"],
+        ):
+            with self.subTest(argv=argv), redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    wechat.main(argv)
+                self.assertEqual(raised.exception.code, 2)
+
+    def test_renew_extends_only_the_matching_active_claim_and_persists_atomically(self):
+        self.assertTrue(hasattr(wechat, "renew"), "renew helper is required")
+        now = datetime(2026, 7, 18, 12, tzinfo=timezone.utc)
+        state = wechat.new_state()
+        entry = add_claim(
+            wechat.parse_article(record("r1")),
+            expires_at="2026-07-18T12:05:00Z",
+        )
+        entry["claim_fetch_started"] = True
+        state["pending"][entry["identity"]] = entry
+        renewed = wechat.renew(state, "r1", CLAIM_ID, now=now)
+        self.assertEqual(renewed, {
+            "claim_id": CLAIM_ID,
+            "claim_expires_at": "2026-07-18T12:15:00Z",
+        })
+        self.assertTrue(state["pending"][entry["identity"]]["claim_fetch_started"])
+        before = copy.deepcopy(state)
+        with self.assertRaises(wechat.ClaimUnavailable):
+            wechat.renew(state, "r1", "b" * 32, now=now)
+        self.assertEqual(state, before)
+        expired_state = wechat.new_state()
+        expired_entry = add_claim(
+            wechat.parse_article(record("expired")),
+            expires_at="2026-07-18T11:59:59Z",
+        )
+        expired_state["pending"][expired_entry["identity"]] = expired_entry
+        with self.assertRaises(wechat.ClaimUnavailable):
+            wechat.renew(expired_state, "expired", CLAIM_ID, now=now)
+
+        path = self.state_file()
+        live = wechat.new_state()
+        live_entry = wechat.parse_article(record("live"))
+        live["pending"][live_entry["identity"]] = live_entry
+        issued = wechat.claim(live, "live")
+        wechat.save_state(path, live)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(wechat.main([
+                "--state-file", str(path), "renew", "live", "--claim-id", issued["claim_id"],
+            ]), 0)
+        receipt = json.loads(output.getvalue())
+        persisted = wechat.load_state(path)["pending"][live_entry["identity"]]
+        self.assertEqual(persisted["claim_id"], issued["claim_id"])
+        self.assertEqual(persisted["claim_expires_at"], receipt["claim_expires_at"])
+
     def test_markdown_budget_beijing_reset_and_never_persists_body(self):
         state = wechat.new_state()
         state["pending"]["resource:r1"] = {"identity": "resource:r1", "resource_id": "r1", "published_at": "2024-01-01T00:00:00+00:00"}
@@ -572,6 +824,17 @@ class WechatDigestTests(unittest.TestCase):
             self.assertEqual(wechat.markdown(state, FakeClient(), "r1")["fallback_reason"], "beijing_timezone_unavailable")
         finally:
             wechat.ZoneInfo = original
+
+    def test_empty_or_whitespace_bestblogs_markdown_uses_fallback(self):
+        for body in ("", "   \n\t"):
+            with self.subTest(body=repr(body)):
+                state = wechat.new_state()
+                entry = wechat.parse_article(record("r1"))
+                state["pending"][entry["identity"]] = entry
+                result = wechat.markdown(state, FakeClient(markdown=body), "r1")
+                self.assertEqual(result, {
+                    "fallback_reason": "bestblogs_markdown_unavailable",
+                })
 
     def test_cli_markdown_durably_reserves_each_429_attempt_before_network(self):
         path = self.state_file()
@@ -979,7 +1242,10 @@ class WechatDigestTests(unittest.TestCase):
         state = wechat.new_state()
         wechat.configure_sources(state, ["s1"])
         state["sources"]["s1"]["initialized"] = True
-        old = wechat.parse_article(record("old"))
+        old = add_claim(
+            wechat.parse_article(record("old")),
+            expires_at="2999-01-01T00:00:00Z",
+        )
         state["pending"][old["identity"]] = old
         wechat.save_state(path, state)
 
@@ -988,7 +1254,7 @@ class WechatDigestTests(unittest.TestCase):
                 before_attempt()
                 with wechat.state_lock(path):
                     current = wechat.load_state(path)
-                    wechat.ack(current, "old")
+                    wechat.ack(current, "old", claim_id=CLAIM_ID)
                     wechat.configure_sources(current, ["s2"])
                     wechat.save_state(path, current)
                 self.calls["subscription"] = self.calls.get("subscription", 0) + 1
@@ -1013,7 +1279,10 @@ class WechatDigestTests(unittest.TestCase):
         state = wechat.new_state()
         wechat.configure_sources(state, ["s1"])
         state["sources"]["s1"]["initialized"] = True
-        entry = wechat.parse_article(record("acked"))
+        entry = add_claim(
+            wechat.parse_article(record("acked")),
+            expires_at="2999-01-01T00:00:00Z",
+        )
         state["pending"][entry["identity"]] = entry
         wechat.save_state(path, state)
 
@@ -1022,7 +1291,7 @@ class WechatDigestTests(unittest.TestCase):
                 before_attempt()
                 with wechat.state_lock(path):
                     current = wechat.load_state(path)
-                    wechat.ack(current, "acked")
+                    wechat.ack(current, "acked", claim_id=CLAIM_ID)
                     wechat.save_state(path, current)
                 self.calls["subscription"] = self.calls.get("subscription", 0) + 1
                 return {"dataList": [record("acked", "s1")]}
@@ -1265,6 +1534,30 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(persisted["version"], 3)
         self.assertEqual(persisted["total_budget"]["count"], 50)
 
+    def test_earliest_exact_v1_state_without_scan_health_migrates(self):
+        path = self.state_file()
+        earliest = {
+            "version": 1,
+            "sources": {},
+            "pending": {},
+            "body_budget": {"day": "", "count": 0},
+            "last_successful_scan": None,
+            "api_calls": {},
+            "warnings": [],
+        }
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(earliest), encoding="utf-8")
+        try:
+            migrated = wechat.load_state(path)
+        except wechat.StateError as error:
+            self.fail("exact earliest v1 state did not migrate: %s" % error)
+        self.assertEqual(migrated["version"], 3)
+        self.assertEqual(migrated["scan_health"], {
+            "pages": 0, "records": 0, "complete": False,
+            "skipped": {"invalid_or_non_wechat": 0},
+        })
+        self.assertEqual(migrated["total_budget"]["count"], wechat.TOTAL_DAILY_LIMIT)
+
     def test_well_formed_v2_state_migrates_sequences_without_claim_or_tombstone_data(self):
         path = self.state_file()
         previous = wechat.new_state()
@@ -1319,6 +1612,31 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("state cannot be read safely", stream.getvalue())
 
+    def test_state_reader_enforces_a_bounded_byte_limit_before_json_decode(self):
+        self.assertTrue(hasattr(wechat, "MAX_STATE_BYTES"), "state read byte cap is required")
+        path = self.state_file()
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b" " * 65)
+        original_limit = wechat.MAX_STATE_BYTES
+        wechat.MAX_STATE_BYTES = 64
+        try:
+            with self.assertRaisesRegex(wechat.StateError, "size limit"):
+                wechat.load_state(path)
+        finally:
+            wechat.MAX_STATE_BYTES = original_limit
+        self.assertEqual(path.stat().st_size, 65)
+
+    def test_state_writer_never_persists_a_file_larger_than_the_read_cap(self):
+        path = self.state_file()
+        original_limit = wechat.MAX_STATE_BYTES
+        wechat.MAX_STATE_BYTES = 64
+        try:
+            with self.assertRaisesRegex(wechat.StateError, "size limit"):
+                wechat.save_state(path, wechat.new_state())
+        finally:
+            wechat.MAX_STATE_BYTES = original_limit
+        self.assertFalse(path.exists())
+
     def test_cli_reports_state_write_oserror_as_redacted_json(self):
         path = self.state_file()
         original_save = wechat.save_state
@@ -1344,9 +1662,18 @@ class WechatDigestTests(unittest.TestCase):
 
     def test_article_resource_id_aliases_work_for_pending_actions(self):
         state = wechat.new_state()
-        state["pending"]["resource:r1"] = {"identity": "resource:r1", "resource_id": "r1", "attempts": 0}
-        self.assertEqual(wechat.fail(state, "r1", "FETCH_FAILED")["attempts"], 1)
-        self.assertEqual(wechat.ack(state, "r1")["acknowledged"], "resource:r1")
+        entry = add_claim(
+            wechat.parse_article(record("r1")),
+            expires_at="2999-01-01T00:00:00Z",
+        )
+        state["pending"][entry["identity"]] = entry
+        self.assertEqual(
+            wechat.fail(state, "r1", "FETCH_FAILED", claim_id=CLAIM_ID)["attempts"], 1,
+        )
+        add_claim(entry, expires_at="2999-01-01T00:00:00Z")
+        self.assertEqual(
+            wechat.ack(state, "r1", claim_id=CLAIM_ID)["acknowledged"], "resource:r1",
+        )
 
     def test_status_exposes_safe_body_budget_details(self):
         state = wechat.new_state()
@@ -1405,6 +1732,9 @@ class WechatDigestSkillContractTests(unittest.TestCase):
             "total_budget",
             "all BestBlogs API metadata", "source names", "effective/final URL",
             "claim <article_id>", "--claim-id", "claimed entries are skipped",
+            "Before calling Firecrawl, run `renew <article_id> --claim-id <claim_id>`",
+            "Before summarizing, run `renew <article_id> --claim-id <claim_id>`",
+            "Immediately before acknowledgment, run `renew <article_id> --claim-id <claim_id>`",
         ):
             self.assertIn(clause, text, clause)
         self.assertNotIn("python3 -c", text)
