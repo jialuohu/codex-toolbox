@@ -9,6 +9,11 @@ from urllib.error import HTTPError
 
 
 MODULE = Path(__file__).parents[1] / "plugins/web-data-tools/skills/wechat-digest/scripts/wechat_digest.py"
+SKILL_DIR = MODULE.parents[1]
+SKILL_FILE = SKILL_DIR / "SKILL.md"
+METADATA_FILE = SKILL_DIR / "agents/openai.yaml"
+WRAPPER_FILE = SKILL_DIR / "scripts/run_wechat_digest.sh"
+PLUGIN_FILE = MODULE.parents[3] / ".codex-plugin/plugin.json"
 SPEC = importlib.util.spec_from_file_location("wechat_digest", MODULE)
 wechat = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(wechat)
@@ -311,6 +316,51 @@ class WechatDigestTests(unittest.TestCase):
         state["pending"]["resource:r1"] = {"identity": "resource:r1", "resource_id": "r1", "attempts": 0}
         self.assertEqual(wechat.fail(state, "r1", "FETCH_FAILED")["attempts"], 1)
         self.assertEqual(wechat.ack(state, "r1")["acknowledged"], "resource:r1")
+
+
+class WechatDigestSkillContractTests(unittest.TestCase):
+    def test_skill_declares_the_operational_digest_contract(self):
+        text = SKILL_FILE.read_text(encoding="utf-8")
+        self.assertIn("name: wechat-digest", text)
+        self.assertRegex(text, r"description: Use when.*(?:WeChat|BestBlogs|digest|scheduled)")
+        for clause in (
+            "bestblogs.env", "BESTBLOGS_API_KEY", "doctor", "sources", "configure",
+            "first", "baseline", "scan", "pending", "summarize", "ack",
+            "35", "15", "three", "BestBlogs", "Firecrawl", "mp.weixin.qq.com",
+            "untrusted", "health", "JSON", "fail", "STATE_FILE", "body_budget",
+        ):
+            self.assertIn(clause, text, clause)
+        self.assertIn("never scrape arbitrary hosts or use browser cookies", text)
+        self.assertIn("Never ask the user to paste or print the key", text)
+        for forbidden in ("s" + "k-", "api_key" + "=", "BESTBLOGS_API_KEY" + "=", "delivery provider"):
+            self.assertNotIn(forbidden, text, forbidden)
+
+    def test_wrapper_loads_only_the_standard_secret_file_and_executes_helper(self):
+        text = WRAPPER_FILE.read_text(encoding="utf-8")
+        self.assertIn("set -euo pipefail", text)
+        self.assertIn('"${BASH_SOURCE[0]}"', text)
+        self.assertIn("bestblogs.env", text)
+        self.assertIn("set -a", text)
+        self.assertIn("set +a", text)
+        self.assertIn("BESTBLOGS_API_KEY", text)
+        self.assertIn("exec python3", text)
+        self.assertIn('"$@"', text)
+        self.assertNotIn("echo \"$BESTBLOGS_API_KEY", text)
+        self.assertNotIn("printenv", text)
+
+    def test_skill_metadata_and_plugin_keep_web_capabilities_consistent(self):
+        metadata = METADATA_FILE.read_text(encoding="utf-8")
+        self.assertIn('display_name: "WeChat Digest"', metadata)
+        short = next(line for line in metadata.splitlines() if "short_description:" in line).split('"')[1]
+        self.assertGreaterEqual(len(short), 25)
+        self.assertLessEqual(len(short), 64)
+        self.assertIn("$wechat-digest", metadata)
+        self.assertNotIn("dependencies:", metadata)
+        plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(plugin["version"], "0.2.0")
+        joined = json.dumps(plugin).lower()
+        for capability in ("wechat", "firecrawl", "playwright"):
+            self.assertIn(capability, joined)
 
 
 if __name__ == "__main__":

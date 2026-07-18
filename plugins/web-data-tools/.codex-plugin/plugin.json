@@ -1,7 +1,7 @@
 {
   "name": "web-data-tools",
-  "version": "0.1.0",
-  "description": "Web browsing, extraction, crawling, and browser automation tools.",
+  "version": "0.2.0",
+  "description": "Web browsing, extraction, crawling, browser automation, and safe WeChat digest tools.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -10,8 +10,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Web Data Tools",
-    "shortDescription": "Firecrawl MCP and Playwright CLI skill.",
-    "longDescription": "Web Data Tools packages Firecrawl MCP for web data extraction and the Playwright CLI skill for browser automation workflows.",
+    "shortDescription": "Firecrawl, Playwright, and WeChat digest tools.",
+    "longDescription": "Web Data Tools packages Firecrawl MCP for web data extraction, Playwright CLI browser automation, and a safe BestBlogs-backed WeChat digest workflow.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -19,7 +19,7 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "Extract web data or automate a browser flow."
+      "Extract web data, automate a browser flow, or run a safe WeChat digest."
     ]
   }
 }

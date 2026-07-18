@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat Digest"
+  short_description: "Safely digest selected WeChat subscriptions"
+  default_prompt: "Use $wechat-digest to run a safe scheduled digest for my selected WeChat subscriptions."
