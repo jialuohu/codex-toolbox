@@ -268,8 +268,8 @@ class WechatDigestTests(unittest.TestCase):
         path.write_text(json.dumps({"version": 1, "sources": [], "pending": {}, "body_budget": {}, "api_calls": {}, "warnings": []}))
         with self.assertRaises(wechat.StateError):
             wechat.load_state(path)
-        output = wechat.doctor(FakeClient(), api_key="fixture")
-        self.assertNotIn("fixture", json.dumps(output))
+        output = wechat.doctor(FakeClient(), api_key="dummy")
+        self.assertNotIn("dummy", json.dumps(output))
         self.assertNotIn("secret@example.com", json.dumps(output))
         self.assertEqual(output["tier"], "pro")
 
