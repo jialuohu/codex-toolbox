@@ -29,6 +29,10 @@ MAX_RECENT = 500
 MAX_FEED_PAGES = 14
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SAFE_REASON = re.compile(r"^[A-Z0-9][A-Z0-9_:-]{0,63}$")
+PENDING_FIELDS = frozenset((
+    "identity", "resource_id", "source_id", "source_name", "title", "url",
+    "published_at", "attempts", "last_failure_reason",
+))
 
 
 class APIError(RuntimeError):
@@ -243,7 +247,7 @@ def _validate_state(state):
                               not isinstance(source_health["skipped"].get("invalid_or_non_wechat"), int)):
             raise StateError("unsupported or malformed state schema")
     for identity, entry in state["pending"].items():
-        if not isinstance(identity, str) or not isinstance(entry, dict) or entry.get("identity") != identity or \
+        if not isinstance(identity, str) or not isinstance(entry, dict) or not set(entry).issubset(PENDING_FIELDS) or entry.get("identity") != identity or \
                 not _safe_id(entry.get("source_id")) or canonical_wechat_url(entry.get("url")) != entry.get("url") or \
                 entry.get("resource_id") is not None and not _safe_id(entry.get("resource_id")) or \
                 not isinstance(entry.get("attempts"), int) or not 0 <= entry["attempts"] <= 3 or \
@@ -541,8 +545,14 @@ def main(argv=None):
             result = status(state)
         else:
             client = _client_from_env()
-            if args.command == "doctor": result = doctor(client)
-            elif args.command == "sources": result = list_sources(client)
+            if args.command == "doctor":
+                result = doctor(client)
+                _merge_calls(state, client)
+                save_state(path, state)
+            elif args.command == "sources":
+                result = list_sources(client)
+                _merge_calls(state, client)
+                save_state(path, state)
             elif args.command == "scan": result = scan(state, client); save_state(path, state)
             else: result = markdown(state, client, args.article_id); save_state(path, state)
     except (APIError, StateError, ValueError, KeyError) as error:

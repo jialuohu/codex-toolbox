@@ -268,6 +268,34 @@ class WechatDigestTests(unittest.TestCase):
         self.assertNotIn("secret@example.com", json.dumps(output))
         self.assertEqual(output["tier"], "pro")
 
+    def test_pending_state_rejects_unexpected_content_fields_without_rewriting(self):
+        path = self.state_file()
+        path.parent.mkdir(parents=True)
+        for field in ("markdown", "body", "content", "summary", "unrecognized"):
+            state = wechat.new_state()
+            entry = wechat.parse_article(record("r1"))
+            entry[field] = "forbidden persisted content"
+            state["pending"][entry["identity"]] = entry
+            serialized = json.dumps(state)
+            path.write_text(serialized)
+            with self.assertRaises(wechat.StateError):
+                wechat.load_state(path)
+            self.assertEqual(path.read_text(), serialized)
+
+    def test_successful_doctor_and_sources_cli_persist_call_counters(self):
+        path = self.state_file()
+        client = FakeClient([{"dataList": [record("r1")]}])
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client
+        try:
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(wechat.main(["--state-file", str(path), "doctor"]), 0)
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(wechat.main(["--state-file", str(path), "sources"]), 0)
+        finally:
+            wechat._client_from_env = original_client
+        self.assertEqual(wechat.status(wechat.load_state(path))["api_calls"], {"me": 1, "subscription": 1})
+
     def test_cli_reports_corrupt_state_as_json_error_without_traceback(self):
         path = self.state_file()
         path.parent.mkdir(parents=True)
