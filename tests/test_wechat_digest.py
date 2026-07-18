@@ -344,6 +344,12 @@ class WechatDigestSkillContractTests(unittest.TestCase):
 
     def test_skill_spells_out_safe_fallback_quota_and_output_sequence(self):
         text = SKILL_FILE.read_text(encoding="utf-8")
+        self.assertIn("Use this exact lifecycle: `scan -> pending -> summarize -> ack`.", text)
+        self.assertIn("After three failures, leave the item exhausted; do not ack or retry it automatically.", text)
+        self.assertIn(
+            "Baseline is established if and only if the latest scan is complete and every configured source is initialized; otherwise it is not established.",
+            text,
+        )
         self.assertIn("configure --source-id <id1> --source-id <id2>", text)
         self.assertIn("35 BestBlogs Markdown attempts", text)
         self.assertIn("15 of 50", text)
