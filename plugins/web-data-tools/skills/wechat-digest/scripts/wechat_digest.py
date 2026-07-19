@@ -168,12 +168,17 @@ class BestBlogsClient:
         return self.get("/me/feeds/subscriptions", {"page": page, "pageSize": page_size, "timeFilter": "week"},
                         before_attempt=before_attempt)
 
-    def subscription_source_page(self, page, page_size, source_id, before_attempt=None):
+    def subscription_source_page(self, page, page_size, source_id, before_attempt=None, time_filter=None):
         if not _safe_id(source_id):
             raise ValueError("source ID must be safe")
+        if time_filter not in (None, "today", "week", "month"):
+            raise ValueError("invalid time filter")
+        query = {"page": page, "pageSize": page_size, "sourceId": source_id}
+        if time_filter is not None:
+            query["timeFilter"] = time_filter
         return self.get(
             "/me/feeds/subscriptions",
-            {"page": page, "pageSize": page_size, "sourceId": source_id},
+            query,
             before_attempt=before_attempt,
         )
 
@@ -401,6 +406,17 @@ def parse_article(raw):
             "source_name": str(raw.get("sourceName") or source_object.get("name") or source)[:200],
             "title": str(raw.get("title") or "Untitled")[:500], "url": url,
             "published_at": timestamp or "", "attempts": 0}
+
+
+def _bounded_display_text(value, limit, fallback=None):
+    if value is None:
+        value = fallback
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if not value or any(ord(character) < 32 or ord(character) == 127 for character in value):
+        return None
+    return value[:limit]
 
 
 def new_state():
@@ -899,6 +915,128 @@ def configure_sources(state, source_ids):
             "discarded_tombstones": len(discarded_tombstones)}
 
 
+def configured_sources(state):
+    return {"sources": [
+        {
+            "id": source_id,
+            "name": _bounded_display_text(source.get("name"), 200, source_id) or source_id,
+            "initialized": source["initialized"],
+        }
+        for source_id, source in state["sources"].items()
+    ]}
+
+
+def _configured_source_id(state, selector):
+    if not isinstance(selector, str) or not 1 <= len(selector) <= 200 or \
+            any(ord(character) < 32 or ord(character) == 127 for character in selector):
+        raise ValueError("unsafe source selector")
+    sources = state.get("sources")
+    if not isinstance(sources, dict):
+        raise StateError("unsupported or malformed state schema")
+    if selector in sources:
+        return selector
+    matches = [
+        source_id for source_id, source in sources.items()
+        if _bounded_display_text(source.get("name"), 200, source_id) == selector
+    ]
+    if not matches:
+        raise ValueError("unknown configured source")
+    if len(matches) != 1:
+        raise ValueError("ambiguous configured source name")
+    return matches[0]
+
+
+def _interactive_article(raw, expected_source_id):
+    if not isinstance(raw, dict):
+        raise APIError("malformed interactive response")
+    raw_source_id, source_valid = _single_value(_source_values(raw), _safe_id_value)
+    if not source_valid or raw_source_id is None:
+        raise APIError("malformed interactive response")
+    if raw_source_id != expected_source_id:
+        raise APIError("feed source filter mismatch")
+    article = parse_article(raw)
+    if article is None:
+        return None
+    source_object = raw.get("source") if isinstance(raw.get("source"), dict) else {}
+    raw_source_names = _field_values(raw, ("sourceName",)) + _field_values(source_object, ("name",))
+    source_names = [_bounded_display_text(value, 200) for value in raw_source_names]
+    if any(name is None for name in source_names):
+        return None
+    source_name = source_names[0] if source_names else article["source_id"]
+    title = _bounded_display_text(raw.get("title"), 500, "Untitled")
+    if title is None:
+        return None
+    return {
+        "identity": article["identity"],
+        "resource_id": article["resource_id"],
+        "source_id": article["source_id"],
+        "source_name": source_name,
+        "title": title,
+        "url": article["url"],
+        "published_at": article["published_at"],
+        "source_name_consistent": len(set(source_names)) <= 1,
+    }
+
+
+def interactive_articles(state, client, source_selector, limit, time_filter=None, before_attempt=None):
+    source_id = _configured_source_id(state, source_selector)
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 20:
+        raise ValueError("limit must be between 1 and 20")
+    if time_filter not in (None, "today", "week", "month"):
+        raise ValueError("invalid time filter")
+    data = client.subscription_source_page(
+        1, DEFAULT_PAGE_SIZE, source_id, time_filter=time_filter, before_attempt=before_attempt,
+    )
+    records, unused_counter, schema_error = _page_items(data)
+    if schema_error:
+        raise APIError("malformed interactive response")
+    articles = []
+    identities, resource_ids = set(), set()
+    for raw in records:
+        article = _interactive_article(raw, source_id)
+        if article is None:
+            continue
+        resource_id = article["resource_id"]
+        if article["identity"] in identities or resource_id is not None and resource_id in resource_ids:
+            raise APIError("duplicate identity in interactive response")
+        identities.add(article["identity"])
+        if resource_id is not None:
+            resource_ids.add(resource_id)
+        articles.append(article)
+    if not articles:
+        raise APIError("no safe article")
+    warnings = []
+    source_names = {article["source_name"] for article in articles}
+    source = state["sources"][source_id]
+    if len(source_names) == 1 and all(article["source_name_consistent"] for article in articles):
+        source["name"] = next(iter(source_names))
+    else:
+        warnings.append("source_name_conflict")
+    if all(article["published_at"] for article in articles):
+        articles = sorted(
+            articles,
+            key=lambda article: datetime.fromisoformat(article["published_at"]).astimezone(timezone.utc),
+            reverse=True,
+        )
+    else:
+        warnings.append("provider_order_used")
+    return {
+        "source": {
+            "id": source_id,
+            "name": _bounded_display_text(source.get("name"), 200, source_id) or source_id,
+            "initialized": source["initialized"],
+        },
+        "articles": [
+            {field: article[field] for field in (
+                "resource_id", "source_id", "source_name", "title", "url", "published_at",
+            )}
+            for article in articles[:limit]
+        ],
+        "requested_limit": limit,
+        "warnings": warnings,
+    }
+
+
 def _page_items(data):
     if not isinstance(data, dict):
         return [], None, "feed_page_not_object"
@@ -936,7 +1074,6 @@ def _source_configuration_fingerprint(sources):
             raise StateError("source configuration cannot be fingerprinted")
         snapshot[source_id] = {
             "id": source.get("id"),
-            "name": source.get("name"),
             "initialized": source.get("initialized"),
             "recent": source.get("recent"),
         }
@@ -1686,12 +1823,19 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
     sub.add_parser("sources")
+    sub.add_parser("configured-sources")
     source_search = sub.add_parser("search-sources")
     source_search.add_argument("--name", required=True)
     follow = sub.add_parser("follow")
     follow.add_argument("--source-id", action="append", required=True)
     configure = sub.add_parser("configure")
     configure.add_argument("--source-id", action="append", required=True)
+    latest_parser = sub.add_parser("latest")
+    latest_parser.add_argument("--source", required=True)
+    recent_parser = sub.add_parser("recent")
+    recent_parser.add_argument("--source", required=True)
+    recent_parser.add_argument("--limit", required=True)
+    recent_parser.add_argument("--time-filter")
     sub.add_parser("scan")
     claim_parser = sub.add_parser("claim")
     claim_parser.add_argument("article_id")
@@ -1719,11 +1863,27 @@ def main(argv=None):
         scan_generation = None
         markdown_identity = None
         markdown_resource_id = None
+        interactive_source_id = None
+        interactive_source_name = None
         with state_lock(path):
             state = _load_locked_state(path)
             if args.command == "configure":
                 result = configure_sources(state, args.source_id)
                 save_state(path, state)
+            elif args.command == "configured-sources":
+                result = configured_sources(state)
+            elif args.command in ("latest", "recent"):
+                interactive_source_id = _configured_source_id(state, args.source)
+                interactive_source_name = state["sources"][interactive_source_id]["name"]
+                if args.command == "recent":
+                    try:
+                        args.limit = int(args.limit)
+                    except (TypeError, ValueError) as error:
+                        raise ValueError("limit must be between 1 and 20") from error
+                    if not 1 <= args.limit <= 20:
+                        raise ValueError("limit must be between 1 and 20")
+                    if args.time_filter not in (None, "today", "week", "month"):
+                        raise ValueError("invalid time filter")
             elif args.command == "claim":
                 selected_identity = _selected_identity_for(state, args.article_id)
                 result = claim(state, selected_identity)
@@ -1791,6 +1951,32 @@ def main(argv=None):
                     args.source_id,
                     before_attempt=_durable_reservation(path, "onboarding_follow"),
                 )
+            elif args.command in ("latest", "recent"):
+                interactive = interactive_articles(
+                    state,
+                    client,
+                    interactive_source_id,
+                    1 if args.command == "latest" else args.limit,
+                    time_filter=None if args.command == "latest" else args.time_filter,
+                    before_attempt=_durable_reservation(path, "subscription"),
+                )
+                with state_lock(path):
+                    fresh_state = _load_locked_state(path)
+                    fresh_source = fresh_state["sources"].get(interactive_source_id)
+                    if fresh_source is None:
+                        raise StateError("configured source changed during interactive request")
+                    cached_name = state["sources"][interactive_source_id]["name"]
+                    if cached_name != interactive_source_name and fresh_source["name"] != cached_name:
+                        fresh_source["name"] = cached_name
+                        save_state(path, fresh_state)
+                if args.command == "latest":
+                    result = {
+                        "source": interactive["source"],
+                        "article": interactive["articles"][0],
+                        "warnings": interactive["warnings"],
+                    }
+                else:
+                    result = interactive
             elif args.command == "scan":
                 observation = _scan_observation(
                     client, before_attempt=_durable_reservation(path, "subscription"),

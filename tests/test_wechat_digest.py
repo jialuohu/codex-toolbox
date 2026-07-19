@@ -3382,5 +3382,192 @@ class WechatDigestSkillContractTests(unittest.TestCase):
             self.assertIn(capability, joined)
 
 
+
+class WechatInteractiveListingTests(unittest.TestCase):
+    def state_file(self):
+        path = Path(tempfile.mkdtemp()) / "nested" / "digest.json"
+        self.addCleanup(lambda: path.parent.parent.exists() and __import__("shutil").rmtree(path.parent.parent))
+        return path
+
+    def test_configured_sources_lists_only_local_config_without_a_network_client(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1", "s2"])
+        state["sources"]["s1"].update({"name": "Source One", "initialized": True})
+        wechat.save_state(path, state)
+        original_client = wechat._client_from_env
+        built = []
+        wechat._client_from_env = lambda: built.append(True)
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                self.assertEqual(wechat.main(["--state-file", str(path), "configured-sources"]), 0)
+        finally:
+            wechat._client_from_env = original_client
+
+        self.assertEqual(json.loads(output.getvalue()), {"sources": [
+            {"id": "s1", "name": "Source One", "initialized": True},
+            {"id": "s2", "name": "s2", "initialized": False},
+        ]})
+        self.assertEqual(built, [])
+
+    def test_interactive_latest_and_recent_are_safe_source_filtered_and_only_mutate_permitted_state(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        state["sources"]["s1"].update({"name": "Configured Name", "initialized": True})
+        pending = add_claim(wechat.parse_article(record("pending", "s1")))
+        state["pending"][pending["identity"]] = pending
+        wechat.save_state(path, state)
+        before = path.read_bytes()
+
+        class InteractiveClient:
+            def __init__(self):
+                self.calls = []
+
+            def subscription_source_page(self, page, page_size, source_id, time_filter=None, before_attempt=None):
+                if before_attempt is not None:
+                    before_attempt()
+                self.calls.append((page, page_size, source_id, time_filter))
+                return {"dataList": [
+                    dict(record("older", "s1", 1710000000000), sourceName="Configured Name"),
+                    dict(record("newer", "s1", 1720000000000), sourceName="Configured Name"),
+                ]}
+
+        client = InteractiveClient()
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client
+        latest_output = io.StringIO()
+        recent_output = io.StringIO()
+        try:
+            with redirect_stdout(latest_output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "latest", "--source", "s1",
+                ]), 0)
+            with redirect_stdout(recent_output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "recent", "--source", "Configured Name", "--limit", "2",
+                    "--time-filter", "week",
+                ]), 0)
+        finally:
+            wechat._client_from_env = original_client
+
+        latest = json.loads(latest_output.getvalue())
+        self.assertEqual(latest["source"], {"id": "s1", "name": "Configured Name", "initialized": True})
+        self.assertEqual(latest["article"]["resource_id"], "newer")
+        self.assertEqual(set(latest["article"]), {
+            "resource_id", "source_id", "source_name", "title", "url", "published_at",
+        })
+        self.assertEqual(latest["warnings"], [])
+        recent = json.loads(recent_output.getvalue())
+        self.assertEqual([article["resource_id"] for article in recent["articles"]], ["newer", "older"])
+        self.assertEqual(recent["requested_limit"], 2)
+        self.assertEqual(recent["warnings"], [])
+        self.assertEqual(client.calls, [(1, 50, "s1", None), (1, 50, "s1", "week")])
+
+        after = wechat.load_state(path)
+        before_state = json.loads(before)
+        for persisted in (before_state, after):
+            persisted.pop("api_calls")
+            persisted.pop("body_budget")
+            persisted.pop("total_budget")
+        self.assertEqual(after, before_state)
+        self.assertEqual(wechat.load_state(path)["api_calls"], {"subscription": 2})
+
+    def test_interactive_listing_fails_closed_for_bad_selector_or_response_and_preserves_delivery_state(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1", "s2"])
+        state["sources"]["s1"]["name"] = "Same Name"
+        state["sources"]["s2"]["name"] = "Same Name"
+        pending = wechat.parse_article(record("pending", "s1"))
+        state["pending"][pending["identity"]] = pending
+        wechat.save_state(path, state)
+        before = wechat.load_state(path)
+
+        class BadClient:
+            def subscription_source_page(self, page, page_size, source_id, time_filter=None, before_attempt=None):
+                if before_attempt is not None:
+                    before_attempt()
+                return {"dataList": [record("one", "s2")]}
+
+        original_client = wechat._client_from_env
+        wechat._client_from_env = BadClient
+        try:
+            for argv, expected in (
+                (["latest", "--source", "missing"], "unknown configured source"),
+                (["latest", "--source", " s1"], "unknown configured source"),
+                (["latest", "--source", "Same Name"], "ambiguous configured source name"),
+                (["recent", "--source", "s1", "--limit", "21"], "limit must be between 1 and 20"),
+                (["recent", "--source", "s1", "--limit", "1", "--time-filter", "year"], "invalid time filter"),
+                (["latest", "--source", "s1"], "feed source filter mismatch"),
+            ):
+                with self.subTest(argv=argv):
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        self.assertEqual(wechat.main(["--state-file", str(path)] + argv), 2)
+                    self.assertIn(expected, json.loads(output.getvalue())["error"])
+        finally:
+            wechat._client_from_env = original_client
+
+        after = wechat.load_state(path)
+        for protected in ("pending", "ack_tombstones", "next_scan_seq", "last_applied_scan_generation", "scan_health", "warnings"):
+            self.assertEqual(after[protected], before[protected])
+        self.assertEqual(after["sources"], before["sources"])
+
+    def test_interactive_listing_rejects_duplicates_and_unsafe_text_uses_provider_order_and_caches_only_consistent_names(self):
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+
+        class SourceClient:
+            def __init__(self, pages):
+                self.pages = pages
+
+            def subscription_source_page(self, page, page_size, source_id, time_filter=None, before_attempt=None):
+                if before_attempt is not None:
+                    before_attempt()
+                return self.pages[page - 1]
+
+        duplicate = record("duplicate", "s1")
+        with self.assertRaisesRegex(wechat.APIError, "duplicate identity"):
+            wechat.interactive_articles(
+                state, SourceClient([{ "dataList": [duplicate, duplicate] }]), "s1", 1,
+            )
+
+        unsafe = record("unsafe", "s1")
+        unsafe["title"] = "Unsafe\x00title"
+        with self.assertRaisesRegex(wechat.APIError, "no safe article"):
+            wechat.interactive_articles(
+                state, SourceClient([{ "dataList": [unsafe] }]), "s1", 1,
+            )
+
+        first = record("first", "s1", None)
+        second = record("second", "s1", 1720000000000)
+        first["sourceName"] = "Cached Source"
+        second["sourceName"] = "Cached Source"
+        result = wechat.interactive_articles(
+            state, SourceClient([{ "dataList": [first, second] }]), "s1", 2,
+        )
+        self.assertEqual([article["resource_id"] for article in result["articles"]], ["first", "second"])
+        self.assertEqual(result["warnings"], ["provider_order_used"])
+        self.assertEqual(state["sources"]["s1"]["name"], "Cached Source")
+
+        before_conflict = copy.deepcopy(state["sources"])
+        conflict = record("conflict", "s1")
+        conflict["sourceName"] = "Different Source"
+        result = wechat.interactive_articles(
+            state, SourceClient([{ "dataList": [conflict, dict(record("other", "s1"), sourceName="Other Source")] }]), "s1", 1,
+        )
+        self.assertIn("source_name_conflict", result["warnings"])
+        self.assertEqual(state["sources"], before_conflict)
+
+    def test_source_name_is_excluded_from_scan_configuration_fingerprint(self):
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        before = wechat._source_configuration_fingerprint(state["sources"])
+        state["sources"]["s1"]["name"] = "Updated Display Name"
+        self.assertEqual(wechat._source_configuration_fingerprint(state["sources"]), before)
+
+
 if __name__ == "__main__":
     unittest.main()
