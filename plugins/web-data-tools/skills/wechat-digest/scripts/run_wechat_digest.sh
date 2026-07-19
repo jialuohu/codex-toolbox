@@ -10,6 +10,8 @@ if [[ ! -f "$secret_file" ]]; then
   exit 2
 fi
 
+set +xv
+unset BESTBLOGS_API_KEY
 set -a
 # shellcheck source=/dev/null
 source "$secret_file"

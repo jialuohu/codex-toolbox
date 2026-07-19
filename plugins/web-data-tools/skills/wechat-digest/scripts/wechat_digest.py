@@ -40,7 +40,7 @@ MAX_RECENT = 500
 MAX_TOMBSTONES = 5000
 MAX_TOMBSTONE_ALIASES = 8
 MAX_FEED_PAGES = 14
-DEFAULT_PAGE_SIZE = 100
+DEFAULT_PAGE_SIZE = 50
 CLAIM_LEASE_SECONDS = 15 * 60
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SAFE_REASON = re.compile(r"^[A-Z0-9][A-Z0-9_:-]{0,63}$")
@@ -105,7 +105,7 @@ def validate_envelope(payload):
 
 
 class BestBlogsClient:
-    """GET-only client deliberately constrained to the fixed BestBlogs origin."""
+    """Fixed-origin client with one bounded POST for explicit onboarding follows."""
 
     def __init__(self, api_key, origin=API_ORIGIN, timeout=20):
         if not isinstance(api_key, str) or not API_KEY.fullmatch(api_key):
@@ -168,6 +168,77 @@ class BestBlogsClient:
         return self.get("/me/feeds/subscriptions", {"page": page, "pageSize": page_size, "timeFilter": "week"},
                         before_attempt=before_attempt)
 
+    def subscription_source_page(self, page, page_size, source_id, before_attempt=None):
+        if not _safe_id(source_id):
+            raise ValueError("source ID must be safe")
+        return self.get(
+            "/me/feeds/subscriptions",
+            {"page": page, "pageSize": page_size, "sourceId": source_id},
+            before_attempt=before_attempt,
+        )
+
+    def source_search(self, name, before_attempt=None):
+        if not isinstance(name, str):
+            raise ValueError("source name must be a bounded string")
+        name = name.strip()
+        if not name or len(name) > 200 or any(ord(character) < 32 or ord(character) == 127 for character in name):
+            raise ValueError("source name must be a bounded string")
+        return self.get(
+            "/search",
+            {"q": name, "language": "zh_CN", "page": 1, "pageSize": 50},
+            before_attempt=before_attempt,
+        )
+
+    def follow_sources(self, source_ids, before_attempt=None):
+        if not isinstance(source_ids, list) or not 1 <= len(source_ids) <= 10 or \
+                len(set(source_ids)) != len(source_ids) or any(not _safe_id(item) for item in source_ids):
+            raise ValueError("follow requires one to ten unique safe source IDs")
+        if before_attempt is not None and not callable(before_attempt):
+            raise ValueError("before_attempt must be callable")
+        path = "/me/onboarding/follow"
+        url = self.origin + path
+        encoded = json.dumps({"sourceIds": source_ids}, separators=(",", ":")).encode("utf-8")
+        request = Request(
+            url,
+            data=encoded,
+            headers={
+                "X-API-KEY": self.api_key,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        for attempt in range(2):
+            if before_attempt is not None:
+                before_attempt()
+            self.calls[path] = self.calls.get(path, 0) + 1
+            try:
+                with self._opener.open(request, timeout=self.timeout) as response:
+                    if response.geturl() != url:
+                        raise APIError("redirected response rejected")
+                    if not 200 <= response.getcode() < 300:
+                        raise APIError("BestBlogs HTTP request was not successful")
+                    body = response.read(MAX_BODY_BYTES + 1)
+                    if len(body) > MAX_BODY_BYTES:
+                        raise APIError("BestBlogs response exceeds size limit")
+                    try:
+                        return validate_envelope(json.loads(body.decode("utf-8")))
+                    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+                        raise APIError("invalid JSON response from BestBlogs") from error
+            except HTTPError as error:
+                if error.code == 429 and attempt == 0:
+                    retry_after = error.headers.get("Retry-After", "1")
+                    try:
+                        delay = min(5, max(0, int(retry_after)))
+                    except ValueError:
+                        delay = 1
+                    time.sleep(delay)
+                    continue
+                raise APIError("BestBlogs HTTP request failed") from error
+            except (URLError, http.client.HTTPException, OSError) as error:
+                raise APIError("BestBlogs network request failed") from error
+        raise APIError("BestBlogs rate limit retry exhausted")
+
     def markdown(self, resource_id, before_attempt=None):
         data = self.get("/resources/%s/markdown" % resource_id, before_attempt=before_attempt)
         if isinstance(data, dict):
@@ -202,6 +273,32 @@ def canonical_wechat_url(value):
     else:
         canonical_pairs = []
     return urlunparse(("https", "mp.weixin.qq.com", parsed.path, "", urlencode(sorted(canonical_pairs)), ""))
+
+
+def canonical_article_url(value):
+    wechat_url = canonical_wechat_url(value)
+    if wechat_url is not None:
+        return wechat_url
+    if not isinstance(value, str) or len(value) > 4096:
+        return None
+    try:
+        parsed = urlparse(value.strip())
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or parsed.username is not None or parsed.password is not None or \
+                parsed.port is not None or parsed.netloc.lower() != host or parsed.params or parsed.query or \
+                parsed.fragment or "%" in parsed.path:
+            return None
+    except ValueError:
+        return None
+    allowed = (
+        host == "www.qbitai.com" and re.fullmatch(r"/[0-9]{4}/[0-9]{2}/[1-9][0-9]*\.html", parsed.path)
+    ) or (
+        host == "www.jiqizhixin.com" and
+        re.fullmatch(r"/articles/[0-9]{4}-[0-9]{2}-[0-9]{2}(?:-[A-Za-z0-9_-]+)?", parsed.path)
+    )
+    if not allowed:
+        return None
+    return urlunparse(("https", host, parsed.path, "", "", ""))
 
 
 def _publication_time(value):
@@ -285,7 +382,7 @@ def parse_article(raw):
     if not resource_valid:
         return None
     url, url_valid = _single_value(
-        _field_values(raw, ("url", "link", "originalUrl")), canonical_wechat_url,
+        _field_values(raw, ("url", "link", "originalUrl")), canonical_article_url,
     )
     if not url_valid or url is None:
         return None
@@ -377,7 +474,7 @@ def _valid_alias_list(aliases, identity):
 
 
 def _url_identity(url):
-    canonical = canonical_wechat_url(url)
+    canonical = canonical_article_url(url)
     if canonical is None:
         return None
     return "url:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -419,6 +516,36 @@ def _recent_aliases(recent):
     for identity, stored in recent.items():
         aliases.update(stored if isinstance(stored, list) else (identity,))
     return frozenset(alias for alias in aliases if _valid_identity(alias))
+
+
+def _merge_recent_frontier(current, observed):
+    merged = {identity: list(stored) for identity, stored in observed.items()}
+    alias_owners = {}
+    for identity, stored in merged.items():
+        for alias in stored:
+            owner = alias_owners.setdefault(alias, identity)
+            if owner != identity:
+                return None
+    for identity, stored in current.items():
+        stored_aliases = set(stored if isinstance(stored, list) else (identity,))
+        owners = {alias_owners[alias] for alias in stored_aliases if alias in alias_owners}
+        if len(owners) > 1:
+            return None
+        if owners:
+            owner = next(iter(owners))
+            combined = set(merged[owner]) | stored_aliases
+            if len(combined) > MAX_TOMBSTONE_ALIASES:
+                return None
+            merged[owner] = sorted(combined)
+            for alias in combined:
+                alias_owners[alias] = owner
+            continue
+        if len(merged) >= MAX_RECENT:
+            break
+        merged[identity] = list(stored) if isinstance(stored, list) else [identity]
+        for alias in stored_aliases:
+            alias_owners[alias] = identity
+    return merged
 
 
 def _validate_state(state):
@@ -466,7 +593,7 @@ def _validate_state(state):
         required = {"identity", "resource_id", "source_id", "source_name", "title", "url", "published_at", "attempts"}
         if not _valid_identity(identity) or not isinstance(entry, dict) or not required.issubset(entry) or \
                 not set(entry).issubset(PENDING_FIELDS) or entry.get("identity") != identity or \
-                not _safe_id(entry.get("source_id")) or canonical_wechat_url(entry.get("url")) != entry.get("url") or \
+                not _safe_id(entry.get("source_id")) or canonical_article_url(entry.get("url")) != entry.get("url") or \
                 entry.get("resource_id") is not None and not _safe_id(entry.get("resource_id")) or \
                 not isinstance(entry.get("attempts"), int) or isinstance(entry.get("attempts"), bool) or not 0 <= entry["attempts"] <= 3 or \
                 not isinstance(entry.get("title"), str) or not isinstance(entry.get("source_name"), str) or not isinstance(entry.get("published_at"), str):
@@ -749,10 +876,27 @@ def save_state(path, state):
 def configure_sources(state, source_ids):
     if not isinstance(source_ids, list) or not 1 <= len(source_ids) <= 10 or len(set(source_ids)) != len(source_ids) or not all(_safe_id(item) for item in source_ids):
         raise ValueError("choose between 1 and 10 unique safe source IDs")
+    selected = set(source_ids)
+    pending_entries = state.get("pending", {})
+    tombstones = state.get("ack_tombstones", {})
+    discarded_pending = [
+        identity for identity, entry in pending_entries.items()
+        if entry.get("source_id") not in selected
+    ]
+    discarded_tombstones = [
+        identity for identity, tombstone in tombstones.items()
+        if tombstone.get("source_id") not in selected
+    ]
+    for identity in discarded_pending:
+        del pending_entries[identity]
+    for identity in discarded_tombstones:
+        del tombstones[identity]
     old = state["sources"]
     state["sources"] = {source: old.get(source, {"id": source, "name": source, "initialized": False, "recent": {}, "health": {}})
                         for source in source_ids}
-    return {"configured_sources": list(state["sources"])}
+    return {"configured_sources": list(state["sources"]),
+            "discarded_pending": len(discarded_pending),
+            "discarded_tombstones": len(discarded_tombstones)}
 
 
 def _page_items(data):
@@ -783,6 +927,25 @@ def _json_fingerprint(value):
     return hashlib.sha256(encoded).digest()
 
 
+def _source_configuration_fingerprint(sources):
+    if not isinstance(sources, dict):
+        raise StateError("source configuration cannot be fingerprinted")
+    snapshot = {}
+    for source_id, source in sources.items():
+        if not isinstance(source, dict):
+            raise StateError("source configuration cannot be fingerprinted")
+        snapshot[source_id] = {
+            "id": source.get("id"),
+            "name": source.get("name"),
+            "initialized": source.get("initialized"),
+            "recent": source.get("recent"),
+        }
+    fingerprint = _json_fingerprint(snapshot)
+    if fingerprint is None:
+        raise StateError("source configuration cannot be fingerprinted")
+    return fingerprint.hex()
+
+
 def _feed_aliases(raw):
     if not isinstance(raw, dict):
         return frozenset()
@@ -792,12 +955,12 @@ def _feed_aliases(raw):
             aliases.add("resource:" + resource_id)
     raw_urls = _field_values(raw, ("url", "link", "originalUrl"))
     for raw_url in raw_urls:
-        url = canonical_wechat_url(raw_url)
+        url = canonical_article_url(raw_url)
         if url:
             aliases.add("url:" + hashlib.sha256(url.encode("utf-8")).hexdigest())
 
     for raw_url in raw_urls:
-        if not isinstance(raw_url, str) or not raw_url.strip() or len(raw_url) > 4096 or canonical_wechat_url(raw_url):
+        if not isinstance(raw_url, str) or not raw_url.strip() or len(raw_url) > 4096 or canonical_article_url(raw_url):
             continue
         encoded = json.dumps(
             ["external_url", raw_url.strip()], ensure_ascii=False,
@@ -887,19 +1050,216 @@ def list_sources(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
     return {"sources": list(sources.values()), "skipped": {"invalid_or_non_wechat": malformed}, "warnings": warnings}
 
 
-def _scan_observation(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
-    records, complete, warnings, pages = _feed_pages(client, page_size, before_attempt=before_attempt)
-    return {"records": records, "complete": complete, "warnings": warnings, "pages": pages}
+def search_sources(client, name, before_attempt=None):
+    data = client.source_search(name, before_attempt=before_attempt)
+    if not isinstance(data, dict) or not isinstance(data.get("dataList"), list):
+        raise APIError("invalid BestBlogs source search response")
+    sources = {}
+    for raw in data["dataList"]:
+        if not isinstance(raw, dict):
+            continue
+        source_id = raw.get("sourceId")
+        source_name = raw.get("sourceName")
+        if source_name == name and _safe_id(source_id):
+            sources.setdefault(source_id, {"id": source_id, "name": source_name})
+    if not sources:
+        raise APIError("no exact BestBlogs source match")
+    if len(sources) > 1:
+        raise APIError("ambiguous exact BestBlogs source match")
+    return {"sources": list(sources.values())}
+
+
+def follow_selected_sources(client, source_ids, before_attempt=None):
+    data = client.follow_sources(source_ids, before_attempt=before_attempt)
+    if not isinstance(data, dict):
+        raise APIError("invalid BestBlogs follow response")
+    legacy_fields = ("followedCount", "skippedCount")
+    live_fields = ("requestedCount", "successCount", "alreadySubscribedCount", "failedCount")
+    legacy_present = any(field in data for field in legacy_fields)
+    live_present = any(field in data for field in live_fields)
+    if legacy_present and live_present:
+        raise APIError("invalid BestBlogs follow response")
+    followed = data.get("followedCount")
+    skipped = data.get("skippedCount")
+    if legacy_present and isinstance(followed, int) and not isinstance(followed, bool) and followed >= 0 and \
+            isinstance(skipped, int) and not isinstance(skipped, bool) and skipped >= 0 and \
+            followed == len(source_ids) and skipped == 0:
+        return {"followedCount": followed, "skippedCount": skipped}
+    counts = [data.get(field) for field in live_fields]
+    if live_present and all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in counts) and \
+            counts[0] == len(source_ids) and sum(counts[1:]) == counts[0] and counts[3] == 0:
+        return dict(zip(live_fields, counts))
+    raise APIError("invalid BestBlogs follow response")
+
+
+def _source_frontier_observation(client, sources, page_size, before_attempt=None):
+    records, warnings, exhausted_source_ids = [], [], []
+    prior_records, prior_aliases = set(), set()
+    pages = 0
+    for source_id, source in sources.items():
+        baseline = not source.get("initialized")
+        known_aliases = set() if baseline else _recent_aliases(source.get("recent", {}))
+        frontier_required = not baseline and bool(known_aliases)
+        page, expected, counter_presence, observed = 1, None, None, 0
+        full_pages = set()
+        source_complete = False
+        while pages < MAX_FEED_PAGES:
+            data = client.subscription_source_page(
+                page, page_size, source_id, before_attempt=before_attempt,
+            )
+            pages += 1
+            items, counter, schema_error = _page_items(data)
+            if schema_error:
+                return {"records": records + items, "complete": False,
+                        "warnings": warnings + [schema_error], "pages": pages}
+            has_counter = counter is not None
+            if counter_presence is None:
+                counter_presence, expected = has_counter, counter
+            elif counter_presence != has_counter or has_counter and counter != expected:
+                return {"records": records + items, "complete": False,
+                        "warnings": warnings + ["feed_counter_changed"], "pages": pages}
+            observed += len(items)
+            if expected is not None and observed > expected:
+                return {"records": records + items, "complete": False,
+                        "warnings": warnings + ["feed_total_less_than_observed"], "pages": pages}
+
+            frontier_index = None
+            if known_aliases:
+                for index, item in enumerate(items):
+                    if not _feed_aliases(item).isdisjoint(known_aliases):
+                        frontier_index = index
+                        break
+            included = items if frontier_index is None else items[:frontier_index + 1]
+            baseline_has_target = False
+            if baseline:
+                for item in included:
+                    parsed_item = parse_article(item)
+                    if parsed_item is not None and parsed_item["source_id"] == source_id:
+                        baseline_has_target = True
+                        break
+            fingerprints = [_json_fingerprint(item) for item in included]
+            if any(fingerprint is None for fingerprint in fingerprints):
+                return {"records": [], "complete": False,
+                        "warnings": warnings + ["feed_json_too_deep"], "pages": pages}
+            aliases = [alias for item in included for alias in _feed_aliases(item)]
+            if len(set(fingerprints)) != len(fingerprints) or any(item in prior_records for item in fingerprints):
+                return {"records": records + included, "complete": False,
+                        "warnings": warnings + ["feed_duplicate_record"], "pages": pages}
+            if len(set(aliases)) != len(aliases) or any(alias in prior_aliases for alias in aliases):
+                return {"records": records + included, "complete": False,
+                        "warnings": warnings + ["feed_duplicate_identity"], "pages": pages}
+            for item in included:
+                if isinstance(item, dict):
+                    item_sources = {_safe_id_value(value) for value in _source_values(item)}
+                    item_sources.discard(None)
+                    if item_sources and item_sources != {source_id}:
+                        return {"records": records + included, "complete": False,
+                                "warnings": warnings + ["feed_source_filter_mismatch"], "pages": pages}
+            page_fingerprint = _json_fingerprint(items)
+            if page_fingerprint is None:
+                return {"records": [], "complete": False,
+                        "warnings": warnings + ["feed_json_too_deep"], "pages": pages}
+            if len(items) == page_size and page_fingerprint in full_pages:
+                return {"records": records + included, "complete": False,
+                        "warnings": warnings + ["feed_repeated_full_page"], "pages": pages}
+            if len(items) == page_size:
+                full_pages.add(page_fingerprint)
+            records.extend(included)
+            prior_records.update(fingerprints)
+            prior_aliases.update(aliases)
+
+            if frontier_index is not None:
+                source_complete = True
+                break
+            if expected is not None and observed == expected:
+                if frontier_required:
+                    return {"records": records, "complete": False,
+                            "warnings": warnings + ["feed_frontier_not_found"], "pages": pages}
+                exhausted_source_ids.append(source_id)
+                source_complete = True
+                break
+            if not items:
+                if expected is not None:
+                    return {"records": records, "complete": False,
+                            "warnings": warnings + ["feed_ended_before_total"], "pages": pages}
+                if frontier_required:
+                    return {"records": records, "complete": False,
+                            "warnings": warnings + ["feed_frontier_not_found"], "pages": pages}
+                exhausted_source_ids.append(source_id)
+                source_complete = True
+                break
+            if len(items) < page_size:
+                if expected is not None:
+                    return {"records": records, "complete": False,
+                            "warnings": warnings + ["feed_shorter_than_total"], "pages": pages}
+                if frontier_required:
+                    return {"records": records, "complete": False,
+                            "warnings": warnings + ["feed_frontier_not_found"], "pages": pages}
+                exhausted_source_ids.append(source_id)
+                source_complete = True
+                break
+            if baseline and baseline_has_target:
+                source_complete = True
+                break
+            if baseline:
+                return {"records": records, "complete": False,
+                        "warnings": warnings + ["baseline_frontier_not_found"], "pages": pages}
+            page += 1
+        if not source_complete:
+            return {"records": records, "complete": False,
+                    "warnings": warnings + ["feed page cap reached"], "pages": pages}
+    return {"records": records, "complete": True, "warnings": warnings, "pages": pages,
+            "exhausted_source_ids": exhausted_source_ids}
+
+
+def _scan_observation(client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None, sources=None):
+    if sources is not None and not sources:
+        raise StateError("configure at least one source before scan")
+    source_fingerprint = _source_configuration_fingerprint(sources) if sources is not None else None
+    if sources and callable(getattr(client, "subscription_source_page", None)):
+        observation = _source_frontier_observation(client, sources, page_size, before_attempt=before_attempt)
+        observation["incremental_frontier"] = True
+    else:
+        records, complete, warnings, pages = _feed_pages(client, page_size, before_attempt=before_attempt)
+        observation = {"records": records, "complete": complete, "warnings": warnings, "pages": pages}
+    if sources is not None:
+        observation["source_ids"] = list(sources)
+        observation["source_configuration_fingerprint"] = source_fingerprint
+    return observation
 
 
 def _apply_scan_observation(state, observation, generation=None):
-    if generation is not None and generation <= state["last_applied_scan_generation"]:
+    if generation is not None and (
+            generation <= state["last_applied_scan_generation"] or
+            generation != state["next_scan_seq"]):
         return {"complete": False, "enqueued": 0, "skipped": {"invalid_or_non_wechat": 0},
                 "warnings": ["superseded_scan"], "superseded": True}
     records = observation["records"]
     complete = observation["complete"]
     pages = observation["pages"]
     selected = state["sources"]
+    observed_source_ids = observation.get("source_ids")
+    if observed_source_ids is not None and set(observed_source_ids) != set(selected):
+        return {"complete": False, "enqueued": 0,
+                "skipped": {"invalid_or_non_wechat": 0},
+                "warnings": ["superseded_configuration"], "superseded": True}
+    if observed_source_ids is not None and (
+            observation.get("source_configuration_fingerprint") !=
+            _source_configuration_fingerprint(selected)):
+        return {"complete": False, "enqueued": 0,
+                "skipped": {"invalid_or_non_wechat": 0},
+                "warnings": ["superseded_configuration"], "superseded": True}
+    incremental_frontier = observation.get("incremental_frontier") is True
+    exhausted_source_ids = observation.get("exhausted_source_ids", [])
+    if incremental_frontier and (
+            not isinstance(exhausted_source_ids, list) or
+            len(set(exhausted_source_ids)) != len(exhausted_source_ids) or
+            any(not _safe_id(source_id) or source_id not in selected for source_id in exhausted_source_ids)):
+        if generation is not None:
+            state["last_applied_scan_generation"] = generation
+        return {"complete": False, "enqueued": 0,
+                "skipped": {"invalid_or_non_wechat": 0},
+                "warnings": ["feed_coverage_invalid"]}
     needs_baseline = not selected or any(not source["initialized"] for source in selected.values())
     migration_receipts = [
         warning for warning in state["warnings"]
@@ -940,6 +1300,20 @@ def _apply_scan_observation(state, observation, generation=None):
         if len(articles) > MAX_RECENT:
             warnings.append("source_snapshot_limit_exceeded:%s:%d" % (source_id, len(articles)))
             complete = False
+    prepared_recent = {}
+    if complete:
+        for source_id, source in selected.items():
+            observed_recent = {
+                identity: sorted(_entry_aliases(article, identity))
+                for identity, article in by_source[source_id].items()
+            }
+            if source.get("initialized") and observation.get("incremental_frontier"):
+                observed_recent = _merge_recent_frontier(source["recent"], observed_recent)
+                if observed_recent is None:
+                    warnings.append("source_alias_limit_exceeded:%s" % source_id)
+                    complete = False
+                    break
+            prepared_recent[source_id] = observed_recent
     if not complete:
         if "partial_feed" not in warnings:
             warnings.append("partial_feed")
@@ -949,6 +1323,8 @@ def _apply_scan_observation(state, observation, generation=None):
         state["warnings"] = warnings
         state["scan_health"] = {"pages": pages, "records": len(records), "complete": False,
                                 "skipped": {"invalid_or_non_wechat": skipped}}
+        if generation is not None:
+            state["last_applied_scan_generation"] = generation
         return {"complete": False, "enqueued": 0,
                 "skipped": {"invalid_or_non_wechat": skipped}, "warnings": warnings}
 
@@ -960,10 +1336,7 @@ def _apply_scan_observation(state, observation, generation=None):
         source["health"] = {"records": len(articles), "complete": True,
                             "skipped": {"invalid_or_non_wechat": skipped}}
         if not source.get("initialized"):
-            source["recent"] = {
-                identity: sorted(_entry_aliases(article, identity))
-                for identity, article in articles.items()
-            }
+            source["recent"] = prepared_recent[source_id]
             source["initialized"] = True
             continue
         seen_before = _recent_aliases(source.get("recent", {}))
@@ -974,11 +1347,9 @@ def _apply_scan_observation(state, observation, generation=None):
                 state["pending"][identity] = article
                 pending_aliases.update(aliases)
                 enqueued += 1
-        source["recent"] = {
-            identity: sorted(_entry_aliases(article, identity))
-            for identity, article in articles.items()
-        }
+        source["recent"] = prepared_recent[source_id]
     if generation is not None:
+        prunable_sources = set(exhausted_source_ids) if incremental_frontier else set(by_source)
         observed_aliases = {
             source_id: {
                 alias
@@ -990,7 +1361,7 @@ def _apply_scan_observation(state, observation, generation=None):
         for identity, tombstone in list(state["ack_tombstones"].items()):
             source_id = tombstone["source_id"]
             aliases = frozenset(tombstone["aliases"])
-            if source_id in by_source and generation > tombstone["ack_after_scan_seq"] and \
+            if source_id in prunable_sources and generation > tombstone["ack_after_scan_seq"] and \
                     aliases.isdisjoint(observed_aliases[source_id]):
                 del state["ack_tombstones"][identity]
         state["last_applied_scan_generation"] = generation
@@ -1003,7 +1374,9 @@ def _apply_scan_observation(state, observation, generation=None):
 
 
 def scan(state, client, page_size=DEFAULT_PAGE_SIZE, before_attempt=None):
-    observation = _scan_observation(client, page_size, before_attempt=before_attempt)
+    observation = _scan_observation(
+        client, page_size, before_attempt=before_attempt, sources=state["sources"],
+    )
     result = _apply_scan_observation(state, observation)
     if before_attempt is None:
         _merge_calls(state, client)
@@ -1055,6 +1428,21 @@ def pending(state, now=None):
     return result
 
 
+def _configured_pending(state, now=None):
+    items = pending(state, now=now)
+    selected = set(state["sources"])
+    result = {
+        category: [entry for entry in entries if entry.get("source_id") in selected]
+        for category, entries in items.items()
+    }
+    result["deselected_count"] = sum(
+        entry.get("source_id") not in selected
+        for entries in items.values()
+        for entry in entries
+    )
+    return result
+
+
 def _identity_for(state, article_id):
     if isinstance(article_id, str):
         matches = set()
@@ -1069,6 +1457,23 @@ def _identity_for(state, article_id):
         if len(matches) > 1:
             raise KeyError("ambiguous pending article")
     return article_id
+
+
+def _selected_identity_for(state, article_id):
+    matches = set()
+    if isinstance(article_id, str):
+        direct = state["pending"].get(article_id)
+        if direct is not None and direct.get("source_id") in state["sources"]:
+            matches.add(article_id)
+        matches.update(
+            identity for identity, entry in state["pending"].items()
+            if entry.get("source_id") in state["sources"] and entry.get("resource_id") == article_id
+        )
+    if len(matches) == 1:
+        return next(iter(matches))
+    if len(matches) > 1:
+        raise KeyError("ambiguous pending article")
+    raise ClaimUnavailable("pending article source is not configured or unavailable")
 
 
 def claim(state, identity, now=None):
@@ -1251,10 +1656,14 @@ def doctor(client, api_key=None, before_attempt=None):
 
 
 def status(state):
-    items = pending(state)
+    items = _configured_pending(state)
+    baseline_established = bool(state["sources"]) and state.get("scan_health", {}).get("complete") is True and \
+        all(source.get("initialized") is True for source in state["sources"].values())
     return {"configured_sources": len(state["sources"]),
             "initialized_sources": sum(bool(source.get("initialized")) for source in state["sources"].values()),
-            "pending": len(state["pending"]), "retryable": len(items["retryable"]),
+            "baseline_established": baseline_established,
+            "pending": len(items["retryable"]) + len(items["claimed"]) + len(items["exhausted"]),
+            "deselected_pending": items["deselected_count"], "retryable": len(items["retryable"]),
             "claimed": len(items["claimed"]), "exhausted": len(items["exhausted"]),
             "last_successful_scan": state.get("last_successful_scan"), "api_calls": state.get("api_calls", {}),
             "warnings": state.get("warnings", []), "scan_health": state.get("scan_health", {}),
@@ -1277,6 +1686,10 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
     sub.add_parser("sources")
+    source_search = sub.add_parser("search-sources")
+    source_search.add_argument("--name", required=True)
+    follow = sub.add_parser("follow")
+    follow.add_argument("--source-id", action="append", required=True)
     configure = sub.add_parser("configure")
     configure.add_argument("--source-id", action="append", required=True)
     sub.add_parser("scan")
@@ -1312,27 +1725,34 @@ def main(argv=None):
                 result = configure_sources(state, args.source_id)
                 save_state(path, state)
             elif args.command == "claim":
-                result = claim(state, args.article_id)
+                selected_identity = _selected_identity_for(state, args.article_id)
+                result = claim(state, selected_identity)
                 if "claim_id" in result:
                     save_state(path, state)
             elif args.command == "renew":
-                result = renew(state, args.article_id, args.claim_id)
+                selected_identity = _selected_identity_for(state, args.article_id)
+                result = renew(state, selected_identity, args.claim_id)
                 save_state(path, state)
             elif args.command == "pending":
-                result = pending(state)
+                result = _configured_pending(state)
             elif args.command == "ack":
-                result = ack(state, args.article_id, claim_id=args.claim_id); save_state(path, state)
+                selected_identity = _selected_identity_for(state, args.article_id)
+                result = ack(state, selected_identity, claim_id=args.claim_id); save_state(path, state)
             elif args.command == "fail":
-                result = fail(state, args.article_id, args.reason, claim_id=args.claim_id); save_state(path, state)
+                selected_identity = _selected_identity_for(state, args.article_id)
+                result = fail(state, selected_identity, args.reason, claim_id=args.claim_id); save_state(path, state)
             elif args.command == "status":
                 result = status(state)
             else:
                 if args.command == "scan":
-                    state["next_scan_seq"] += 1
-                    scan_generation = state["next_scan_seq"]
-                    save_state(path, state)
+                    if not state["sources"]:
+                        result = {"error": "configure at least one source before scan"}
+                    else:
+                        state["next_scan_seq"] += 1
+                        scan_generation = state["next_scan_seq"]
+                        save_state(path, state)
                 elif args.command == "markdown":
-                    markdown_identity = _identity_for(state, args.article_id)
+                    markdown_identity = _selected_identity_for(state, args.article_id)
                     entry = state["pending"].get(markdown_identity)
                     try:
                         if not entry:
@@ -1360,9 +1780,21 @@ def main(argv=None):
                 result = doctor(client, before_attempt=_durable_reservation(path, "me"))
             elif args.command == "sources":
                 result = list_sources(client, before_attempt=_durable_reservation(path, "subscription"))
+            elif args.command == "search-sources":
+                result = search_sources(
+                    client, args.name,
+                    before_attempt=_durable_reservation(path, "source_search"),
+                )
+            elif args.command == "follow":
+                result = follow_selected_sources(
+                    client,
+                    args.source_id,
+                    before_attempt=_durable_reservation(path, "onboarding_follow"),
+                )
             elif args.command == "scan":
                 observation = _scan_observation(
                     client, before_attempt=_durable_reservation(path, "subscription"),
+                    sources=state["sources"],
                 )
                 with state_lock(path):
                     fresh_state = _load_locked_state(path)
