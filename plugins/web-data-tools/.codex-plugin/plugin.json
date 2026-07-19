@@ -1,7 +1,7 @@
 {
   "name": "web-data-tools",
   "version": "0.3.0",
-  "description": "Web browsing, extraction, crawling, browser automation, and safe WeChat digest tools.",
+  "description": "Web browsing, extraction, crawling, browser automation, and safe WeChat reader and digest tools.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"

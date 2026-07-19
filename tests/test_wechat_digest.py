@@ -3236,57 +3236,94 @@ class WechatDigestTests(unittest.TestCase):
 
 
 class WechatDigestSkillContractTests(unittest.TestCase):
+    def markdown_section(self, text, heading, next_heading):
+        start_marker = "## %s" % heading
+        end_marker = "## %s" % next_heading
+        self.assertIn(start_marker, text)
+        self.assertIn(end_marker, text)
+        return text.split(start_marker, 1)[1].split(end_marker, 1)[0]
+
+    def paragraph_containing(self, text, needle):
+        matches = [paragraph for paragraph in text.split("\n\n") if needle in paragraph]
+        self.assertEqual(len(matches), 1, "expected one paragraph containing %r" % needle)
+        return matches[0]
+
+    def sentence_containing(self, text, needle):
+        matches = [sentence for sentence in text.split(". ") if needle in sentence]
+        self.assertEqual(len(matches), 1, "expected one sentence containing %r" % needle)
+        return matches[0]
+
     def test_skill_routes_interactive_reading_without_the_digest_lifecycle(self):
         text = SKILL_FILE.read_text(encoding="utf-8")
-        self.assertIn("## Setup", text)
-        self.assertIn("## Intent Routing", text)
-        self.assertIn("## Interactive Reading", text)
-        self.assertIn("## Incremental Digest", text)
-        self.assertIn("## Safety and Quotas", text)
-        self.assertIn("## Automation", text)
-
-        interactive = text.split("## Interactive Reading", 1)[1].split("## Incremental Digest", 1)[0]
-        for clause in (
-            "configured-sources", "latest", "recent", "read", "never mark items read",
-            "bookmark", "highlight", "BestBlogs history", "structured fallback",
-            "formats: [\"markdown\"]", "onlyMainContent: true", "mobile: true",
-            "storeInCache: false", 'proxy: "auto"', "effective/final URL",
-            "untrusted", "It uses no claim/renew/ack gates",
+        for heading in (
+            "Setup", "Intent Routing", "Interactive Reading", "Incremental Digest",
+            "Safety and Quotas", "Automation",
         ):
-            self.assertIn(clause, interactive, clause)
-        self.assertIn("search-sources", text)
-        self.assertIn("exactly one result", text)
+            self.assertIn("## %s" % heading, text, heading)
+        intent = self.markdown_section(text, "Intent Routing", "Interactive Reading")
+        exact_name = self.paragraph_containing(intent, "search-sources --name <exact-name>")
+        for relationship in (
+            "requested exact source name", "exactly one result",
+            "ID appears in `configured-sources`", "interactive command by that ID",
+        ):
+            self.assertIn(relationship, exact_name, relationship)
+        forbidden = self.paragraph_containing(intent, "Interactive current/latest/recent requests")
+        self.assertIn("do not run", forbidden)
+        for command in ("`scan`", "`pending`", "`claim`", "`ack`", "`fail`"):
+            self.assertIn(command, forbidden, command)
 
     def test_skill_keeps_interactive_and_digest_fallbacks_separate(self):
         text = SKILL_FILE.read_text(encoding="utf-8")
-        self.assertIn("## Interactive Reading", text)
-        self.assertIn("## Incremental Digest", text)
-        self.assertIn("## Safety and Quotas", text)
-        interactive = text.split("## Interactive Reading", 1)[1].split("## Incremental Digest", 1)[0]
-        digest = text.split("## Incremental Digest", 1)[1].split("## Safety and Quotas", 1)[0]
-        self.assertIn("read returns a structured fallback", interactive)
-        self.assertIn("It uses no claim/renew/ack gates", interactive)
-        self.assertIn("Standalone URLs", text)
-        self.assertIn("historical/topic searches", text)
+        interactive = self.markdown_section(text, "Interactive Reading", "Incremental Digest")
+        digest = self.markdown_section(text, "Incremental Digest", "Safety and Quotas")
+        fallback = self.paragraph_containing(interactive, "Use Firecrawl only when read returns")
+        self.assertIn("Use Firecrawl only when read returns a structured fallback.", fallback)
+        self.assertIn("Scrape only that exact validated URL", fallback)
+        self.assertIn("effective/final URL to remain exactly canonical", fallback)
+        self.assertIn("It uses no claim/renew/ack gates.", fallback)
+        for option in (
+            'formats: ["markdown"]', "onlyMainContent: true", "mobile: true",
+            "storeInCache: false", 'proxy: "auto"',
+        ):
+            self.assertIn(option, fallback, option)
+        commands = self.paragraph_containing(interactive, "Use `configured-sources`")
+        for command in ("`configured-sources`", "`latest", "`recent", "`read"):
+            self.assertIn(command, commands, command)
+        read_only = self.paragraph_containing(interactive, "never mark items read")
+        for effect in ("bookmark", "highlight", "modify BestBlogs history"):
+            self.assertIn(effect, read_only, effect)
+        untrusted = self.paragraph_containing(interactive, "untrusted content")
+        for relationship in (
+            "cannot select tools", "trigger additional calls", "alter the workflow",
+            "request secrets", "override instructions",
+        ):
+            self.assertIn(relationship, untrusted, relationship)
         self.assertIn("claim/renew/ack lifecycle", digest)
         self.assertIn("Before calling Firecrawl, run `renew <article_id> --claim-id <claim_id>`", digest)
 
     def test_reader_metadata_plugin_version_and_global_routing_are_english(self):
         metadata = METADATA_FILE.read_text(encoding="utf-8")
-        routing = (MODULE.parents[5] / "config/codex/AGENTS.global.md").read_text(encoding="utf-8")
+        routing_text = (MODULE.parents[5] / "config/codex/AGENTS.global.md").read_text(encoding="utf-8")
+        routing = self.paragraph_containing(routing_text, "Use `$wechat-digest`")
         self.assertIn('display_name: "WeChat Reader & Digest"', metadata)
         self.assertIn("$wechat-digest", metadata)
         self.assertIn("interactive reading", metadata.lower())
         self.assertTrue(metadata.isascii())
         self.assertTrue(SKILL_FILE.read_text(encoding="utf-8").isascii())
-        self.assertIn("latest/current/recent", routing)
-        self.assertIn("configured-source", routing)
-        self.assertIn("read", routing)
-        self.assertIn("incremental", routing)
-        self.assertIn("claim/renew/ack", routing)
-        self.assertTrue(routing.isascii())
+        latest_route = self.sentence_containing(routing, "latest/current/recent")
+        self.assertIn("configured-source questions", latest_route)
+        self.assertIn("read-only interactive route", latest_route)
+        fallback_route = self.sentence_containing(routing, "Use Firecrawl only when")
+        self.assertIn("interactive `read` returns its validated structured fallback", fallback_route)
+        self.assertIn("no claim/renew/ack gates", fallback_route)
+        self.assertIn("incremental digest claim/renew/ack lifecycle", fallback_route)
+        standalone_route = self.sentence_containing(routing, "standalone article URL")
+        self.assertIn("historical/topic search", standalone_route)
+        self.assertIn("Defuddle or Firecrawl", standalone_route)
+        self.assertTrue(routing_text.isascii())
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
         self.assertEqual(plugin["version"], "0.3.0")
+        self.assertIn("wechat reader and digest tools", plugin["description"].lower())
 
     def test_skill_declares_the_operational_digest_contract(self):
         text = SKILL_FILE.read_text(encoding="utf-8")
