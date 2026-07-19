@@ -1,5 +1,6 @@
 # Superpowers planning artifacts are local process notes, not toolbox assets.
 docs/superpowers/
+.worktrees/
 
 # Local environment and editor noise.
 .DS_Store
