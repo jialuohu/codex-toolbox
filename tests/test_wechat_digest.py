@@ -538,6 +538,22 @@ class WechatDigestTests(unittest.TestCase):
         self.assertIn("feed_duplicate_identity", result["warnings"])
         self.assertFalse(state["sources"]["s1"]["initialized"])
 
+    def test_cross_page_opaque_url_alias_does_not_require_a_resource_type(self):
+        first = {
+            "sourceId": "s2", "title": "first", "url": "https://example.com/post",
+        }
+        second = copy.deepcopy(first)
+        second.update({"title": "changed metadata", "resourceType": "video"})
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        result = wechat.scan(state, FakeClient([
+            {"dataList": [first], "total": 2},
+            {"dataList": [second], "total": 2},
+        ]), page_size=1)
+        self.assertFalse(result["complete"])
+        self.assertIn("feed_duplicate_identity", result["warnings"])
+        self.assertFalse(state["sources"]["s1"]["initialized"])
+
     def test_cross_page_duplicate_article_identity_is_incomplete(self):
         first_r2 = record("r2")
         second_r2 = record("r2")
@@ -1784,6 +1800,12 @@ class WechatDigestTests(unittest.TestCase):
         legacy.pop("last_applied_scan_generation", None)
         legacy.pop("ack_tombstones", None)
         legacy["body_budget"] = {"day": wechat._beijing_day(), "count": 7}
+        wechat.configure_sources(legacy, ["s1"])
+        old_url = "https://mp.weixin.qq.com/s/v1-recent?sessionid=private"
+        old_identity = "url:" + hashlib.sha256(old_url.encode("utf-8")).hexdigest()
+        legacy["sources"]["s1"].update({
+            "initialized": True, "recent": {old_identity: True},
+        })
         legacy_entry = wechat.parse_article(record("r1"))
         legacy_entry["identity"] = "resource:r1"
         legacy["pending"]["resource:r1"] = legacy_entry
@@ -1796,7 +1818,11 @@ class WechatDigestTests(unittest.TestCase):
             "day": wechat._beijing_day(), "count": wechat.TOTAL_DAILY_LIMIT,
         })
         self.assertEqual(migrated["body_budget"]["count"], 7)
-        self.assertIn("resource:r1", migrated["pending"])
+        self.assertEqual(migrated["pending"], {})
+        self.assertIn("legacy_pending_discarded:1", migrated["warnings"])
+        self.assertFalse(migrated["sources"]["s1"]["initialized"])
+        self.assertEqual(migrated["sources"]["s1"]["recent"], {})
+        self.assertIn("identity_rebaseline:s1", migrated["warnings"])
 
         with redirect_stdout(io.StringIO()):
             self.assertEqual(wechat.main(["--state-file", str(path), "status"]), 0)
@@ -1836,6 +1862,12 @@ class WechatDigestTests(unittest.TestCase):
         previous.pop("next_scan_seq")
         previous.pop("last_applied_scan_generation")
         previous.pop("ack_tombstones")
+        wechat.configure_sources(previous, ["s1"])
+        old_url = "https://mp.weixin.qq.com/s/v2-recent?srcid=legacy"
+        old_identity = "url:" + hashlib.sha256(old_url.encode("utf-8")).hexdigest()
+        previous["sources"]["s1"].update({
+            "initialized": True, "recent": {old_identity: True},
+        })
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps(previous), encoding="utf-8")
         migrated = wechat.load_state(path)
@@ -1843,6 +1875,9 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(migrated["next_scan_seq"], 4)
         self.assertEqual(migrated["last_applied_scan_generation"], 0)
         self.assertEqual(migrated["ack_tombstones"], {})
+        self.assertFalse(migrated["sources"]["s1"]["initialized"])
+        self.assertEqual(migrated["sources"]["s1"]["recent"], {})
+        self.assertIn("identity_rebaseline:s1", migrated["warnings"])
 
     def test_v3_resource_recent_migrates_to_rebaseline_before_id_drift_can_enqueue(self):
         path = self.state_file()
@@ -1869,7 +1904,76 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(migrated["pending"], {})
         self.assertTrue(migrated["sources"]["s1"]["initialized"])
 
-    def test_v3_tombstones_and_pending_migrate_without_losing_alias_information(self):
+    def test_v3_url_recent_migrates_to_rebaseline_after_canonicalizer_tightening(self):
+        path = self.state_file()
+        legacy = wechat.new_state()
+        legacy["version"] = 3
+        wechat.configure_sources(legacy, ["s1"])
+        old_url = "https://mp.weixin.qq.com/s/stable?sessionid=private"
+        old_identity = "url:" + hashlib.sha256(old_url.encode("utf-8")).hexdigest()
+        legacy["sources"]["s1"].update({
+            "initialized": True,
+            "recent": {old_identity: True},
+        })
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        migrated = wechat.load_state(path)
+        self.assertFalse(migrated["sources"]["s1"]["initialized"])
+        self.assertEqual(migrated["sources"]["s1"]["recent"], {})
+        self.assertIn("identity_rebaseline:s1", migrated["warnings"])
+        result = wechat.scan(migrated, FakeClient([{
+            "dataList": [record(None, url=old_url)],
+        }]))
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["enqueued"], 0)
+        self.assertEqual(migrated["pending"], {})
+
+    def test_v3_pending_is_discarded_when_identity_rules_change(self):
+        path = self.state_file()
+        legacy = wechat.new_state()
+        legacy["version"] = 3
+        wechat.configure_sources(legacy, ["s1"])
+        legacy["sources"]["s1"]["initialized"] = True
+        old_url = "https://mp.weixin.qq.com/s/pending?sessionid=private"
+        old_identity = "url:" + hashlib.sha256(old_url.encode("utf-8")).hexdigest()
+        entry = wechat.parse_article(record(None, url=old_url))
+        entry.update({"identity": old_identity, "url": old_url})
+        legacy["pending"][old_identity] = entry
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        migrated = wechat.load_state(path)
+        self.assertEqual(migrated["pending"], {})
+        self.assertIn("legacy_pending_discarded:1", migrated["warnings"])
+        self.assertFalse(migrated["sources"]["s1"]["initialized"])
+
+    def test_v3_overlapping_pending_and_tombstone_state_cannot_redeliver(self):
+        path = self.state_file()
+        legacy = wechat.new_state()
+        legacy["version"] = 3
+        wechat.configure_sources(legacy, ["s1"])
+        legacy["sources"]["s1"]["initialized"] = True
+        shared_url = "https://mp.weixin.qq.com/s/shared"
+        resource_entry = wechat.parse_article(record("r1", url=shared_url))
+        resource_entry["identity"] = "resource:r1"
+        url_entry = wechat.parse_article(record(None, url=shared_url))
+        legacy["pending"] = {
+            resource_entry["identity"]: resource_entry,
+            url_entry["identity"]: url_entry,
+        }
+        legacy["ack_tombstones"] = {
+            "resource:r1": {"source_id": "s1", "ack_after_scan_seq": 0},
+        }
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        migrated = wechat.load_state(path)
+        self.assertEqual(migrated["pending"], {})
+        self.assertEqual(wechat.pending(migrated)["retryable"], [])
+        self.assertIn("legacy_pending_discarded:2", migrated["warnings"])
+
+    def test_v3_tombstones_and_pending_are_discarded_before_safe_rebaseline(self):
         path = self.state_file()
         stable_url = "https://mp.weixin.qq.com/s/legacy-pending"
         legacy = wechat.new_state()
@@ -1888,10 +1992,11 @@ class WechatDigestTests(unittest.TestCase):
 
         migrated = wechat.load_state(path)
         self.assertEqual(migrated["version"], 4)
-        self.assertEqual(
-            migrated["ack_tombstones"]["resource:acked-id"]["aliases"],
-            ["resource:acked-id"],
-        )
+        self.assertEqual(migrated["ack_tombstones"], {})
+        self.assertEqual(migrated["pending"], {})
+        self.assertIn("legacy_pending_discarded:1", migrated["warnings"])
+        self.assertIn("legacy_tombstones_discarded:1", migrated["warnings"])
+        self.assertFalse(migrated["sources"]["s1"]["initialized"])
         result = wechat.scan(migrated, FakeClient([{
             "dataList": [
                 record("drifted-id", url=stable_url),
@@ -1900,7 +2005,7 @@ class WechatDigestTests(unittest.TestCase):
         }]))
         self.assertTrue(result["complete"])
         self.assertEqual(result["enqueued"], 0)
-        self.assertEqual(list(migrated["pending"]), ["resource:pending-id"])
+        self.assertEqual(migrated["pending"], {})
 
     def test_malformed_v3_container_types_fail_as_state_errors_during_migration(self):
         base = wechat.new_state()
@@ -1918,6 +2023,87 @@ class WechatDigestTests(unittest.TestCase):
                 path.write_text(json.dumps(malformed), encoding="utf-8")
                 with self.assertRaises(wechat.StateError):
                     wechat.load_state(path)
+
+    def test_malformed_nested_v3_state_fails_safely_without_rewriting(self):
+        base = wechat.new_state()
+        base["version"] = 3
+        wechat.configure_sources(base, ["s1"])
+        cases = []
+        bad_tombstone = copy.deepcopy(base)
+        bad_tombstone["ack_tombstones"] = {
+            "resource:r1": {"source_id": [], "ack_after_scan_seq": 0},
+        }
+        cases.append(bad_tombstone)
+        for recent in (123, [1]):
+            malformed = copy.deepcopy(base)
+            malformed["sources"]["s1"]["recent"] = recent
+            cases.append(malformed)
+        for index, malformed in enumerate(cases):
+            with self.subTest(index=index):
+                path = self.state_file()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                encoded = json.dumps(malformed)
+                path.write_text(encoded, encoding="utf-8")
+                with self.assertRaises(wechat.StateError):
+                    wechat.load_state(path)
+                self.assertEqual(path.read_text(encoding="utf-8"), encoded)
+
+    def test_v4_alias_lists_reject_non_string_values_as_state_errors(self):
+        url = "https://mp.weixin.qq.com/s/valid"
+        identity = "url:" + hashlib.sha256(url.encode("utf-8")).hexdigest()
+        cases = []
+        recent = wechat.new_state()
+        wechat.configure_sources(recent, ["s1"])
+        recent["sources"]["s1"].update({
+            "initialized": True,
+            "recent": {identity: [identity, {}]},
+        })
+        cases.append(recent)
+        tombstone = wechat.new_state()
+        tombstone["ack_tombstones"][identity] = {
+            "source_id": "s1", "ack_after_scan_seq": 0,
+            "aliases": [identity, 1],
+        }
+        cases.append(tombstone)
+        for malformed in cases:
+            with self.subTest(malformed=malformed):
+                with self.assertRaises(wechat.StateError):
+                    wechat.save_state(self.state_file(), malformed)
+
+    def test_v4_state_rejects_overlapping_pending_and_tombstone_aliases(self):
+        shared = wechat.parse_article(record("r1", url="https://mp.weixin.qq.com/s/shared"))
+        resource_copy = copy.deepcopy(shared)
+        resource_copy["identity"] = "resource:r1"
+        cases = []
+        duplicate_pending = wechat.new_state()
+        duplicate_pending["pending"] = {
+            shared["identity"]: shared,
+            resource_copy["identity"]: resource_copy,
+        }
+        cases.append(duplicate_pending)
+        pending_tombstone = wechat.new_state()
+        pending_tombstone["pending"][shared["identity"]] = shared
+        pending_tombstone["ack_tombstones"]["resource:r1"] = {
+            "source_id": "s1", "ack_after_scan_seq": 0,
+            "aliases": ["resource:r1"],
+        }
+        cases.append(pending_tombstone)
+        duplicate_tombstones = wechat.new_state()
+        duplicate_tombstones["ack_tombstones"] = {
+            shared["identity"]: {
+                "source_id": "s1", "ack_after_scan_seq": 0,
+                "aliases": sorted([shared["identity"], "resource:r1"]),
+            },
+            "resource:r1": {
+                "source_id": "s1", "ack_after_scan_seq": 0,
+                "aliases": ["resource:r1"],
+            },
+        }
+        cases.append(duplicate_tombstones)
+        for malformed in cases:
+            with self.subTest(malformed=malformed):
+                with self.assertRaises(wechat.StateError):
+                    wechat.save_state(self.state_file(), malformed)
 
     def test_pending_state_rejects_unexpected_content_fields_without_rewriting(self):
         path = self.state_file()
@@ -2071,6 +2257,46 @@ class WechatDigestTests(unittest.TestCase):
             state["pending"][entry["identity"]] = entry
         with self.assertRaisesRegex(KeyError, "ambiguous"):
             wechat.claim(state, "shared")
+
+    def test_direct_pending_identity_cannot_shadow_another_raw_resource_id(self):
+        state = wechat.new_state()
+        direct = wechat.parse_article(record("direct", url="https://mp.weixin.qq.com/s/direct"))
+        shadow = wechat.parse_article(record(
+            direct["identity"], url="https://mp.weixin.qq.com/s/shadow",
+        ))
+        state["pending"] = {direct["identity"]: direct, shadow["identity"]: shadow}
+        before = copy.deepcopy(state)
+        with self.assertRaisesRegex(KeyError, "ambiguous"):
+            wechat.claim(state, direct["identity"])
+        self.assertEqual(state, before)
+
+    def test_identity_resource_collision_is_ambiguous_for_every_pending_action(self):
+        for action in ("renew", "markdown", "fail", "ack"):
+            with self.subTest(action=action):
+                state = wechat.new_state()
+                direct = wechat.parse_article(record(
+                    "direct", url="https://mp.weixin.qq.com/s/direct-action",
+                ))
+                shadow = wechat.parse_article(record(
+                    direct["identity"], url="https://mp.weixin.qq.com/s/shadow-action",
+                ))
+                add_claim(direct)
+                add_claim(shadow)
+                state["pending"] = {
+                    direct["identity"]: direct,
+                    shadow["identity"]: shadow,
+                }
+                before = copy.deepcopy(state)
+                with self.assertRaisesRegex(KeyError, "ambiguous"):
+                    if action == "renew":
+                        wechat.renew(state, direct["identity"], CLAIM_ID)
+                    elif action == "markdown":
+                        wechat.markdown(state, FakeClient(markdown="# body"), direct["identity"])
+                    elif action == "fail":
+                        wechat.fail(state, direct["identity"], "FETCH_FAILED", claim_id=CLAIM_ID)
+                    else:
+                        wechat.ack(state, direct["identity"], claim_id=CLAIM_ID)
+                self.assertEqual(state, before)
 
     def test_status_exposes_safe_body_budget_details(self):
         state = wechat.new_state()

@@ -13,6 +13,8 @@ Use `scripts/run_wechat_digest.sh` for every helper command. It loads only `best
 2. Have the user select one to ten source IDs from the JSON output. Configure the selected set atomically with one command: `run_wechat_digest.sh configure --source-id <id1> --source-id <id2> ...`.
 3. Run `run_wechat_digest.sh scan` as a first-run dry run. A complete first scan is a baseline: it records the current articles as seen, returns no historical items in `pending`, and must not be summarized. If scan health is partial, fix or report it and rerun later; it is not a baseline.
 
+State versions 1–3 used incompatible article identities. Their first v4 command validates the old file, discards legacy pending items and tombstones with explicit `legacy_*_discarded` warnings, and resets every configured source for a safe baseline. Surface those warnings and complete a fresh baseline before scheduled processing; never represent discarded legacy items as delivered.
+
 ## Scheduled run
 
 Use this exact lifecycle: `scan -> pending -> claim -> markdown -> (renew -> Firecrawl fallback when needed) -> renew -> summarize -> renew -> ack -> status`.

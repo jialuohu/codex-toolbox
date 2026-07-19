@@ -201,6 +201,35 @@ def canonical_wechat_url(value):
     return urlunparse(("https", "mp.weixin.qq.com", parsed.path, "", urlencode(sorted(canonical_pairs)), ""))
 
 
+def _legacy_canonical_wechat_url(value):
+    """Reconstruct the v1-v3 canonical form only to validate old state safely."""
+    if not isinstance(value, str) or len(value) > 4096:
+        return None
+    try:
+        parsed = urlparse(value.strip())
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or host != "mp.weixin.qq.com" or \
+                parsed.username is not None or parsed.password is not None or \
+                parsed.port is not None or parsed.netloc.lower() != "mp.weixin.qq.com":
+            return None
+    except ValueError:
+        return None
+    if parsed.params:
+        return None
+    pairs = [
+        (key, item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_") and key.lower() not in {"from", "scene", "src"}
+    ]
+    if parsed.path == "/s":
+        for required in ("__biz", "mid", "idx", "sn"):
+            values = [item for key, item in pairs if key == required]
+            if len(values) != 1 or not values[0]:
+                return None
+    elif not re.fullmatch(r"/s/[A-Za-z0-9_-]+", parsed.path):
+        return None
+    return urlunparse(("https", "mp.weixin.qq.com", parsed.path, "", urlencode(sorted(pairs)), ""))
+
+
 def _publication_time(value):
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if not math.isfinite(value):
@@ -360,6 +389,14 @@ def _valid_identity(identity):
     return bool(re.fullmatch(r"url:[0-9a-f]{64}", identity))
 
 
+def _valid_alias_list(aliases, identity):
+    if not isinstance(aliases, list) or not 1 <= len(aliases) <= MAX_TOMBSTONE_ALIASES:
+        return False
+    if any(not _valid_identity(alias) for alias in aliases):
+        return False
+    return identity in aliases and aliases == sorted(aliases) and len(aliases) == len(set(aliases))
+
+
 def _url_identity(url):
     canonical = canonical_wechat_url(url)
     if canonical is None:
@@ -441,13 +478,11 @@ def _validate_state(state):
             raise StateError("unsupported or malformed state schema")
         for identity, aliases in source["recent"].items():
             if not isinstance(identity, str) or not identity.startswith("url:") or \
-                    not _valid_identity(identity) or not isinstance(aliases, list) or \
-                    not 1 <= len(aliases) <= MAX_TOMBSTONE_ALIASES or \
-                    aliases != sorted(set(aliases)) or identity not in aliases or \
-                    any(not _valid_identity(alias) for alias in aliases):
+                    not _valid_identity(identity) or not _valid_alias_list(aliases, identity):
                 raise StateError("unsupported or malformed state schema")
         if not _valid_health(source["health"], allow_empty=True):
             raise StateError("unsupported or malformed state schema")
+    pending_aliases = set()
     for identity, entry in state["pending"].items():
         required = {"identity", "resource_id", "source_id", "source_name", "title", "url", "published_at", "attempts"}
         if not _valid_identity(identity) or not isinstance(entry, dict) or not required.issubset(entry) or \
@@ -457,8 +492,10 @@ def _validate_state(state):
                 not isinstance(entry.get("attempts"), int) or isinstance(entry.get("attempts"), bool) or not 0 <= entry["attempts"] <= 3 or \
                 not isinstance(entry.get("title"), str) or not isinstance(entry.get("source_name"), str) or not isinstance(entry.get("published_at"), str):
             raise StateError("unsupported or malformed state schema")
-        if identity not in _entry_aliases(entry):
+        entry_aliases = _entry_aliases(entry)
+        if identity not in entry_aliases or not entry_aliases.isdisjoint(pending_aliases):
             raise StateError("unsupported or malformed state schema")
+        pending_aliases.update(entry_aliases)
         if entry.get("last_failure_reason") is not None and (not isinstance(entry["last_failure_reason"], str) or not SAFE_REASON.fullmatch(entry["last_failure_reason"])):
             raise StateError("unsupported or malformed state schema")
         has_claim_id = "claim_id" in entry
@@ -469,6 +506,7 @@ def _validate_state(state):
             raise StateError("unsupported or malformed state schema")
         if "claim_fetch_started" in entry and (not has_claim_id or entry["claim_fetch_started"] is not True):
             raise StateError("unsupported or malformed state schema")
+    tombstone_aliases = set()
     for identity, tombstone in state["ack_tombstones"].items():
         if not _valid_identity(identity) or not isinstance(tombstone, dict) or \
                 set(tombstone) != {"source_id", "ack_after_scan_seq", "aliases"} or \
@@ -478,16 +516,81 @@ def _validate_state(state):
                 not 0 <= tombstone["ack_after_scan_seq"] <= state["next_scan_seq"]:
             raise StateError("unsupported or malformed state schema")
         aliases = tombstone.get("aliases")
-        if not isinstance(aliases, list) or not 1 <= len(aliases) <= MAX_TOMBSTONE_ALIASES or \
-                aliases != sorted(set(aliases)) or identity not in aliases or \
-                any(not _valid_identity(alias) for alias in aliases):
+        if not _valid_alias_list(aliases, identity):
             raise StateError("unsupported or malformed state schema")
+        aliases = set(aliases)
+        if not aliases.isdisjoint(pending_aliases) or not aliases.isdisjoint(tombstone_aliases):
+            raise StateError("unsupported or malformed state schema")
+        tombstone_aliases.update(aliases)
     return state
 
 
 def default_state_path():
     home = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
     return Path(home) / "state" / "wechat-digest.json"
+
+
+def _validate_legacy_sources(sources):
+    if not isinstance(sources, dict):
+        raise StateError("unsupported or malformed state schema")
+    for source_id, source in sources.items():
+        if not _safe_id(source_id) or not isinstance(source, dict) or \
+                set(source) != {"id", "name", "initialized", "recent", "health"} or \
+                source.get("id") != source_id or not isinstance(source.get("name"), str) or \
+                not isinstance(source.get("initialized"), bool) or \
+                not isinstance(source.get("recent"), dict) or len(source["recent"]) > MAX_RECENT or \
+                not isinstance(source.get("health"), dict) or \
+                any(not _valid_identity(identity) or value is not True
+                    for identity, value in source["recent"].items()) or \
+                not _valid_health(source["health"], allow_empty=True):
+            raise StateError("unsupported or malformed state schema")
+
+
+def _validate_legacy_pending(pending):
+    if not isinstance(pending, dict):
+        raise StateError("unsupported or malformed state schema")
+    required = {"identity", "resource_id", "source_id", "source_name", "title", "url", "published_at", "attempts"}
+    for identity, entry in pending.items():
+        if not _valid_identity(identity) or not isinstance(entry, dict) or \
+                not required.issubset(entry) or not set(entry).issubset(PENDING_FIELDS) or \
+                entry.get("identity") != identity or not _safe_id(entry.get("source_id")) or \
+                _legacy_canonical_wechat_url(entry.get("url")) != entry.get("url") or \
+                entry.get("resource_id") is not None and not _safe_id(entry.get("resource_id")) or \
+                not isinstance(entry.get("attempts"), int) or isinstance(entry.get("attempts"), bool) or \
+                not 0 <= entry["attempts"] <= 3 or not isinstance(entry.get("title"), str) or \
+                not isinstance(entry.get("source_name"), str) or not isinstance(entry.get("published_at"), str):
+            raise StateError("unsupported or malformed state schema")
+        resource_id = entry.get("resource_id")
+        if resource_id is not None and identity != "resource:" + resource_id:
+            raise StateError("unsupported or malformed state schema")
+        if resource_id is None and identity != "url:" + hashlib.sha256(entry["url"].encode("utf-8")).hexdigest():
+            raise StateError("unsupported or malformed state schema")
+        if entry.get("last_failure_reason") is not None and \
+                (not isinstance(entry["last_failure_reason"], str) or
+                 not SAFE_REASON.fullmatch(entry["last_failure_reason"])):
+            raise StateError("unsupported or malformed state schema")
+        has_claim_id = "claim_id" in entry
+        has_claim_expiry = "claim_expires_at" in entry
+        if has_claim_id != has_claim_expiry or has_claim_id and \
+                (not isinstance(entry["claim_id"], str) or not CLAIM_TOKEN.fullmatch(entry["claim_id"]) or
+                 _parse_claim_expiry(entry["claim_expires_at"]) is None):
+            raise StateError("unsupported or malformed state schema")
+        if "claim_fetch_started" in entry and (not has_claim_id or entry["claim_fetch_started"] is not True):
+            raise StateError("unsupported or malformed state schema")
+
+
+def _validate_legacy_tombstones(tombstones, next_sequence):
+    if not isinstance(tombstones, dict) or len(tombstones) > MAX_TOMBSTONES or \
+            not isinstance(next_sequence, int) or isinstance(next_sequence, bool) or next_sequence < 0:
+        raise StateError("unsupported or malformed state schema")
+    for identity, tombstone in tombstones.items():
+        if not _valid_identity(identity) or not isinstance(tombstone, dict) or \
+                set(tombstone) != {"source_id", "ack_after_scan_seq"} or \
+                not _safe_id(tombstone.get("source_id")) or \
+                not isinstance(tombstone.get("ack_after_scan_seq"), int) or \
+                isinstance(tombstone.get("ack_after_scan_seq"), bool) or \
+                not 0 <= tombstone["ack_after_scan_seq"] <= next_sequence:
+            raise StateError("unsupported or malformed state schema")
 
 
 def _migrate_state(state):
@@ -517,55 +620,36 @@ def _migrate_state(state):
             raise StateError("unsupported or malformed state schema")
         migrated = copy.deepcopy(state)
         next_sequence = migrated["next_scan_seq"]
-        if not isinstance(migrated["ack_tombstones"], dict):
-            raise StateError("unsupported or malformed state schema")
-        for identity, tombstone in migrated["ack_tombstones"].items():
-            if not _valid_identity(identity) or not isinstance(tombstone, dict) or \
-                    set(tombstone) != {"source_id", "ack_after_scan_seq"}:
-                raise StateError("unsupported or malformed state schema")
-        migrated["ack_tombstones"] = {
-            identity: {
-                "source_id": tombstone["source_id"],
-                "ack_after_scan_seq": tombstone["ack_after_scan_seq"],
-                "aliases": [identity],
-            }
-            for identity, tombstone in migrated["ack_tombstones"].items()
-        }
     else:
         raise StateError("unsupported or malformed state schema")
-    migrated["version"] = STATE_VERSION
     if version in (LEGACY_STATE_VERSION, SEQUENCE_STATE_VERSION):
         migrated["next_scan_seq"] = next_sequence
         migrated["last_applied_scan_generation"] = 0
         migrated["ack_tombstones"] = {}
 
-    if not isinstance(migrated.get("sources"), dict) or \
-            not isinstance(migrated.get("warnings"), list) or \
-            not isinstance(migrated.get("ack_tombstones"), dict) or \
-            any(not isinstance(source, dict) for source in migrated["sources"].values()):
+    if not isinstance(migrated.get("warnings"), list) or \
+            any(not isinstance(warning, str) for warning in migrated["warnings"]):
         raise StateError("unsupported or malformed state schema")
+    _validate_legacy_sources(migrated.get("sources"))
+    _validate_legacy_pending(migrated.get("pending"))
+    _validate_legacy_tombstones(migrated.get("ack_tombstones"), next_sequence)
 
-    resource_only_tombstone_sources = {
-        tombstone["source_id"]
-        for identity, tombstone in migrated["ack_tombstones"].items()
-        if identity.startswith("resource:")
-    }
+    pending_count = len(migrated["pending"])
+    tombstone_count = len(migrated["ack_tombstones"])
+    migrated["version"] = STATE_VERSION
+    migrated["pending"] = {}
+    migrated["ack_tombstones"] = {}
     for source_id, source in migrated["sources"].items():
-        legacy_recent = source.get("recent", {})
-        needs_rebaseline = source_id in resource_only_tombstone_sources or \
-            any(identity.startswith("resource:") for identity in legacy_recent)
-        if isinstance(legacy_recent, dict):
-            source["recent"] = {
-                identity: [identity] if value is True else value
-                for identity, value in legacy_recent.items()
-            }
-        if needs_rebaseline:
-            source["initialized"] = False
-            source["recent"] = {}
-            source["health"] = {}
-            warning = "identity_rebaseline:" + source_id
-            if warning not in migrated["warnings"]:
-                migrated["warnings"].append(warning)
+        source["initialized"] = False
+        source["recent"] = {}
+        source["health"] = {}
+        warning = "identity_rebaseline:" + source_id
+        if warning not in migrated["warnings"]:
+            migrated["warnings"].append(warning)
+    if pending_count:
+        migrated["warnings"].append("legacy_pending_discarded:%d" % pending_count)
+    if tombstone_count:
+        migrated["warnings"].append("legacy_tombstones_discarded:%d" % tombstone_count)
     return _validate_state(migrated)
 
 
@@ -730,20 +814,14 @@ def _feed_aliases(raw):
         if url:
             aliases.add("url:" + hashlib.sha256(url.encode("utf-8")).hexdigest())
 
-    sources = {_safe_id_value(value) for value in _source_values(raw)}
-    sources.discard(None)
-    kinds = {_kind_value(value) for value in _field_values(raw, ("resourceType", "type"))}
-    kinds.discard(None)
     for raw_url in raw_urls:
         if not isinstance(raw_url, str) or not raw_url.strip() or len(raw_url) > 4096 or canonical_wechat_url(raw_url):
             continue
-        for source_id in sources:
-            for kind in kinds:
-                encoded = json.dumps(
-                    [source_id, kind, raw_url.strip()], ensure_ascii=False,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-                aliases.add("opaque:" + hashlib.sha256(encoded).hexdigest())
+        encoded = json.dumps(
+            ["external_url", raw_url.strip()], ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        aliases.add("opaque:" + hashlib.sha256(encoded).hexdigest())
     return frozenset(aliases)
 
 
@@ -991,13 +1069,16 @@ def pending(state, now=None):
 
 
 def _identity_for(state, article_id):
-    if article_id in state["pending"]:
-        return article_id
     if isinstance(article_id, str):
-        matches = [identity for identity, entry in state["pending"].items()
-                   if entry.get("resource_id") == article_id]
+        matches = set()
+        if article_id in state["pending"]:
+            matches.add(article_id)
+        matches.update(
+            identity for identity, entry in state["pending"].items()
+            if entry.get("resource_id") == article_id
+        )
         if len(matches) == 1:
-            return matches[0]
+            return next(iter(matches))
         if len(matches) > 1:
             raise KeyError("ambiguous pending article")
     return article_id
