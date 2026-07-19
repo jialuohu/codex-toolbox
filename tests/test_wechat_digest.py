@@ -3701,6 +3701,32 @@ class WechatInteractiveListingTests(unittest.TestCase):
         self.assertEqual(mixed["warnings"], [])
         self.assertEqual(state["sources"]["s1"]["name"], "Existing Alias")
 
+    def test_interactive_listing_fails_closed_when_the_only_candidate_has_no_resource_id(self):
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        missing_id = record(None, "s1")
+
+        class SourceClient:
+            def subscription_source_page(self, page, page_size, source_id, time_filter=None, before_attempt=None):
+                return {"dataList": [missing_id]}
+
+        with self.assertRaisesRegex(wechat.APIError, "no safe article"):
+            wechat.interactive_articles(state, SourceClient(), "s1", 1)
+
+    def test_interactive_listing_skips_idless_candidates_and_returns_only_readable_articles(self):
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        missing_id = record(None, "s1")
+        valid = record("readable", "s1")
+
+        class SourceClient:
+            def subscription_source_page(self, page, page_size, source_id, time_filter=None, before_attempt=None):
+                return {"dataList": [missing_id, valid]}
+
+        result = wechat.interactive_articles(state, SourceClient(), "s1", 2)
+
+        self.assertEqual([article["resource_id"] for article in result["articles"]], ["readable"])
+
     def test_interactive_cache_compare_and_swap_preserves_a_newer_concurrent_alias(self):
         path = self.state_file()
         state = wechat.new_state()
@@ -3881,6 +3907,90 @@ class WechatInteractiveListingTests(unittest.TestCase):
             "url": record("article-1", "s1")["url"].split("?")[0],
         })
         self.assertEqual(result["article"]["resource_id"], "article-1")
+
+    def test_read_configuration_loss_after_metadata_prevents_the_markdown_request(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        wechat.save_state(path, state)
+
+        class RacingReadClient:
+            def __init__(self):
+                self.calls = []
+
+            def resource_metadata(self, resource_id, before_attempt=None):
+                before_attempt()
+                self.calls.append("metadata")
+                with wechat.state_lock(path):
+                    current = wechat.load_state(path)
+                    wechat.configure_sources(current, ["s2"])
+                    wechat.save_state(path, current)
+                return record("article-1", "s1")
+
+            def markdown(self, resource_id, before_attempt=None):
+                before_attempt()
+                self.calls.append("markdown")
+                return "# stale content"
+
+        client = RacingReadClient()
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "read", "article-1", "--source", "s1",
+                ]), 2)
+        finally:
+            wechat._client_from_env = original_client
+
+        self.assertEqual(json.loads(output.getvalue()), {
+            "error": "configured source changed during read request",
+        })
+        self.assertEqual(client.calls, ["metadata"])
+
+    def test_read_configuration_loss_during_markdown_suppresses_content_and_fallback(self):
+        for body in ("# stale content", ""):
+            with self.subTest(body=body):
+                path = self.state_file()
+                state = wechat.new_state()
+                wechat.configure_sources(state, ["s1"])
+                wechat.save_state(path, state)
+
+                class RacingReadClient:
+                    def __init__(self):
+                        self.calls = []
+
+                    def resource_metadata(self, resource_id, before_attempt=None):
+                        before_attempt()
+                        self.calls.append("metadata")
+                        return record("article-1", "s1")
+
+                    def markdown(self, resource_id, before_attempt=None):
+                        before_attempt()
+                        self.calls.append("markdown")
+                        with wechat.state_lock(path):
+                            current = wechat.load_state(path)
+                            wechat.configure_sources(current, ["s2"])
+                            wechat.save_state(path, current)
+                        return body
+
+                client = RacingReadClient()
+                original_client = wechat._client_from_env
+                wechat._client_from_env = lambda: client
+                output = io.StringIO()
+                try:
+                    with redirect_stdout(output):
+                        self.assertEqual(wechat.main([
+                            "--state-file", str(path), "read", "article-1", "--source", "s1",
+                        ]), 2)
+                finally:
+                    wechat._client_from_env = original_client
+
+                self.assertEqual(json.loads(output.getvalue()), {
+                    "error": "configured source changed during read request",
+                })
+                self.assertEqual(client.calls, ["metadata", "markdown"])
 
     def test_read_reports_total_budget_exhaustion_without_a_fallback_url_before_metadata(self):
         path = self.state_file()

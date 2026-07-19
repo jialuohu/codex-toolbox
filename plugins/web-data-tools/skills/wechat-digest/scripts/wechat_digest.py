@@ -965,6 +965,8 @@ def _interactive_article(raw, expected_source_id):
     article = parse_article(raw)
     if article is None:
         return None
+    if not _safe_id(article["resource_id"]):
+        return None
     source_object = raw.get("source") if isinstance(raw.get("source"), dict) else {}
     raw_source_names = _field_values(raw, ("sourceName",)) + _field_values(source_object, ("name",))
     source_names = [_bounded_display_text(value, 200) for value in raw_source_names]
@@ -1058,7 +1060,10 @@ def _article_summary(article):
     )}
 
 
-def read_article(state, client, resource_id, source_selector, metadata_attempt=None, markdown_attempt=None):
+def read_article(
+        state, client, resource_id, source_selector, metadata_attempt=None,
+        markdown_attempt=None, validate_source=None,
+):
     if not _safe_id(resource_id):
         raise ValueError("resource ID must be safe")
     source_id = _configured_source_id(state, source_selector)
@@ -1069,24 +1074,24 @@ def read_article(state, client, resource_id, source_selector, metadata_attempt=N
     if article["resource_id"] != resource_id:
         raise APIError("resource metadata mismatch")
     summary = _article_summary(article)
+
+    def fallback(reason):
+        if validate_source is not None:
+            validate_source()
+        return {"article": summary, "fallback": {"reason": reason, "url": summary["url"]}}
+
     try:
         body = client.markdown(resource_id, before_attempt=markdown_attempt)
     except TotalBudgetExhausted:
-        return {"article": summary, "fallback": {
-            "reason": "daily_total_budget_exhausted", "url": summary["url"],
-        }}
+        return fallback("daily_total_budget_exhausted")
     except BodyBudgetExhausted:
-        return {"article": summary, "fallback": {
-            "reason": "daily_body_budget_exhausted", "url": summary["url"],
-        }}
+        return fallback("daily_body_budget_exhausted")
     except (APIError, ValueError):
-        return {"article": summary, "fallback": {
-            "reason": "bestblogs_markdown_unavailable", "url": summary["url"],
-        }}
+        return fallback("bestblogs_markdown_unavailable")
     if not isinstance(body, str) or not body.strip():
-        return {"article": summary, "fallback": {
-            "reason": "bestblogs_markdown_unavailable", "url": summary["url"],
-        }}
+        return fallback("bestblogs_markdown_unavailable")
+    if validate_source is not None:
+        validate_source()
     return {"article": summary, "content": {"source": "bestblogs", "markdown": body}}
 
 
@@ -1785,10 +1790,15 @@ def _reserve_body_attempt(state, now=None):
     _reserve_api_attempt(state, now=now, body=True)
 
 
-def _durable_reservation(path, endpoint, body=False, now=None, identity=None, resource_id=None, claim_id=None):
+def _durable_reservation(
+        path, endpoint, body=False, now=None, identity=None, resource_id=None,
+        claim_id=None, configured_source_id=None,
+):
     def reserve_attempt():
         with state_lock(path):
             state = _load_locked_state(path)
+            if configured_source_id is not None and configured_source_id not in state["sources"]:
+                raise StateError("configured source changed during read request")
             if identity is not None:
                 entry = state["pending"].get(identity)
                 if not entry or entry.get("resource_id") != resource_id or entry.get("claim_fetch_started") is not True:
@@ -1798,6 +1808,15 @@ def _durable_reservation(path, endpoint, body=False, now=None, identity=None, re
             state["api_calls"][endpoint] = int(state["api_calls"].get(endpoint, 0)) + 1
             save_state(path, state)
     return reserve_attempt
+
+
+def _durable_source_validation(path, source_id):
+    def validate_source():
+        with state_lock(path):
+            state = _load_locked_state(path)
+            if source_id not in state["sources"]:
+                raise StateError("configured source changed during read request")
+    return validate_source
 
 
 def markdown(state, client, identity, now=None, reserve_attempt=None):
@@ -2040,8 +2059,13 @@ def main(argv=None):
             elif args.command == "read":
                 result = read_article(
                     state, client, args.resource_id, interactive_source_id,
-                    metadata_attempt=_durable_reservation(path, "resource_metadata"),
-                    markdown_attempt=_durable_reservation(path, "markdown", body=True),
+                    metadata_attempt=_durable_reservation(
+                        path, "resource_metadata", configured_source_id=interactive_source_id,
+                    ),
+                    markdown_attempt=_durable_reservation(
+                        path, "markdown", body=True, configured_source_id=interactive_source_id,
+                    ),
+                    validate_source=_durable_source_validation(path, interactive_source_id),
                 )
             elif args.command == "scan":
                 observation = _scan_observation(
