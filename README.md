@@ -50,6 +50,38 @@ third-party marketplace pins, and reusable Codex instructions.
 5. Start a fresh Codex session so the installed global `AGENTS.md`, plugins, and
    MCP servers are loaded from the beginning of the run.
 
+## Todoist Task Planning
+
+The default `productivity-tools` plugin bundles `$todoist-task-planning` and
+Todoist's official hosted MCP at `https://ai.todoist.net/mcp`. Prefer the
+connected Todoist app in ChatGPT or Codex Desktop. The hosted MCP is the Codex
+CLI fallback when app tools are unavailable; use one Todoist tool surface per
+request so a task is never written twice.
+
+Todoist remains the durable source of truth for tasks; Google Calendar is used
+only for explicit meetings and focused work blocks. Deadline-only tasks stay in
+Todoist, including deadlines with a clock time.
+
+If the connected app is unavailable in a CLI session, authorize the hosted MCP
+on that device:
+
+```bash
+codex mcp login todoist
+```
+
+Start a fresh Codex task after login. Example requests include:
+
+```text
+Add "submit expense report" to my Todoist for Friday.
+Block two hours tomorrow afternoon to work on the proposal.
+Schedule a 30-minute remote check-in with Alice next Tuesday at 2 PM.
+Show my overdue tasks and what is due this week.
+```
+
+Task creation is allowed when explicitly requested. Calendar writes, attendee
+invitations, deletions, and ambiguous updates remain confirmation-gated. A
+one-time task/event cross-link is not ongoing bidirectional synchronization.
+
 ## Paper Library Intake
 
 Use one workflow for public discovery, Zotero deduplication, topical filing, and

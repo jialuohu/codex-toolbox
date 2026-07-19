@@ -1,0 +1,27 @@
+{
+  "name": "productivity-tools",
+  "version": "0.1.0",
+  "description": "Official Todoist MCP access with a selective Google Calendar planning workflow.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Productivity Tools",
+    "shortDescription": "Todoist tasks with selective calendar planning.",
+    "longDescription": "Connects Codex to Todoist's official hosted MCP and adds a workflow that keeps Todoist authoritative for tasks while using Google Calendar only for explicit meetings and time blocks.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use $todoist-task-planning to capture this task with the right deadline and details.",
+      "Use $todoist-task-planning to review my Todoist tasks and plan only explicit work blocks on Google Calendar."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

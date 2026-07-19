@@ -1,0 +1,11 @@
+interface:
+  display_name: "Todoist Task Planning"
+  short_description: "Manage Todoist tasks and calendar work blocks."
+  default_prompt: "Use $todoist-task-planning to capture this task and schedule time only when appropriate."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "todoist"
+      description: "Official Todoist task and project tools"
+      transport: "streamable_http"
+      url: "https://ai.todoist.net/mcp"
