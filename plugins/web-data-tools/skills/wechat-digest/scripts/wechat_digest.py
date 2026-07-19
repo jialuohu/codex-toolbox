@@ -246,10 +246,17 @@ class BestBlogsClient:
         raise APIError("BestBlogs rate limit retry exhausted")
 
     def markdown(self, resource_id, before_attempt=None):
+        if not _safe_id(resource_id):
+            raise ValueError("resource ID must be safe")
         data = self.get("/resources/%s/markdown" % resource_id, before_attempt=before_attempt)
         if isinstance(data, dict):
             data = data.get("markdown", data.get("content"))
         return data
+
+    def resource_metadata(self, resource_id, before_attempt=None):
+        if not _safe_id(resource_id):
+            raise ValueError("resource ID must be safe")
+        return self.get("/resources/%s/meta" % resource_id, before_attempt=before_attempt)
 
 
 def canonical_wechat_url(value):
@@ -1043,6 +1050,44 @@ def interactive_articles(state, client, source_selector, limit, time_filter=None
         "requested_limit": limit,
         "warnings": warnings,
     }
+
+
+def _article_summary(article):
+    return {field: article[field] for field in (
+        "resource_id", "source_id", "source_name", "title", "url", "published_at",
+    )}
+
+
+def read_article(state, client, resource_id, source_selector, metadata_attempt=None, markdown_attempt=None):
+    if not _safe_id(resource_id):
+        raise ValueError("resource ID must be safe")
+    source_id = _configured_source_id(state, source_selector)
+    metadata = client.resource_metadata(resource_id, before_attempt=metadata_attempt)
+    article = _interactive_article(metadata, source_id)
+    if article is None:
+        raise APIError("unsafe resource metadata")
+    if article["resource_id"] != resource_id:
+        raise APIError("resource metadata mismatch")
+    summary = _article_summary(article)
+    try:
+        body = client.markdown(resource_id, before_attempt=markdown_attempt)
+    except TotalBudgetExhausted:
+        return {"article": summary, "fallback": {
+            "reason": "daily_total_budget_exhausted", "url": summary["url"],
+        }}
+    except BodyBudgetExhausted:
+        return {"article": summary, "fallback": {
+            "reason": "daily_body_budget_exhausted", "url": summary["url"],
+        }}
+    except (APIError, ValueError):
+        return {"article": summary, "fallback": {
+            "reason": "bestblogs_markdown_unavailable", "url": summary["url"],
+        }}
+    if not isinstance(body, str) or not body.strip():
+        return {"article": summary, "fallback": {
+            "reason": "bestblogs_markdown_unavailable", "url": summary["url"],
+        }}
+    return {"article": summary, "content": {"source": "bestblogs", "markdown": body}}
 
 
 def _page_items(data):
@@ -1844,6 +1889,9 @@ def main(argv=None):
     recent_parser.add_argument("--source", required=True)
     recent_parser.add_argument("--limit", required=True)
     recent_parser.add_argument("--time-filter")
+    read_parser = sub.add_parser("read")
+    read_parser.add_argument("resource_id")
+    read_parser.add_argument("--source", required=True)
     sub.add_parser("scan")
     claim_parser = sub.add_parser("claim")
     claim_parser.add_argument("article_id")
@@ -1892,6 +1940,10 @@ def main(argv=None):
                         raise ValueError("limit must be between 1 and 20")
                     if args.time_filter not in (None, "today", "week", "month"):
                         raise ValueError("invalid time filter")
+            elif args.command == "read":
+                interactive_source_id = _configured_source_id(state, args.source)
+                if not _safe_id(args.resource_id):
+                    raise ValueError("resource ID must be safe")
             elif args.command == "claim":
                 selected_identity = _selected_identity_for(state, args.article_id)
                 result = claim(state, selected_identity)
@@ -1985,6 +2037,12 @@ def main(argv=None):
                     }
                 else:
                     result = interactive
+            elif args.command == "read":
+                result = read_article(
+                    state, client, args.resource_id, interactive_source_id,
+                    metadata_attempt=_durable_reservation(path, "resource_metadata"),
+                    markdown_attempt=_durable_reservation(path, "markdown", body=True),
+                )
             elif args.command == "scan":
                 observation = _scan_observation(
                     client, before_attempt=_durable_reservation(path, "subscription"),

@@ -211,6 +211,23 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(request.full_url, expected_url)
         self.assertEqual(request.get_method(), "GET")
 
+    def test_client_reads_resource_metadata_with_a_fixed_origin_get(self):
+        client = wechat.BestBlogsClient(VALID_API_KEY)
+        expected_url = wechat.API_ORIGIN + "/resources/article-1/meta"
+        body = json.dumps({
+            "success": True, "code": None, "message": None, "requestId": "r", "data": record("article-1"),
+        }).encode()
+        opener = FakeOpener([FakeResponse(body, expected_url)])
+        client._opener = opener
+
+        self.assertEqual(client.resource_metadata("article-1")["id"], "article-1")
+        request, _ = opener.requests[0]
+        self.assertEqual(request.full_url, expected_url)
+        self.assertEqual(request.get_method(), "GET")
+        with self.assertRaises(ValueError):
+            client.resource_metadata("unsafe\nresource")
+        self.assertEqual(len(opener.requests), 1)
+
     def test_client_follow_is_bounded_and_fixed_to_the_documented_endpoint(self):
         client = wechat.BestBlogsClient(VALID_API_KEY)
         body = json.dumps({
@@ -3641,6 +3658,175 @@ class WechatInteractiveListingTests(unittest.TestCase):
         before = wechat._source_configuration_fingerprint(state["sources"])
         state["sources"]["s1"]["name"] = "Updated Display Name"
         self.assertEqual(wechat._source_configuration_fingerprint(state["sources"]), before)
+
+    def test_read_verifies_selected_source_metadata_before_markdown_and_only_mutates_budgets(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        state["sources"]["s1"].update({"name": "Source One", "initialized": True})
+        pending = add_claim(wechat.parse_article(record("pending", "s1")))
+        state["pending"][pending["identity"]] = pending
+        wechat.save_state(path, state)
+        before = wechat.load_state(path)
+
+        class ReadClient:
+            def __init__(self):
+                self.calls = []
+
+            def resource_metadata(self, resource_id, before_attempt=None):
+                if before_attempt is not None:
+                    before_attempt()
+                self.calls.append(("metadata", resource_id))
+                return record("article-1", "s1")
+
+            def markdown(self, resource_id, before_attempt=None):
+                if before_attempt is not None:
+                    before_attempt()
+                self.calls.append(("markdown", resource_id))
+                return "# verified body"
+
+        client = ReadClient()
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "read", "article-1", "--source", "s1",
+                ]), 0)
+        finally:
+            wechat._client_from_env = original_client
+
+        self.assertEqual(json.loads(output.getvalue()), {
+            "article": {
+                "resource_id": "article-1", "source_id": "s1", "source_name": "Source One",
+                "title": "An article", "url": record("article-1", "s1")["url"].split("?")[0],
+                "published_at": "2024-03-09T16:00:00+00:00",
+            },
+            "content": {"source": "bestblogs", "markdown": "# verified body"},
+        })
+        self.assertEqual(client.calls, [("metadata", "article-1"), ("markdown", "article-1")])
+        after = wechat.load_state(path)
+        self.assertEqual(after["total_budget"]["count"], before["total_budget"]["count"] + 2)
+        self.assertEqual(after["body_budget"]["count"], before["body_budget"]["count"] + 1)
+        self.assertEqual(after["api_calls"], {"resource_metadata": 1, "markdown": 1})
+        for protected in (
+            "sources", "pending", "ack_tombstones", "last_successful_scan", "warnings",
+            "next_scan_seq", "last_applied_scan_generation", "scan_health",
+        ):
+            self.assertEqual(after[protected], before[protected])
+
+    def test_read_fails_closed_before_markdown_for_unverified_metadata(self):
+        for label, metadata, expected in (
+            ("mismatch", record("other", "s1"), "resource metadata mismatch"),
+            ("wrong_source", record("article-1", "s2"), "feed source filter mismatch"),
+            ("unsafe_url", dict(record("article-1", "s1"), url="https://example.invalid/a"), "unsafe resource metadata"),
+        ):
+            with self.subTest(label=label):
+                path = self.state_file()
+                state = wechat.new_state()
+                wechat.configure_sources(state, ["s1"])
+                wechat.save_state(path, state)
+
+                class ReadClient:
+                    def __init__(self):
+                        self.calls = []
+
+                    def resource_metadata(self, resource_id, before_attempt=None):
+                        if before_attempt is not None:
+                            before_attempt()
+                        self.calls.append("metadata")
+                        return metadata
+
+                    def markdown(self, resource_id, before_attempt=None):
+                        self.calls.append("markdown")
+                        return "unexpected"
+
+                client = ReadClient()
+                original_client = wechat._client_from_env
+                wechat._client_from_env = lambda: client
+                output = io.StringIO()
+                try:
+                    with redirect_stdout(output):
+                        self.assertEqual(wechat.main([
+                            "--state-file", str(path), "read", "article-1", "--source", "s1",
+                        ]), 2)
+                finally:
+                    wechat._client_from_env = original_client
+
+                result = json.loads(output.getvalue())
+                self.assertEqual(result, {"error": expected})
+                self.assertEqual(client.calls, ["metadata"])
+
+    def test_read_returns_a_safe_fallback_only_after_verified_metadata(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        wechat.save_state(path, state)
+
+        class ReadClient:
+            def resource_metadata(self, resource_id, before_attempt=None):
+                if before_attempt is not None:
+                    before_attempt()
+                return record("article-1", "s1")
+
+            def markdown(self, resource_id, before_attempt=None):
+                if before_attempt is not None:
+                    before_attempt()
+                return ""
+
+        original_client = wechat._client_from_env
+        wechat._client_from_env = ReadClient
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "read", "article-1", "--source", "s1",
+                ]), 0)
+        finally:
+            wechat._client_from_env = original_client
+
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["fallback"], {
+            "reason": "bestblogs_markdown_unavailable",
+            "url": record("article-1", "s1")["url"].split("?")[0],
+        })
+        self.assertEqual(result["article"]["resource_id"], "article-1")
+
+    def test_read_reports_total_budget_exhaustion_without_a_fallback_url_before_metadata(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        state["total_budget"] = {"day": wechat._beijing_day(), "count": wechat.TOTAL_DAILY_LIMIT}
+        wechat.save_state(path, state)
+
+        class ReadClient:
+            def __init__(self):
+                self.calls = []
+
+            def resource_metadata(self, resource_id, before_attempt=None):
+                before_attempt()
+                self.calls.append("metadata")
+                return record("article-1", "s1")
+
+            def markdown(self, resource_id, before_attempt=None):
+                self.calls.append("markdown")
+                return "unexpected"
+
+        client = ReadClient()
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "read", "article-1", "--source", "s1",
+                ]), 2)
+        finally:
+            wechat._client_from_env = original_client
+
+        self.assertEqual(json.loads(output.getvalue()), {"error": "daily total budget exhausted"})
+        self.assertEqual(client.calls, [])
 
 
 if __name__ == "__main__":
