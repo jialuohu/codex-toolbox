@@ -3467,12 +3467,21 @@ class WechatInteractiveListingTests(unittest.TestCase):
 
         after = wechat.load_state(path)
         before_state = json.loads(before)
-        for persisted in (before_state, after):
-            persisted.pop("api_calls")
-            persisted.pop("body_budget")
-            persisted.pop("total_budget")
-        self.assertEqual(after, before_state)
-        self.assertEqual(wechat.load_state(path)["api_calls"], {"subscription": 2})
+        protected_before = {
+            key: value for key, value in before_state.items()
+            if key not in ("api_calls", "body_budget", "total_budget")
+        }
+        protected_after = {
+            key: value for key, value in after.items()
+            if key not in ("api_calls", "body_budget", "total_budget")
+        }
+        self.assertEqual(
+            json.dumps(protected_after, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
+            json.dumps(protected_before, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(),
+        )
+        self.assertEqual(after["body_budget"], before_state["body_budget"])
+        self.assertEqual(after["total_budget"]["count"], before_state["total_budget"]["count"] + 2)
+        self.assertEqual(after["api_calls"], {"subscription": 2})
 
     def test_interactive_listing_fails_closed_for_bad_selector_or_response_and_preserves_delivery_state(self):
         path = self.state_file()
@@ -3560,6 +3569,71 @@ class WechatInteractiveListingTests(unittest.TestCase):
         )
         self.assertIn("source_name_conflict", result["warnings"])
         self.assertEqual(state["sources"], before_conflict)
+
+    def test_missing_provider_names_do_not_change_or_conflict_with_the_cached_alias(self):
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        state["sources"]["s1"]["name"] = "Existing Alias"
+
+        class SourceClient:
+            def __init__(self, records):
+                self.records = records
+
+            def subscription_source_page(self, page, page_size, source_id, time_filter=None, before_attempt=None):
+                return {"dataList": self.records}
+
+        missing = record("missing", "s1")
+        missing.pop("sourceName")
+        all_missing = wechat.interactive_articles(state, SourceClient([missing]), "s1", 1)
+        self.assertEqual(all_missing["warnings"], [])
+        self.assertEqual(all_missing["articles"][0]["source_name"], "s1")
+        self.assertEqual(state["sources"]["s1"]["name"], "Existing Alias")
+
+        present = record("present", "s1")
+        present["sourceName"] = "Provider Alias"
+        mixed = wechat.interactive_articles(state, SourceClient([missing, present]), "s1", 2)
+        self.assertEqual(mixed["warnings"], [])
+        self.assertEqual(state["sources"]["s1"]["name"], "Existing Alias")
+
+    def test_interactive_cache_compare_and_swap_preserves_a_newer_concurrent_alias(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        state["sources"]["s1"]["name"] = "Before Request"
+        wechat.save_state(path, state)
+
+        class RacingClient:
+            def subscription_source_page(self, page, page_size, source_id, time_filter=None, before_attempt=None):
+                before_attempt()
+                with wechat.state_lock(path):
+                    newer = wechat.load_state(path)
+                    newer["sources"]["s1"]["name"] = "Newer Alias"
+                    wechat.save_state(path, newer)
+                return {"dataList": [dict(record("latest", "s1"), sourceName="Stale Provider Alias")]}
+
+        original_client = wechat._client_from_env
+        wechat._client_from_env = RacingClient
+        try:
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(wechat.main(["--state-file", str(path), "latest", "--source", "s1"]), 0)
+        finally:
+            wechat._client_from_env = original_client
+
+        self.assertEqual(wechat.load_state(path)["sources"]["s1"]["name"], "Newer Alias")
+
+    def test_display_sanitization_rejects_unicode_control_characters(self):
+        self.assertIsNone(wechat._bounded_display_text("Unsafe\u0080name", 200))
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        unsafe = record("unsafe-unicode", "s1")
+        unsafe["title"] = "Unsafe\u0080title"
+
+        class SourceClient:
+            def subscription_source_page(self, page, page_size, source_id, time_filter=None, before_attempt=None):
+                return {"dataList": [unsafe]}
+
+        with self.assertRaisesRegex(wechat.APIError, "no safe article"):
+            wechat.interactive_articles(state, SourceClient(), "s1", 1)
 
     def test_source_name_is_excluded_from_scan_configuration_fingerprint(self):
         state = wechat.new_state()

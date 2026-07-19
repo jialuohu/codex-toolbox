@@ -14,6 +14,7 @@ import secrets
 import tempfile
 import time
 import math
+import unicodedata
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -414,7 +415,7 @@ def _bounded_display_text(value, limit, fallback=None):
     if not isinstance(value, str):
         return None
     value = value.strip()
-    if not value or any(ord(character) < 32 or ord(character) == 127 for character in value):
+    if not value or any(unicodedata.category(character) == "Cc" for character in value):
         return None
     return value[:limit]
 
@@ -974,6 +975,7 @@ def _interactive_article(raw, expected_source_id):
         "title": title,
         "url": article["url"],
         "published_at": article["published_at"],
+        "source_name_explicit": bool(source_names),
         "source_name_consistent": len(set(source_names)) <= 1,
     }
 
@@ -1006,11 +1008,17 @@ def interactive_articles(state, client, source_selector, limit, time_filter=None
     if not articles:
         raise APIError("no safe article")
     warnings = []
-    source_names = {article["source_name"] for article in articles}
+    explicit_source_names = {
+        article["source_name"] for article in articles if article["source_name_explicit"]
+    }
+    all_names_explicit = all(article["source_name_explicit"] for article in articles)
+    explicit_names_consistent = all(
+        article["source_name_consistent"] for article in articles if article["source_name_explicit"]
+    )
     source = state["sources"][source_id]
-    if len(source_names) == 1 and all(article["source_name_consistent"] for article in articles):
-        source["name"] = next(iter(source_names))
-    else:
+    if all_names_explicit and len(explicit_source_names) == 1 and explicit_names_consistent:
+        source["name"] = next(iter(explicit_source_names))
+    elif len(explicit_source_names) > 1 or not explicit_names_consistent:
         warnings.append("source_name_conflict")
     if all(article["published_at"] for article in articles):
         articles = sorted(
@@ -1966,7 +1974,7 @@ def main(argv=None):
                     if fresh_source is None:
                         raise StateError("configured source changed during interactive request")
                     cached_name = state["sources"][interactive_source_id]["name"]
-                    if cached_name != interactive_source_name and fresh_source["name"] != cached_name:
+                    if cached_name != interactive_source_name and fresh_source["name"] == interactive_source_name:
                         fresh_source["name"] = cached_name
                         save_state(path, fresh_state)
                 if args.command == "latest":
