@@ -50,6 +50,25 @@ third-party marketplace pins, and reusable Codex instructions.
 5. Start a fresh Codex session so the installed global `AGENTS.md`, plugins, and
    MCP servers are loaded from the beginning of the run.
 
+## Managed Codex Pet
+
+The toolbox keeps the validated `stinky-penguin` v2 package under
+`config/codex/pets/stinky-penguin/`. Setup copies repository-managed pets into
+`${CODEX_HOME:-$HOME/.codex}/pets/` atomically, backs up a different package
+with the same ID, and preserves unrelated custom pets. It installs the pet
+without selecting it or changing the current Codex avatar preference.
+
+Use the synchronizer directly when validating or installing pet updates:
+
+```bash
+python3 scripts/sync-codex-pets.py --install
+python3 scripts/sync-codex-pets.py --check
+```
+
+A marketplace **Upgrade** refreshes plugins but does not copy runtime pet
+files. Rerun the toolbox setup after upgrading when a managed pet changes, then
+start a fresh Codex Desktop session to load and animate the updated atlas.
+
 ## Todoist Task Planning
 
 The default `productivity-tools` plugin bundles `$todoist-task-planning` and
@@ -182,9 +201,9 @@ read-only copy instead of the original, uses configured local models with
 offline hub behavior, and writes private checksum-verified artifacts.
 
 Keep model caches, extracted outputs, benchmark artifacts, and machine-local
-Symphony workflow overrides outside this repository and untracked.
+workflow overrides outside this repository and untracked.
 
-## Symphony Routing
+## Execution Routing
 
 For large decomposable projects, start naturally in Plan mode. For example:
 
@@ -192,17 +211,12 @@ For large decomposable projects, start naturally in Plan mode. For example:
 Build a polished business website for a small AI consulting agency.
 ```
 
-The global instructions should let Codex plan first, recognize when the work
-breaks into three or more independent testable tasks, and route to the
-Codex + Symphony + Linear lane without requiring the prompt to name Symphony.
-Plan mode may prepare issue breakdowns, a project-specific workflow preview,
-and reviewed Linear issue preflight payloads. Live issue creation, scheduler
-refreshes, workflow writes, and Linear closeout still require explicit approval.
-After approval, preflight is no longer the endpoint; Codex should write the
-reviewed workflow, create the approved issues, and start or refresh Symphony so
-workers run. Do not offer Codex-only as an equal path for Symphony-eligible
-plans unless the user explicitly asks for quick single-session execution or
-opts out of Symphony/Linear.
+The global instructions let Codex plan first and then select the narrowest
+execution lane. Tiny changes stay in the main task. Independent, testable work
+can run through native Codex subagents, while non-trivial coding uses the
+Superpowers planning and subagent-driven-development workflow. Use OpenSpec
+when durable requirements, acceptance criteria, or spec governance should be
+settled before implementation.
 
 ## Deep Planning
 
@@ -210,27 +224,12 @@ Plan Mode uses `$deep-planning` by default for non-trivial work before the
 final plan is presented. The skill is a critique gate: it gathers observed
 facts, states assumptions and material unknowns, drafts the strongest plan,
 challenges product value, architecture, implementation risk, edge cases, tests,
-rollout, and scope, then chooses Codex-only, Superpowers, OpenSpec, or
-Symphony/Linear routing.
+rollout, and scope, then chooses Codex-only, native Codex subagents,
+Superpowers, or OpenSpec routing.
 
 Superpowers remains the design and implementation workflow. Deep Planning does
 not write `docs/superpowers/` artifacts, create issues, dispatch workers, or
 perform verification after code changes.
-
-For projects outside the Symphony source repo
-([jialuohu/symphony-go](https://github.com/jialuohu/symphony-go)), create a
-project workflow first:
-
-```bash
-symphony workflow init \
-  --target-root ~/codes/example-project \
-  --output ~/codes/example-project/WORKFLOW.md \
-  --project-slug <PROJECT_SLUG> \
-  --team-key <LINEAR_TEAM_KEY> \
-  --port 4001 \
-  --concurrency 4 \
-  --dry-run
-```
 
 ## Paper Figure Workflow
 

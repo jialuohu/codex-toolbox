@@ -3,16 +3,15 @@
 For large or vague project requests, plan normally first, then choose the execution lane.
 
 - Use Codex-only work for tiny edits, one bugfix, one review, fast debugging, or single-session exploration.
-- If planning produces 3 or more independent, testable implementation tasks, route to the Codex + Symphony + Linear lane by default even when the user did not mention Symphony or Linear. Do not present Codex-only as an equal execution option unless the user explicitly asks for a quick single-session build or opts out of Symphony/Linear.
-- In Plan mode, prepare the architecture, issue breakdown, project workflow choice, and reviewed preflight Linear payloads only. Do not create live Linear issues, refresh/dispatch Symphony, or mutate Linear state in Plan mode.
-- In normal execution mode, create live Linear issues only after dry-run payload review and explicit approval. Scheduler refreshes and Linear closeout mutations also require confirmation.
-- After the user approves Symphony execution, do not stop at dry-runs. Write the reviewed project workflow, create the approved Linear issues, and start or refresh Symphony so workers actually run.
-- For greenfield apps or sites, do the serial bootstrap first when no repo exists or the shared foundation is not ready. Stop bootstrap at the stable shared foundation; split remaining frontend, backend, content, testing, and polish work into Symphony issues instead of continuing the whole build inline.
-- Use a project-specific Symphony workflow for unrelated projects. Do not run a new project through the Symphony source repo workflow from [jialuohu/symphony-go](https://github.com/jialuohu/symphony-go); create or dry-run a workflow for that target repo first.
+- Use native Codex subagents when a plan contains independent, testable subtasks and parallel work will improve reliability or latency. Keep simple deterministic reads and tightly coupled edits in the main task.
+- For non-trivial coding work with multiple implementation steps, use the Superpowers planning and subagent-driven-development workflow.
+- Use OpenSpec when the project needs durable requirements, acceptance criteria, or spec governance across tasks or sessions before implementation.
+- In Plan mode, prepare the architecture, task boundaries, acceptance criteria, verification, and execution routing only. Do not implement changes or mutate external systems in Plan mode.
+- For greenfield apps or sites, bootstrap serially until the shared foundation is stable, then split independent frontend, backend, content, testing, and polish work across native Codex subagents.
 
 ## Deep planning in Plan Mode
 
-In Plan Mode for non-trivial, ambiguous, architectural, high-risk, or multi-step work, use `$deep-planning` by default before presenting the final plan. If `$deep-planning` is unavailable, follow the same adversarial critique protocol inline: gather observed facts, state assumptions and material unknowns, draft the strongest plan, critique product value, architecture, implementation risk, edge cases, tests, rollout, and scope, revise the plan, then choose Codex-only, Superpowers, OpenSpec, or Symphony/Linear routing. For non-trivial plans, keep the final response ordered as Observed Facts, Assumptions / Unknowns, Strongest Plan, Adversarial Review, and Revised Plan / Routing unless the active Plan Mode format is stricter.
+In Plan Mode for non-trivial, ambiguous, architectural, high-risk, or multi-step work, use `$deep-planning` by default before presenting the final plan. If `$deep-planning` is unavailable, follow the same adversarial critique protocol inline: gather observed facts, state assumptions and material unknowns, draft the strongest plan, critique product value, architecture, implementation risk, edge cases, tests, rollout, and scope, revise the plan, then choose Codex-only, native Codex subagents, Superpowers, or OpenSpec routing. For non-trivial plans, keep the final response ordered as Observed Facts, Assumptions / Unknowns, Strongest Plan, Adversarial Review, and Revised Plan / Routing unless the active Plan Mode format is stricter.
 
 Do not use deep planning for tiny edits, simple command-output checks, pure execution, post-code verification, or full Superpowers design-doc workflows. `deep-planning` must not write files, create issues, dispatch workers, refresh schedulers, or write `docs/superpowers/` artifacts.
 
@@ -22,7 +21,7 @@ For non-trivial coding tasks, prefer the Superpowers workflow.
 
 - If requirements are unclear, use `superpowers:brainstorming`.
 - If the task needs multiple implementation steps, use `superpowers:writing-plans`.
-- After plan approval, use the orchestration routing rules above. Choose Symphony for durable multi-ticket work and any plan with 3 or more independent, testable implementation tasks; otherwise offer `superpowers:subagent-driven-development` as the default execution path.
+- After plan approval, use `superpowers:subagent-driven-development` for bounded multi-step implementation and native Codex subagents for independent parallel work. Use OpenSpec first when durable requirements or acceptance criteria are still needed.
 - During implementation of features or bugfixes, use `superpowers:test-driven-development`.
 - Before claiming completion, use `superpowers:verification-before-completion`.
 
@@ -44,7 +43,7 @@ Delegate when it improves reliability. Use subagents for broad research, indepen
 
 The personal toolbox repo is identified by `CODEX_TOOLBOX_ROOT` on each machine, and its GitHub remote is `jialuohu/codex-toolbox`. It is a repo-scoped Codex plugin marketplace named `jialuo-codex-toolbox`.
 
-- Keep plugins focused by domain. Current default plugins are `obsidian-tools`, `research-tools`, `web-data-tools`, `game-asset-tools`, `symphony-tools`, `workflow-tools`, `paper-figure-tools`, `productivity-tools`, `trading-tools`, `vibe-trading-tools`, and `chronicle-tools`.
+- Keep plugins focused by domain. Current default plugins are `obsidian-tools`, `research-tools`, `web-data-tools`, `game-asset-tools`, `workflow-tools`, `paper-figure-tools`, `productivity-tools`, `trading-tools`, `vibe-trading-tools`, and `chronicle-tools`.
 - The setup script also manages third-party Git marketplaces: `ui-ux-pro-max-skill`, pinned to `v2.10.0` with sparse checkout limited to the core `ui-ux-pro-max` skill, and the official Context7 marketplace `context7-marketplace`. Do not vendor these third-party plugins into `codex-toolbox` unless explicitly asked.
 - Do not reintroduce the retired starter plugins `lab-weekly-update` or `context7-docs` unless explicitly asked.
 - Do not commit secrets, OAuth state, API keys, or env-file contents. MCP configs may reference `CODEX_SECRETS_DIR`, but the secret files remain per-device.
@@ -65,8 +64,6 @@ Use Firecrawl as the default for public web search, current web pages, documenta
 Use `$mineru-document-extraction` for complex, scanned, OCR-heavy, or layout-sensitive local documents when a simple reader may lose columns, tables, formulas, figures, or page structure. Prefer the installed `pdf` or `documents` skill for straightforward born-digital files and simple reads, Zotero for an item already saved in the user's library, Defuddle or Firecrawl for web content, and `obsidian_files` only for vault I/O after extracted content has been reviewed. MinerU is a local skill plus `scripts/setup-mineru.sh`, not an MCP server: start with `scripts/setup-mineru.sh --check`; run `--install` and then the opt-in `--download-models` only when local setup is requested. Keep model caches, extraction outputs, and benchmarks outside the Git checkout and any Obsidian vault. Follow the skill's high-to-medium and hybrid-to-pipeline fallbacks explicitly; if MinerU remains unavailable for a complex document, report the limitation instead of silently degrading to a simple extractor.
 
 Use PixelLab MCP (`pixellab`) only for pixel-art game asset workflows: sprites, character rotations, animations, top-down or sidescroller tilesets, isometric tiles, and map objects. Do not use PixelLab for web search, private/local files, normal coding, or generic image generation unless the user explicitly asks for PixelLab assets. Creation and destructive tools can spend credits or change saved assets, so keep them prompt-gated unless the user explicitly confirms the action.
-
-Use Symphony MCP (`symphony`) and the `symphony-orchestration` skill for durable Codex plus Linear orchestration: planning runnable Linear issues, dry-running reviewed issue payloads, monitoring Symphony daemon state, refreshing a scheduler tick, summarizing worker handoffs, and closing out Linear comments/state moves after review. Keep issue creation and closeout dry-run first; live issue creation, Linear closeout mutations, and dispatch refreshes require explicit confirmation. Symphony workers should not create more Linear issues or mutate Linear state from inside their issue workspace.
 
 Use `$paper-figure-workflow` for AI/systems paper figure workflows: editable draw.io or diagrams.net pipeline diagrams, Matplotlib and SciencePlots plots, Inkscape cleanup or SVG/PDF conversion, `figures_src/`, `figures/`, and reproducible commands such as `make figures`.
 

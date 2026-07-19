@@ -9,17 +9,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SETUP_SCRIPT = ROOT / "scripts" / "setup-codex-toolbox.sh"
 SYNC_AGENTS_SCRIPT = ROOT / "scripts" / "sync-agents.sh"
+SYNC_PETS_SCRIPT = ROOT / "scripts" / "sync-codex-pets.py"
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
 README = ROOT / "README.md"
+STINKY_PENGUIN_DIR = ROOT / "config" / "codex" / "pets" / "stinky-penguin"
+STINKY_PENGUIN_MANIFEST = STINKY_PENGUIN_DIR / "pet.json"
+STINKY_PENGUIN_SPRITESHEET = STINKY_PENGUIN_DIR / "spritesheet.webp"
 MINERU_SETUP = ROOT / "scripts" / "setup-mineru.sh"
 MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
 GAME_ASSET_PLUGIN = ROOT / "plugins" / "game-asset-tools" / ".codex-plugin" / "plugin.json"
 GAME_ASSET_MCP = ROOT / "plugins" / "game-asset-tools" / ".mcp.json"
-SYMPHONY_PLUGIN = ROOT / "plugins" / "symphony-tools" / ".codex-plugin" / "plugin.json"
-SYMPHONY_MCP = ROOT / "plugins" / "symphony-tools" / ".mcp.json"
-SYMPHONY_SKILL = (
-    ROOT / "plugins" / "symphony-tools" / "skills" / "symphony-orchestration" / "SKILL.md"
-)
 TRADING_MCP = ROOT / "plugins" / "trading-tools" / ".mcp.json"
 RESEARCH_PLUGIN = ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json"
 RESEARCH_MCP = ROOT / "plugins" / "research-tools" / ".mcp.json"
@@ -79,6 +78,19 @@ PAPER_FIGURE_REFERENCE = (
     / "references"
     / "templates.md"
 )
+PRODUCTIVITY_PLUGIN = ROOT / "plugins" / "productivity-tools" / ".codex-plugin" / "plugin.json"
+PRODUCTIVITY_MCP = ROOT / "plugins" / "productivity-tools" / ".mcp.json"
+TODOIST_TASK_PLANNING_SKILL = (
+    ROOT
+    / "plugins"
+    / "productivity-tools"
+    / "skills"
+    / "todoist-task-planning"
+    / "SKILL.md"
+)
+TODOIST_TASK_PLANNING_OPENAI = (
+    TODOIST_TASK_PLANNING_SKILL.parent / "agents" / "openai.yaml"
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -104,15 +116,13 @@ def main() -> None:
     global_agents_text = GLOBAL_AGENTS.read_text()
     global_agents_normalized = " ".join(global_agents_text.split())
     for expected in (
-        "3 or more independent, testable implementation tasks",
-        "Codex + Symphony + Linear",
+        "native Codex subagents",
+        "independent, testable subtasks",
+        "Superpowers planning and subagent-driven-development workflow",
+        "durable requirements, acceptance criteria",
         "Plan mode",
-        "project-specific Symphony workflow",
-        "route to the Codex + Symphony + Linear lane by default",
-        "Do not present Codex-only as an equal execution option",
-        "reviewed preflight Linear payloads",
-        "do not stop at dry-runs",
-        "start or refresh Symphony",
+        "Do not implement changes or mutate external systems in Plan mode",
+        "bootstrap serially until the shared foundation is stable",
     ):
         require(expected in global_agents_text, f"global AGENTS routing must mention {expected}")
     for expected in (
@@ -153,6 +163,20 @@ def main() -> None:
             f"global AGENTS paper intake routing must mention {expected}",
         )
     for expected in (
+        "Todoist MCP",
+        "$todoist-task-planning",
+        "Prefer the connected Todoist app",
+        "authoritative personal task store",
+        "Deadline-only tasks stay in Todoist",
+        "Google Calendar only for explicit meetings or time blocks",
+        "confirm before calendar writes or invitations",
+        "do not create meeting follow-up tasks unless",
+    ):
+        require(
+            expected in global_agents_normalized,
+            f"global AGENTS Todoist routing must mention {expected}",
+        )
+    for expected in (
         "$deep-planning",
         "adversarial critique protocol",
         "If `$deep-planning` is unavailable",
@@ -184,12 +208,28 @@ def main() -> None:
         '"$ROOT/scripts/sync-agents.sh" --install' in script,
         "setup script must install global AGENTS instructions",
     )
+    require(SYNC_PETS_SCRIPT.exists(), "setup must include a Codex pet sync script")
+    require(
+        'python3 "$ROOT/scripts/sync-codex-pets.py" --install' in script,
+        "setup script must install repository-managed Codex pets",
+    )
+    require(STINKY_PENGUIN_MANIFEST.exists(), "managed stinky-penguin manifest must exist")
+    require(STINKY_PENGUIN_SPRITESHEET.exists(), "managed stinky-penguin atlas must exist")
+    stinky_penguin_manifest = json.loads(STINKY_PENGUIN_MANIFEST.read_text())
+    require(
+        stinky_penguin_manifest
+        == {
+            "id": "stinky-penguin",
+            "displayName": "臭企鹅 stinky penguin",
+            "description": "you are a stinky penguin.",
+            "spriteVersionNumber": 2,
+            "spritesheetPath": "spritesheet.webp",
+        },
+        "managed stinky-penguin manifest must match the validated v2 package",
+    )
     require(MINERU_SETUP.exists(), "toolbox must include the optional MinerU setup helper")
     require(GAME_ASSET_PLUGIN.exists(), "game-asset-tools plugin manifest must exist")
     require(GAME_ASSET_MCP.exists(), "game-asset-tools must define an MCP config")
-    require(SYMPHONY_PLUGIN.exists(), "symphony-tools plugin manifest must exist")
-    require(SYMPHONY_MCP.exists(), "symphony-tools must define an MCP config")
-    require(SYMPHONY_SKILL.exists(), "symphony-tools must bundle the symphony-orchestration skill")
     require(RESEARCH_PLUGIN.exists(), "research-tools plugin manifest must exist")
     require(RESEARCH_MCP.exists(), "research-tools must define an MCP config")
     require(RESEARCH_LLM_WIKI_SKILL.exists(), "research-tools must include research-llm-wiki skill")
@@ -218,24 +258,81 @@ def main() -> None:
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
     require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
     require(PAPER_FIGURE_PLUGIN.exists(), "paper-figure-tools plugin manifest must exist")
-    require(PAPER_FIGURE_SKILL.exists(), "paper-figure-tools must include paper-figure-workflow skill")
-    require(PAPER_FIGURE_OPENAI.exists(), "paper-figure-workflow must include OpenAI agent metadata")
-    require(PAPER_FIGURE_REFERENCE.exists(), "paper-figure-workflow must include figure templates reference")
+    require(
+        PAPER_FIGURE_SKILL.exists(),
+        "paper-figure-tools must include paper-figure-workflow skill",
+    )
+    require(
+        PAPER_FIGURE_OPENAI.exists(),
+        "paper-figure-workflow must include OpenAI agent metadata",
+    )
+    require(
+        PAPER_FIGURE_REFERENCE.exists(),
+        "paper-figure-workflow must include figure templates reference",
+    )
+    require(PRODUCTIVITY_PLUGIN.exists(), "productivity-tools plugin manifest must exist")
+    require(PRODUCTIVITY_MCP.exists(), "productivity-tools must define an MCP config")
+    require(
+        TODOIST_TASK_PLANNING_SKILL.exists(),
+        "productivity-tools must include todoist-task-planning skill",
+    )
+    require(
+        TODOIST_TASK_PLANNING_OPENAI.exists(),
+        "todoist-task-planning must include OpenAI agent metadata",
+    )
     marketplace = json.loads(MARKETPLACE.read_text())
     game_asset_plugin = json.loads(GAME_ASSET_PLUGIN.read_text())
     game_asset_mcp = json.loads(GAME_ASSET_MCP.read_text())
-    symphony_plugin = json.loads(SYMPHONY_PLUGIN.read_text())
-    symphony_mcp = json.loads(SYMPHONY_MCP.read_text())
     research_plugin = json.loads(RESEARCH_PLUGIN.read_text())
     research_mcp = json.loads(RESEARCH_MCP.read_text())
     workflow_plugin = json.loads(WORKFLOW_PLUGIN.read_text())
     paper_figure_plugin = json.loads(PAPER_FIGURE_PLUGIN.read_text())
+    productivity_plugin = json.loads(PRODUCTIVITY_PLUGIN.read_text())
+    productivity_mcp = json.loads(PRODUCTIVITY_MCP.read_text())
     trading_mcp = json.loads(TRADING_MCP.read_text())
     default_plugins = array_body(script, "DEFAULT_PLUGINS")
+    retired_plugins = array_body(script, "RETIRED_PLUGINS")
     managed_mcp_servers = array_body(script, "MANAGED_MCP_SERVERS")
+    retired_mcp_servers = array_body(script, "RETIRED_MCP_SERVERS")
     pixellab_server = game_asset_mcp.get("mcpServers", {}).get("pixellab")
-    symphony_server = symphony_mcp.get("mcpServers", {}).get("symphony")
     robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
+    todoist_server = productivity_mcp.get("mcpServers", {}).get("todoist")
+
+    retired_orchestrator = "sym" + "phony"
+    retired_plugin_name = retired_orchestrator + "-tools"
+    require(
+        not (ROOT / "plugins" / retired_plugin_name).exists(),
+        "retired orchestration plugin directory must be absent",
+    )
+    retired_mentions = []
+    retired_tracker_mentions = []
+    for path in ROOT.rglob("*"):
+        if not path.is_file() or ".git" in path.parts or path.resolve() == Path(__file__).resolve():
+            continue
+        try:
+            lines = path.read_text().splitlines()
+        except UnicodeDecodeError:
+            continue
+        for line_number, line in enumerate(lines, start=1):
+            if retired_orchestrator in line.lower():
+                retired_mentions.append((str(path.relative_to(ROOT)), line_number, line.strip()))
+            if re.search(r"\b" + ("lin" + "ear") + r"\b", line, re.IGNORECASE):
+                retired_tracker_mentions.append(
+                    (str(path.relative_to(ROOT)), line_number, line.strip())
+                )
+    allowed_retired_mentions = {
+        ("scripts/setup-codex-toolbox.sh", f'"{retired_plugin_name}"'),
+        ("scripts/setup-codex-toolbox.sh", f'"{retired_orchestrator}"'),
+    }
+    require(
+        len(retired_mentions) == 2
+        and {(path, line) for path, _, line in retired_mentions} == allowed_retired_mentions,
+        "retired orchestration references must be limited to the plugin and MCP migration tombstones",
+    )
+    require(
+        not retired_tracker_mentions,
+        "retired issue-tracker routing references must be absent",
+    )
 
     require(
         marketplace.get("name") == "jialuo-codex-toolbox",
@@ -266,6 +363,31 @@ def main() -> None:
         "use_scihub=false",
     ):
         require(expected in readme_text, f"README paper intake must mention {expected}")
+    for expected in (
+        "Todoist Task Planning",
+        "$todoist-task-planning",
+        "connected Todoist app",
+        "Codex CLI fallback",
+        "https://ai.todoist.net/mcp",
+        "codex mcp login todoist",
+        "Deadline-only tasks stay in Todoist",
+    ):
+        require(
+            expected in readme_normalized,
+            f"README Todoist workflow must mention {expected}",
+        )
+    for expected in (
+        "Managed Codex Pet",
+        "config/codex/pets/stinky-penguin/",
+        "python3 scripts/sync-codex-pets.py --install",
+        "python3 scripts/sync-codex-pets.py --check",
+        "installs the pet without selecting it",
+        "Rerun the toolbox setup",
+    ):
+        require(
+            expected in readme_normalized,
+            f"README managed pet workflow must mention {expected}",
+        )
     for forbidden in (
         "/Users/",
         "/home/",
@@ -363,8 +485,12 @@ def main() -> None:
         "setup script must install the game-asset-tools plugin",
     )
     require(
-        '  "symphony-tools"' in default_plugins,
-        "setup script must install the symphony-tools plugin",
+        '  "symphony-tools"' not in default_plugins,
+        "setup script must not install the retired symphony-tools plugin",
+    )
+    require(
+        '  "symphony-tools"' in retired_plugins,
+        "setup script must retain the symphony-tools migration tombstone",
     )
     require(
         '  "workflow-tools"' in default_plugins,
@@ -375,12 +501,29 @@ def main() -> None:
         "setup script must install the paper-figure-tools plugin",
     )
     require(
+        '  "productivity-tools"' in default_plugins,
+        "setup script must install the productivity-tools plugin",
+    )
+    require(
         '  "pixellab"' in managed_mcp_servers,
         "setup script must manage the pixellab MCP server cleanup list",
     )
     require(
-        '  "symphony"' in managed_mcp_servers,
-        "setup script must manage the symphony MCP server cleanup list",
+        '  "symphony"' not in managed_mcp_servers,
+        "setup script must not treat the retired symphony MCP server as active",
+    )
+    require(
+        '  "symphony"' in retired_mcp_servers,
+        "setup script must retain the symphony MCP migration tombstone",
+    )
+    require(
+        'for server in "${RETIRED_MCP_SERVERS[@]}"; do' in script
+        and 'Removed retired direct MCP config: ${server}' in script,
+        "setup script must clean up retired direct MCP config overrides",
+    )
+    require(
+        '  "todoist"' in managed_mcp_servers,
+        "setup script must manage the todoist MCP server cleanup list",
     )
     require(
         any(
@@ -399,12 +542,11 @@ def main() -> None:
         "game-asset-tools must expose its MCP config",
     )
     require(
-        any(
+        not any(
             plugin.get("name") == "symphony-tools"
-            and plugin.get("source", {}).get("path") == "./plugins/symphony-tools"
             for plugin in marketplace.get("plugins", [])
         ),
-        "marketplace must include symphony-tools",
+        "marketplace must not include the retired symphony-tools plugin",
     )
     require(
         any(
@@ -423,8 +565,89 @@ def main() -> None:
         "marketplace must include paper-figure-tools",
     )
     require(
+        any(
+            plugin.get("name") == "productivity-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/productivity-tools"
+            for plugin in marketplace.get("plugins", [])
+        ),
+        "marketplace must include productivity-tools",
+    )
+    require(
+        productivity_plugin.get("skills") == "./skills/",
+        "productivity-tools must expose its Todoist workflow skill",
+    )
+    require(
+        productivity_plugin.get("mcpServers") == "./.mcp.json",
+        "productivity-tools must expose its MCP config",
+    )
+    productivity_interface = productivity_plugin.get("interface", {})
+    require(
+        "Todoist" in productivity_interface.get("longDescription", ""),
+        "productivity-tools description must mention Todoist",
+    )
+    require(
+        any(
+            "todoist-task-planning" in prompt
+            for prompt in productivity_interface.get("defaultPrompt", [])
+        ),
+        "productivity-tools prompts must surface todoist-task-planning",
+    )
+    require(
+        todoist_server is not None,
+        "productivity-tools must define the todoist MCP server",
+    )
+    require(
+        todoist_server.get("type") == "http",
+        "todoist must use the Streamable HTTP plugin MCP shape",
+    )
+    require(
+        todoist_server.get("url") == "https://ai.todoist.net/mcp",
+        "todoist must point to Todoist's official MCP endpoint",
+    )
+    require(
+        todoist_server.get("default_tools_approval_mode") == "prompt",
+        "todoist tools must prompt by default until their mutation semantics are reviewed",
+    )
+    todoist_skill_text = TODOIST_TASK_PLANNING_SKILL.read_text()
+    todoist_skill_normalized = " ".join(todoist_skill_text.split())
+    for expected in (
+        "name: todoist-task-planning",
+        "Todoist is the source of truth",
+        "Deadline-only tasks",
+        "Do not create a Google Calendar event",
+        "calendar time block",
+        "remote meeting",
+        "Do not create a Todoist follow-up task unless",
+        "Search for an existing matching record",
+        "attendee-visible",
+        "Confirm before",
+        "conversation history is not a task database",
+        "Prefer the connected Todoist app",
+        "Never write the same operation through both",
+    ):
+        require(
+            expected in todoist_skill_normalized,
+            f"todoist-task-planning must mention {expected}",
+        )
+    todoist_openai = TODOIST_TASK_PLANNING_OPENAI.read_text()
+    for expected in (
+        'display_name: "Todoist Task Planning"',
+        'short_description: "Manage Todoist tasks and calendar work blocks."',
+        'default_prompt: "Use $todoist-task-planning to capture this task and schedule time only when appropriate."',
+        'value: "todoist"',
+        'url: "https://ai.todoist.net/mcp"',
+    ):
+        require(
+            expected in todoist_openai,
+            f"todoist-task-planning OpenAI metadata must mention {expected}",
+        )
+    require(
         workflow_plugin.get("skills") == "./skills/",
         "workflow-tools must expose bundled planning skills",
+    )
+    require(
+        workflow_plugin.get("version") == "0.1.1",
+        "workflow-tools plugin version must reflect the routing update",
     )
     require(
         "mcpServers" not in workflow_plugin,
@@ -452,9 +675,9 @@ def main() -> None:
         "Do not edit or write files",
         "docs/superpowers/",
         "Codex-only",
+        "Native Codex subagents",
         "Superpowers",
         "OpenSpec",
-        "Symphony/Linear",
     ):
         require(expected in deep_planning_text, f"deep-planning skill must mention {expected}")
     deep_planning_openai = DEEP_PLANNING_OPENAI.read_text()
@@ -523,79 +746,6 @@ def main() -> None:
         "--export",
     ):
         require(expected in paper_figure_reference_text, f"paper-figure reference must mention {expected}")
-    require(
-        symphony_plugin.get("skills") == "./skills/",
-        "symphony-tools must expose its orchestration skill",
-    )
-    require(
-        symphony_plugin.get("mcpServers") == "./.mcp.json",
-        "symphony-tools must expose its MCP config",
-    )
-    require(
-        symphony_server is not None,
-        "symphony-tools must define the symphony MCP server",
-    )
-    require(
-        symphony_server.get("command") == "/bin/zsh",
-        "symphony MCP must use the zsh secret-loading wrapper",
-    )
-    symphony_args = symphony_server.get("args", [])
-    require(
-        len(symphony_args) == 2 and symphony_args[0] == "-lc",
-        "symphony MCP must run through zsh -lc",
-    )
-    symphony_launch = symphony_args[1] if len(symphony_args) == 2 else ""
-    for expected in (
-        "CODEX_SECRETS_DIR",
-        'source "$SECRET_FILE"',
-        'command -v symphony',
-        "CODEX_LOCAL_BIN_DIR",
-        'exec "$SYMPHONY" mcp',
-    ):
-        require(expected in symphony_launch, f"symphony launch must include {expected}")
-    require(
-        symphony_server.get("default_tools_approval_mode") == "prompt",
-        "symphony MCP must prompt by default",
-    )
-    for tool_name in ("symphony_state", "symphony_handoff_summary"):
-        require(
-            symphony_server.get("tools", {}).get(tool_name, {}).get("approval_mode") == "auto",
-            f"symphony read/review tool {tool_name} must be auto-approved",
-        )
-    for tool_name in (
-        "symphony_create_issue",
-        "symphony_create_issue_batch",
-        "symphony_workflow_init",
-        "symphony_refresh",
-        "symphony_add_linear_comment",
-        "symphony_move_linear_issue",
-    ):
-        require(
-            symphony_server.get("tools", {}).get(tool_name, {}).get("approval_mode") == "prompt",
-            f"symphony mutating/dispatch tool {tool_name} must stay prompt-gated",
-        )
-    symphony_skill_text = SYMPHONY_SKILL.read_text()
-    for expected in (
-        "name: symphony-orchestration",
-        "MCP Tool Preference",
-        "symphony_create_issue",
-        "symphony_workflow_init",
-        "symphony_handoff_summary",
-        "symphony_add_linear_comment",
-        "symphony_move_linear_issue",
-        "symphony service",
-        "large decomposable app/site/project builds",
-        "Workflow Selection",
-        "https://github.com/jialuohu/symphony-go",
-        "--concurrency 4",
-        "route to the Symphony lane by default",
-        "Do not offer Codex-only as an equal lane",
-        "preflight",
-        "do not stop at dry-runs",
-        "Build a polished business website",
-        "Never let a worker use these tools",
-    ):
-        require(expected in symphony_skill_text, f"symphony skill must mention {expected}")
     require(
         research_plugin.get("skills") == "./skills/",
         "research-tools must expose bundled research skills",

@@ -1,6 +1,6 @@
 {
   "name": "workflow-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Codex planning and workflow skills for non-mutating critique before implementation.",
   "author": {
     "name": "Jialuo Hu"

@@ -25,7 +25,6 @@ DEFAULT_PLUGINS=(
   "research-tools"
   "web-data-tools"
   "game-asset-tools"
-  "symphony-tools"
   "workflow-tools"
   "paper-figure-tools"
   "productivity-tools"
@@ -42,6 +41,7 @@ CONTEXT7_DEFAULT_PLUGINS=(
 RETIRED_PLUGINS=(
   "lab-weekly-update"
   "context7-docs"
+  "symphony-tools"
 )
 MANAGED_MCP_SERVERS=(
   "alpaca"
@@ -50,11 +50,13 @@ MANAGED_MCP_SERVERS=(
   "paper_search_mcp"
   "context7"
   "pixellab"
-  "symphony"
   "todoist"
   "robinhood-trading"
   "vibe_trading"
   "zotero"
+)
+RETIRED_MCP_SERVERS=(
+  "symphony"
 )
 
 resolve_codex() {
@@ -86,6 +88,7 @@ fi
 echo "Using Codex binary: $CODEX_BIN"
 "$CODEX_BIN" --version
 "$ROOT/scripts/sync-agents.sh" --install
+python3 "$ROOT/scripts/sync-codex-pets.py" --install
 
 marketplace_registered() {
   local marketplace_name="$1"
@@ -419,6 +422,15 @@ for server in "${MANAGED_MCP_SERVERS[@]}"; do
     echo "Removed direct MCP config override: ${server}"
   else
     echo "Direct MCP config override not present: ${server}"
+  fi
+done
+
+for server in "${RETIRED_MCP_SERVERS[@]}"; do
+  if direct_mcp_config_present "$server"; then
+    "$CODEX_BIN" mcp remove "$server" >/dev/null
+    echo "Removed retired direct MCP config: ${server}"
+  else
+    echo "Retired direct MCP config not present: ${server}"
   fi
 done
 
