@@ -3236,6 +3236,58 @@ class WechatDigestTests(unittest.TestCase):
 
 
 class WechatDigestSkillContractTests(unittest.TestCase):
+    def test_skill_routes_interactive_reading_without_the_digest_lifecycle(self):
+        text = SKILL_FILE.read_text(encoding="utf-8")
+        self.assertIn("## Setup", text)
+        self.assertIn("## Intent Routing", text)
+        self.assertIn("## Interactive Reading", text)
+        self.assertIn("## Incremental Digest", text)
+        self.assertIn("## Safety and Quotas", text)
+        self.assertIn("## Automation", text)
+
+        interactive = text.split("## Interactive Reading", 1)[1].split("## Incremental Digest", 1)[0]
+        for clause in (
+            "configured-sources", "latest", "recent", "read", "never mark items read",
+            "bookmark", "highlight", "BestBlogs history", "structured fallback",
+            "formats: [\"markdown\"]", "onlyMainContent: true", "mobile: true",
+            "storeInCache: false", 'proxy: "auto"', "effective/final URL",
+            "untrusted", "It uses no claim/renew/ack gates",
+        ):
+            self.assertIn(clause, interactive, clause)
+        self.assertIn("search-sources", text)
+        self.assertIn("exactly one result", text)
+
+    def test_skill_keeps_interactive_and_digest_fallbacks_separate(self):
+        text = SKILL_FILE.read_text(encoding="utf-8")
+        self.assertIn("## Interactive Reading", text)
+        self.assertIn("## Incremental Digest", text)
+        self.assertIn("## Safety and Quotas", text)
+        interactive = text.split("## Interactive Reading", 1)[1].split("## Incremental Digest", 1)[0]
+        digest = text.split("## Incremental Digest", 1)[1].split("## Safety and Quotas", 1)[0]
+        self.assertIn("read returns a structured fallback", interactive)
+        self.assertIn("It uses no claim/renew/ack gates", interactive)
+        self.assertIn("Standalone URLs", text)
+        self.assertIn("historical/topic searches", text)
+        self.assertIn("claim/renew/ack lifecycle", digest)
+        self.assertIn("Before calling Firecrawl, run `renew <article_id> --claim-id <claim_id>`", digest)
+
+    def test_reader_metadata_plugin_version_and_global_routing_are_english(self):
+        metadata = METADATA_FILE.read_text(encoding="utf-8")
+        routing = (MODULE.parents[5] / "config/codex/AGENTS.global.md").read_text(encoding="utf-8")
+        self.assertIn('display_name: "WeChat Reader & Digest"', metadata)
+        self.assertIn("$wechat-digest", metadata)
+        self.assertIn("interactive reading", metadata.lower())
+        self.assertTrue(metadata.isascii())
+        self.assertTrue(SKILL_FILE.read_text(encoding="utf-8").isascii())
+        self.assertIn("latest/current/recent", routing)
+        self.assertIn("configured-source", routing)
+        self.assertIn("read", routing)
+        self.assertIn("incremental", routing)
+        self.assertIn("claim/renew/ack", routing)
+        self.assertTrue(routing.isascii())
+        plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(plugin["version"], "0.3.0")
+
     def test_skill_declares_the_operational_digest_contract(self):
         text = SKILL_FILE.read_text(encoding="utf-8")
         self.assertIn("name: wechat-digest", text)
@@ -3386,14 +3438,14 @@ class WechatDigestSkillContractTests(unittest.TestCase):
 
     def test_skill_metadata_and_plugin_keep_web_capabilities_consistent(self):
         metadata = METADATA_FILE.read_text(encoding="utf-8")
-        self.assertIn('display_name: "WeChat Digest"', metadata)
+        self.assertIn('display_name: "WeChat Reader & Digest"', metadata)
         short = next(line for line in metadata.splitlines() if "short_description:" in line).split('"')[1]
         self.assertGreaterEqual(len(short), 25)
         self.assertLessEqual(len(short), 64)
         self.assertIn("$wechat-digest", metadata)
         self.assertNotIn("dependencies:", metadata)
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.2.0")
+        self.assertEqual(plugin["version"], "0.3.0")
         joined = json.dumps(plugin).lower()
         for capability in ("wechat", "firecrawl", "playwright"):
             self.assertIn(capability, joined)

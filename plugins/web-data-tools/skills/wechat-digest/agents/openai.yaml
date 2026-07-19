@@ -1,4 +1,4 @@
 interface:
-  display_name: "WeChat Digest"
-  short_description: "Safely digest selected WeChat subscriptions"
-  default_prompt: "Use $wechat-digest to run a safe scheduled digest for my selected WeChat subscriptions."
+  display_name: "WeChat Reader & Digest"
+  short_description: "Read current articles or digest selected WeChat sources"
+  default_prompt: "Use $wechat-digest for interactive reading of current configured WeChat articles or a safe incremental digest."
