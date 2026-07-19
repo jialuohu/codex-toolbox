@@ -48,6 +48,9 @@ API_KEY = re.compile(r"^bb_[0-9A-Fa-f]{32}$")
 CLAIM_TOKEN = re.compile(r"^[0-9a-f]{32}$")
 CANONICAL_DAY = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 NON_TARGET_RESOURCE_TYPES = frozenset(("blog", "newsletter", "podcast", "tweet", "video"))
+MIGRATION_WARNING_PREFIXES = (
+    "identity_rebaseline:", "legacy_pending_discarded:", "legacy_tombstones_discarded:",
+)
 PENDING_FIELDS = frozenset((
     "identity", "resource_id", "source_id", "source_name", "title", "url",
     "published_at", "attempts", "last_failure_reason", "claim_id", "claim_expires_at",
@@ -175,12 +178,12 @@ class BestBlogsClient:
 def canonical_wechat_url(value):
     if not isinstance(value, str) or len(value) > 4096:
         return None
-    parsed = urlparse(value.strip())
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or host != "mp.weixin.qq.com" or parsed.username is not None or parsed.password is not None:
-        return None
     try:
-        if parsed.port is not None or parsed.netloc.lower() != "mp.weixin.qq.com":
+        parsed = urlparse(value.strip())
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or host != "mp.weixin.qq.com" or \
+                parsed.username is not None or parsed.password is not None or \
+                parsed.port is not None or parsed.netloc.lower() != "mp.weixin.qq.com":
             return None
     except ValueError:
         return None
@@ -201,47 +204,23 @@ def canonical_wechat_url(value):
     return urlunparse(("https", "mp.weixin.qq.com", parsed.path, "", urlencode(sorted(canonical_pairs)), ""))
 
 
-def _legacy_canonical_wechat_url(value):
-    """Reconstruct the v1-v3 canonical form only to validate old state safely."""
-    if not isinstance(value, str) or len(value) > 4096:
-        return None
-    try:
-        parsed = urlparse(value.strip())
-        host = (parsed.hostname or "").lower()
-        if parsed.scheme != "https" or host != "mp.weixin.qq.com" or \
-                parsed.username is not None or parsed.password is not None or \
-                parsed.port is not None or parsed.netloc.lower() != "mp.weixin.qq.com":
-            return None
-    except ValueError:
-        return None
-    if parsed.params:
-        return None
-    pairs = [
-        (key, item) for key, item in parse_qsl(parsed.query, keep_blank_values=True)
-        if not key.lower().startswith("utm_") and key.lower() not in {"from", "scene", "src"}
-    ]
-    if parsed.path == "/s":
-        for required in ("__biz", "mid", "idx", "sn"):
-            values = [item for key, item in pairs if key == required]
-            if len(values) != 1 or not values[0]:
-                return None
-    elif not re.fullmatch(r"/s/[A-Za-z0-9_-]+", parsed.path):
-        return None
-    return urlunparse(("https", "mp.weixin.qq.com", parsed.path, "", urlencode(sorted(pairs)), ""))
-
-
 def _publication_time(value):
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        if not math.isfinite(value):
-            return None
         try:
+            if isinstance(value, float) and not math.isfinite(value):
+                return None
             return datetime.fromtimestamp(value / (1000 if abs(value) > 10_000_000_000 else 1), tz=timezone.utc).isoformat()
         except (OverflowError, OSError, ValueError):
             return None
     if isinstance(value, str):
         value = value.strip()
         if value.isdigit():
-            return _publication_time(int(value))
+            if len(value) > 20:
+                return None
+            try:
+                return _publication_time(int(value))
+            except ValueError:
+                return None
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).isoformat()
@@ -493,7 +472,8 @@ def _validate_state(state):
                 not isinstance(entry.get("title"), str) or not isinstance(entry.get("source_name"), str) or not isinstance(entry.get("published_at"), str):
             raise StateError("unsupported or malformed state schema")
         entry_aliases = _entry_aliases(entry)
-        if identity not in entry_aliases or not entry_aliases.isdisjoint(pending_aliases):
+        if _url_identity(entry.get("url")) != identity or \
+                not entry_aliases.isdisjoint(pending_aliases):
             raise StateError("unsupported or malformed state schema")
         pending_aliases.update(entry_aliases)
         if entry.get("last_failure_reason") is not None and (not isinstance(entry["last_failure_reason"], str) or not SAFE_REASON.fullmatch(entry["last_failure_reason"])):
@@ -508,7 +488,8 @@ def _validate_state(state):
             raise StateError("unsupported or malformed state schema")
     tombstone_aliases = set()
     for identity, tombstone in state["ack_tombstones"].items():
-        if not _valid_identity(identity) or not isinstance(tombstone, dict) or \
+        if not isinstance(identity, str) or not identity.startswith("url:") or \
+                not _valid_identity(identity) or not isinstance(tombstone, dict) or \
                 set(tombstone) != {"source_id", "ack_after_scan_seq", "aliases"} or \
                 not _safe_id(tombstone.get("source_id")) or \
                 not isinstance(tombstone.get("ack_after_scan_seq"), int) or \
@@ -551,10 +532,11 @@ def _validate_legacy_pending(pending):
         raise StateError("unsupported or malformed state schema")
     required = {"identity", "resource_id", "source_id", "source_name", "title", "url", "published_at", "attempts"}
     for identity, entry in pending.items():
+        legacy_url = entry.get("url") if isinstance(entry, dict) else None
         if not _valid_identity(identity) or not isinstance(entry, dict) or \
                 not required.issubset(entry) or not set(entry).issubset(PENDING_FIELDS) or \
                 entry.get("identity") != identity or not _safe_id(entry.get("source_id")) or \
-                _legacy_canonical_wechat_url(entry.get("url")) != entry.get("url") or \
+                not isinstance(legacy_url, str) or not 1 <= len(legacy_url) <= 4096 or \
                 entry.get("resource_id") is not None and not _safe_id(entry.get("resource_id")) or \
                 not isinstance(entry.get("attempts"), int) or isinstance(entry.get("attempts"), bool) or \
                 not 0 <= entry["attempts"] <= 3 or not isinstance(entry.get("title"), str) or \
@@ -563,7 +545,7 @@ def _validate_legacy_pending(pending):
         resource_id = entry.get("resource_id")
         if resource_id is not None and identity != "resource:" + resource_id:
             raise StateError("unsupported or malformed state schema")
-        if resource_id is None and identity != "url:" + hashlib.sha256(entry["url"].encode("utf-8")).hexdigest():
+        if resource_id is None and identity != "url:" + hashlib.sha256(legacy_url.encode("utf-8")).hexdigest():
             raise StateError("unsupported or malformed state schema")
         if entry.get("last_failure_reason") is not None and \
                 (not isinstance(entry["last_failure_reason"], str) or
@@ -916,9 +898,14 @@ def _apply_scan_observation(state, observation, generation=None):
                 "warnings": ["superseded_scan"], "superseded": True}
     records = observation["records"]
     complete = observation["complete"]
-    warnings = list(observation["warnings"])
     pages = observation["pages"]
     selected = state["sources"]
+    needs_baseline = not selected or any(not source["initialized"] for source in selected.values())
+    migration_receipts = [
+        warning for warning in state["warnings"]
+        if needs_baseline and warning.startswith(MIGRATION_WARNING_PREFIXES)
+    ]
+    warnings = list(dict.fromkeys(migration_receipts + list(observation["warnings"])))
     parsed, malformed, non_target = [], 0, 0
     for raw in records:
         article = parse_article(raw)

@@ -13,7 +13,11 @@ Use `scripts/run_wechat_digest.sh` for every helper command. It loads only `best
 2. Have the user select one to ten source IDs from the JSON output. Configure the selected set atomically with one command: `run_wechat_digest.sh configure --source-id <id1> --source-id <id2> ...`.
 3. Run `run_wechat_digest.sh scan` as a first-run dry run. A complete first scan is a baseline: it records the current articles as seen, returns no historical items in `pending`, and must not be summarized. If scan health is partial, fix or report it and rerun later; it is not a baseline.
 
-State versions 1–3 used incompatible article identities. Their first v4 command validates the old file, discards legacy pending items and tombstones with explicit `legacy_*_discarded` warnings, and resets every configured source for a safe baseline. Surface those warnings and complete a fresh baseline before scheduled processing; never represent discarded legacy items as delivered.
+State versions 1–3 used incompatible article identities. Their first v4 command validates the old file, discards legacy pending items and tombstones with explicit `legacy_*_discarded` warnings, and resets every configured source for a safe baseline. The first rebaseline `scan` returns those migration receipts and keeps them in `status` until the following scan. Surface those warnings and complete a fresh baseline before scheduled processing; never represent discarded legacy items as delivered. A direct v1 migration reserves its unknown same-day usage by setting `total_budget` to 50/50, so wait for the next Beijing day before any BestBlogs call.
+
+## Deployment schedule
+
+Only after `status` proves a complete baseline and every configured source is initialized, create a Codex automation that invokes this skill and its exact lifecycle daily at 08:30 in `America/New_York`. The automation prompt must retain every claim, renewal, fallback, acknowledgment, failure, and final-status guard below. If an automation scheduler is unavailable, report the 08:30 task as **not deployed**; do not substitute an OS cron job or claim that scheduling succeeded.
 
 ## Scheduled run
 

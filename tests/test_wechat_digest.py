@@ -216,6 +216,29 @@ class WechatDigestTests(unittest.TestCase):
             self.assertIsNone(wechat.canonical_wechat_url(unsafe))
         self.assertIsNone(wechat.parse_article({"source": [], "url": "https://mp.weixin.qq.com/s/a"}))
 
+    def test_hostile_time_and_url_values_fail_closed_without_escaping_scan(self):
+        hostile_records = []
+        huge_integer = record("huge-integer")
+        huge_integer["publishTime"] = 10 ** 1000
+        hostile_records.append(huge_integer)
+        huge_string = record("huge-string")
+        huge_string["publishTime"] = "9" * 5000
+        hostile_records.append(huge_string)
+        invalid_url = record("invalid-url")
+        invalid_url["url"] = "https://[::1"
+        hostile_records.append(invalid_url)
+        for raw in hostile_records:
+            with self.subTest(raw_id=raw["id"]):
+                state = wechat.new_state()
+                wechat.configure_sources(state, ["s1"])
+                try:
+                    result = wechat.scan(state, FakeClient([{"dataList": [raw]}]))
+                except (OverflowError, ValueError) as error:
+                    self.fail("hostile remote value escaped fail-closed handling: %s" % error)
+                self.assertFalse(result["complete"])
+                self.assertIn("skipped_malformed_records:1", result["warnings"])
+                self.assertFalse(state["sources"]["s1"]["initialized"])
+
     def test_canonical_wechat_url_accepts_only_article_paths(self):
         self.assertEqual(
             wechat.canonical_wechat_url(
@@ -1854,6 +1877,33 @@ class WechatDigestTests(unittest.TestCase):
         })
         self.assertEqual(migrated["total_budget"]["count"], wechat.TOTAL_DAILY_LIMIT)
 
+    def test_early_v1_pending_with_obsolete_url_shape_is_discarded_safely(self):
+        path = self.state_file()
+        legacy = wechat.new_state()
+        legacy["version"] = 1
+        legacy.pop("total_budget")
+        legacy.pop("next_scan_seq")
+        legacy.pop("last_applied_scan_generation")
+        legacy.pop("ack_tombstones")
+        old_url = "https://legacy.weixin.qq.com/obsolete/path?x=1"
+        old_identity = "url:" + hashlib.sha256(old_url.encode("utf-8")).hexdigest()
+        legacy["pending"][old_identity] = {
+            "identity": old_identity,
+            "resource_id": None,
+            "source_id": "s1",
+            "source_name": "Legacy Source",
+            "title": "Legacy article",
+            "url": old_url,
+            "published_at": "",
+            "attempts": 0,
+        }
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+
+        migrated = wechat.load_state(path)
+        self.assertEqual(migrated["pending"], {})
+        self.assertIn("legacy_pending_discarded:1", migrated["warnings"])
+
     def test_well_formed_v2_state_migrates_sequences_without_claim_or_tombstone_data(self):
         path = self.state_file()
         previous = wechat.new_state()
@@ -2007,6 +2057,40 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(result["enqueued"], 0)
         self.assertEqual(migrated["pending"], {})
 
+    def test_first_cli_rebaseline_scan_surfaces_migration_receipts_once(self):
+        path = self.state_file()
+        legacy = wechat.new_state()
+        legacy["version"] = 3
+        wechat.configure_sources(legacy, ["s1"])
+        legacy["sources"]["s1"]["initialized"] = True
+        pending_entry = wechat.parse_article(record("pending-id"))
+        pending_entry["identity"] = "resource:pending-id"
+        legacy["pending"][pending_entry["identity"]] = pending_entry
+        legacy["ack_tombstones"] = {
+            "resource:acked-id": {"source_id": "s1", "ack_after_scan_seq": 0},
+        }
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(legacy), encoding="utf-8")
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: FakeClient([{"dataList": []}])
+        try:
+            first_output = io.StringIO()
+            with redirect_stdout(first_output):
+                self.assertEqual(wechat.main(["--state-file", str(path), "scan"]), 0)
+            first = json.loads(first_output.getvalue())
+            self.assertIn("identity_rebaseline:s1", first["warnings"])
+            self.assertIn("legacy_pending_discarded:1", first["warnings"])
+            self.assertIn("legacy_tombstones_discarded:1", first["warnings"])
+            self.assertEqual(wechat.load_state(path)["warnings"], first["warnings"])
+
+            second_output = io.StringIO()
+            with redirect_stdout(second_output):
+                self.assertEqual(wechat.main(["--state-file", str(path), "scan"]), 0)
+            self.assertEqual(json.loads(second_output.getvalue())["warnings"], [])
+            self.assertEqual(wechat.load_state(path)["warnings"], [])
+        finally:
+            wechat._client_from_env = original_client
+
     def test_malformed_v3_container_types_fail_as_state_errors_during_migration(self):
         base = wechat.new_state()
         base["version"] = 3
@@ -2072,8 +2156,15 @@ class WechatDigestTests(unittest.TestCase):
 
     def test_v4_state_rejects_overlapping_pending_and_tombstone_aliases(self):
         shared = wechat.parse_article(record("r1", url="https://mp.weixin.qq.com/s/shared"))
-        resource_copy = copy.deepcopy(shared)
-        resource_copy["identity"] = "resource:r1"
+        resource_copy = wechat.parse_article(record(
+            "r1", url="https://mp.weixin.qq.com/s/shared-by-resource",
+        ))
+        tombstone_one = wechat.parse_article(record(
+            "t1", url="https://mp.weixin.qq.com/s/tombstone-one",
+        ))["identity"]
+        tombstone_two = wechat.parse_article(record(
+            "t2", url="https://mp.weixin.qq.com/s/tombstone-two",
+        ))["identity"]
         cases = []
         duplicate_pending = wechat.new_state()
         duplicate_pending["pending"] = {
@@ -2083,24 +2174,39 @@ class WechatDigestTests(unittest.TestCase):
         cases.append(duplicate_pending)
         pending_tombstone = wechat.new_state()
         pending_tombstone["pending"][shared["identity"]] = shared
-        pending_tombstone["ack_tombstones"]["resource:r1"] = {
+        pending_tombstone["ack_tombstones"][tombstone_one] = {
             "source_id": "s1", "ack_after_scan_seq": 0,
-            "aliases": ["resource:r1"],
+            "aliases": sorted([tombstone_one, "resource:r1"]),
         }
         cases.append(pending_tombstone)
         duplicate_tombstones = wechat.new_state()
         duplicate_tombstones["ack_tombstones"] = {
-            shared["identity"]: {
+            tombstone_one: {
                 "source_id": "s1", "ack_after_scan_seq": 0,
-                "aliases": sorted([shared["identity"], "resource:r1"]),
+                "aliases": sorted([tombstone_one, "resource:r1"]),
             },
-            "resource:r1": {
+            tombstone_two: {
                 "source_id": "s1", "ack_after_scan_seq": 0,
-                "aliases": ["resource:r1"],
+                "aliases": sorted([tombstone_two, "resource:r1"]),
             },
         }
         cases.append(duplicate_tombstones)
         for malformed in cases:
+            with self.subTest(malformed=malformed):
+                with self.assertRaises(wechat.StateError):
+                    wechat.save_state(self.state_file(), malformed)
+
+    def test_v4_pending_and_tombstones_require_url_primary_identities(self):
+        pending = wechat.new_state()
+        entry = wechat.parse_article(record("r1", url="https://mp.weixin.qq.com/s/primary"))
+        entry["identity"] = "resource:r1"
+        pending["pending"][entry["identity"]] = entry
+        tombstone = wechat.new_state()
+        tombstone["ack_tombstones"]["resource:r1"] = {
+            "source_id": "s1", "ack_after_scan_seq": 0,
+            "aliases": ["resource:r1"],
+        }
+        for malformed in (pending, tombstone):
             with self.subTest(malformed=malformed):
                 with self.assertRaises(wechat.StateError):
                     wechat.save_state(self.state_file(), malformed)
@@ -2370,6 +2476,14 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertNotIn("python3 -c", text)
         self.assertLess(text.index("prepare a complete article output block"), text.index("then call `ack <article_id>`"))
         self.assertLess(text.index("then call `ack <article_id>`"), text.index("then include the prepared block in the final digest"))
+
+    def test_skill_records_the_approved_scheduler_guardrails(self):
+        text = SKILL_FILE.read_text(encoding="utf-8")
+        for clause in (
+            "08:30", "America/New_York", "automation", "scheduler",
+            "complete baseline", "configured", "initialized", "not deployed",
+        ):
+            self.assertIn(clause, text, clause)
 
     def test_wrapper_loads_only_the_standard_secret_file_and_executes_helper(self):
         text = WRAPPER_FILE.read_text(encoding="utf-8")
