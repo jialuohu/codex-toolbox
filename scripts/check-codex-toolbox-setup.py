@@ -91,6 +91,15 @@ TODOIST_TASK_PLANNING_SKILL = (
 TODOIST_TASK_PLANNING_OPENAI = (
     TODOIST_TASK_PLANNING_SKILL.parent / "agents" / "openai.yaml"
 )
+DAILY_COMMAND_CENTER_SKILL = (
+    ROOT
+    / "plugins"
+    / "productivity-tools"
+    / "skills"
+    / "daily-command-center"
+    / "SKILL.md"
+)
+DAILY_COMMAND_CENTER_OPENAI = DAILY_COMMAND_CENTER_SKILL.parent / "agents" / "openai.yaml"
 
 
 def require(condition: bool, message: str) -> None:
@@ -104,10 +113,42 @@ def array_body(script: str, name: str) -> str:
     return match.group("body")
 
 
+def normalized(text: str) -> str:
+    return " ".join(text.split())
+
+
+def daily_skill_frontmatter(skill_text: str) -> str:
+    match = re.match(r"\A---\n(?P<frontmatter>.*?)\n---\n", skill_text, re.DOTALL)
+    require(match is not None, "daily-command-center must start with YAML frontmatter")
+    return match.group("frontmatter")
+
+
+def markdown_section(skill_text: str, heading: str) -> str:
+    match = re.search(
+        rf"^## {re.escape(heading)}\n(?P<body>.*?)(?=^## |\Z)",
+        skill_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    require(match is not None, f"daily-command-center must include a {heading} section")
+    return match.group("body")
+
+
+def plain_normalized(text: str) -> str:
+    return re.sub(r"[`*_]", "", normalized(text)).lower()
+
+
 def main() -> None:
     script = SETUP_SCRIPT.read_text()
     readme_text = README.read_text()
     readme_normalized = " ".join(readme_text.split())
+    require(
+        DAILY_COMMAND_CENTER_SKILL.exists(),
+        "productivity-tools must include daily-command-center skill",
+    )
+    require(
+        DAILY_COMMAND_CENTER_OPENAI.exists(),
+        "daily-command-center must include OpenAI agent metadata",
+    )
     require(GLOBAL_AGENTS.exists(), "canonical global AGENTS file must exist")
     require(
         GLOBAL_AGENTS.read_text().startswith("## Orchestration routing\n"),
@@ -175,6 +216,22 @@ def main() -> None:
         require(
             expected in global_agents_normalized,
             f"global AGENTS Todoist routing must mention {expected}",
+        )
+    for expected in (
+        "$daily-command-center",
+        "bounded cross-app reads",
+        "Gmail is incoming context",
+        "Todoist is the durable source of truth for actionable tasks",
+        "Google Calendar is the source of truth for time commitments",
+        "strict no-mutation behavior in scheduled runs",
+        "connected Todoist app",
+        "official hosted MCP as a Codex CLI fallback",
+        "partial brief",
+        "do not substitute web search",
+    ):
+        require(
+            expected in global_agents_normalized,
+            f"global AGENTS daily command center routing must mention {expected}",
         )
     for expected in (
         "$deep-planning",
@@ -377,6 +434,20 @@ def main() -> None:
             f"README Todoist workflow must mention {expected}",
         )
     for expected in (
+        "Daily Command Center",
+        "$daily-command-center",
+        "read-only daily brief",
+        "Gmail",
+        "Google Calendar",
+        "Todoist",
+        "scheduled task",
+        "preferred local time",
+    ):
+        require(
+            expected in readme_normalized,
+            f"README daily command center guidance must mention {expected}",
+        )
+    for expected in (
         "Managed Codex Pet",
         "config/codex/pets/stinky-penguin/",
         "python3 scripts/sync-codex-pets.py --install",
@@ -574,7 +645,7 @@ def main() -> None:
     )
     require(
         productivity_plugin.get("skills") == "./skills/",
-        "productivity-tools must expose its Todoist workflow skill",
+        "productivity-tools must expose its productivity workflow skills",
     )
     require(
         productivity_plugin.get("mcpServers") == "./.mcp.json",
@@ -582,15 +653,36 @@ def main() -> None:
     )
     productivity_interface = productivity_plugin.get("interface", {})
     require(
+        productivity_plugin.get("version") == "0.2.0",
+        "productivity-tools plugin version must reflect daily-command-center",
+    )
+    require(
         "Todoist" in productivity_interface.get("longDescription", ""),
         "productivity-tools description must mention Todoist",
     )
+    for field in ("description",):
+        require(
+            "daily" in productivity_plugin.get(field, "").lower(),
+            f"productivity-tools {field} must describe the daily brief",
+        )
+    for field in ("shortDescription", "longDescription"):
+        require(
+            "daily" in productivity_interface.get(field, "").lower(),
+            f"productivity-tools {field} must describe the daily brief",
+        )
     require(
         any(
             "todoist-task-planning" in prompt
             for prompt in productivity_interface.get("defaultPrompt", [])
         ),
         "productivity-tools prompts must surface todoist-task-planning",
+    )
+    require(
+        any(
+            "daily-command-center" in prompt
+            for prompt in productivity_interface.get("defaultPrompt", [])
+        ),
+        "productivity-tools prompts must surface daily-command-center",
     )
     require(
         todoist_server is not None,
@@ -641,6 +733,156 @@ def main() -> None:
             expected in todoist_openai,
             f"todoist-task-planning OpenAI metadata must mention {expected}",
         )
+    daily_skill_text = DAILY_COMMAND_CENTER_SKILL.read_text()
+    daily_skill_normalized = normalized(daily_skill_text)
+    daily_skill_lower = daily_skill_normalized.lower()
+    read_only_text = daily_skill_text.split("## Source ownership and tool choice", maxsplit=1)[0]
+    source_choice_text = markdown_section(daily_skill_text, "Source ownership and tool choice")
+    read_sources_text = markdown_section(daily_skill_text, "Read the bounded sources")
+    brief_text = markdown_section(daily_skill_text, "Write the brief")
+    frontmatter = daily_skill_frontmatter(daily_skill_text)
+    frontmatter_lines = frontmatter.splitlines()
+    require(
+        len(frontmatter_lines) == 2
+        and frontmatter_lines[0] == "name: daily-command-center"
+        and frontmatter_lines[1].startswith("description: ")
+        and bool(frontmatter_lines[1].removeprefix("description: ").strip()),
+        "daily-command-center frontmatter must contain exactly the required name and description",
+    )
+    description = frontmatter_lines[1].removeprefix("description: ").lower()
+    for expected in (
+        "daily or morning briefs",
+        "daily planning",
+        "scheduled command-center runs",
+        "gmail, google calendar, and todoist",
+    ):
+        require(
+            expected in description,
+            f"daily-command-center frontmatter description must trigger for {expected}",
+        )
+    for expected in (
+        "daily or morning briefs",
+        "daily planning",
+        "scheduled command-center runs",
+        "Gmail, Google Calendar, and Todoist",
+        "strictly read-only",
+        "conversation history is not a task database",
+        "Gmail is incoming context",
+        "Todoist is the durable source of truth for actionable tasks",
+        "Google Calendar is the source of truth for time commitments",
+        "Prefer connected apps",
+        "official hosted MCP as a fallback",
+        "one Todoist surface per run",
+        "overdue, today, and seven-day upcoming tasks",
+        "verification codes",
+        "direct verification",
+        "partial brief",
+        "do not substitute web search",
+        "$todoist-task-planning",
+    ):
+        require(
+            expected.lower() in daily_skill_lower,
+            f"daily-command-center must mention {expected}",
+        )
+    for service, operations in (
+        ("Gmail", r"send\s*,\s*draft\s*,\s*label\s*,\s*archive\s*,\s*trash\s*,\s*or\s+delete\s+email"),
+        ("Calendar", r"create\s*,\s*update\s*,\s*delete\s*,\s*or\s+respond\s+to\s+calendar\s+events"),
+        ("Todoist", r"create\s*,\s*update\s*,\s*complete\s*,\s*delete\s*,\s*or\s+reschedule\s+todoist\s+records"),
+    ):
+        require(
+            re.search(operations, plain_normalized(read_only_text)) is not None,
+            f"daily-command-center must list every prohibited {service} mutation",
+        )
+    timezone_contract = plain_normalized(source_choice_text)
+    require(
+        re.search(
+            r"connected profiles.*?profiles disagree materially.*?report the mismatch.*?calendar timezone.*?schedule rendering",
+            timezone_contract,
+        )
+        is not None,
+        "daily-command-center must report profile timezone mismatches and render schedules in the Calendar timezone",
+    )
+    gmail_query = (
+        "newer_than:2d in:inbox -category:promotions "
+        "-category:social -in:spam -in:trash"
+    )
+    require(
+        gmail_query in read_sources_text,
+        "daily-command-center must use the exact bounded Gmail query",
+    )
+    require(
+        re.search(
+            r"initial search at 30 messages.*?group results by thread.*?at most five likely-action threads",
+            plain_normalized(read_sources_text),
+        )
+        is not None,
+        "daily-command-center must retain the exact Gmail message and thread expansion bounds",
+    )
+    require(
+        re.search(
+            r"calendar.*?explicit timezone-aware bounds.*?start of today.*?next seven days",
+            plain_normalized(read_sources_text),
+        )
+        is not None,
+        "daily-command-center must retain the bounded timezone-aware Calendar window",
+    )
+    output_labels = (
+        "Today at a glance",
+        "Attention now",
+        "Calendar",
+        "Tasks",
+        "FYI",
+        "Suggested actions",
+        "Coverage and caveats",
+    )
+    brief_lines = [plain_normalized(line) for line in brief_text.splitlines()]
+    output_positions = []
+    for label in output_labels:
+        label_pattern = rf"(?:(?:\d+[.)]|[-+])\s+)?{re.escape(label.lower())}"
+        matching_lines = [
+            index
+            for index, line in enumerate(brief_lines)
+            if re.fullmatch(label_pattern, line)
+        ]
+        require(
+            len(matching_lines) == 1,
+            f"daily-command-center must list the {label} output section exactly once",
+        )
+        output_positions.append(matching_lines[0])
+    require(
+        output_positions == sorted(output_positions),
+        "daily-command-center output labels must appear in the required stable order",
+    )
+    require(
+        re.search(
+            r"(?:limit|cap)\s+attention now\s+to\s+five(?:\s+items)?\s+and\s+fyi\s+to\s+three(?:\s+items)?",
+            plain_normalized(brief_text),
+        )
+        is not None,
+        "daily-command-center must cap Attention now at five items and FYI at three",
+    )
+    require(
+        re.search(
+            r"every attention item.*?source.*?time (?:or|/) date.*?why it matters.*?known deadline.*?recommended next step",
+            plain_normalized(brief_text),
+        )
+        is not None,
+        "daily-command-center attention items must include source, time/date, rationale, deadline, and next step",
+    )
+    daily_openai = DAILY_COMMAND_CENTER_OPENAI.read_text()
+    for expected in (
+        'display_name: "Daily Command Center"',
+        'short_description: "Summarize email, calendar, and priority tasks."',
+        'default_prompt: "Use $daily-command-center to prepare my read-only daily brief."',
+    ):
+        require(
+            expected in daily_openai,
+            f"daily-command-center OpenAI metadata must mention {expected}",
+        )
+    require(
+        "todoist" not in daily_openai.lower(),
+        "daily-command-center OpenAI metadata must not require Todoist MCP",
+    )
     require(
         workflow_plugin.get("skills") == "./skills/",
         "workflow-tools must expose bundled planning skills",
