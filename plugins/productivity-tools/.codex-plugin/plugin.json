@@ -20,7 +20,6 @@
     ],
     "defaultPrompt": [
       "Use $daily-command-center to prepare my read-only daily brief.",
-      "Use $daily-command-center to summarize today's email context, calendar, and priority tasks.",
       "Use $todoist-task-planning to capture this task with the right deadline and details.",
       "Use $todoist-task-planning to review my Todoist tasks and plan only explicit work blocks on Google Calendar."
     ]
