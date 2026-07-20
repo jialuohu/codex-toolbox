@@ -1,7 +1,7 @@
 {
   "name": "productivity-tools",
-  "version": "0.1.0",
-  "description": "Official Todoist MCP access with a selective Google Calendar planning workflow.",
+  "version": "0.2.0",
+  "description": "Read-only daily Gmail, Calendar, and Todoist briefs plus Todoist task planning.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -9,8 +9,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Productivity Tools",
-    "shortDescription": "Todoist tasks with selective calendar planning.",
-    "longDescription": "Connects Codex to Todoist's official hosted MCP and adds a workflow that keeps Todoist authoritative for tasks while using Google Calendar only for explicit meetings and time blocks.",
+    "shortDescription": "Daily briefs with Todoist and calendar planning.",
+    "longDescription": "Adds a read-only daily command center across Gmail, Google Calendar, and Todoist while retaining Todoist's official hosted MCP and the separate task-planning workflow for explicit task, meeting, and time-block changes.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -19,6 +19,8 @@
       "Interactive"
     ],
     "defaultPrompt": [
+      "Use $daily-command-center to prepare my read-only daily brief.",
+      "Use $daily-command-center to summarize today's email context, calendar, and priority tasks.",
       "Use $todoist-task-planning to capture this task with the right deadline and details.",
       "Use $todoist-task-planning to review my Todoist tasks and plan only explicit work blocks on Google Calendar."
     ]

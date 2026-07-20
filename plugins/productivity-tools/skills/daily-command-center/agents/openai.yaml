@@ -1,0 +1,4 @@
+interface:
+  display_name: "Daily Command Center"
+  short_description: "Summarize email, calendar, and priority tasks."
+  default_prompt: "Use $daily-command-center to prepare my read-only daily brief."

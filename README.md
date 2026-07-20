@@ -101,6 +101,25 @@ Task creation is allowed when explicitly requested. Calendar writes, attendee
 invitations, deletions, and ambiguous updates remain confirmation-gated. A
 one-time task/event cross-link is not ongoing bidirectional synchronization.
 
+## Daily Command Center
+
+Use `$daily-command-center` for a read-only daily brief that brings together
+Gmail context, Google Calendar commitments, and Todoist priorities. It reads
+the connected sources on each run, keeps Todoist authoritative for actionable
+tasks and Calendar authoritative for time commitments, and proposes follow-up
+actions without changing email, calendar, or task records.
+
+Invoke it manually when you want a morning or daily planning pass:
+
+```text
+Use $daily-command-center to prepare my read-only daily brief.
+```
+
+It can also be used from a scheduled task at your preferred local time. The
+scheduled run remains read-only and reports partial coverage if a connected
+source is unavailable; use the relevant interactive workflow for any later
+email, calendar, or Todoist change.
+
 ## Paper Library Intake
 
 Use one workflow for public discovery, Zotero deduplication, topical filing, and
