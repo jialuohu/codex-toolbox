@@ -9,7 +9,7 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Productivity Tools",
-    "shortDescription": "Daily briefs with Todoist and calendar planning.",
+    "shortDescription": "Read-only Gmail, Calendar, and Todoist daily briefs.",
     "longDescription": "Adds a read-only daily command center across Gmail, Google Calendar, and Todoist while retaining Todoist's official hosted MCP and the separate task-planning workflow for explicit task, meeting, and time-block changes.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
