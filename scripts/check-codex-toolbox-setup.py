@@ -685,6 +685,10 @@ def main() -> None:
         "productivity-tools prompts must surface daily-command-center",
     )
     require(
+        len(productivity_interface.get("defaultPrompt", [])) <= 3,
+        "productivity-tools must stay within Codex's three default-prompt limit",
+    )
+    require(
         todoist_server is not None,
         "productivity-tools must define the todoist MCP server",
     )
