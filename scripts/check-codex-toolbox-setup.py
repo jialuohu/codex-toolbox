@@ -660,15 +660,19 @@ def main() -> None:
         "Todoist" in productivity_interface.get("longDescription", ""),
         "productivity-tools description must mention Todoist",
     )
-    for field in ("description",):
+    description_surfaces = {
+        "description": productivity_plugin.get("description", ""),
+        "shortDescription": productivity_interface.get("shortDescription", ""),
+        "longDescription": productivity_interface.get("longDescription", ""),
+    }
+    for field, description_text in description_surfaces.items():
+        description_lower = description_text.lower()
         require(
-            "daily" in productivity_plugin.get(field, "").lower(),
-            f"productivity-tools {field} must describe the daily brief",
-        )
-    for field in ("shortDescription", "longDescription"):
-        require(
-            "daily" in productivity_interface.get(field, "").lower(),
-            f"productivity-tools {field} must describe the daily brief",
+            all(
+                expected in description_lower
+                for expected in ("read-only", "daily", "gmail", "calendar", "todoist")
+            ),
+            f"productivity-tools {field} must surface the read-only Gmail, Calendar, and Todoist daily brief",
         )
     require(
         any(
