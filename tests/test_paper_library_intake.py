@@ -989,6 +989,7 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
         self.assertEqual(manifest["version"], "0.3.0")
         default_prompts = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(default_prompts), 3)
+        self.assertTrue(all(len(prompt) <= 128 for prompt in default_prompts))
         prompts = " ".join(default_prompts)
         self.assertIn("$paper-library-intake", prompts)
         self.assertIn("$paper-read-draft", prompts)
