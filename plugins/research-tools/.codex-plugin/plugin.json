@@ -19,7 +19,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use $paper-read-draft to create a factual Obsidian PaperRead note shell, or $paper-library-intake to find, deduplicate, file, or add the paper with verified attachment storage.",
+      "Use $paper-read-draft for a brief Obsidian note, or $paper-library-intake to find, deduplicate, file, or add the paper.",
       "Extract a complex local document with checksum-verified MinerU outputs.",
       "Use the Research LLM Wiki to ingest, query, or lint my research vault wiki."
     ]

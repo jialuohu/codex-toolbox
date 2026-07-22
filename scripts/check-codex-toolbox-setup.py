@@ -932,6 +932,10 @@ def main() -> None:
         len(research_interface.get("defaultPrompt", [])) <= 3,
         "research-tools default prompts must respect Codex's three-prompt limit",
     )
+    require(
+        all(len(prompt) <= 128 for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must respect Codex's 128-character limit",
+    )
     paper_read_draft_text = PAPER_READ_DRAFT_SKILL.read_text()
     for expected in (
         "name: paper-read-draft",
