@@ -51,4 +51,4 @@ OK
 
 ## Commit
 
-Pending final commit.
+Implementation commit: `6f2661fd38e268a5d4673677d1a78be51871f4c0` (`feat: add PaperRead draft skill`).
