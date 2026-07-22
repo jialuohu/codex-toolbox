@@ -88,9 +88,14 @@ class PaperReadDraftSkillTests(unittest.TestCase):
 
     def test_skill_preserves_template_filename_and_existing_note_protections(self) -> None:
         skill = self.read(SKILL)
-        self.assertIn("PaperRead/_Paper Read Template.md", skill)
-        self.assertRegex(skill, r"(?is)vault template.*?satisfies the contract.*?bundled fallback")
-        self.assertRegex(skill, r"(?i)never silently rewrite.*?vault template")
+        self.assertIn(
+            "Use the vault template at `PaperRead/_Paper Read Template.md` when it exists and satisfies the contract.",
+            skill,
+        )
+        self.assertIn(
+            "If that exact vault template is missing or malformed, never silently rewrite the vault template; use the bundled fallback at `references/paper-read-template.md` for note creation.",
+            skill,
+        )
         self.assertRegex(skill, r"(?is)canonical title.*?normalized.*?whitespace collapsed.*?\.md")
         self.assertRegex(skill, r"(?i)preserve the real title in frontmatter and H1")
         self.assertRegex(skill, r"(?is)before any write.*?exact-path check")
@@ -103,6 +108,13 @@ class PaperReadDraftSkillTests(unittest.TestCase):
         self.assertRegex(skill, r"(?i)at most three.*?lowercase hyphenated topic tags")
         self.assertRegex(skill, r"(?i)if uncertain.*?only `?paper-read`?")
         self.assertRegex(skill, r"(?i)standard create-draft request authorizes only one new note")
+
+    def test_skill_leaves_personal_sections_as_hidden_prompts_by_default(self) -> None:
+        skill = self.read(SKILL)
+        self.assertIn(
+            "Do not fill personal sections by default; each is hidden-prompt-only.",
+            skill,
+        )
 
     def test_skill_has_no_zotero_or_llm_wiki_mutation_path(self) -> None:
         skill = self.read(SKILL)

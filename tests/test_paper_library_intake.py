@@ -990,6 +990,7 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
         prompts = " ".join(manifest["interface"]["defaultPrompt"])
         self.assertIn("$paper-library-intake", prompts)
         self.assertIn("$paper-read-draft", prompts)
+        self.assertIn("MinerU", prompts)
 
     def test_global_routing_readme_wiki_and_checker_expose_one_workflow(self) -> None:
         agents = GLOBAL_AGENTS.read_text()

@@ -40,4 +40,4 @@ The base tag is `paper-read`. A concrete note may add at most three conservative
 
 - Return an existing path unchanged when the exact note exists.
 - Otherwise return the created path, with unresolved optional metadata called out plainly.
-- Do not fill personal sections beyond the hidden prompts.
+- Do not fill personal sections by default; each is hidden-prompt-only.

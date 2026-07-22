@@ -916,6 +916,10 @@ def main() -> None:
         "research-tools default prompts must surface paper-library-intake",
     )
     require(
+        any("mineru" in prompt.lower() for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must retain MinerU extraction coverage",
+    )
+    require(
         "PaperRead" in research_interface.get("shortDescription", "")
         and "PaperRead" in research_interface.get("longDescription", ""),
         "research-tools plugin descriptions must surface the PaperRead draft workflow",
@@ -927,16 +931,43 @@ def main() -> None:
     paper_read_draft_text = PAPER_READ_DRAFT_SKILL.read_text()
     for expected in (
         "name: paper-read-draft",
-        "CODEX_OBSIDIAN_VAULT",
-        "PaperRead/",
-        "references/paper-read-template.md",
         "metadata-only",
         "do not guess",
         "Do not add or update Zotero",
         "do not ingest the LLM Wiki",
-        "without modifying",
     ):
         require(expected in paper_read_draft_text, f"paper-read-draft skill must mention {expected}")
+    for expected, message in (
+        (
+            "Use the vault template at `PaperRead/_Paper Read Template.md` when it exists and satisfies the contract.",
+            "paper-read-draft must require the exact PaperRead vault template path",
+        ),
+        (
+            "If that exact vault template is missing or malformed, never silently rewrite the vault template; use the bundled fallback at `references/paper-read-template.md` for note creation.",
+            "paper-read-draft must use its bundled fallback only when the vault template is missing or malformed",
+        ),
+        (
+            "A standard create-draft request authorizes only one new note.",
+            "paper-read-draft must limit create authority to one new note",
+        ),
+        (
+            "Resolve the configured vault through `CODEX_OBSIDIAN_VAULT` and `obsidian_files`. Write only beneath `PaperRead/`; never use the current working directory as the vault.",
+            "paper-read-draft must use the configured vault, only write under PaperRead, and never use the current directory as the vault",
+        ),
+        (
+            "Before any write, perform an exact-path check. If the note already exists, return its path without modifying it.",
+            "paper-read-draft must return an exact-path existing note without modification",
+        ),
+        (
+            "If a normalized filename collision represents a distinct paper, ask before choosing a disambiguated filename.",
+            "paper-read-draft must ask about distinct normalized filename collisions",
+        ),
+        (
+            "Do not fill personal sections by default; each is hidden-prompt-only.",
+            "paper-read-draft must leave personal sections hidden-prompt-only by default",
+        ),
+    ):
+        require(expected in paper_read_draft_text, message)
     paper_read_draft_openai = PAPER_READ_DRAFT_OPENAI.read_text()
     for expected in (
         'display_name: "PaperRead Draft"',
