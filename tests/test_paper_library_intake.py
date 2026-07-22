@@ -987,7 +987,9 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
         manifest = json.loads(RESEARCH_PLUGIN.read_text())
 
         self.assertEqual(manifest["version"], "0.3.0")
-        prompts = " ".join(manifest["interface"]["defaultPrompt"])
+        default_prompts = manifest["interface"]["defaultPrompt"]
+        self.assertLessEqual(len(default_prompts), 3)
+        prompts = " ".join(default_prompts)
         self.assertIn("$paper-library-intake", prompts)
         self.assertIn("$paper-read-draft", prompts)
         self.assertIn("MinerU", prompts)
