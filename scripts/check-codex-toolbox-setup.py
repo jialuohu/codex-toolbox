@@ -55,6 +55,11 @@ PAPER_LIBRARY_INTAKE_OPENAI = PAPER_LIBRARY_INTAKE_SKILL.parent / "agents" / "op
 PAPER_LIBRARY_ATTACHMENT = (
     PAPER_LIBRARY_INTAKE_SKILL.parent / "scripts" / "zotero_attachment.py"
 )
+PAPER_READ_DRAFT_SKILL = (
+    ROOT / "plugins" / "research-tools" / "skills" / "paper-read-draft" / "SKILL.md"
+)
+PAPER_READ_DRAFT_OPENAI = PAPER_READ_DRAFT_SKILL.parent / "agents" / "openai.yaml"
+PAPER_READ_DRAFT_TEMPLATE = PAPER_READ_DRAFT_SKILL.parent / "references" / "paper-read-template.md"
 WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
 DEEP_PLANNING_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "SKILL.md"
@@ -253,6 +258,18 @@ def main() -> None:
     require(
         PAPER_LIBRARY_ATTACHMENT.exists(),
         "paper-library-intake must include the WebDAV attachment helper",
+    )
+    require(
+        PAPER_READ_DRAFT_SKILL.exists(),
+        "research-tools must include paper-read-draft skill",
+    )
+    require(
+        PAPER_READ_DRAFT_OPENAI.exists(),
+        "paper-read-draft must include OpenAI agent metadata",
+    )
+    require(
+        PAPER_READ_DRAFT_TEMPLATE.exists(),
+        "paper-read-draft must include its compact note template",
     )
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
@@ -821,8 +838,8 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.2.0",
-        "research-tools must use the paper-intake minor version",
+        research_plugin.get("version") == "0.3.0",
+        "research-tools must use the PaperRead draft minor version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
     for expected in (
@@ -898,6 +915,52 @@ def main() -> None:
         any("$paper-library-intake" in prompt for prompt in research_interface.get("defaultPrompt", [])),
         "research-tools default prompts must surface paper-library-intake",
     )
+    require(
+        "PaperRead" in research_interface.get("shortDescription", "")
+        and "PaperRead" in research_interface.get("longDescription", ""),
+        "research-tools plugin descriptions must surface the PaperRead draft workflow",
+    )
+    require(
+        any("$paper-read-draft" in prompt for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must surface paper-read-draft",
+    )
+    paper_read_draft_text = PAPER_READ_DRAFT_SKILL.read_text()
+    for expected in (
+        "name: paper-read-draft",
+        "CODEX_OBSIDIAN_VAULT",
+        "PaperRead/",
+        "references/paper-read-template.md",
+        "metadata-only",
+        "do not guess",
+        "Do not add or update Zotero",
+        "do not ingest the LLM Wiki",
+        "without modifying",
+    ):
+        require(expected in paper_read_draft_text, f"paper-read-draft skill must mention {expected}")
+    paper_read_draft_openai = PAPER_READ_DRAFT_OPENAI.read_text()
+    for expected in (
+        'display_name: "PaperRead Draft"',
+        'default_prompt: "Use $paper-read-draft',
+        "allow_implicit_invocation: true",
+    ):
+        require(expected in paper_read_draft_openai, f"paper-read-draft metadata must mention {expected}")
+    paper_read_draft_template = PAPER_READ_DRAFT_TEMPLATE.read_text()
+    for expected in (
+        "tags: [paper-read]",
+        "## Takeaway",
+        "## Summary in my own words",
+        "## My thoughts",
+        "## Questions",
+    ):
+        require(expected in paper_read_draft_template, f"paper-read-draft template must mention {expected}")
+    for expected in (
+        "## PaperRead Draft",
+        "$paper-read-draft",
+        "create a compact Obsidian PaperRead draft",
+        "fills factual metadata only",
+        "four personal sections",
+    ):
+        require(expected in readme_text, f"README PaperRead draft section must mention {expected}")
     research_skill_text = RESEARCH_LLM_WIKI_SKILL.read_text()
     for expected in (
         "name: research-llm-wiki",

@@ -160,6 +160,21 @@ python3 plugins/research-tools/skills/paper-library-intake/scripts/zotero_attach
 Do not print or commit the secret environment. A real Zotero write canary should
 only be performed for a paper the user explicitly asks to add.
 
+## PaperRead Draft
+
+Use `$paper-read-draft` to create a compact Obsidian PaperRead draft for one
+paper without filling in the reading itself:
+
+```text
+$paper-read-draft <title|DOI|arXiv URL|publisher URL|Zotero item>
+```
+
+For a natural-language request, say: “Create a PaperRead draft for this paper
+and put it in my Obsidian vault.” The workflow fills factual metadata only and
+leaves the four personal sections—Takeaway, Summary in my own words, My
+thoughts, and Questions—for the user. It does not add or update Zotero or
+ingest the Research LLM Wiki.
+
 ## Optional MinerU Document Extraction
 
 Use `$mineru-document-extraction` for complex, scanned, OCR-heavy, or

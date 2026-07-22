@@ -1,7 +1,7 @@
 {
   "name": "research-tools",
-  "version": "0.2.0",
-  "description": "Research skills and MCP servers for paper-library intake, Zotero, public paper search, clean web-page extraction, quality-first local document extraction, and source-backed LLM Wiki maintenance.",
+  "version": "0.3.0",
+  "description": "Research skills and MCP servers for PaperRead drafts, paper-library intake, Zotero, public paper search, clean web-page extraction, quality-first local document extraction, and source-backed LLM Wiki maintenance.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -10,8 +10,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Research Tools",
-    "shortDescription": "Paper intake, web, local document, and LLM Wiki tools.",
-    "longDescription": "Research Tools packages a Zotero-first paper-library intake workflow, paper-search MCP, Zotero MCP, Defuddle web extraction, quality-first local MinerU document extraction, and the Research LLM Wiki workflow for source-backed Obsidian research synthesis.",
+    "shortDescription": "PaperRead drafts, paper intake, web, local document, and LLM Wiki tools.",
+    "longDescription": "Research Tools packages a lightweight PaperRead draft workflow for factual Obsidian note shells, a Zotero-first paper-library intake workflow, paper-search MCP, Zotero MCP, Defuddle web extraction, quality-first local MinerU document extraction, and the Research LLM Wiki workflow for source-backed Obsidian research synthesis.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -19,6 +19,7 @@
       "Write"
     ],
     "defaultPrompt": [
+      "Use $paper-read-draft to create a factual Obsidian PaperRead note shell and leave personal reading sections for me.",
       "Use $paper-library-intake to find, deduplicate, file, or add a paper with verified attachment storage.",
       "Extract a complex local document with checksum-verified MinerU outputs.",
       "Use the Research LLM Wiki to ingest, query, or lint my research vault wiki."
