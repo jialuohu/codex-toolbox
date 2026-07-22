@@ -37,6 +37,8 @@ MAX_BODY_BYTES = 1_000_000
 MAX_STATE_BYTES = 16 * 1024 * 1024
 BODY_DAILY_LIMIT = 35
 TOTAL_DAILY_LIMIT = 50
+PRESERVE_BODY_CEILING = 30
+PRESERVE_TOTAL_CEILING = 35
 MAX_RECENT = 500
 MAX_TOMBSTONES = 5000
 MAX_TOMBSTONE_ALIASES = 8
@@ -77,6 +79,10 @@ class BodyBudgetExhausted(StateError):
 
 
 class TotalBudgetExhausted(StateError):
+    pass
+
+
+class QuotaReservePreserved(StateError):
     pass
 
 
@@ -1764,7 +1770,7 @@ def _beijing_day(now=None):
     return now.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
 
 
-def _reserve_api_attempt(state, now=None, body=False):
+def _prepared_api_attempt(state, now=None, body=False, preserve_reserve=False):
     day = _beijing_day(now)
     total_budget = state["total_budget"]
     body_budget = state["body_budget"]
@@ -1777,10 +1783,22 @@ def _reserve_api_attempt(state, now=None, body=False):
         raise TotalBudgetExhausted("daily total budget exhausted")
     if body and body_count >= BODY_DAILY_LIMIT:
         raise BodyBudgetExhausted("daily body budget exhausted")
+    if preserve_reserve and body and (
+            total_count >= PRESERVE_TOTAL_CEILING or body_count >= PRESERVE_BODY_CEILING):
+        raise QuotaReservePreserved("BestBlogs quota reserve preserved")
     new_total_count = total_count + 1
     new_body_count = body_count + (1 if body else 0)
     if body_budget.get("day") == day and new_body_count > new_total_count:
         raise StateError("inconsistent daily budgets")
+    return day, new_total_count, new_body_count
+
+
+def _reserve_api_attempt(state, now=None, body=False, preserve_reserve=False):
+    day, new_total_count, new_body_count = _prepared_api_attempt(
+        state, now=now, body=body, preserve_reserve=preserve_reserve,
+    )
+    total_budget = state["total_budget"]
+    body_budget = state["body_budget"]
     total_budget.update({"day": day, "count": new_total_count})
     if body:
         body_budget.update({"day": day, "count": new_body_count})
@@ -1792,7 +1810,7 @@ def _reserve_body_attempt(state, now=None):
 
 def _durable_reservation(
         path, endpoint, body=False, now=None, identity=None, resource_id=None,
-        claim_id=None, configured_source_id=None,
+        claim_id=None, configured_source_id=None, preserve_reserve=False,
 ):
     def reserve_attempt():
         with state_lock(path):
@@ -1804,7 +1822,9 @@ def _durable_reservation(
                 if not entry or entry.get("resource_id") != resource_id or entry.get("claim_fetch_started") is not True:
                     raise ClaimUnavailable("claim is unavailable")
                 _require_claim(entry, claim_id, now=now, require_active=True)
-            _reserve_api_attempt(state, now=now, body=body)
+            _reserve_api_attempt(
+                state, now=now, body=body, preserve_reserve=preserve_reserve,
+            )
             state["api_calls"][endpoint] = int(state["api_calls"].get(endpoint, 0)) + 1
             save_state(path, state)
     return reserve_attempt
@@ -1845,6 +1865,10 @@ def markdown(state, client, identity, now=None, reserve_attempt=None):
         if not durable_reservation:
             _merge_calls(state, client)
         return {"fallback_reason": "daily_body_budget_exhausted"}
+    except QuotaReservePreserved:
+        if not durable_reservation:
+            _merge_calls(state, client)
+        return {"fallback_reason": "bestblogs_quota_reserve_preserved"}
     except (APIError, ValueError):
         if not durable_reservation:
             _merge_calls(state, client)
@@ -1922,6 +1946,7 @@ def main(argv=None):
     markdown_parser = sub.add_parser("markdown")
     markdown_parser.add_argument("article_id")
     markdown_parser.add_argument("--claim-id", required=True)
+    markdown_parser.add_argument("--preserve-reserve", action="store_true")
     ack_parser = sub.add_parser("ack")
     ack_parser.add_argument("article_id")
     ack_parser.add_argument("--claim-id", required=True)
@@ -2001,9 +2026,22 @@ def main(argv=None):
                             result = {"claim_status": "already_fetching"}
                             entry = None
                         else:
-                            entry["claim_fetch_started"] = True
-                            markdown_resource_id = entry.get("resource_id")
-                            save_state(path, state)
+                            if args.preserve_reserve:
+                                try:
+                                    _prepared_api_attempt(
+                                        state, body=True, preserve_reserve=True,
+                                    )
+                                except QuotaReservePreserved:
+                                    result = {
+                                        "fallback_reason": "bestblogs_quota_reserve_preserved",
+                                    }
+                                    entry = None
+                                except (TotalBudgetExhausted, BodyBudgetExhausted):
+                                    pass
+                            if entry is not None:
+                                entry["claim_fetch_started"] = True
+                                markdown_resource_id = entry.get("resource_id")
+                                save_state(path, state)
                     except ClaimUnavailable:
                         result = {"claim_status": "claim_lost"}
                         entry = None
@@ -2082,6 +2120,7 @@ def main(argv=None):
                     reserve_attempt=_durable_reservation(
                         path, "markdown", body=True, identity=markdown_identity,
                         resource_id=markdown_resource_id, claim_id=args.claim_id,
+                        preserve_reserve=args.preserve_reserve,
                     ),
                 )
     except OSError:
