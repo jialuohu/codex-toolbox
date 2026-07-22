@@ -1,0 +1,6 @@
+interface:
+  display_name: "PaperRead Draft"
+  short_description: "Create a compact PaperRead note shell."
+  default_prompt: "Use $paper-read-draft to prepare a brief Obsidian PaperRead draft for this paper."
+policy:
+  allow_implicit_invocation: true

@@ -55,6 +55,11 @@ PAPER_LIBRARY_INTAKE_OPENAI = PAPER_LIBRARY_INTAKE_SKILL.parent / "agents" / "op
 PAPER_LIBRARY_ATTACHMENT = (
     PAPER_LIBRARY_INTAKE_SKILL.parent / "scripts" / "zotero_attachment.py"
 )
+PAPER_READ_DRAFT_SKILL = (
+    ROOT / "plugins" / "research-tools" / "skills" / "paper-read-draft" / "SKILL.md"
+)
+PAPER_READ_DRAFT_OPENAI = PAPER_READ_DRAFT_SKILL.parent / "agents" / "openai.yaml"
+PAPER_READ_DRAFT_TEMPLATE = PAPER_READ_DRAFT_SKILL.parent / "references" / "paper-read-template.md"
 WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
 DEEP_PLANNING_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "SKILL.md"
@@ -310,6 +315,18 @@ def main() -> None:
     require(
         PAPER_LIBRARY_ATTACHMENT.exists(),
         "paper-library-intake must include the WebDAV attachment helper",
+    )
+    require(
+        PAPER_READ_DRAFT_SKILL.exists(),
+        "research-tools must include paper-read-draft skill",
+    )
+    require(
+        PAPER_READ_DRAFT_OPENAI.exists(),
+        "paper-read-draft must include OpenAI agent metadata",
+    )
+    require(
+        PAPER_READ_DRAFT_TEMPLATE.exists(),
+        "paper-read-draft must include its compact note template",
     )
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
@@ -1071,8 +1088,8 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.2.0",
-        "research-tools must use the paper-intake minor version",
+        research_plugin.get("version") == "0.3.0",
+        "research-tools must use the PaperRead draft minor version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
     for expected in (
@@ -1148,6 +1165,86 @@ def main() -> None:
         any("$paper-library-intake" in prompt for prompt in research_interface.get("defaultPrompt", [])),
         "research-tools default prompts must surface paper-library-intake",
     )
+    require(
+        any("mineru" in prompt.lower() for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must retain MinerU extraction coverage",
+    )
+    require(
+        "PaperRead" in research_interface.get("shortDescription", "")
+        and "PaperRead" in research_interface.get("longDescription", ""),
+        "research-tools plugin descriptions must surface the PaperRead draft workflow",
+    )
+    require(
+        any("$paper-read-draft" in prompt for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must surface paper-read-draft",
+    )
+    paper_read_draft_text = PAPER_READ_DRAFT_SKILL.read_text()
+    for expected in (
+        "name: paper-read-draft",
+        "metadata-only",
+        "do not guess",
+        "Do not add or update Zotero",
+        "do not ingest the LLM Wiki",
+        "Fill a metadata field only when the user supplied it or current-task source/tool output actually observed it.",
+        "Never claim a Zotero or canonical lookup occurred without actual returned evidence.",
+        "Missing evidence means blank optional fields.",
+    ):
+        require(expected in paper_read_draft_text, f"paper-read-draft skill must mention {expected}")
+    for expected, message in (
+        (
+            "Use the vault template at `PaperRead/_Paper Read Template.md` when it exists and satisfies the contract.",
+            "paper-read-draft must require the exact PaperRead vault template path",
+        ),
+        (
+            "If that exact vault template is missing or malformed, never silently rewrite the vault template; use the bundled fallback at `references/paper-read-template.md` for note creation.",
+            "paper-read-draft must use its bundled fallback only when the vault template is missing or malformed",
+        ),
+        (
+            "A standard create-draft request authorizes only one new note.",
+            "paper-read-draft must limit create authority to one new note",
+        ),
+        (
+            "Resolve the configured vault through `CODEX_OBSIDIAN_VAULT` and `obsidian_files`. Write only beneath `PaperRead/`; never use the current working directory as the vault.",
+            "paper-read-draft must use the configured vault, only write under PaperRead, and never use the current directory as the vault",
+        ),
+        (
+            "Before any write, perform an exact-path check. If the note already exists, return its path without modifying it.",
+            "paper-read-draft must return an exact-path existing note without modification",
+        ),
+        (
+            "If a normalized filename collision represents a distinct paper, ask before choosing a disambiguated filename.",
+            "paper-read-draft must ask about distinct normalized filename collisions",
+        ),
+        (
+            "Do not fill personal sections by default; each is hidden-prompt-only.",
+            "paper-read-draft must leave personal sections hidden-prompt-only by default",
+        ),
+    ):
+        require(expected in paper_read_draft_text, message)
+    paper_read_draft_openai = PAPER_READ_DRAFT_OPENAI.read_text()
+    for expected in (
+        'display_name: "PaperRead Draft"',
+        'default_prompt: "Use $paper-read-draft',
+        "allow_implicit_invocation: true",
+    ):
+        require(expected in paper_read_draft_openai, f"paper-read-draft metadata must mention {expected}")
+    paper_read_draft_template = PAPER_READ_DRAFT_TEMPLATE.read_text()
+    for expected in (
+        "tags: [paper-read]",
+        "## Takeaway",
+        "## Summary in my own words",
+        "## My thoughts",
+        "## Questions",
+    ):
+        require(expected in paper_read_draft_template, f"paper-read-draft template must mention {expected}")
+    for expected in (
+        "## PaperRead Draft",
+        "$paper-read-draft",
+        "create a compact Obsidian PaperRead draft",
+        "fills factual metadata only",
+        "four personal sections",
+    ):
+        require(expected in readme_text, f"README PaperRead draft section must mention {expected}")
     research_skill_text = RESEARCH_LLM_WIKI_SKILL.read_text()
     for expected in (
         "name: research-llm-wiki",

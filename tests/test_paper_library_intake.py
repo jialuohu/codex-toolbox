@@ -983,14 +983,14 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
         self.assertIn("download_scihub", server["disabled_tools"])
         self.assertIn("download_with_fallback", server["disabled_tools"])
 
-    def test_research_plugin_minor_version_and_prompt_expose_intake(self) -> None:
+    def test_research_plugin_minor_version_and_prompts_expose_intake_and_drafts(self) -> None:
         manifest = json.loads(RESEARCH_PLUGIN.read_text())
 
-        self.assertEqual(manifest["version"], "0.2.0")
-        self.assertIn(
-            "$paper-library-intake",
-            " ".join(manifest["interface"]["defaultPrompt"]),
-        )
+        self.assertEqual(manifest["version"], "0.3.0")
+        prompts = " ".join(manifest["interface"]["defaultPrompt"])
+        self.assertIn("$paper-library-intake", prompts)
+        self.assertIn("$paper-read-draft", prompts)
+        self.assertIn("MinerU", prompts)
 
     def test_global_routing_readme_wiki_and_checker_expose_one_workflow(self) -> None:
         agents = GLOBAL_AGENTS.read_text()
