@@ -928,6 +928,10 @@ def main() -> None:
         any("$paper-read-draft" in prompt for prompt in research_interface.get("defaultPrompt", [])),
         "research-tools default prompts must surface paper-read-draft",
     )
+    require(
+        len(research_interface.get("defaultPrompt", [])) <= 3,
+        "research-tools default prompts must respect Codex's three-prompt limit",
+    )
     paper_read_draft_text = PAPER_READ_DRAFT_SKILL.read_text()
     for expected in (
         "name: paper-read-draft",
