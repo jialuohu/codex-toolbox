@@ -51,22 +51,47 @@ class PaperReadDraftSkillTests(unittest.TestCase):
         frontmatter = re.match(r"\A---\n(?P<body>.*?)\n---\n(?P<note>.*)\Z", template, re.DOTALL)
         self.assertIsNotNone(frontmatter, "template must have YAML frontmatter")
         metadata = frontmatter.group("body")  # type: ignore[union-attr]
-        fields = re.findall(r"(?m)^([a-z]+):", metadata)
-        self.assertEqual(fields, ["title", "authors", "year", "venue", "url", "tags", "created"])
-        self.assertNotIn("\n", metadata.strip().split("tags:", 1)[1].split("\n", 1)[0])
+        self.assertEqual(
+            metadata,
+            "\n".join(
+                [
+                    'title: ""',
+                    "authors: []",
+                    'year: ""',
+                    'venue: ""',
+                    'url: ""',
+                    "tags: [paper-read]",
+                    'created: ""',
+                ]
+            ),
+        )
 
         body = frontmatter.group("note")  # type: ignore[union-attr]
-        sections = re.findall(r"(?ms)^## (.+?)\n\n(.*?)(?=^## |\Z)", body)
         self.assertEqual(
-            [heading for heading, _content in sections],
-            ["Takeaway", "Summary in my own words", "My thoughts", "Questions"],
-        )
-        self.assertEqual(len(sections), 4)
-        for _heading, content in sections:
-            self.assertRegex(content.strip(), r"\A%%\s+.+?\s+%%\Z")
-        self.assertNotRegex(
-            body.lower(),
-            r"\b(abstract|method|evaluation|results|critique|quote|reading log|claim)\b",
+            body,
+            "\n".join(
+                [
+                    "",
+                    "# {{title}}",
+                    "",
+                    "## Takeaway",
+                    "",
+                    "%% State the core point in your own words. %%",
+                    "",
+                    "## Summary in my own words",
+                    "",
+                    "%% Explain it plainly in your own words. %%",
+                    "",
+                    "## My thoughts",
+                    "",
+                    "%% Add your reflections. %%",
+                    "",
+                    "## Questions",
+                    "",
+                    "%% Record open questions. %%",
+                    "",
+                ]
+            ),
         )
 
     def test_skill_resolves_the_configured_vault_and_only_paperread(self) -> None:
@@ -85,6 +110,18 @@ class PaperReadDraftSkillTests(unittest.TestCase):
         self.assertRegex(skill, r"(?i)do not guess")
         self.assertRegex(skill, r"(?i)metadata remains unavailable.*?leave optional fields blank")
         self.assertRegex(skill, r"(?i)metadata-only")
+
+    def test_skill_requires_current_evidence_before_filling_or_claiming_metadata_lookups(self) -> None:
+        skill = self.read(SKILL)
+        self.assertIn(
+            "Fill a metadata field only when the user supplied it or current-task source/tool output actually observed it.",
+            skill,
+        )
+        self.assertIn(
+            "Never claim a Zotero or canonical lookup occurred without actual returned evidence.",
+            skill,
+        )
+        self.assertIn("Missing evidence means blank optional fields.", skill)
 
     def test_skill_preserves_template_filename_and_existing_note_protections(self) -> None:
         skill = self.read(SKILL)

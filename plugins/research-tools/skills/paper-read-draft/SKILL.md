@@ -18,8 +18,9 @@ Create one compact, factual note shell for a paper. The note records verified me
 
 1. Use metadata in this order: user-supplied facts; read-only Zotero when available; then one canonical scholarly source.
 2. If identity is ambiguous, ask one focused question and do not guess, even under time pressure.
-3. If metadata remains unavailable, leave optional fields blank rather than blocking or inventing values. Report the result as metadata-only when that is the appropriate status.
-4. Keep only facts in frontmatter. Do not provide a paper summary, claims, methods, evaluation, critique, quotes, or a reading log.
+3. Fill a metadata field only when the user supplied it or current-task source/tool output actually observed it. Never claim a Zotero or canonical lookup occurred without actual returned evidence. Missing evidence means blank optional fields.
+4. If metadata remains unavailable, leave optional fields blank rather than blocking or inventing values. Report the result as metadata-only when that is the appropriate status.
+5. Keep only facts in frontmatter. Do not provide a paper summary, claims, methods, evaluation, critique, quotes, or a reading log.
 
 ## Note Contract
 

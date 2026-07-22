@@ -935,6 +935,9 @@ def main() -> None:
         "do not guess",
         "Do not add or update Zotero",
         "do not ingest the LLM Wiki",
+        "Fill a metadata field only when the user supplied it or current-task source/tool output actually observed it.",
+        "Never claim a Zotero or canonical lookup occurred without actual returned evidence.",
+        "Missing evidence means blank optional fields.",
     ):
         require(expected in paper_read_draft_text, f"paper-read-draft skill must mention {expected}")
     for expected, message in (
