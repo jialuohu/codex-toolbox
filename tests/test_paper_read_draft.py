@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ SKILL_DIR = ROOT / "plugins" / "research-tools" / "skills" / "paper-read-draft"
 SKILL = SKILL_DIR / "SKILL.md"
 OPENAI_METADATA = SKILL_DIR / "agents" / "openai.yaml"
 TEMPLATE = SKILL_DIR / "references" / "paper-read-template.md"
+OBSIDIAN_MCP = ROOT / "plugins" / "obsidian-tools" / ".mcp.json"
 
 
 class PaperReadDraftSkillTests(unittest.TestCase):
@@ -101,6 +103,11 @@ class PaperReadDraftSkillTests(unittest.TestCase):
         self.assertIn("PaperRead/", skill)
         self.assertRegex(skill, r"(?i)never use the current working directory as the vault")
         self.assertRegex(skill, r"(?i)write only beneath `?PaperRead/?`?")
+
+    def test_obsidian_files_forwards_the_configured_vault_environment(self) -> None:
+        mcp = json.loads(self.read(OBSIDIAN_MCP))
+        server = mcp["mcpServers"]["obsidian_files"]
+        self.assertIn("CODEX_OBSIDIAN_VAULT", server.get("env_vars", []))
 
     def test_skill_handles_identity_and_metadata_without_invention(self) -> None:
         skill = self.read(SKILL)

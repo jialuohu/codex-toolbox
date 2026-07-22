@@ -7,6 +7,9 @@
         "-lc",
         "if [ -z \"${CODEX_OBSIDIAN_VAULT:-}\" ]; then echo \"Set CODEX_OBSIDIAN_VAULT to the local Obsidian vault path\" >&2; exit 1; fi; NPX=\"$(command -v npx || true)\"; if [ -z \"$NPX\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/npx\" ]; then NPX=\"$CODEX_LOCAL_BIN_DIR/npx\"; fi; if [ -z \"$NPX\" ]; then echo \"npx not found\" >&2; exit 127; fi; exec \"$NPX\" -y @modelcontextprotocol/server-filesystem@2026.1.14 \"$CODEX_OBSIDIAN_VAULT\""
       ],
+      "env_vars": [
+        "CODEX_OBSIDIAN_VAULT"
+      ],
       "startup_timeout_sec": 120,
       "tool_timeout_sec": 180,
       "default_tools_approval_mode": "auto",
