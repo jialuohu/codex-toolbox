@@ -17,6 +17,7 @@ STINKY_PENGUIN_MANIFEST = STINKY_PENGUIN_DIR / "pet.json"
 STINKY_PENGUIN_SPRITESHEET = STINKY_PENGUIN_DIR / "spritesheet.webp"
 MINERU_SETUP = ROOT / "scripts" / "setup-mineru.sh"
 MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
+OBSIDIAN_MCP = ROOT / "plugins" / "obsidian-tools" / ".mcp.json"
 GAME_ASSET_PLUGIN = ROOT / "plugins" / "game-asset-tools" / ".codex-plugin" / "plugin.json"
 GAME_ASSET_MCP = ROOT / "plugins" / "game-asset-tools" / ".mcp.json"
 TRADING_MCP = ROOT / "plugins" / "trading-tools" / ".mcp.json"
@@ -328,6 +329,7 @@ def main() -> None:
         PAPER_READ_DRAFT_TEMPLATE.exists(),
         "paper-read-draft must include its compact note template",
     )
+    require(OBSIDIAN_MCP.exists(), "obsidian-tools must define an MCP config")
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
     require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
@@ -355,6 +357,7 @@ def main() -> None:
         "todoist-task-planning must include OpenAI agent metadata",
     )
     marketplace = json.loads(MARKETPLACE.read_text())
+    obsidian_mcp = json.loads(OBSIDIAN_MCP.read_text())
     game_asset_plugin = json.loads(GAME_ASSET_PLUGIN.read_text())
     game_asset_mcp = json.loads(GAME_ASSET_MCP.read_text())
     research_plugin = json.loads(RESEARCH_PLUGIN.read_text())
@@ -371,6 +374,13 @@ def main() -> None:
     pixellab_server = game_asset_mcp.get("mcpServers", {}).get("pixellab")
     robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
     todoist_server = productivity_mcp.get("mcpServers", {}).get("todoist")
+    obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
+
+    require(obsidian_files_server is not None, "obsidian-tools must define obsidian_files")
+    require(
+        "CODEX_OBSIDIAN_VAULT" in obsidian_files_server.get("env_vars", []),
+        "obsidian_files must forward CODEX_OBSIDIAN_VAULT to its STDIO server",
+    )
 
     retired_orchestrator = "sym" + "phony"
     retired_plugin_name = retired_orchestrator + "-tools"
