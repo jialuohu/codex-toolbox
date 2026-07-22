@@ -88,6 +88,7 @@ class PaperReadDraftSkillTests(unittest.TestCase):
 
     def test_skill_preserves_template_filename_and_existing_note_protections(self) -> None:
         skill = self.read(SKILL)
+        self.assertIn("PaperRead/_Paper Read Template.md", skill)
         self.assertRegex(skill, r"(?is)vault template.*?satisfies the contract.*?bundled fallback")
         self.assertRegex(skill, r"(?i)never silently rewrite.*?vault template")
         self.assertRegex(skill, r"(?is)canonical title.*?normalized.*?whitespace collapsed.*?\.md")

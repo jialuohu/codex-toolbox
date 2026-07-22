@@ -23,7 +23,7 @@ Create one compact, factual note shell for a paper. The note records verified me
 
 ## Note Contract
 
-Use a vault template when it exists and satisfies the contract; otherwise use the bundled fallback at `references/paper-read-template.md`. Never silently rewrite a malformed or missing vault template.
+Use the vault template at `PaperRead/_Paper Read Template.md` when it exists and satisfies the contract. If that exact vault template is missing or malformed, never silently rewrite the vault template; use the bundled fallback at `references/paper-read-template.md` for note creation.
 
 The frontmatter contains only `title`, `authors`, `year`, `venue`, `url`, `tags`, and `created`. The body has one H1 with the real title and exactly these H2 sections, in order: `Takeaway`, `Summary in my own words`, `My thoughts`, and `Questions`. Each section contains only its short `%% ... %%` prompt.
 
