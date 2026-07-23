@@ -3606,6 +3606,15 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         ):
             self.assertIn(relationship, untrusted, relationship)
         self.assertIn("claim/renew/ack lifecycle", digest)
+        self.assertIn(
+            "run `markdown <article_id> --claim-id <claim_id> --preserve-reserve`",
+            digest,
+        )
+        self.assertIn("`bestblogs_quota_reserve_preserved`", digest)
+        self.assertIn(
+            "Only a structured `fallback_reason` receipt may permit Firecrawl fallback.",
+            digest,
+        )
         self.assertIn("Before calling Firecrawl, run `renew <article_id> --claim-id <claim_id>`", digest)
 
     def test_reader_metadata_plugin_version_and_global_routing_are_english(self):
@@ -3629,7 +3638,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("Defuddle or Firecrawl", standalone_route)
         self.assertTrue(routing_text.isascii())
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.3.0")
+        self.assertEqual(plugin["version"], "0.3.1")
         self.assertIn("wechat reader and digest tools", plugin["description"].lower())
 
     def test_skill_declares_the_operational_digest_contract(self):
@@ -3654,7 +3663,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("if and only if its JSON is an object with `complete: true`", text)
         self.assertIn("a missing or invalid `complete` field, or any `error` response", text)
         self.assertIn(
-            "Use this exact lifecycle: `scan -> pending -> claim -> markdown -> "
+            "Use this exact lifecycle: `scan -> pending -> claim -> markdown --preserve-reserve -> "
             "(renew -> Firecrawl fallback when needed) -> renew -> summarize -> renew -> ack -> status`.",
             text,
         )
@@ -3789,7 +3798,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("$wechat-digest", metadata)
         self.assertNotIn("dependencies:", metadata)
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.3.0")
+        self.assertEqual(plugin["version"], "0.3.1")
         joined = json.dumps(plugin).lower()
         for capability in ("wechat", "firecrawl", "playwright"):
             self.assertIn(capability, joined)
