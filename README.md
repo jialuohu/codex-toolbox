@@ -132,12 +132,13 @@ $paper-library-intake add <title|DOI|arXiv URL>
 
 `find` is read-only. `add` authorizes that paper's item, lawful attachment,
 suitable topical collection memberships, and `Research/ReadLater`. The workflow
-checks Zotero first, uses Firecrawl first for public discovery and canonical
-pages, then uses Paper Search for cross-source validation and open-access PDF
-retrieval. It never merges on title alone, enables semantic indexing, or uses
-Sci-Hub. The toolbox disables the direct Sci-Hub tool and the unsafe upstream
-generic fallback; any separately installed fallback must pass
-`use_scihub=false`.
+checks Zotero first, uses Paper Search first for public scholarly discovery,
+cross-source validation, and open-access PDF retrieval, then uses normal Codex
+web search when a current canonical page is still needed. It uses Firecrawl only
+when that selected canonical page requires clean or dynamic extraction. It never
+merges on title alone, enables semantic indexing, or uses Sci-Hub. The toolbox
+disables the direct Sci-Hub tool and the unsafe upstream generic fallback; any
+separately installed fallback must pass `use_scihub=false`.
 
 The paper-search launcher loads its per-device environment before resolving the
 checkout. Its portable default is
@@ -264,6 +265,19 @@ Superpowers, or OpenSpec routing.
 Superpowers remains the design and implementation workflow. Deep Planning does
 not write `docs/superpowers/` artifacts, create issues, dispatch workers, or
 perform verification after code changes.
+
+## Explain Clearly
+
+Use `$explain-clearly` when a concept, why/how question, comparison, or code
+walkthrough needs a clear mental model and concrete example. It leads with the
+direct answer, uses one accurate example by default, and adds only the mechanism
+or caveat needed to avoid a misleading simplification.
+
+Example prompt:
+
+```text
+Use $explain-clearly to explain JavaScript closures with a simple mental model and one concrete example.
+```
 
 ## Paper Figure Workflow
 

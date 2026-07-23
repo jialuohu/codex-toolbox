@@ -33,7 +33,7 @@ Prefer the narrowest local or connected source:
 - Use `obsidian_files` or local filesystem reads for vault notes under `CODEX_OBSIDIAN_VAULT`.
 - Use `$paper-library-intake` when a public paper must be found, checked against Zotero, classified, added, or attachment-repaired before wiki ingestion. Do not duplicate its deduplication, filing, or storage logic here.
 - Use Zotero MCP for saved library metadata, notes, annotations, and PDFs.
-- Use Firecrawl for public web pages or clean web extraction.
+- Use built-in Codex web search for public discovery, Defuddle for straightforward public pages, and Firecrawl only when a selected page needs difficult, dynamic, or structured extraction.
 - Use existing `Paper Notes/` pages as raw source notes; do not edit them unless the user explicitly asks.
 
 Before writing wiki updates, identify the raw source path, URL, DOI, arXiv id, Zotero key, or note link. If no reliable source identity exists, record the source as `unverified` and keep claims conservative.

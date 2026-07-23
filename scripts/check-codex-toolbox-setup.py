@@ -68,6 +68,10 @@ DEEP_PLANNING_SKILL = (
 DEEP_PLANNING_OPENAI = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "agents" / "openai.yaml"
 )
+EXPLAIN_CLEARLY_SKILL = (
+    ROOT / "plugins" / "workflow-tools" / "skills" / "explain-clearly" / "SKILL.md"
+)
+EXPLAIN_CLEARLY_OPENAI = EXPLAIN_CLEARLY_SKILL.parent / "agents" / "openai.yaml"
 PAPER_FIGURE_PLUGIN = ROOT / "plugins" / "paper-figure-tools" / ".codex-plugin" / "plugin.json"
 PAPER_FIGURE_SKILL = (
     ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
@@ -173,6 +177,21 @@ def main() -> None:
     ):
         require(expected in global_agents_text, f"global AGENTS routing must mention {expected}")
     for expected in (
+        "Use built-in Codex web search by default",
+        "ordinary public discovery",
+        "Use Firecrawl only",
+        "full-page clean Markdown",
+        "without `scrapeOptions`",
+        "limit of 5 or less",
+        "scrape only the selected URLs",
+        "explicit page limit",
+        "Interact or Agent",
+    ):
+        require(
+            expected in global_agents_text,
+            f"global AGENTS cost-aware web routing must mention {expected}",
+        )
+    for expected in (
         "paper-figure-tools",
         "$paper-figure-workflow",
         "draw.io",
@@ -199,8 +218,9 @@ def main() -> None:
     for expected in (
         "$paper-library-intake",
         "Zotero first",
-        "Firecrawl first",
-        "Paper Search",
+        "Paper Search first",
+        "normal Codex web search",
+        "Firecrawl only",
         "Research/ReadLater",
         "explicit `add`, `save`, or `import`",
         "use_scihub=false",
@@ -249,6 +269,19 @@ def main() -> None:
         "docs/superpowers/",
     ):
         require(expected in global_agents_text, f"global AGENTS deep planning must mention {expected}")
+    for expected in (
+        "## Explanation routing",
+        "$explain-clearly",
+        "explain, teach, understand",
+        "why/how",
+        "code walkthrough",
+        "execution-only",
+        "explicit user instructions",
+    ):
+        require(
+            expected in global_agents_text,
+            f"global AGENTS explanation routing must mention {expected}",
+        )
     require(
         "## Superpowers workflow" in global_agents_text,
         "canonical global AGENTS file must preserve the Superpowers workflow section",
@@ -333,6 +366,11 @@ def main() -> None:
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
     require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
+    require(EXPLAIN_CLEARLY_SKILL.exists(), "workflow-tools must include explain-clearly skill")
+    require(
+        EXPLAIN_CLEARLY_OPENAI.exists(),
+        "explain-clearly must include OpenAI agent metadata",
+    )
     require(PAPER_FIGURE_PLUGIN.exists(), "paper-figure-tools plugin manifest must exist")
     require(
         PAPER_FIGURE_SKILL.exists(),
@@ -390,8 +428,13 @@ def main() -> None:
     )
     retired_mentions = []
     retired_tracker_mentions = []
+    ignored_scan_parts = {".git", ".worktrees", "__pycache__"}
     for path in ROOT.rglob("*"):
-        if not path.is_file() or ".git" in path.parts or path.resolve() == Path(__file__).resolve():
+        if (
+            not path.is_file()
+            or ignored_scan_parts.intersection(path.parts)
+            or path.resolve() == Path(__file__).resolve()
+        ):
             continue
         try:
             lines = path.read_text().splitlines()
@@ -445,6 +488,8 @@ def main() -> None:
         "Koofr/WebDAV",
         "metadata-only",
         "use_scihub=false",
+        "Paper Search first",
+        "Firecrawl only",
     ):
         require(expected in readme_text, f"README paper intake must mention {expected}")
     for expected in (
@@ -473,6 +518,16 @@ def main() -> None:
         require(
             expected in readme_normalized,
             f"README daily command center guidance must mention {expected}",
+        )
+    for expected in (
+        "Explain Clearly",
+        "$explain-clearly",
+        "mental model",
+        "concrete example",
+    ):
+        require(
+            expected in readme_text,
+            f"README explanation workflow must mention {expected}",
         )
     for expected in (
         "Managed Codex Pet",
@@ -923,8 +978,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.1.1",
-        "workflow-tools plugin version must reflect the routing update",
+        workflow_plugin.get("version") == "0.2.0",
+        "workflow-tools plugin version must reflect the explanation update",
     )
     require(
         "mcpServers" not in workflow_plugin,
@@ -938,6 +993,14 @@ def main() -> None:
     require(
         any("deep-planning" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
         "workflow-tools default prompts must surface deep-planning usage",
+    )
+    require(
+        any("explain-clearly" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools default prompts must surface explain-clearly usage",
+    )
+    require(
+        "explanation" in workflow_interface.get("longDescription", "").lower(),
+        "workflow-tools plugin description must mention explanations",
     )
     deep_planning_text = DEEP_PLANNING_SKILL.read_text()
     for expected in (
@@ -964,6 +1027,34 @@ def main() -> None:
         'default_prompt: "Use $deep-planning to critique this plan before implementation."',
     ):
         require(expected in deep_planning_openai, f"deep-planning OpenAI metadata must mention {expected}")
+    explain_clearly_text = EXPLAIN_CLEARLY_SKILL.read_text()
+    for expected in (
+        "name: explain-clearly",
+        "Use when",
+        "Direct answer",
+        "Mental model",
+        "Concrete example",
+        "exactly one worked",
+        "Mechanism and limits",
+        "input",
+        "state",
+        "output",
+        "analogy",
+        "terse factual query",
+        "explicit user instructions",
+    ):
+        require(expected in explain_clearly_text, f"explain-clearly skill must mention {expected}")
+    explain_clearly_openai = EXPLAIN_CLEARLY_OPENAI.read_text()
+    for expected in (
+        'display_name: "Explain Clearly"',
+        'short_description: "Clear mental models and concrete examples."',
+        'default_prompt: "Use $explain-clearly to explain this with a simple mental model and concrete example."',
+        "allow_implicit_invocation: true",
+    ):
+        require(
+            expected in explain_clearly_openai,
+            f"explain-clearly OpenAI metadata must mention {expected}",
+        )
     require(
         paper_figure_plugin.get("skills") == "./skills/",
         "paper-figure-tools must expose bundled figure workflow skills",
@@ -1052,8 +1143,9 @@ def main() -> None:
         "$paper-library-intake find",
         "$paper-library-intake add",
         "Search Zotero first",
-        "Use Firecrawl first",
-        "Use Paper Search",
+        "Use Paper Search first",
+        "normal Codex web search",
+        "Use Firecrawl only",
         "Research/ReadLater",
         'if_exists="file"',
         "create_missing_collections=false",

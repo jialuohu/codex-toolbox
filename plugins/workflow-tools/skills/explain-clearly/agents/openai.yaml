@@ -1,0 +1,6 @@
+interface:
+  display_name: "Explain Clearly"
+  short_description: "Clear mental models and concrete examples."
+  default_prompt: "Use $explain-clearly to explain this with a simple mental model and concrete example."
+policy:
+  allow_implicit_invocation: true

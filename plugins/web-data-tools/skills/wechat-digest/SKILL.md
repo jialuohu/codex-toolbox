@@ -29,7 +29,7 @@ Interactive current/latest/recent requests do not run `scan`, `pending`, `claim`
 
 Use the incremental digest route only for new-article digests, scheduled updates, baselining, or delivery-state work. Preserve its `scan -> pending -> claim -> markdown --preserve-reserve -> (renew -> Firecrawl fallback when needed) -> renew -> summarize -> renew -> ack -> status` lifecycle exactly.
 
-Standalone URLs and non-subscription historical/topic searches use Defuddle or Firecrawl. Do not substitute generic BestBlogs discovery or scraping for configured-source interaction.
+For a standalone article URL, prefer Defuddle and use Firecrawl only when the validated page needs difficult or dynamic extraction. For a non-subscription historical/topic search, use built-in Codex web search. Do not substitute generic BestBlogs discovery or scraping for configured-source interaction.
 
 ## Interactive Reading
 

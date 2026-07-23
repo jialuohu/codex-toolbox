@@ -908,12 +908,13 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
     def test_skill_orders_private_lookup_public_discovery_and_identifier_recheck(self) -> None:
         text = SKILL.read_text()
 
-        self.assertLess(text.index("Search Zotero first"), text.index("Use Firecrawl first"))
-        self.assertLess(text.index("Use Firecrawl first"), text.index("Use Paper Search"))
+        self.assertLess(text.index("Search Zotero first"), text.index("Use Paper Search first"))
+        self.assertLess(text.index("Use Paper Search first"), text.index("Use Firecrawl only"))
         for expected in (
             "DOI",
             "arXiv",
             "Recheck Zotero",
+            "normal Codex web search",
             'if_exists="file"',
             "create_missing_collections=false",
             "Never merge by title",
@@ -1004,8 +1005,9 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
         for expected in (
             "$paper-library-intake",
             "Zotero first",
-            "Firecrawl first",
-            "Paper Search",
+            "Paper Search first",
+            "normal Codex web search",
+            "Firecrawl only",
             "Research/ReadLater",
             "explicit `add`, `save`, or `import`",
         ):
@@ -1017,9 +1019,17 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
             "Koofr/WebDAV",
             "metadata-only",
             "use_scihub=false",
+            "Paper Search first",
+            "Firecrawl only",
         ):
             self.assertIn(expected, readme)
-        self.assertIn("$paper-library-intake", wiki)
+        for expected in (
+            "$paper-library-intake",
+            "built-in Codex web search",
+            "Defuddle",
+            "Firecrawl only",
+        ):
+            self.assertIn(expected, wiki)
         for expected in (
             "PAPER_LIBRARY_INTAKE_SKILL",
             "PAPER_LIBRARY_INTAKE_OPENAI",
@@ -1028,6 +1038,8 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
             "download_with_fallback",
             "incomplete_webdav_configuration",
             "attach_zotero_cloud",
+            "Use Paper Search first",
+            "Use Firecrawl only",
         ):
             self.assertIn(expected, checker)
 
