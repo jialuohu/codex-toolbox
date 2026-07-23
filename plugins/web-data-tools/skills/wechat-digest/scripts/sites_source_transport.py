@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import termios
@@ -13,14 +14,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Sequence, TextIO
+from urllib.parse import urlsplit
 
 
-PROJECT_ROOT = Path("/workspace/info-site")
-PROJECT_ID = "sites-project-id"
-REMOTE_URL = (
-    "https://git.chatgpt-team.site/repository-id/"
-    "sites-project-id.git"
-)
+BOUNDARY_CONFIG_FILENAME = "sites-source-transport.json"
+BOUNDARY_CONFIG_KEYS = frozenset({"project_root", "project_id", "remote_url"})
+MAX_BOUNDARY_CONFIG_BYTES = 16_384
 REMOTE_NAME = "sites"
 BRANCH = "main"
 PROVIDER = "cloudflare_artifact"
@@ -56,6 +55,10 @@ ERROR_MESSAGES = {
     "INVALID_ARGUMENTS": "Expected exactly one operation argument.",
     "INVALID_OPERATION": "Operation must be push or readback.",
     "CREDENTIAL_ENV_FORBIDDEN": "Credential environment variables are forbidden.",
+    "BOUNDARY_CONFIG_MISSING": "The private Sites boundary config is missing.",
+    "BOUNDARY_CONFIG_UNSAFE": "The private Sites boundary config is not safely stored.",
+    "BOUNDARY_CONFIG_INVALID": "The private Sites boundary config is invalid.",
+    "RUNTIME_BOUNDARY_MISMATCH": "The runtime does not match the private Sites boundary.",
     "ROOT_PATH_UNSAFE": "The pinned project root is not a real direct path.",
     "WORKING_DIRECTORY_MISMATCH": "Run the transport only from the pinned project root.",
     "GIT_UNAVAILABLE": "The pinned Git executable is unavailable.",
@@ -92,6 +95,7 @@ ERROR_MESSAGES = {
     "REMOTE_READBACK_AMBIGUOUS": "Sites source readback returned multiple branches.",
     "REMOTE_READBACK_MALFORMED": "Sites source readback was malformed.",
     "REMOTE_SHA_MISMATCH": "Remote branch does not equal local HEAD.",
+    "INTERRUPTED": "Sites source transport was interrupted safely.",
     "INTERNAL_ERROR": "Sites source transport failed safely.",
 }
 
@@ -105,8 +109,15 @@ class TransportError(Exception):
 
 
 @dataclass(frozen=True)
+class Boundary:
+    root: Path
+    project_id: str
+    remote_url: str
+
+
+@dataclass(frozen=True)
 class Runtime:
-    root: Path = PROJECT_ROOT
+    root: Path
     git_executable: str = GIT_EXECUTABLE
 
 
@@ -123,6 +134,89 @@ class LocalState:
 
 def _raise(code: str, *, exit_code: int = 2) -> None:
     raise TransportError(code, exit_code=exit_code)
+
+
+def _boundary_config_path(environment: Mapping[str, str]) -> Path:
+    secrets_dir = environment.get("CODEX_SECRETS_DIR")
+    if secrets_dir:
+        base = Path(secrets_dir)
+    else:
+        codex_home = environment.get("CODEX_HOME")
+        if codex_home:
+            base = Path(codex_home) / "secrets"
+        else:
+            home = environment.get("HOME")
+            if not home:
+                _raise("BOUNDARY_CONFIG_MISSING")
+            base = Path(home) / ".codex" / "secrets"
+    return base / BOUNDARY_CONFIG_FILENAME
+
+
+def _validate_boundary_remote_url(value: object, project_id: str) -> str:
+    if not isinstance(value, str) or not 1 <= len(value) <= 2_048:
+        _raise("BOUNDARY_CONFIG_INVALID")
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "git.chatgpt-team.site"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port is not None
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith("/")
+        or not parsed.path.endswith("/" + project_id + ".git")
+    ):
+        _raise("BOUNDARY_CONFIG_INVALID")
+    return value
+
+
+def _load_boundary_config(environment: Mapping[str, str]) -> Boundary:
+    config_path = _boundary_config_path(environment)
+    if not config_path.is_absolute():
+        _raise("BOUNDARY_CONFIG_UNSAFE")
+    try:
+        metadata = config_path.lstat()
+    except FileNotFoundError:
+        _raise("BOUNDARY_CONFIG_MISSING")
+    except OSError:
+        _raise("BOUNDARY_CONFIG_UNSAFE")
+    try:
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_uid != os.getuid()
+            or config_path.resolve(strict=True) != config_path
+        ):
+            _raise("BOUNDARY_CONFIG_UNSAFE")
+        raw = config_path.read_bytes()
+    except TransportError:
+        raise
+    except OSError:
+        _raise("BOUNDARY_CONFIG_UNSAFE")
+    if not raw or len(raw) > MAX_BOUNDARY_CONFIG_BYTES:
+        _raise("BOUNDARY_CONFIG_INVALID")
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        _raise("BOUNDARY_CONFIG_INVALID")
+    if not isinstance(value, dict) or set(value) != BOUNDARY_CONFIG_KEYS:
+        _raise("BOUNDARY_CONFIG_INVALID")
+
+    root_value = value.get("project_root")
+    project_id = value.get("project_id")
+    if (
+        not isinstance(root_value, str)
+        or not root_value
+        or not isinstance(project_id, str)
+        or not APP_REPOSITORY_ID_RE.fullmatch(project_id)
+    ):
+        _raise("BOUNDARY_CONFIG_INVALID")
+    root = Path(root_value)
+    if not root.is_absolute():
+        _raise("BOUNDARY_CONFIG_INVALID")
+    remote_url = _validate_boundary_remote_url(value.get("remote_url"), project_id)
+    return Boundary(root=root, project_id=project_id, remote_url=remote_url)
 
 
 def _base_git_environment() -> Dict[str, str]:
@@ -227,17 +321,21 @@ def _read_local_sha(runtime: Runtime) -> str:
     return output
 
 
-def _validate_remote_output(output: str) -> None:
+def _validate_remote_output(output: str, boundary: Boundary) -> None:
     lines = [line for line in output.splitlines() if line]
     if not lines:
         _raise("REMOTE_MISSING")
     if len(lines) != 1:
         _raise("REMOTE_AMBIGUOUS")
-    if lines[0] != REMOTE_URL:
+    if lines[0] != boundary.remote_url:
         _raise("REMOTE_MISMATCH")
 
 
-def _read_local_state(runtime: Runtime, operation: str) -> LocalState:
+def _read_local_state(
+    runtime: Runtime,
+    operation: str,
+    boundary: Boundary,
+) -> LocalState:
     top_level = _require_git_output(
         runtime,
         ["rev-parse", "--show-toplevel"],
@@ -269,14 +367,14 @@ def _read_local_state(runtime: Runtime, operation: str) -> LocalState:
     fetch_remote = _run_git(runtime, ["remote", "get-url", "--all", REMOTE_NAME])
     if fetch_remote.returncode != 0:
         _raise("REMOTE_MISSING")
-    _validate_remote_output(fetch_remote.stdout)
+    _validate_remote_output(fetch_remote.stdout, boundary)
     push_remote = _run_git(
         runtime,
         ["remote", "get-url", "--push", "--all", REMOTE_NAME],
     )
     if push_remote.returncode != 0:
         _raise("REMOTE_MISSING")
-    _validate_remote_output(push_remote.stdout)
+    _validate_remote_output(push_remote.stdout, boundary)
 
     if operation == "push":
         status = _require_git_output(
@@ -352,7 +450,11 @@ def _parse_expiry(value: object) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _parse_credential(line: str, now: datetime) -> Credential:
+def _parse_credential(
+    line: str,
+    now: datetime,
+    boundary: Boundary,
+) -> Credential:
     try:
         value = json.loads(line)
     except (json.JSONDecodeError, UnicodeError):
@@ -366,13 +468,13 @@ def _parse_credential(line: str, now: datetime) -> Credential:
         or not APP_REPOSITORY_ID_RE.fullmatch(app_repository_id)
     ):
         _raise("INVALID_REPOSITORY_ID")
-    if value.get("repository") != PROJECT_ID:
+    if value.get("repository") != boundary.project_id:
         _raise("PROJECT_ID_MISMATCH")
     if value.get("provider") != PROVIDER:
         _raise("PROVIDER_MISMATCH")
     if value.get("branch") != BRANCH:
         _raise("BRANCH_MISMATCH")
-    if value.get("remote_url") != REMOTE_URL:
+    if value.get("remote_url") != boundary.remote_url:
         _raise("REMOTE_MISMATCH")
     if value.get("auth_mode") != AUTH_MODE:
         _raise("AUTH_MODE_MISMATCH")
@@ -393,14 +495,18 @@ def _parse_credential(line: str, now: datetime) -> Credential:
     return Credential(token=token, expires_at=expires_at)
 
 
-def _read_remote_sha(runtime: Runtime, token: str) -> str:
+def _read_remote_sha(
+    runtime: Runtime,
+    token: str,
+    boundary: Boundary,
+) -> str:
     result = _run_git(
         runtime,
         [
             "ls-remote",
             "--heads",
             "--exit-code",
-            REMOTE_URL,
+            boundary.remote_url,
             "refs/heads/main",
         ],
         token=token,
@@ -433,7 +539,13 @@ def _require_stable_local_state(runtime: Runtime, expected_sha: str, operation: 
             _raise("LOCAL_STATE_CHANGED", exit_code=3)
 
 
-def _perform(operation: str, runtime: Runtime, credential: Credential, local: LocalState) -> dict:
+def _perform(
+    operation: str,
+    runtime: Runtime,
+    credential: Credential,
+    local: LocalState,
+    boundary: Boundary,
+) -> dict:
     _require_stable_local_state(runtime, local.sha, operation)
     if operation == "push":
         result = _run_git(
@@ -442,7 +554,7 @@ def _perform(operation: str, runtime: Runtime, credential: Credential, local: Lo
                 "push",
                 "--porcelain",
                 "--no-verify",
-                REMOTE_URL,
+                boundary.remote_url,
                 "HEAD:refs/heads/main",
             ],
             token=credential.token,
@@ -450,7 +562,7 @@ def _perform(operation: str, runtime: Runtime, credential: Credential, local: Lo
         if result.returncode != 0:
             _raise("GIT_PUSH_FAILED", exit_code=3)
 
-    remote_sha = _read_remote_sha(runtime, credential.token)
+    remote_sha = _read_remote_sha(runtime, credential.token, boundary)
     _require_stable_local_state(runtime, local.sha, operation)
     if remote_sha != local.sha:
         _raise("REMOTE_SHA_MISMATCH", exit_code=3)
@@ -465,6 +577,7 @@ def _perform(operation: str, runtime: Runtime, credential: Credential, local: Lo
 def _transport(
     argv: Sequence[str],
     runtime: Runtime,
+    boundary: Boundary,
     stdin: TextIO,
     stdout: TextIO,
     environment: Mapping[str, str],
@@ -475,31 +588,50 @@ def _transport(
     if operation not in {"push", "readback"}:
         _raise("INVALID_OPERATION")
     _validate_no_credential_environment(environment)
+    if runtime.root != boundary.root:
+        _raise("RUNTIME_BOUNDARY_MISMATCH")
     _validate_runtime(runtime)
-    local = _read_local_state(runtime, operation)
+    local = _read_local_state(runtime, operation, boundary)
     line = _read_credential_line(stdin, stdout)
-    credential = _parse_credential(line, datetime.now(timezone.utc))
+    credential = _parse_credential(
+        line,
+        datetime.now(timezone.utc),
+        boundary,
+    )
     _validate_credential_not_in_environment(credential.token, environment)
-    return _perform(operation, runtime, credential, local)
+    return _perform(operation, runtime, credential, local, boundary)
 
 
 def main(
     argv: Optional[Sequence[str]] = None,
     *,
     runtime: Optional[Runtime] = None,
+    boundary: Optional[Boundary] = None,
     stdin: Optional[TextIO] = None,
     stdout: Optional[TextIO] = None,
     stderr: Optional[TextIO] = None,
     environment: Optional[Mapping[str, str]] = None,
 ) -> int:
     argv = list(sys.argv if argv is None else argv)
-    runtime = Runtime() if runtime is None else runtime
     stdin = sys.stdin if stdin is None else stdin
     stdout = sys.stdout if stdout is None else stdout
     stderr = sys.stderr if stderr is None else stderr
     environment = os.environ if environment is None else environment
     try:
-        receipt = _transport(argv, runtime, stdin, stdout, environment)
+        boundary = (
+            _load_boundary_config(environment)
+            if boundary is None
+            else boundary
+        )
+        runtime = Runtime(root=boundary.root) if runtime is None else runtime
+        receipt = _transport(
+            argv,
+            runtime,
+            boundary,
+            stdin,
+            stdout,
+            environment,
+        )
     except TransportError as error:
         json.dump(
             {"error": error.code, "message": error.message},
@@ -510,6 +642,16 @@ def main(
         stderr.write("\n")
         stderr.flush()
         return error.exit_code
+    except KeyboardInterrupt:
+        json.dump(
+            {"error": "INTERRUPTED", "message": ERROR_MESSAGES["INTERRUPTED"]},
+            stderr,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        stderr.write("\n")
+        stderr.flush()
+        return 130
     except Exception:
         json.dump(
             {"error": "INTERNAL_ERROR", "message": ERROR_MESSAGES["INTERNAL_ERROR"]},

@@ -3,6 +3,7 @@ import json
 import os
 import pty
 import select
+import signal
 import stat
 import subprocess
 import sys
@@ -22,11 +23,8 @@ TRANSPORT = (
     REPO_ROOT
     / "plugins/web-data-tools/skills/wechat-digest/scripts/sites_source_transport.py"
 )
-PROJECT_ID = "sites-project-id"
-REMOTE_URL = (
-    "https://git.chatgpt-team.site/repository-id/"
-    "sites-project-id.git"
-)
+PROJECT_ID = "appgprj_fixture"
+REMOTE_URL = "https://git.chatgpt-team.site/fixture-repository/appgprj_fixture.git"
 LOCAL_SHA = "1" * 40
 SYNTHETIC_TOKEN = "synthetic-" + ("x" * 48)
 READINESS_EVENT = {"event": "credential_input_ready"}
@@ -155,11 +153,16 @@ spec = importlib.util.spec_from_file_location("sites_source_transport", {str(TRA
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
+boundary = module.Boundary(
+    root=Path({str(runtime_root)!r}),
+    project_id={PROJECT_ID!r},
+    remote_url={REMOTE_URL!r},
+)
 runtime = module.Runtime(
     root=Path({str(runtime_root)!r}),
     git_executable={str(self.fake_git)!r},
 )
-raise SystemExit(module.main(sys.argv, runtime=runtime))
+raise SystemExit(module.main(sys.argv, runtime=runtime, boundary=boundary))
 """
         self.runner.write_text(textwrap.dedent(source), encoding="utf-8")
 
@@ -340,6 +343,34 @@ raise SystemExit(module.main(sys.argv, runtime=runtime))
         result.timed_out = timed_out
         return result
 
+    def run_tty_interrupt_after_readiness(self, operation):
+        master_fd, slave_fd = pty.openpty()
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                str(self.runner),
+                operation,
+            ],
+            cwd=self.root,
+            env=os.environ.copy(),
+            stdin=slave_fd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            readiness = process.stdout.readline()
+            process.send_signal(signal.SIGINT)
+            stdout, stderr = process.communicate(timeout=5)
+        finally:
+            os.close(master_fd)
+            os.close(slave_fd)
+        return subprocess.CompletedProcess(
+            process.args,
+            process.returncode,
+            (readiness + stdout).decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
+
     def run_pipe(self, operation, credential=None, *, cwd=None, env=None, extra_args=()):
         credential = self.credential() if credential is None else credential
         process_env = os.environ.copy()
@@ -408,8 +439,11 @@ class SitesSourceTransportTests(unittest.TestCase):
         text = SKILL_FILE.read_text(encoding="utf-8")
         self.assertIn("## Pinned Sites Source Transport", text)
         for clause in (
-            "/workspace/info-site",
-            PROJECT_ID,
+            "sites-source-transport.json",
+            "project_root",
+            "project_id",
+            "remote_url",
+            "mode `600`",
             "owner-only digest Sites source",
             "sites_source_transport.py push",
             "sites_source_transport.py readback",
@@ -425,10 +459,65 @@ class SitesSourceTransportTests(unittest.TestCase):
         ):
             self.assertIn(clause, text, clause)
         self.assertIn("Do not", text)
+        self.assertNotIn("/" + "Users" + "/", text)
         self.assertNotIn(SYNTHETIC_TOKEN, text)
 
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.3.2")
+        self.assertEqual(plugin["version"], "0.3.3")
+
+    def test_boundary_config_is_private_strict_and_fail_closed(self):
+        spec = importlib.util.spec_from_file_location(
+            "sites_source_transport_config_test",
+            TRANSPORT,
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        secrets_dir = self.fixture.base / "secrets"
+        secrets_dir.mkdir(mode=0o700)
+        environment = {"CODEX_SECRETS_DIR": str(secrets_dir)}
+        config_path = secrets_dir / "sites-source-transport.json"
+
+        with self.assertRaises(module.TransportError) as missing:
+            module._load_boundary_config(environment)
+        self.assertEqual(missing.exception.code, "BOUNDARY_CONFIG_MISSING")
+
+        config_path.write_text(
+            json.dumps(
+                {
+                    "project_root": str(self.fixture.root),
+                    "project_id": PROJECT_ID,
+                    "remote_url": REMOTE_URL,
+                }
+            ),
+            encoding="utf-8",
+        )
+        config_path.chmod(0o644)
+        with self.assertRaises(module.TransportError) as unsafe:
+            module._load_boundary_config(environment)
+        self.assertEqual(unsafe.exception.code, "BOUNDARY_CONFIG_UNSAFE")
+
+        config_path.chmod(0o600)
+        boundary = module._load_boundary_config(environment)
+        self.assertEqual(boundary.root, self.fixture.root)
+        self.assertEqual(boundary.project_id, PROJECT_ID)
+        self.assertEqual(boundary.remote_url, REMOTE_URL)
+
+        config_path.write_text(
+            json.dumps(
+                {
+                    "project_root": str(self.fixture.root),
+                    "project_id": PROJECT_ID,
+                    "remote_url": REMOTE_URL,
+                    "token": SYNTHETIC_TOKEN,
+                }
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(module.TransportError) as invalid:
+            module._load_boundary_config(environment)
+        self.assertEqual(invalid.exception.code, "BOUNDARY_CONFIG_INVALID")
 
     def test_push_uses_exact_nonforce_refspec_and_redacted_receipt(self):
         result = self.fixture.run_tty("push")
@@ -749,6 +838,17 @@ class SitesSourceTransportTests(unittest.TestCase):
         self.assertEqual(receipt["operation"], "readback")
         self.assertEqual(json.loads(result.stdout.splitlines()[0]), READINESS_EVENT)
 
+    def test_interrupt_after_readiness_is_bounded_and_redacted(self):
+        result = self.fixture.run_tty_interrupt_after_readiness("readback")
+
+        self.assertEqual(result.returncode, 130)
+        self.assertEqual(result.stdout, READINESS_LINE)
+        error = json.loads(result.stderr)
+        self.assertEqual(error["error"], "INTERRUPTED")
+        self.assertEqual(set(error), {"error", "message"})
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertNotIn(str(self.fixture.root), result.stderr)
+
     def test_rejects_wrong_working_directory_and_symlink_runtime_root(self):
         other = self.fixture.base / "other"
         other.mkdir()
@@ -839,6 +939,11 @@ class SitesSourceTransportTests(unittest.TestCase):
             module._parse_credential(
                 json.dumps(oversized),
                 datetime.now(timezone.utc),
+                module.Boundary(
+                    root=self.fixture.root,
+                    project_id=PROJECT_ID,
+                    remote_url=REMOTE_URL,
+                ),
             )
         self.assertEqual(raised.exception.code, "INVALID_TOKEN")
 

@@ -17,9 +17,17 @@ SELF_PATH="scripts/privacy-audit.sh"
 fail=0
 
 run_current() {
-  if rg --hidden --no-ignore -n -I -e "$AUDIT_RE" -g '!/.git/**' -g "!$SELF_PATH" .; then
+  if git grep -I -n -E -e "$AUDIT_RE" -- . ":(exclude)$SELF_PATH"; then
     fail=1
   fi
+  while IFS= read -r -d '' path; do
+    if matches="$(rg --no-filename -n -I -e "$AUDIT_RE" -- "$path")"; then
+      while IFS= read -r match; do
+        printf '%s:%s\n' "$path" "$match"
+      done <<< "$matches"
+      fail=1
+    fi
+  done < <(git ls-files --others --exclude-standard -z -- .)
 }
 
 run_history() {
