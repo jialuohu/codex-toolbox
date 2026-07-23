@@ -1957,6 +1957,138 @@ class WechatDigestTests(unittest.TestCase):
         self.assertEqual(persisted["total_budget"]["count"], 36)
         self.assertEqual(persisted["body_budget"]["count"], 31)
 
+    def test_preserve_reserve_rejects_429_retry_after_the_first_attempt_reaches_ceiling(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        entry = add_claim(wechat.parse_article(record("r1")))
+        state["pending"][entry["identity"]] = entry
+        day = wechat._beijing_day()
+        state["total_budget"] = {"day": day, "count": 34}
+        state["body_budget"] = {"day": day, "count": 29}
+        wechat.save_state(path, state)
+        rate_limited = HTTPError(
+            wechat.API_ORIGIN + "/resources/r1/markdown", 429, "slow", {"Retry-After": "0"}, None,
+        )
+        client = wechat.BestBlogsClient(VALID_API_KEY)
+        opener = FakeOpener([rate_limited])
+        client._opener = opener
+        original_client = wechat._client_from_env
+        original_sleep = wechat.time.sleep
+        wechat._client_from_env = lambda: client
+        wechat.time.sleep = lambda unused: None
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "markdown", "r1",
+                    "--claim-id", CLAIM_ID, "--preserve-reserve",
+                ]), 0)
+        finally:
+            wechat._client_from_env = original_client
+            wechat.time.sleep = original_sleep
+
+        self.assertEqual(json.loads(output.getvalue()), {
+            "fallback_reason": "bestblogs_quota_reserve_preserved",
+        })
+        self.assertEqual(len(opener.requests), 1)
+        self.assertEqual(client.calls, {"/resources/r1/markdown": 1})
+        persisted = wechat.load_state(path)
+        self.assertEqual(persisted["total_budget"], {"day": day, "count": 35})
+        self.assertEqual(persisted["body_budget"], {"day": day, "count": 30})
+        self.assertEqual(persisted["api_calls"], {"markdown": 1})
+
+    def test_preserve_reserve_rechecks_quota_changed_after_preflight_before_http(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        entry = add_claim(wechat.parse_article(record("r1")))
+        state["pending"][entry["identity"]] = entry
+        day = wechat._beijing_day()
+        state["total_budget"] = {"day": day, "count": 34}
+        state["body_budget"] = {"day": day, "count": 29}
+        wechat.save_state(path, state)
+        client = wechat.BestBlogsClient(VALID_API_KEY)
+        opener = FakeOpener([])
+        client._opener = opener
+
+        def reserve_concurrently_before_client_returns():
+            with wechat.state_lock(path):
+                current = wechat.load_state(path)
+                wechat._reserve_api_attempt(current, body=True)
+                current["api_calls"]["markdown"] = 1
+                wechat.save_state(path, current)
+            return client
+
+        original_client = wechat._client_from_env
+        wechat._client_from_env = reserve_concurrently_before_client_returns
+        output = io.StringIO()
+        try:
+            with redirect_stdout(output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "markdown", "r1",
+                    "--claim-id", CLAIM_ID, "--preserve-reserve",
+                ]), 0)
+        finally:
+            wechat._client_from_env = original_client
+
+        self.assertEqual(json.loads(output.getvalue()), {
+            "fallback_reason": "bestblogs_quota_reserve_preserved",
+        })
+        self.assertEqual(opener.requests, [])
+        self.assertEqual(client.calls, {})
+        persisted = wechat.load_state(path)
+        self.assertEqual(persisted["total_budget"], {"day": day, "count": 35})
+        self.assertEqual(persisted["body_budget"], {"day": day, "count": 30})
+        self.assertEqual(persisted["api_calls"], {"markdown": 1})
+
+    def test_preserve_reserve_fallback_atomically_prevents_duplicate_same_claim_fetch(self):
+        path = self.state_file()
+        state = wechat.new_state()
+        wechat.configure_sources(state, ["s1"])
+        entry = add_claim(wechat.parse_article(record("r1")))
+        state["pending"][entry["identity"]] = entry
+        day = wechat._beijing_day()
+        state["total_budget"] = {"day": day, "count": 35}
+        state["body_budget"] = {"day": day, "count": 30}
+        wechat.save_state(path, state)
+        client_builds = []
+        original_client = wechat._client_from_env
+        wechat._client_from_env = lambda: client_builds.append(True)
+        try:
+            first_output = io.StringIO()
+            with redirect_stdout(first_output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "markdown", "r1",
+                    "--claim-id", CLAIM_ID, "--preserve-reserve",
+                ]), 0)
+            self.assertEqual(json.loads(first_output.getvalue()), {
+                "fallback_reason": "bestblogs_quota_reserve_preserved",
+            })
+            after_first = wechat.load_state(path)
+            self.assertTrue(after_first["pending"][entry["identity"]]["claim_fetch_started"])
+            self.assertEqual(after_first["total_budget"], {"day": day, "count": 35})
+            self.assertEqual(after_first["body_budget"], {"day": day, "count": 30})
+            self.assertEqual(after_first["api_calls"], {})
+
+            second_output = io.StringIO()
+            with redirect_stdout(second_output):
+                self.assertEqual(wechat.main([
+                    "--state-file", str(path), "markdown", "r1",
+                    "--claim-id", CLAIM_ID, "--preserve-reserve",
+                ]), 0)
+            self.assertEqual(json.loads(second_output.getvalue()), {
+                "claim_status": "already_fetching",
+            })
+        finally:
+            wechat._client_from_env = original_client
+
+        self.assertEqual(client_builds, [])
+        after_second = wechat.load_state(path)
+        self.assertEqual(after_second["total_budget"], {"day": day, "count": 35})
+        self.assertEqual(after_second["body_budget"], {"day": day, "count": 30})
+        self.assertEqual(after_second["api_calls"], {})
+
     def test_state_lock_excludes_a_second_writer_with_a_bounded_safe_error(self):
         path = self.state_file()
         self.assertTrue(hasattr(wechat, "state_lock"), "state_lock is required")

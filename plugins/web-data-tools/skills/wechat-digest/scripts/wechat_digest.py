@@ -2032,6 +2032,8 @@ def main(argv=None):
                                         state, body=True, preserve_reserve=True,
                                     )
                                 except QuotaReservePreserved:
+                                    entry["claim_fetch_started"] = True
+                                    save_state(path, state)
                                     result = {
                                         "fallback_reason": "bestblogs_quota_reserve_preserved",
                                     }
