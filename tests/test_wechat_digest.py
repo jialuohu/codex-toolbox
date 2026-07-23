@@ -3638,7 +3638,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("Defuddle or Firecrawl", standalone_route)
         self.assertTrue(routing_text.isascii())
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.3.1")
+        self.assertEqual(plugin["version"], "0.3.2")
         self.assertIn("wechat reader and digest tools", plugin["description"].lower())
 
     def test_skill_declares_the_operational_digest_contract(self):
@@ -3798,7 +3798,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("$wechat-digest", metadata)
         self.assertNotIn("dependencies:", metadata)
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.3.1")
+        self.assertEqual(plugin["version"], "0.3.2")
         joined = json.dumps(plugin).lower()
         for capability in ("wechat", "firecrawl", "playwright"):
             self.assertIn(capability, joined)

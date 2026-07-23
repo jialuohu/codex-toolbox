@@ -57,6 +57,14 @@ BestBlogs Free tier permits 50 calls per Beijing day. The helper durably enforce
 
 For each completed digest item, emit WeChat source name, title, canonical URL, publication time when present, content source (`bestblogs` or `firecrawl`), and a concise summary. After processing, run `status` directly: `run_wechat_digest.sh status`. End every digest with a health footer: scan completeness and warnings, configured/initialized sources, retryable, claimed, and exhausted counts, both `total_budget` and `body_budget` day, used, and limit, API-call counters, fallback/failure receipts, and baseline status. Baseline is established if and only if at least one source is configured, the latest scan is complete, and every configured source is initialized; otherwise it is not established.
 
+## Pinned Sites Source Transport
+
+`scripts/sites_source_transport.py` is only for the bound owner-only digest Sites source at `/workspace/info-site`, project `sites-project-id`. It has exactly two operations: start `sites_source_transport.py push` to non-force push the current clean `HEAD` to the pinned `main` branch and verify exact readback, or start `sites_source_transport.py readback` to compare that branch with local `HEAD` without a remote mutation.
+
+Start the selected operation as a tool-controlled terminal process and send nothing before the transport emits and flushes the exact readiness line `{"event":"credential_input_ready"}`. That line means every local preflight passed and terminal echo is already disabled. Only after observing that exact line, send one fresh credential JSON line through tool-controlled non-echoed stdin. Use only a fresh structured credential returned for this exact Sites project. On success, the transport emits exactly one redacted SHA receipt after the readiness line; earlier failures emit no readiness line, and failures emit only a bounded error.
+
+Do not use shell `echo`, a pipe, command interpolation, CLI credential arguments, credential environment variables, credential files, temporary files, or logs to pass or retain the credential. Never print the credential, token, authorization header, stdin payload, Git child arguments, Git environment, or raw Git output.
+
 ## Automation
 
 Only after `status` proves a complete baseline, create a Codex automation that invokes the incremental digest lifecycle daily at 08:30 in `America/New_York`. The automation prompt must retain every claim, renewal, fallback, acknowledgment, failure, and final-status guard above. If an automation scheduler is unavailable, report the 08:30 task as **not deployed**; do not substitute an OS cron job or claim that scheduling succeeded.
