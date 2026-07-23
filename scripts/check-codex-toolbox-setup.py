@@ -62,6 +62,8 @@ PAPER_READ_DRAFT_SKILL = (
 PAPER_READ_DRAFT_OPENAI = PAPER_READ_DRAFT_SKILL.parent / "agents" / "openai.yaml"
 PAPER_READ_DRAFT_TEMPLATE = PAPER_READ_DRAFT_SKILL.parent / "references" / "paper-read-template.md"
 WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
+CODER_PLUGIN = ROOT / "plugins" / "coder-tools" / ".codex-plugin" / "plugin.json"
+CODER_MCP = ROOT / "plugins" / "coder-tools" / ".mcp.json"
 DEEP_PLANNING_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "SKILL.md"
 )
@@ -363,6 +365,8 @@ def main() -> None:
         "paper-read-draft must include its compact note template",
     )
     require(OBSIDIAN_MCP.exists(), "obsidian-tools must define an MCP config")
+    require(CODER_PLUGIN.exists(), "coder-tools plugin manifest must exist")
+    require(CODER_MCP.exists(), "coder-tools must define an MCP config")
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
     require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
@@ -400,6 +404,8 @@ def main() -> None:
     game_asset_mcp = json.loads(GAME_ASSET_MCP.read_text())
     research_plugin = json.loads(RESEARCH_PLUGIN.read_text())
     research_mcp = json.loads(RESEARCH_MCP.read_text())
+    coder_plugin = json.loads(CODER_PLUGIN.read_text())
+    coder_mcp = json.loads(CODER_MCP.read_text())
     workflow_plugin = json.loads(WORKFLOW_PLUGIN.read_text())
     paper_figure_plugin = json.loads(PAPER_FIGURE_PLUGIN.read_text())
     productivity_plugin = json.loads(PRODUCTIVITY_PLUGIN.read_text())
@@ -412,6 +418,7 @@ def main() -> None:
     pixellab_server = game_asset_mcp.get("mcpServers", {}).get("pixellab")
     robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
     todoist_server = productivity_mcp.get("mcpServers", {}).get("todoist")
+    coder_server = coder_mcp.get("mcpServers", {}).get("coder")
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
 
     require(obsidian_files_server is not None, "obsidian-tools must define obsidian_files")
@@ -504,6 +511,18 @@ def main() -> None:
         require(
             expected in readme_normalized,
             f"README Todoist workflow must mention {expected}",
+        )
+    for expected in (
+        "Coder MCP",
+        "coder-tools",
+        "coder login <deployment-url>",
+        "coder exp mcp server",
+        "read-only",
+        "fresh Codex task",
+    ):
+        require(
+            expected in readme_normalized,
+            f"README Coder MCP guidance must mention {expected}",
         )
     for expected in (
         "Daily Command Center",
@@ -650,6 +669,10 @@ def main() -> None:
         "setup script must install the workflow-tools plugin",
     )
     require(
+        '  "coder-tools"' in default_plugins,
+        "setup script must install the coder-tools plugin",
+    )
+    require(
         '  "paper-figure-tools"' in default_plugins,
         "setup script must install the paper-figure-tools plugin",
     )
@@ -677,6 +700,10 @@ def main() -> None:
     require(
         '  "todoist"' in managed_mcp_servers,
         "setup script must manage the todoist MCP server cleanup list",
+    )
+    require(
+        '  "coder"' in managed_mcp_servers,
+        "setup script must manage the coder MCP server cleanup list",
     )
     require(
         any(
@@ -708,6 +735,69 @@ def main() -> None:
             for plugin in marketplace.get("plugins", [])
         ),
         "marketplace must include workflow-tools",
+    )
+    require(
+        any(
+            plugin.get("name") == "coder-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/coder-tools"
+            for plugin in marketplace.get("plugins", [])
+        ),
+        "marketplace must include coder-tools",
+    )
+    require(
+        coder_plugin.get("mcpServers") == "./.mcp.json",
+        "coder-tools must expose its MCP config",
+    )
+    require(
+        coder_plugin.get("version") == "0.1.0",
+        "coder-tools plugin version must start at 0.1.0",
+    )
+    require(coder_server is not None, "coder-tools must define the coder MCP server")
+    require(
+        coder_server.get("command") == "/bin/zsh",
+        "coder MCP must use the portable zsh launcher",
+    )
+    coder_args = coder_server.get("args", [])
+    require(
+        len(coder_args) == 2
+        and coder_args[0] == "-lc"
+        and 'exec "$CODER_BIN" exp mcp server' in coder_args[1],
+        "coder MCP must launch the local Coder CLI MCP server",
+    )
+    require(
+        "--allowed-tools" in coder_args[1],
+        "coder MCP must restrict the exposed tool set",
+    )
+    for allowed_tool in (
+        "coder_get_authenticated_user",
+        "coder_get_workspace",
+        "coder_get_workspace_agent_logs",
+        "coder_get_workspace_build_logs",
+        "coder_list_templates",
+        "coder_list_workspaces",
+        "coder_workspace_ls",
+        "coder_workspace_read_file",
+        "fetch",
+        "search",
+    ):
+        require(
+            allowed_tool in coder_args[1],
+            f"coder MCP read-only allowlist must include {allowed_tool}",
+        )
+    for forbidden_tool in (
+        "coder_create_workspace",
+        "coder_delete_workspace",
+        "coder_workspace_bash",
+        "coder_workspace_edit_file",
+        "coder_workspace_write_file",
+    ):
+        require(
+            forbidden_tool not in coder_args[1],
+            f"coder MCP allowlist must exclude mutating tool {forbidden_tool}",
+        )
+    require(
+        coder_server.get("default_tools_approval_mode") == "auto",
+        "coder MCP may auto-approve only its process-level read-only allowlist",
     )
     require(
         any(

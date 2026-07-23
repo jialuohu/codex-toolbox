@@ -1,0 +1,23 @@
+{
+  "name": "coder-tools",
+  "version": "0.1.0",
+  "description": "Read-only Coder MCP access for workspaces, templates, tasks, files, and logs.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Coder Tools",
+    "shortDescription": "Read-only Coder deployment inspection through MCP.",
+    "longDescription": "Coder Tools runs the local Coder CLI MCP server using the device's existing Coder login. A process-level allowlist exposes only read-only workspace, template, task, file, application, forwarding, and log inspection tools.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Inspect my Coder workspaces, templates, tasks, or logs without changing them."
+    ]
+  }
+}

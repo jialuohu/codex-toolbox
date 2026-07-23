@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "coder": {
+      "enabled": true,
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "CODER_BIN=\"$(command -v coder || true)\"; if [ -z \"$CODER_BIN\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/coder\" ]; then CODER_BIN=\"$CODEX_LOCAL_BIN_DIR/coder\"; fi; if [ -z \"$CODER_BIN\" ] && [ -x /usr/local/bin/coder ]; then CODER_BIN=/usr/local/bin/coder; fi; if [ -z \"$CODER_BIN\" ] && [ -x /opt/homebrew/bin/coder ]; then CODER_BIN=/opt/homebrew/bin/coder; fi; if [ -z \"$CODER_BIN\" ]; then echo \"coder CLI not found; install it and run: coder login <deployment-url>\" >&2; exit 127; fi; exec \"$CODER_BIN\" exp mcp server --allowed-tools coder_get_authenticated_user,coder_get_task_logs,coder_get_task_status,coder_get_template,coder_get_template_version_logs,coder_get_workspace,coder_get_workspace_agent_logs,coder_get_workspace_build_logs,coder_list_tasks,coder_list_templates,coder_list_workspaces,coder_template_version_parameters,coder_workspace_list_apps,coder_workspace_ls,coder_workspace_port_forward,coder_workspace_read_file,fetch,search"
+      ],
+      "startup_timeout_sec": 30,
+      "tool_timeout_sec": 180,
+      "default_tools_approval_mode": "auto"
+    }
+  }
+}

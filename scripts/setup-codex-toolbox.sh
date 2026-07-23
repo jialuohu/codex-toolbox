@@ -26,6 +26,7 @@ DEFAULT_PLUGINS=(
   "web-data-tools"
   "game-asset-tools"
   "workflow-tools"
+  "coder-tools"
   "paper-figure-tools"
   "productivity-tools"
   "trading-tools"
@@ -45,6 +46,7 @@ RETIRED_PLUGINS=(
 )
 MANAGED_MCP_SERVERS=(
   "alpaca"
+  "coder"
   "firecrawl"
   "obsidian_files"
   "paper_search_mcp"
