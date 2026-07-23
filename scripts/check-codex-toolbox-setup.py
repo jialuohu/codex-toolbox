@@ -61,6 +61,10 @@ PAPER_READ_DRAFT_SKILL = (
 )
 PAPER_READ_DRAFT_OPENAI = PAPER_READ_DRAFT_SKILL.parent / "agents" / "openai.yaml"
 PAPER_READ_DRAFT_TEMPLATE = PAPER_READ_DRAFT_SKILL.parent / "references" / "paper-read-template.md"
+PAPER_READ_REVIEW_SKILL = (
+    ROOT / "plugins" / "research-tools" / "skills" / "paper-read-review" / "SKILL.md"
+)
+PAPER_READ_REVIEW_OPENAI = PAPER_READ_REVIEW_SKILL.parent / "agents" / "openai.yaml"
 WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
 CODER_PLUGIN = ROOT / "plugins" / "coder-tools" / ".codex-plugin" / "plugin.json"
 CODER_MCP = ROOT / "plugins" / "coder-tools" / ".mcp.json"
@@ -363,6 +367,14 @@ def main() -> None:
     require(
         PAPER_READ_DRAFT_TEMPLATE.exists(),
         "paper-read-draft must include its compact note template",
+    )
+    require(
+        PAPER_READ_REVIEW_SKILL.exists(),
+        "research-tools must include paper-read-review skill",
+    )
+    require(
+        PAPER_READ_REVIEW_OPENAI.exists(),
+        "paper-read-review must include OpenAI agent metadata",
     )
     require(OBSIDIAN_MCP.exists(), "obsidian-tools must define an MCP config")
     require(CODER_PLUGIN.exists(), "coder-tools plugin manifest must exist")
@@ -1280,8 +1292,8 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.3.0",
-        "research-tools must use the PaperRead draft minor version",
+        research_plugin.get("version") == "0.4.0",
+        "research-tools must use the PaperRead review minor version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
     for expected in (
@@ -1363,12 +1375,18 @@ def main() -> None:
     )
     require(
         "PaperRead" in research_interface.get("shortDescription", "")
-        and "PaperRead" in research_interface.get("longDescription", ""),
-        "research-tools plugin descriptions must surface the PaperRead draft workflow",
+        and "review" in research_interface.get("shortDescription", "").lower()
+        and "PaperRead" in research_interface.get("longDescription", "")
+        and "review" in research_interface.get("longDescription", "").lower(),
+        "research-tools plugin descriptions must surface the PaperRead draft and review workflows",
     )
     require(
         any("$paper-read-draft" in prompt for prompt in research_interface.get("defaultPrompt", [])),
         "research-tools default prompts must surface paper-read-draft",
+    )
+    require(
+        any("$paper-read-review" in prompt for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must surface paper-read-review",
     )
     require(
         len(research_interface.get("defaultPrompt", [])) <= 3,
@@ -1431,8 +1449,7 @@ def main() -> None:
     paper_read_draft_template = PAPER_READ_DRAFT_TEMPLATE.read_text()
     for expected in (
         "tags: [paper-read]",
-        "## Takeaway",
-        "## Summary in my own words",
+        "## Summary and takeaway",
         "## My thoughts",
         "## Questions",
     ):
@@ -1442,9 +1459,40 @@ def main() -> None:
         "$paper-read-draft",
         "create a compact Obsidian PaperRead draft",
         "fills factual metadata only",
-        "four personal sections",
+        "three personal sections",
     ):
         require(expected in readme_text, f"README PaperRead draft section must mention {expected}")
+    paper_read_review_text = PAPER_READ_REVIEW_SKILL.read_text()
+    for expected in (
+        "name: paper-read-review",
+        "`review` is read-only",
+        "`annotate`",
+        "`refresh`",
+        "%% paper-read-review:summary-and-takeaway:start %%",
+        "Preserve frontmatter, hidden prompts, user prose, existing callouts, and heading order byte-for-byte outside generated markers.",
+        "Zotero first",
+        "Legal marker order",
+        "interleaving untouched byte slices",
+        "obsidian eval",
+        "Completion Receipt",
+        "**Reason:**",
+    ):
+        require(expected in paper_read_review_text, f"paper-read-review skill must mention {expected}")
+    paper_read_review_openai = PAPER_READ_REVIEW_OPENAI.read_text()
+    for expected in (
+        'display_name: "PaperRead Review"',
+        'default_prompt: "Use $paper-read-review',
+        "allow_implicit_invocation: true",
+    ):
+        require(expected in paper_read_review_openai, f"paper-read-review metadata must mention {expected}")
+    for expected in (
+        "## PaperRead Review",
+        "$paper-read-review",
+        "review",
+        "annotate",
+        "refresh",
+    ):
+        require(expected in readme_text, f"README PaperRead review section must mention {expected}")
     research_skill_text = RESEARCH_LLM_WIKI_SKILL.read_text()
     for expected in (
         "name: research-llm-wiki",

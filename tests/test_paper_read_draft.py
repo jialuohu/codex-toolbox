@@ -48,7 +48,7 @@ class PaperReadDraftSkillTests(unittest.TestCase):
             r"(?ms)^policy:\n\s+allow_implicit_invocation: true\s*$",
         )
 
-    def test_template_is_the_exact_compact_note_contract(self) -> None:
+    def test_template_is_the_exact_three_section_note_contract(self) -> None:
         template = self.read(TEMPLATE)
         frontmatter = re.match(r"\A---\n(?P<body>.*?)\n---\n(?P<note>.*)\Z", template, re.DOTALL)
         self.assertIsNotNone(frontmatter, "template must have YAML frontmatter")
@@ -74,15 +74,9 @@ class PaperReadDraftSkillTests(unittest.TestCase):
             "\n".join(
                 [
                     "",
-                    "# {{title}}",
+                    "## Summary and takeaway",
                     "",
-                    "## Takeaway",
-                    "",
-                    "%% State the core point in your own words. %%",
-                    "",
-                    "## Summary in my own words",
-                    "",
-                    "%% Explain it plainly in your own words. %%",
+                    "%% Summarize the paper and state its core takeaway in your own words. %%",
                     "",
                     "## My thoughts",
                     "",
@@ -141,7 +135,8 @@ class PaperReadDraftSkillTests(unittest.TestCase):
             skill,
         )
         self.assertRegex(skill, r"(?is)canonical title.*?normalized.*?whitespace collapsed.*?\.md")
-        self.assertRegex(skill, r"(?i)preserve the real title in frontmatter and H1")
+        self.assertRegex(skill, r"(?i)preserve the real title in frontmatter")
+        self.assertRegex(skill, r"(?i)do not add a body H1")
         self.assertRegex(skill, r"(?is)before any write.*?exact-path check")
         self.assertRegex(skill, r"(?is)note already exists.*?return its path.*?without modifying")
         self.assertRegex(skill, r"(?is)normalized filename collision.*?distinct paper.*?ask")

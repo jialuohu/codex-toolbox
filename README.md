@@ -211,9 +211,30 @@ $paper-read-draft <title|DOI|arXiv URL|publisher URL|Zotero item>
 
 For a natural-language request, say: “Create a PaperRead draft for this paper
 and put it in my Obsidian vault.” The workflow fills factual metadata only and
-leaves the four personal sections—Takeaway, Summary in my own words, My
-thoughts, and Questions—for the user. It does not add or update Zotero or
-ingest the Research LLM Wiki.
+leaves the three personal sections—Summary and takeaway, My thoughts, and
+Questions—for the user. The note title remains in frontmatter and the body has
+no repeated H1. The workflow does not add or update Zotero or ingest the
+Research LLM Wiki.
+
+## PaperRead Review
+
+Use `$paper-read-review` for source-backed feedback on one completed PaperRead
+note:
+
+```text
+$paper-read-review review PaperRead/<note>.md
+$paper-read-review annotate PaperRead/<note>.md
+$paper-read-review refresh PaperRead/<note>.md
+```
+
+`review` is read-only. `annotate` requires an explicit request to add Obsidian
+callouts to one exact note, while `refresh` updates valid hidden-marker blocks
+in one exact existing `PaperRead/` note. Vault edits prefer `obsidian_files`;
+an enabled Obsidian CLI may perform guarded `obsidian read` plus `obsidian
+eval` exact edits, otherwise the operation is no-write. The workflow preserves
+the user's frontmatter and prose, checks technical accuracy, missing
+contributions, evidence, limitations, and research questions, and keeps
+private note or Zotero content out of public search services.
 
 ## Optional MinerU Document Extraction
 

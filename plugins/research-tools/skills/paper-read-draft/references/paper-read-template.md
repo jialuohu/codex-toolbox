@@ -8,15 +8,9 @@ tags: [paper-read]
 created: ""
 ---
 
-# {{title}}
+## Summary and takeaway
 
-## Takeaway
-
-%% State the core point in your own words. %%
-
-## Summary in my own words
-
-%% Explain it plainly in your own words. %%
+%% Summarize the paper and state its core takeaway in your own words. %%
 
 ## My thoughts
 

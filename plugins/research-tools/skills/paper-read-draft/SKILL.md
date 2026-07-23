@@ -26,13 +26,13 @@ Create one compact, factual note shell for a paper. The note records verified me
 
 Use the vault template at `PaperRead/_Paper Read Template.md` when it exists and satisfies the contract. If that exact vault template is missing or malformed, never silently rewrite the vault template; use the bundled fallback at `references/paper-read-template.md` for note creation.
 
-The frontmatter contains only `title`, `authors`, `year`, `venue`, `url`, `tags`, and `created`. The body has one H1 with the real title and exactly these H2 sections, in order: `Takeaway`, `Summary in my own words`, `My thoughts`, and `Questions`. Each section contains only its short `%% ... %%` prompt.
+The frontmatter contains only `title`, `authors`, `year`, `venue`, `url`, `tags`, and `created`. Do not add a body H1. The body has exactly these H2 sections, in order: `Summary and takeaway`, `My thoughts`, and `Questions`. Each section contains only its short `%% ... %%` prompt.
 
 The base tag is `paper-read`. A concrete note may add at most three conservative lowercase hyphenated topic tags. If uncertain, use only `paper-read`.
 
 ## Safe Creation
 
-1. Derive the concrete filename from the canonical title, with `/`, `:`, and shell-hostile characters normalized, whitespace collapsed, and `.md` appended. Preserve the real title in frontmatter and H1.
+1. Derive the concrete filename from the canonical title, with `/`, `:`, and shell-hostile characters normalized, whitespace collapsed, and `.md` appended. Preserve the real title in frontmatter.
 2. Before any write, perform an exact-path check. If the note already exists, return its path without modifying it.
 3. If a normalized filename collision represents a distinct paper, ask before choosing a disambiguated filename.
 4. Create the one note only under `PaperRead/`, then report the created path and any unresolved metadata.
