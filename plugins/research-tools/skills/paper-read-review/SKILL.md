@@ -42,7 +42,16 @@ Require every existing marker pair to occupy its exact layout-specific anchor; o
 
 ## Callout Contract
 
-Use at most two callouts per reviewed section and add no new H1 or H2:
+Default to one callout per reviewed section. Use a second only when a technical correction and missing evidence must remain distinct. Add no new H1 or H2.
+
+Keep the review scannable:
+
+- Use at most two callouts and 160 generated words per reviewed section.
+- Use one short paragraph or at most four concise bullets per callout.
+- Put one actionable point in each bullet and place its source locator at the end.
+- Use short titles such as `Technical correction`, `Missing evidence`, or `Research questions`; do not repeat a `Review —` prefix.
+- Separate adjacent callouts with one completely blank, unquoted line. Never use a `>`-only line between callouts because that keeps them in one blockquote and breaks Obsidian rendering.
+- Prefix every content and list line inside a callout with `>`.
 
 - `> [!success]` supported strength
 - `> [!warning]` technical correction
@@ -57,27 +66,31 @@ Use these exact hidden markers:
 
 ```markdown
 %% paper-read-review:summary-and-takeaway:start %%
-> [!warning] Review — Technical correction
-> Feedback with a source locator.
+> [!warning] Technical correction
+> - Concise correction. (Section or figure locator)
+
+> [!info] Missing evidence
+> Concise evidence gap. (Table or page locator)
 %% paper-read-review:summary-and-takeaway:end %%
 
 %% paper-read-review:my-thoughts:start %%
-> [!tip] Review — Strengthen the analysis
+> [!tip] Strengthen the analysis
 > Feedback.
 %% paper-read-review:my-thoughts:end %%
 
 %% paper-read-review:questions:start %%
-> [!question] Review — Research question
+> [!question] Research questions
 > Feedback.
 %% paper-read-review:questions:end %%
 
 %% paper-read-review:final:start %%
-> [!abstract] Review — Priority revisions
+> [!abstract] Priority revisions
 > Highest-value revisions.
 %% paper-read-review:final:end %%
 ```
 
 Omit empty blocks rather than generating filler.
+Before editing, lint every generated block: count the callout headers, enforce the section word limit, and require `\n\n> [!` before each adjacent callout after the first. Reject any `\n>\n> [!` separator.
 
 ## Safe Editing and Verification
 
@@ -88,7 +101,7 @@ Construct the candidate by interleaving untouched byte slices from the captured 
 - With no generated markers, interleave blocks between untouched slices and require those untouched slices to concatenate to the exact preimage.
 - With a complete valid marker set, locate each start marker and matching end marker; compare the untouched prefix, every untouched infix between complete pairs, and suffix byte-for-byte with the exact preimage, then replace only bytes inside each pair.
 
-Immediately before editing, re-read and compare against the exact preimage. A mismatch or changed preimage requires no-write. On a concurrent edit, re-read; never use a whole-file overwrite. After editing, repeat the applicable insertion or replacement comparison and verify marker order and callout syntax.
+Immediately before editing, re-read and compare against the exact preimage. A mismatch or changed preimage requires no-write. On a concurrent edit, re-read; never use a whole-file overwrite. After editing, repeat the applicable insertion or replacement comparison and verify marker order, callout count, separators, section word limits, and callout syntax.
 
 ## Completion Receipt
 

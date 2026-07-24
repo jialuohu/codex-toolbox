@@ -233,7 +233,10 @@ prefer `obsidian_files`; an enabled Obsidian CLI may perform guarded `obsidian
 read` plus `obsidian eval` exact edits, otherwise the operation is no-write.
 The workflow preserves the user's frontmatter and prose, checks technical
 accuracy, missing contributions, evidence, limitations, and research questions,
-and keeps private note or Zotero content out of public search services.
+and keeps private note or Zotero content out of public search services. Generated
+comments are concise, use no more than two callouts per section, and separate
+adjacent callouts with an unquoted blank line so Obsidian renders them
+independently.
 
 ## Optional MinerU Document Extraction
 

@@ -1292,7 +1292,7 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.4.0",
+        research_plugin.get("version") == "0.4.1",
         "research-tools must use the PaperRead review minor version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
@@ -1472,6 +1472,8 @@ def main() -> None:
         "Zotero first",
         "Legal marker order",
         "interleaving untouched byte slices",
+        "Separate adjacent callouts with one completely blank, unquoted line.",
+        "160 generated words per reviewed section",
         "obsidian eval",
         "Completion Receipt",
         "**Reason:**",

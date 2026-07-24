@@ -79,7 +79,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
         for callout_type in ("success", "warning", "info", "tip", "question", "abstract"):
             self.assertIn(f"> [!{callout_type}]", skill)
         self.assertRegex(skill, r"(?i)no new H1 or H2")
-        self.assertRegex(skill, r"(?i)at most two callouts per reviewed section")
+        self.assertRegex(skill, r"(?i)at most two callouts")
         self.assertRegex(
             skill,
             r"(?is)legal marker order.*?summary-and-takeaway.*?my-thoughts.*?questions.*?final",
@@ -89,6 +89,30 @@ class PaperReadReviewSkillTests(unittest.TestCase):
             skill,
             r"(?is)unknown.*?paper-read-review:.*?no-write",
         )
+
+    def test_skill_enforces_scannable_independent_callouts(self) -> None:
+        skill = self.read(SKILL)
+        self.assertIn("160 generated words per reviewed section", skill)
+        self.assertIn("at most four concise bullets per callout", skill)
+        self.assertIn(
+            "Separate adjacent callouts with one completely blank, unquoted line.",
+            skill,
+        )
+        self.assertIn("Never use a `>`-only line between callouts", skill)
+        self.assertIn(r"require `\n\n> [!`", skill)
+        self.assertIn(r"Reject any `\n>\n> [!` separator.", skill)
+        self.assertNotIn("> [!warning] Review —", skill)
+        summary_example = re.search(
+            r"%% paper-read-review:summary-and-takeaway:start %%"
+            r"(?P<body>.*?)"
+            r"%% paper-read-review:summary-and-takeaway:end %%",
+            skill,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(summary_example)
+        body = summary_example.group("body")  # type: ignore[union-attr]
+        self.assertIn("\n\n> [!info]", body)
+        self.assertNotIn("\n>\n> [!info]", body)
 
     def test_skill_preserves_non_generated_content_and_fails_closed(self) -> None:
         skill = self.read(SKILL)
@@ -216,7 +240,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
 
     def test_plugin_packaging_and_docs_expose_the_review_skill(self) -> None:
         manifest = json.loads(self.read(RESEARCH_PLUGIN))
-        self.assertEqual(manifest["version"], "0.4.0")
+        self.assertEqual(manifest["version"], "0.4.1")
         interface = manifest["interface"]
         self.assertIn("review", interface["description"].lower())
         self.assertIn("review", interface["shortDescription"].lower())
