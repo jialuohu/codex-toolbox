@@ -209,7 +209,7 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
         mcp = json.loads(RESEARCH_MCP.read_text())
         prompts = manifest["interface"]["defaultPrompt"]
 
-        self.assertEqual(manifest["version"], "0.5.0")
+        self.assertEqual(manifest["version"], "0.6.0")
         self.assertLessEqual(len(prompts), 3)
         self.assertTrue(all(len(prompt) <= 128 for prompt in prompts))
         prompt_text = " ".join(prompts)
@@ -225,10 +225,17 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
 
         for path, expected in (
             (README, "$zotero-todoist-reading-tasks"),
+            (README, "By default, each uniquely resolved Zotero parent"),
+            (README, "without Obsidian notes"),
             (GLOBAL_AGENTS, "$zotero-todoist-reading-tasks"),
+            (GLOBAL_AGENTS, "default PaperRead coupling"),
+            (GLOBAL_AGENTS, "sole owner of note identity, safe creation, and URI generation"),
+            (GLOBAL_AGENTS, "`note-missing`"),
             (SETUP_CHECKER, "ZOTERO_TODOIST_READING_TASKS_SKILL"),
             (SETUP_CHECKER, "ZOTERO_TODOIST_READING_TASKS_OPENAI"),
-            (SETUP_CHECKER, '"0.5.0"'),
+            (SETUP_CHECKER, '"0.6.0"'),
+            (SETUP_CHECKER, "research-tools must declare obsidian_files as a dependency"),
+            (SETUP_CHECKER, "research-tools must not duplicate the Obsidian MCP server"),
         ):
             self.assertIn(expected, path.read_text())
 

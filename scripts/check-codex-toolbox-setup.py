@@ -489,7 +489,7 @@ def main() -> None:
     for path in ROOT.rglob("*"):
         if (
             not path.is_file()
-            or ignored_scan_parts.intersection(path.parts)
+            or ignored_scan_parts.intersection(path.relative_to(ROOT).parts)
             or path.resolve() == Path(__file__).resolve()
         ):
             continue
@@ -1317,6 +1317,7 @@ def main() -> None:
         "paper-library-intake agent metadata must expose the skill trigger",
     )
     zotero_todoist_text = ZOTERO_TODOIST_READING_TASKS_SKILL.read_text()
+    zotero_todoist_normalized = " ".join(zotero_todoist_text.split())
     for expected in (
         "name: zotero-todoist-reading-tasks",
         "Do not mutate Zotero",
@@ -1333,9 +1334,13 @@ def main() -> None:
         "`reschedule-tasks`",
         "continuous synchronization",
         "$paper-library-intake",
+        "`$paper-read-draft` exactly once per uniquely resolved Zotero parent",
+        "without Obsidian notes",
+        "Do not independently infer a note filename or URI",
+        "`note-missing`",
     ):
         require(
-            expected in zotero_todoist_text,
+            expected in zotero_todoist_normalized,
             f"zotero-todoist-reading-tasks must mention {expected}",
         )
     zotero_todoist_openai = ZOTERO_TODOIST_READING_TASKS_OPENAI.read_text()
@@ -1344,6 +1349,7 @@ def main() -> None:
         'default_prompt: "Use $zotero-todoist-reading-tasks',
         'value: "zotero"',
         'value: "todoist"',
+        'value: "obsidian_files"',
         'url: "https://ai.todoist.net/mcp"',
     ):
         require(
@@ -1351,8 +1357,16 @@ def main() -> None:
             f"zotero-todoist-reading-tasks metadata must mention {expected}",
         )
     require(
+        'value: "obsidian_files"' in zotero_todoist_openai,
+        "research-tools must declare obsidian_files as a dependency",
+    )
+    require(
         "todoist" not in research_mcp.get("mcpServers", {}),
         "research-tools must not duplicate the Todoist MCP server",
+    )
+    require(
+        "obsidian_files" not in research_mcp.get("mcpServers", {}),
+        "research-tools must not duplicate the Obsidian MCP server",
     )
     attachment_text = PAPER_LIBRARY_ATTACHMENT.read_text()
     for expected in (
@@ -1380,7 +1394,7 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.5.0",
+        research_plugin.get("version") == "0.6.0",
         "research-tools must use the Zotero-Todoist workflow minor version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
@@ -1497,6 +1511,7 @@ def main() -> None:
         "research-tools default prompts must respect Codex's 128-character limit",
     )
     paper_read_draft_text = PAPER_READ_DRAFT_SKILL.read_text()
+    paper_read_draft_normalized = " ".join(paper_read_draft_text.split())
     for expected in (
         "name: paper-read-draft",
         "metadata-only",
@@ -1523,6 +1538,10 @@ def main() -> None:
             "paper-read-draft must limit create authority to one new note",
         ),
         (
+            "A bounded call from `$zotero-todoist-reading-tasks` authorizes at most one create-or-reuse action per uniquely resolved parent.",
+            "paper-read-draft must bound delegated create-or-reuse authority per resolved parent",
+        ),
+        (
             "Resolve the configured vault through `CODEX_OBSIDIAN_VAULT` and `obsidian_files`. Write only beneath `PaperRead/`; never use the current working directory as the vault.",
             "paper-read-draft must use the configured vault, only write under PaperRead, and never use the current directory as the vault",
         ),
@@ -1546,8 +1565,16 @@ def main() -> None:
             "Do not fill personal sections by default; each is hidden-prompt-only.",
             "paper-read-draft must leave personal sections hidden-prompt-only by default",
         ),
+        (
+            "Return `reused` for an existing exact or identity-deduplicated note, `created` for a new note, or `skipped` when no note was written.",
+            "paper-read-draft must return a created, reused, or skipped note status",
+        ),
+        (
+            "For `created` or `reused`, return the vault-relative path and the resulting clickable Obsidian URI.",
+            "paper-read-draft must return its resolved path and URI",
+        ),
     ):
-        require(expected in paper_read_draft_text, message)
+        require(expected in paper_read_draft_normalized, message)
     paper_read_draft_openai = PAPER_READ_DRAFT_OPENAI.read_text()
     for expected in (
         'display_name: "PaperRead Draft"',

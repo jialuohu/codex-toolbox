@@ -208,6 +208,7 @@ readings or to repair Zotero links on existing reading tasks:
 ```text
 $zotero-todoist-reading-tasks create tasks from Zotero collection Research/ReadLater/video-gen-serving
 $zotero-todoist-reading-tasks repair Zotero links in my existing paper-reading tasks
+$zotero-todoist-reading-tasks create tasks from Zotero collection Research/ReadLater/video-gen-serving without Obsidian notes
 ```
 
 The workflow reads Zotero without changing the library and writes through one
@@ -216,6 +217,14 @@ Each task receives a parent-item link and, when exactly one PDF attachment can b
 resolved, an attachment-key link that opens the PDF in Zotero Desktop. It
 deduplicates by the parent-item URI, preserves unrelated task fields, and stops
 when title or attachment matching is ambiguous.
+
+By default, each uniquely resolved Zotero parent gets one bounded PaperRead
+create-or-reuse action before its first Todoist write. `$paper-read-draft` owns
+note identity, safe creation, and URI generation; this workflow uses only its
+returned URI to maintain one canonical `Obsidian: [Open PaperRead note](...)`
+line. Say `without Obsidian notes` to skip PaperRead entirely and preserve any
+existing Obsidian line. If PaperRead cannot return a URI, Todoist work continues
+best-effort with `note-missing`, while stale canonical Obsidian lines are removed.
 
 When scheduling is requested, the task's due date is its planned reading day and
 `deadlineDate` remains the final cutoff. An unspecified daily allocation is
