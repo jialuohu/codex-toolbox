@@ -1,6 +1,6 @@
 interface:
-  display_name: "PaperRead Review"
-  short_description: "Review PaperRead notes with research-grade feedback."
-  default_prompt: "Use $paper-read-review to critique and strengthen my completed Obsidian PaperRead note."
+  display_name: "PaperRead Annotation"
+  short_description: "Annotate PaperRead notes with research-grade feedback."
+  default_prompt: "Use $paper-read-review to add source-backed review comments inside my completed Obsidian PaperRead note."
 policy:
   allow_implicit_invocation: true

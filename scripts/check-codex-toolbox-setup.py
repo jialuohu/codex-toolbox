@@ -1465,9 +1465,8 @@ def main() -> None:
     paper_read_review_text = PAPER_READ_REVIEW_SKILL.read_text()
     for expected in (
         "name: paper-read-review",
-        "`review` is read-only",
-        "`annotate`",
-        "`refresh`",
+        "There is no chat-only review mode.",
+        "**Mode:** `annotate` or `no-write`",
         "%% paper-read-review:summary-and-takeaway:start %%",
         "Preserve frontmatter, hidden prompts, user prose, existing callouts, and heading order byte-for-byte outside generated markers.",
         "Zotero first",
@@ -1480,17 +1479,17 @@ def main() -> None:
         require(expected in paper_read_review_text, f"paper-read-review skill must mention {expected}")
     paper_read_review_openai = PAPER_READ_REVIEW_OPENAI.read_text()
     for expected in (
-        'display_name: "PaperRead Review"',
+        'display_name: "PaperRead Annotation"',
         'default_prompt: "Use $paper-read-review',
         "allow_implicit_invocation: true",
     ):
         require(expected in paper_read_review_openai, f"paper-read-review metadata must mention {expected}")
     for expected in (
-        "## PaperRead Review",
+        "## PaperRead Annotation",
         "$paper-read-review",
         "review",
         "annotate",
-        "refresh",
+        "no chat-only review mode",
     ):
         require(expected in readme_text, f"README PaperRead review section must mention {expected}")
     research_skill_text = RESEARCH_LLM_WIKI_SKILL.read_text()

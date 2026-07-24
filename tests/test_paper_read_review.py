@@ -41,7 +41,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
 
     def test_openai_metadata_enables_implicit_invocation(self) -> None:
         metadata = self.read(OPENAI_METADATA)
-        self.assertRegex(metadata, r'(?m)^\s*display_name: "PaperRead Review"$')
+        self.assertRegex(metadata, r'(?m)^\s*display_name: "PaperRead Annotation"$')
         self.assertRegex(metadata, r'(?m)^\s*short_description: ".+"$')
         self.assertRegex(metadata, r'(?m)^\s*default_prompt: ".*\$paper-read-review.*"$')
         self.assertRegex(
@@ -49,22 +49,19 @@ class PaperReadReviewSkillTests(unittest.TestCase):
             r"(?ms)^policy:\n\s+allow_implicit_invocation: true\s*$",
         )
 
-    def test_skill_defines_read_only_annotate_and_refresh_modes(self) -> None:
+    def test_skill_defines_annotation_as_the_only_write_workflow(self) -> None:
         skill = self.read(SKILL)
-        self.assertRegex(skill, r"(?is)`review`.*?read-only")
-        self.assertRegex(skill, r"(?is)`annotate`.*?one exact existing.*?`PaperRead/`")
         self.assertRegex(
             skill,
-            r"(?is)`refresh`.*?one exact existing.*?`PaperRead/`.*?replace only.*?generated marker",
+            r"(?is)review.*?critique.*?fact-check.*?annotation request.*?authorizes annotation.*?one exact existing.*?`PaperRead/`",
         )
+        self.assertIn("There is no chat-only review mode.", skill)
+        self.assertIn("**Mode:** `annotate` or `no-write`", skill)
         self.assertRegex(
             skill,
-            r"(?is)review or critique request alone.*?does not authorize.*?(write|edit|mutation)",
+            r"(?is)no generated markers.*?insert.*?complete valid marker set.*?replace only.*?skill-owned",
         )
-        self.assertRegex(
-            skill,
-            r"(?is)insert|add|leave comments|annotate|refresh",
-        )
+        self.assertNotRegex(skill, r"(?is)`review` is read-only|`refresh` requires")
 
     def test_skill_has_stable_marker_and_callout_contract(self) -> None:
         skill = self.read(SKILL)
@@ -111,11 +108,11 @@ class PaperReadReviewSkillTests(unittest.TestCase):
         )
         self.assertRegex(
             skill,
-            r"(?is)annotate.*?untouched slices.*?exact preimage",
+            r"(?is)no generated markers.*?interleave.*?untouched slices.*?exact preimage",
         )
         self.assertRegex(
             skill,
-            r"(?is)refresh.*?start marker.*?end marker.*?prefix.*?infix.*?suffix",
+            r"(?is)complete valid marker set.*?start marker.*?end marker.*?prefix.*?infix.*?suffix",
         )
 
     def test_skill_has_deterministic_layout_anchors_and_vault_tool_fallback(self) -> None:
@@ -137,7 +134,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
             r"(?is)`Questions`.*?(end of file|EOF)",
         )
         self.assertIn(
-            "For `refresh`, require every existing marker pair to occupy its exact layout-specific anchor; otherwise return no-write.",
+            "Require every existing marker pair to occupy its exact layout-specific anchor; otherwise return no-write.",
             skill,
         )
         for expected in ("obsidian_files", "Obsidian CLI", "obsidian read", "obsidian eval"):
@@ -239,7 +236,13 @@ class PaperReadReviewSkillTests(unittest.TestCase):
 
         readme = self.read(README)
         checker = self.read(SETUP_CHECKER)
-        for expected in ("## PaperRead Review", "$paper-read-review", "review", "annotate", "refresh"):
+        for expected in (
+            "## PaperRead Annotation",
+            "$paper-read-review",
+            "review",
+            "annotate",
+            "no chat-only review mode",
+        ):
             self.assertIn(expected, readme)
         for expected in (
             "PAPER_READ_REVIEW_SKILL",

@@ -1,17 +1,17 @@
 ---
 name: paper-read-review
-description: Use when a user asks to review, critique, fact-check, strengthen, or annotate an Obsidian PaperRead or paper-reading note.
+description: Use when a user asks to review, critique, fact-check, strengthen, or annotate an existing Obsidian PaperRead or paper-reading note by adding source-backed comments inside that note.
 ---
 
-# PaperRead Review
+# PaperRead Annotation
 
-Give source-backed, research-grade feedback without rewriting the user's note.
+Add source-backed, research-grade feedback inside the user's note without rewriting their prose.
 
-## Modes and Authority
+## Authority and Scope
 
-- `review` is read-only. A review or critique request alone does not authorize a write, edit, or mutation.
-- `annotate` requires an explicit request to insert, add, or leave comments or annotate one exact existing note beneath `PaperRead/`.
-- `refresh` requires an explicit request to refresh, update, or re-review one exact existing note beneath `PaperRead/`; replace only content inside valid generated marker pairs.
+A matching review, critique, fact-check, strengthening, or annotation request authorizes annotation of one exact existing note beneath `PaperRead/`. There is no chat-only review mode.
+
+If the note has no generated markers, insert the annotation blocks. If it has a complete valid marker set, replace only the skill-owned generated blocks so repeated reviews remain idempotent.
 
 Prefer `obsidian_files` with `CODEX_OBSIDIAN_VAULT`, never the working directory. If it is unavailable and Obsidian CLI is enabled, use `obsidian read` to capture the preimage and `obsidian eval` to compare and apply the exact edit through Obsidian. If neither `obsidian_files` nor Obsidian CLI is available, return no-write. Do not create, move, delete, or rewrite another note. Resolve an ambiguous path or paper identity before reviewing.
 
@@ -38,7 +38,7 @@ Use this deterministic anchor map:
 - Append `Questions` feedback followed by the final block at end of file (EOF).
 
 Require every anchor heading exactly once. Do not migrate either layout.
-For `refresh`, require every existing marker pair to occupy its exact layout-specific anchor; otherwise return no-write.
+Require every existing marker pair to occupy its exact layout-specific anchor; otherwise return no-write.
 
 ## Callout Contract
 
@@ -85,16 +85,16 @@ Preserve frontmatter, hidden prompts, user prose, existing callouts, and heading
 
 Construct the candidate by interleaving untouched byte slices from the captured preimage with generated blocks; never reserialize the note.
 
-- For `annotate`, require no generated markers, interleave blocks between untouched slices, and require those untouched slices to concatenate to the exact preimage.
-- For `refresh`, locate each start marker and matching end marker; compare the untouched prefix, every untouched infix between complete pairs, and suffix byte-for-byte with the exact preimage, then replace only bytes inside each pair.
+- With no generated markers, interleave blocks between untouched slices and require those untouched slices to concatenate to the exact preimage.
+- With a complete valid marker set, locate each start marker and matching end marker; compare the untouched prefix, every untouched infix between complete pairs, and suffix byte-for-byte with the exact preimage, then replace only bytes inside each pair.
 
-Immediately before editing, re-read and compare against the exact preimage. A mismatch or changed preimage requires no-write. On a concurrent edit, re-read; never use a whole-file overwrite. After editing, repeat the annotate or refresh comparison and verify marker order and callout syntax.
+Immediately before editing, re-read and compare against the exact preimage. A mismatch or changed preimage requires no-write. On a concurrent edit, re-read; never use a whole-file overwrite. After editing, repeat the applicable insertion or replacement comparison and verify marker order and callout syntax.
 
 ## Completion Receipt
 
 Return:
 
-- **Mode:** `review`, `annotate`, `refresh`, or `no-write`
+- **Mode:** `annotate` or `no-write`
 - **Note path:** exact vault-relative path
 - **Evidence:** sources and locators used
 - **Generated blocks:** inserted, replaced, or none

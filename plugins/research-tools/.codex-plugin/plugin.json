@@ -20,7 +20,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use $paper-read-draft to start a note, $paper-read-review to critique it, or $paper-library-intake for library work.",
+      "Use $paper-read-draft to start a note, $paper-read-review to annotate it, or $paper-library-intake for library work.",
       "Extract a complex local document with checksum-verified MinerU outputs.",
       "Use the Research LLM Wiki to ingest, query, or lint my research vault wiki."
     ]

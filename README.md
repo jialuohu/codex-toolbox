@@ -216,25 +216,24 @@ Questions—for the user. The note title remains in frontmatter and the body has
 no repeated H1. The workflow does not add or update Zotero or ingest the
 Research LLM Wiki.
 
-## PaperRead Review
+## PaperRead Annotation
 
-Use `$paper-read-review` for source-backed feedback on one completed PaperRead
-note:
+Use `$paper-read-review` to add source-backed feedback inside one completed
+PaperRead note:
 
 ```text
-$paper-read-review review PaperRead/<note>.md
 $paper-read-review annotate PaperRead/<note>.md
-$paper-read-review refresh PaperRead/<note>.md
 ```
 
-`review` is read-only. `annotate` requires an explicit request to add Obsidian
-callouts to one exact note, while `refresh` updates valid hidden-marker blocks
-in one exact existing `PaperRead/` note. Vault edits prefer `obsidian_files`;
-an enabled Obsidian CLI may perform guarded `obsidian read` plus `obsidian
-eval` exact edits, otherwise the operation is no-write. The workflow preserves
-the user's frontmatter and prose, checks technical accuracy, missing
-contributions, evidence, limitations, and research questions, and keeps
-private note or Zotero content out of public search services.
+A request to review, critique, fact-check, strengthen, or annotate one exact
+existing `PaperRead/` note authorizes this skill to add Obsidian callouts inside
+that note. There is no chat-only review mode. The first run inserts hidden-marker
+blocks; later runs replace only those valid skill-owned blocks. Vault edits
+prefer `obsidian_files`; an enabled Obsidian CLI may perform guarded `obsidian
+read` plus `obsidian eval` exact edits, otherwise the operation is no-write.
+The workflow preserves the user's frontmatter and prose, checks technical
+accuracy, missing contributions, evidence, limitations, and research questions,
+and keeps private note or Zotero content out of public search services.
 
 ## Optional MinerU Document Extraction
 
