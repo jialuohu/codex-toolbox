@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -13,6 +15,7 @@ SKILL = SKILL_DIR / "SKILL.md"
 OPENAI_METADATA = SKILL_DIR / "agents" / "openai.yaml"
 TEMPLATE = SKILL_DIR / "references" / "paper-read-template.md"
 FILENAME_HELPER = SKILL_DIR / "scripts" / "paper_read_filename.py"
+URI_HELPER = SKILL_DIR / "scripts" / "paper_read_uri.py"
 OBSIDIAN_MCP = ROOT / "plugins" / "obsidian-tools" / ".mcp.json"
 
 
@@ -191,6 +194,77 @@ class PaperReadDraftSkillTests(unittest.TestCase):
         )
         with self.assertRaises(module.FilenameError):
             module.build_filename("Feng", "26", "StreamDiffusionV2")
+
+    def load_uri_helper(self):
+        self.assertTrue(URI_HELPER.is_file())
+        spec = importlib.util.spec_from_file_location("paper_read_uri", URI_HELPER)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)  # type: ignore[union-attr]
+        module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+        return module
+
+    def test_uri_helper_builds_a_clickable_obsidian_open_uri(self) -> None:
+        uri = self.load_uri_helper().build_obsidian_open_uri(
+            "/vaults/My Research Vault",
+            "PaperRead/Feng 26-StreamDiffusionV2.md",
+        )
+
+        self.assertEqual(
+            uri,
+            "obsidian://open?vault=My%20Research%20Vault&file="
+            "PaperRead%2FFeng%2026-StreamDiffusionV2.md",
+        )
+
+    def test_uri_helper_percent_encodes_all_reserved_query_characters(self) -> None:
+        uri = self.load_uri_helper().build_obsidian_open_uri(
+            "/vaults/My Research Vault",
+            "PaperRead/space /#?&.md",
+        )
+
+        self.assertEqual(
+            uri,
+            "obsidian://open?vault=My%20Research%20Vault&file="
+            "PaperRead%2Fspace%20%2F%23%3F%26.md",
+        )
+
+    def test_uri_helper_rejects_invalid_vault_and_note_paths(self) -> None:
+        module = self.load_uri_helper()
+        invalid_cases = (
+            ("/", "PaperRead/note.md"),
+            ("/vaults/Research", "/PaperRead/note.md"),
+            ("/vaults/Research", "PaperRead/../note.md"),
+            ("/vaults/Research", "PaperRead/./note.md"),
+            ("/vaults/Research", "Elsewhere/note.md"),
+            ("/vaults/Research", "PaperRead/note.txt"),
+        )
+
+        for vault_path, note_path in invalid_cases:
+            with self.subTest(vault_path=vault_path, note_path=note_path):
+                with self.assertRaises(module.ObsidianURIError):
+                    module.build_obsidian_open_uri(vault_path, note_path)
+
+    def test_uri_helper_cli_accepts_vault_and_note_path_options(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(URI_HELPER),
+                "--vault-path",
+                "/vaults/My Research Vault",
+                "--note-path",
+                "PaperRead/Feng 26-StreamDiffusionV2.md",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.stdout,
+            "obsidian://open?vault=My%20Research%20Vault&file="
+            "PaperRead%2FFeng%2026-StreamDiffusionV2.md\n",
+        )
 
     def test_skill_limits_tags_and_create_authority(self) -> None:
         skill = self.read(SKILL)

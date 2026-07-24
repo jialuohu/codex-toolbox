@@ -9,7 +9,7 @@ Create one compact, factual note shell for a paper. The note records verified me
 
 ## Scope and Authority
 
-- A standard create-draft request authorizes only one new note.
+- A standard create-draft request authorizes only one new note. A bounded call from `$zotero-todoist-reading-tasks` authorizes at most one create-or-reuse action per uniquely resolved parent.
 - Resolve the configured vault through `CODEX_OBSIDIAN_VAULT` and `obsidian_files`. Write only beneath `PaperRead/`; never use the current working directory as the vault.
 - Accept a title, DOI, arXiv ID or URL, publisher URL, or Zotero item.
 - Do not add or update Zotero and do not ingest the LLM Wiki.
@@ -61,7 +61,8 @@ Preserve the complete canonical paper title in frontmatter; the short method nam
 
 ## Completion Check
 
-- Return an existing path unchanged when the exact note exists.
-- Return an existing legacy-named path unchanged when paper-identity deduplication finds it.
+- After an existing or newly created note is resolved, run `python3 scripts/paper_read_uri.py --vault-path "$CODEX_OBSIDIAN_VAULT" --note-path <vault-relative-path>`.
+- Return `reused` for an existing exact or identity-deduplicated note, `created` for a new note, or `skipped` when no note was written. For `created` or `reused`, return the vault-relative path and the resulting clickable Obsidian URI.
+- If URI generation fails, preserve the resolved note, return its vault-relative path, and report `link-unavailable` rather than modifying, deleting, or recreating it.
 - Otherwise return the created path, with unresolved optional metadata called out plainly.
 - Do not fill personal sections by default; each is hidden-prompt-only.
