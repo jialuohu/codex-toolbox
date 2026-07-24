@@ -134,10 +134,13 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
         for expected in (
             "Obsidian: [Open PaperRead note](obsidian://open?vault=<ENCODED_VAULT>&file=<ENCODED_NOTE_PATH>)",
             "exactly one managed `Obsidian:` line",
-            "begins `Obsidian: [Open PaperRead note](`",
-            "has an `obsidian://open?` target that exactly equals the URI returned by `$paper-read-draft`",
+            "A canonical managed Obsidian line is exactly",
+            "an `obsidian://open` target with both `vault` and `file` query values",
+            "no extra text",
+            "independent of a current PaperRead result",
+            "Do not require an existing canonical URI to equal a newly returned URI",
             "Only this managed form is replaceable or removable",
-            "replace all existing managed `Obsidian:` lines with exactly one",
+            "replace all canonical managed `Obsidian:` lines with exactly one current managed line",
             "preserve every other description line unchanged and in order",
             "Preserve any other `Obsidian:` line or any other `obsidian://` content unchanged",
             "`obsidian://` URI appears outside a managed line",
@@ -153,6 +156,7 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
             "preserve any existing Obsidian line",
             "`note-missing`",
             "without adding a stale Obsidian line",
+            "For `note-missing`, remove all canonical managed Obsidian lines so no stale link remains",
             "with the reason",
         ):
             self.assertIn(expected, text)

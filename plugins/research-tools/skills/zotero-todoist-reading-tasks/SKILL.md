@@ -105,11 +105,15 @@ first Todoist write, then reuse the recorded result for all later writes.
   Render the returned URI verbatim in that line; the placeholders illustrate
   only the encoded values already present in the returned URI. Do not construct
   a new URI.
-- A line is managed only if it begins `Obsidian: [Open PaperRead note](` and
-  has an `obsidian://open?` target that exactly equals the URI returned by
-  `$paper-read-draft` for that parent. Only this managed form is replaceable or
-  removable. Preserve any other `Obsidian:` line or any other `obsidian://`
-  content unchanged and report the task as ambiguous for manual review.
+- A canonical managed Obsidian line is exactly
+  `Obsidian: [Open PaperRead note](obsidian://open?vault=<...>&file=<...>)`:
+  it has the exact label and prefix, an `obsidian://open` target with both
+  `vault` and `file` query values, and no extra text. This predicate is
+  independent of a current PaperRead result. Do not require an existing
+  canonical URI to equal a newly returned URI. Only this managed form is
+  replaceable or removable. Preserve any other `Obsidian:` line or any other
+  `obsidian://` content unchanged and report the task as ambiguous for manual
+  review.
 - Treat `link-unavailable`, `skipped`, an unavailable PaperRead call, or a
   missing returned URI as `note-missing`. Continue valid Todoist work without
   adding a stale Obsidian line, and record `note-missing` with the reason.
@@ -132,9 +136,9 @@ Search only the requested Todoist project or section before creating tasks.
 Maintain exactly one managed `Zotero:` line and, when PaperRead returned a URI,
 exactly one managed `Obsidian:` line in the task description. On repair, replace
 existing lines that begin with `Zotero:` and contain a `zotero://` URI. For an
-authorized returned PaperRead URI, replace all existing managed `Obsidian:`
-lines with exactly one exact managed line. For a non-opt-out `note-missing`,
-remove managed Obsidian lines so the task has no stale line and preserve every
+authorized returned PaperRead URI, replace all canonical managed `Obsidian:`
+lines with exactly one current managed line. For `note-missing`, remove all
+canonical managed Obsidian lines so no stale link remains and preserve every
 other description line unchanged and in order. If a `zotero://` or `obsidian://`
 URI appears outside a managed line, do not duplicate or rewrite it; report the
 task as ambiguous for manual review.
