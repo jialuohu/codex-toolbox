@@ -56,6 +56,17 @@ PAPER_LIBRARY_INTAKE_OPENAI = PAPER_LIBRARY_INTAKE_SKILL.parent / "agents" / "op
 PAPER_LIBRARY_ATTACHMENT = (
     PAPER_LIBRARY_INTAKE_SKILL.parent / "scripts" / "zotero_attachment.py"
 )
+ZOTERO_TODOIST_READING_TASKS_SKILL = (
+    ROOT
+    / "plugins"
+    / "research-tools"
+    / "skills"
+    / "zotero-todoist-reading-tasks"
+    / "SKILL.md"
+)
+ZOTERO_TODOIST_READING_TASKS_OPENAI = (
+    ZOTERO_TODOIST_READING_TASKS_SKILL.parent / "agents" / "openai.yaml"
+)
 PAPER_READ_DRAFT_SKILL = (
     ROOT / "plugins" / "research-tools" / "skills" / "paper-read-draft" / "SKILL.md"
 )
@@ -239,6 +250,18 @@ def main() -> None:
             f"global AGENTS paper intake routing must mention {expected}",
         )
     for expected in (
+        "$zotero-todoist-reading-tasks",
+        "parent item key",
+        "PDF attachment key",
+        "one Todoist surface per request",
+        "deadlineDate",
+        "one-time reconciliation",
+    ):
+        require(
+            expected in global_agents_normalized,
+            f"global AGENTS Zotero-Todoist routing must mention {expected}",
+        )
+    for expected in (
         "Todoist MCP",
         "$todoist-task-planning",
         "Prefer the connected Todoist app",
@@ -354,6 +377,14 @@ def main() -> None:
     require(
         PAPER_LIBRARY_INTAKE_OPENAI.exists(),
         "paper-library-intake must include OpenAI agent metadata",
+    )
+    require(
+        ZOTERO_TODOIST_READING_TASKS_SKILL.exists(),
+        "research-tools must include zotero-todoist-reading-tasks skill",
+    )
+    require(
+        ZOTERO_TODOIST_READING_TASKS_OPENAI.exists(),
+        "zotero-todoist-reading-tasks must include OpenAI agent metadata",
     )
     require(
         PAPER_LIBRARY_ATTACHMENT.exists(),
@@ -518,6 +549,18 @@ def main() -> None:
         "Firecrawl only",
     ):
         require(expected in readme_text, f"README paper intake must mention {expected}")
+    for expected in (
+        "## Zotero-linked Todoist Reading Tasks",
+        "$zotero-todoist-reading-tasks",
+        "parent-item link",
+        "attachment-key link",
+        "`deadlineDate`",
+        "not continuous",
+    ):
+        require(
+            expected in readme_text,
+            f"README Zotero-Todoist workflow must mention {expected}",
+        )
     for expected in (
         "Todoist Task Planning",
         "$todoist-task-planning",
@@ -1273,6 +1316,44 @@ def main() -> None:
         "$paper-library-intake" in PAPER_LIBRARY_INTAKE_OPENAI.read_text(),
         "paper-library-intake agent metadata must expose the skill trigger",
     )
+    zotero_todoist_text = ZOTERO_TODOIST_READING_TASKS_SKILL.read_text()
+    for expected in (
+        "name: zotero-todoist-reading-tasks",
+        "Do not mutate Zotero",
+        "zotero_get_collection_items",
+        "zotero_get_items_children",
+        "Choose exactly one Todoist tool surface",
+        "zotero://select/library/items/<PARENT_KEY>",
+        "zotero://open-pdf/library/items/<ATTACHMENT_KEY>",
+        "zotero://select/groups/<GROUP_ID>/items/<PARENT_KEY>",
+        "zotero://open-pdf/groups/<GROUP_ID>/items/<ATTACHMENT_KEY>",
+        "unique one-to-one match",
+        "exactly one managed `Zotero:` line",
+        "`deadlineDate`",
+        "`reschedule-tasks`",
+        "continuous synchronization",
+        "$paper-library-intake",
+    ):
+        require(
+            expected in zotero_todoist_text,
+            f"zotero-todoist-reading-tasks must mention {expected}",
+        )
+    zotero_todoist_openai = ZOTERO_TODOIST_READING_TASKS_OPENAI.read_text()
+    for expected in (
+        'display_name: "Zotero Todoist Reading Tasks"',
+        'default_prompt: "Use $zotero-todoist-reading-tasks',
+        'value: "zotero"',
+        'value: "todoist"',
+        'url: "https://ai.todoist.net/mcp"',
+    ):
+        require(
+            expected in zotero_todoist_openai,
+            f"zotero-todoist-reading-tasks metadata must mention {expected}",
+        )
+    require(
+        "todoist" not in research_mcp.get("mcpServers", {}),
+        "research-tools must not duplicate the Todoist MCP server",
+    )
     attachment_text = PAPER_LIBRARY_ATTACHMENT.read_text()
     for expected in (
         "incomplete_webdav_configuration",
@@ -1299,8 +1380,8 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.4.2",
-        "research-tools must use the PaperRead review minor version",
+        research_plugin.get("version") == "0.5.0",
+        "research-tools must use the Zotero-Todoist workflow minor version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
     for expected in (
@@ -1377,8 +1458,20 @@ def main() -> None:
         "research-tools default prompts must surface paper-library-intake",
     )
     require(
+        any(
+            "$zotero-todoist-reading-tasks" in prompt
+            for prompt in research_interface.get("defaultPrompt", [])
+        ),
+        "research-tools default prompts must surface zotero-todoist-reading-tasks",
+    )
+    require(
         any("mineru" in prompt.lower() for prompt in research_interface.get("defaultPrompt", [])),
         "research-tools default prompts must retain MinerU extraction coverage",
+    )
+    require(
+        "Todoist" in research_plugin.get("description", "")
+        and "Todoist" in research_interface.get("longDescription", ""),
+        "research-tools descriptions must surface Zotero-linked Todoist reading tasks",
     )
     require(
         "PaperRead" in research_interface.get("shortDescription", "")

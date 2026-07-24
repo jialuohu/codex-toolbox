@@ -200,6 +200,28 @@ python3 plugins/research-tools/skills/paper-library-intake/scripts/zotero_attach
 Do not print or commit the secret environment. A real Zotero write canary should
 only be performed for a paper the user explicitly asks to add.
 
+## Zotero-linked Todoist Reading Tasks
+
+Use one workflow to turn a saved Zotero collection into trackable Todoist paper
+readings or to repair Zotero links on existing reading tasks:
+
+```text
+$zotero-todoist-reading-tasks create tasks from Zotero collection Research/ReadLater/video-gen-serving
+$zotero-todoist-reading-tasks repair Zotero links in my existing paper-reading tasks
+```
+
+The workflow reads Zotero without changing the library and writes through one
+Todoist surface only, preferring the connected app over the hosted MCP fallback.
+Each task receives a parent-item link and, when exactly one PDF attachment can be
+resolved, an attachment-key link that opens the PDF in Zotero Desktop. It
+deduplicates by the parent-item URI, preserves unrelated task fields, and stops
+when title or attachment matching is ambiguous.
+
+When scheduling is requested, the task's due date is its planned reading day and
+`deadlineDate` remains the final cutoff. An unspecified daily allocation is
+distributed evenly across the available dates in reading order. This is an
+explicit one-time reconciliation, not continuous Zotero–Todoist synchronization.
+
 ## PaperRead Draft
 
 Use `$paper-read-draft` to create a compact Obsidian PaperRead draft for one

@@ -984,10 +984,10 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
         self.assertIn("download_scihub", server["disabled_tools"])
         self.assertIn("download_with_fallback", server["disabled_tools"])
 
-    def test_research_plugin_minor_version_and_prompts_expose_intake_and_paperread(self) -> None:
+    def test_research_plugin_version_and_prompts_expose_intake_and_paperread(self) -> None:
         manifest = json.loads(RESEARCH_PLUGIN.read_text())
 
-        self.assertEqual(manifest["version"], "0.4.2")
+        self.assertEqual(manifest["version"], "0.5.0")
         default_prompts = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(default_prompts), 3)
         self.assertTrue(all(len(prompt) <= 128 for prompt in default_prompts))
