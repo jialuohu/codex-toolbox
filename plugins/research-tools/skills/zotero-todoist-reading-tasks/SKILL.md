@@ -1,6 +1,6 @@
 ---
 name: zotero-todoist-reading-tasks
-description: Create, schedule, reconcile, and repair Todoist paper-reading tasks from saved Zotero collections or items, including desktop deep links to parent records and PDF attachments. Use when a user wants a Zotero reading queue turned into Todoist tasks, readings distributed across dates, or Zotero links added to existing paper-reading tasks.
+description: Use when a user wants to create, schedule, reconcile, or repair Todoist reading tasks from saved Zotero items or collections, with default PaperRead note links.
 ---
 
 # Zotero Todoist Reading Tasks
@@ -14,6 +14,13 @@ progress record.
 - Inspect Zotero and Todoist before writing. Do not mutate Zotero.
 - Treat an explicit request to create, schedule, reconcile, or repair reading
   tasks as authority only for the named Todoist project, collection, and tasks.
+- A named Zotero item or collection request also authorizes at most one
+  create-or-reuse action per uniquely resolved Zotero parent through
+  `$paper-read-draft`. This bounded note authority is inherited from that named
+  request; it does not authorize any other PaperRead note work.
+- An explicit request for `without Obsidian notes` opts out of PaperRead work for
+  that run. On opt-out, perform no PaperRead note operation and preserve any
+  existing Obsidian line in a matched Todoist task.
 - Require the exact task identity and an explicit deletion request before
   deleting anything. Do not infer cleanup authority from a reconciliation.
 - Prefer the connected Todoist app when it is available. Use the official hosted
@@ -77,6 +84,32 @@ Zotero: [Show item](zotero://select/library/items/<PARENT_KEY>)
 
 Substitute the group-library forms when applicable.
 
+## Create or reuse the PaperRead draft
+
+For each uniquely resolved parent, after Zotero identity resolution and before
+any Todoist write, invoke `$paper-read-draft` exactly once per uniquely resolved
+Zotero parent unless the user explicitly requested `without Obsidian notes`.
+Pass only the resolved parent identity and observed metadata that the PaperRead
+skill needs; it remains the sole owner of note identity, safe creation, and URI
+generation.
+
+- Use only the URI returned by `$paper-read-draft` when its result is `created`
+  or `reused`. Do not independently infer a note filename or URI.
+- With a returned URI, the managed line is exactly:
+
+  ```markdown
+  Obsidian: [Open PaperRead note](obsidian://open?vault=<ENCODED_VAULT>&file=<ENCODED_NOTE_PATH>)
+  ```
+
+  Render the returned URI verbatim in that line; the placeholders illustrate
+  only the encoded values already present in the returned URI. Do not construct
+  a new URI.
+- Treat `link-unavailable`, `skipped`, an unavailable PaperRead call, or a
+  missing returned URI as `note-missing`. Continue valid Todoist work without
+  adding a stale Obsidian line, and record `note-missing` with the reason.
+- On explicit opt-out, do not call `$paper-read-draft`, do not add, remove, or
+  replace an Obsidian line, and do not report a note failure.
+
 ## Reconcile task identity
 
 Search only the requested Todoist project or section before creating tasks.
@@ -90,11 +123,15 @@ Search only the requested Todoist project or section before creating tasks.
    stop on ambiguity and show the candidates.
 4. If no match exists, create `Read: <paper title>` in the requested target.
 
-Maintain exactly one managed `Zotero:` line in the task description. On repair,
-replace existing lines that begin with `Zotero:` and contain a `zotero://` URI,
-then preserve every other description line unchanged and in order. If a
-`zotero://` URI appears outside a managed line, do not duplicate or rewrite it;
-report the task as ambiguous for manual review.
+Maintain exactly one managed `Zotero:` line and, when PaperRead returned a URI,
+exactly one managed `Obsidian:` line in the task description. On repair, replace
+existing lines that begin with `Zotero:` and contain a `zotero://` URI. For an
+authorized returned PaperRead URI, replace all existing managed `Obsidian:`
+lines with exactly one exact managed line. For a non-opt-out `note-missing`,
+remove managed Obsidian lines so the task has no stale line and preserve every
+other description line unchanged and in order. If a `zotero://` or `obsidian://`
+URI appears outside a managed line, do not duplicate or rewrite it; report the
+task as ambiguous for manual review.
 
 Repeated runs are idempotent reconciliation, not continuous synchronization.
 Never claim that later Zotero or Todoist changes will propagate automatically.
@@ -119,15 +156,21 @@ Never claim that later Zotero or Todoist changes will propagate automatically.
 ## Apply and verify
 
 1. Preview the resolved Zotero parents, attachment choice, Todoist target,
-   matches, planned dates, final deadline, and any ambiguity that blocks a write.
-2. Apply only the authorized creations or updates. Use batch Todoist operations
-   where the tool supports them.
+   matches, planned dates, final deadline, planned PaperRead action or opt-out,
+   and any ambiguity that blocks a write.
+2. Before every Todoist write, perform the authorized PaperRead action and
+   record its `created`, `reused`, `link-unavailable`, `skipped`, or
+   `note-missing` result. Apply only the authorized Todoist creations or
+   updates. Use batch Todoist operations where the tool supports them.
 3. Read back every created or changed task. Confirm its project and section,
-   content, managed link line, planned due date, and `deadlineDate`.
+   content, managed Zotero line, managed Obsidian line, planned due date, and
+   `deadlineDate`.
 4. Return a compact receipt grouped as `created`, `reused`, `repaired`, and
-   `skipped`. For skipped items, state whether the cause was a missing PDF,
-   ambiguous attachment, ambiguous task match, missing target, or unavailable
-   service.
+   `skipped`. For each item, include the PaperRead note status (`created`,
+   `reused`, `opt-out`, or `note-missing` with the reason) and the read-back
+   managed Obsidian line when one exists. For skipped items, state whether the
+   cause was a missing PDF, ambiguous attachment, ambiguous task match, missing
+   target, or unavailable service.
 
 If Zotero cannot be read, do not infer the collection contents or keys. If
 Todoist is unavailable, report that no task change was persisted. Never use

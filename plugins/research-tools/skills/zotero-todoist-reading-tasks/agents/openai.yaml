@@ -1,7 +1,7 @@
 interface:
   display_name: "Zotero Todoist Reading Tasks"
   short_description: "Link Zotero papers to Todoist reading tasks."
-  default_prompt: "Use $zotero-todoist-reading-tasks to create or repair linked Todoist reading tasks from Zotero."
+  default_prompt: "Use $zotero-todoist-reading-tasks to create or repair linked Todoist reading tasks and PaperRead notes from Zotero."
 dependencies:
   tools:
     - type: "mcp"
@@ -12,3 +12,6 @@ dependencies:
       description: "Official Todoist task and project tools"
       transport: "streamable_http"
       url: "https://ai.todoist.net/mcp"
+    - type: "mcp"
+      value: "obsidian_files"
+      description: "Local Obsidian PaperRead vault access"

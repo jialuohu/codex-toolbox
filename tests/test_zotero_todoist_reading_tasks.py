@@ -36,20 +36,26 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
 
         self.assertEqual(keys, ["name", "description"])
         self.assertIn("name: zotero-todoist-reading-tasks", frontmatter)
-        frontmatter_lower = frontmatter.lower()
-        for trigger in ("Zotero", "Todoist", "create", "schedule", "repair"):
-            self.assertIn(trigger.lower(), frontmatter_lower)
+        description = re.search(r"^description: (.+)$", frontmatter, flags=re.MULTILINE)
+        self.assertIsNotNone(description)
+        self.assertTrue(description.group(1).startswith("Use when"))
+        self.assertIn("Zotero", description.group(1))
+        self.assertIn("Todoist", description.group(1))
 
         metadata = OPENAI_METADATA.read_text()
         for expected in (
             'display_name: "Zotero Todoist Reading Tasks"',
             'short_description: "Link Zotero papers to Todoist reading tasks."',
-            'default_prompt: "Use $zotero-todoist-reading-tasks',
+            'default_prompt: "Use $zotero-todoist-reading-tasks to create or repair linked Todoist reading tasks and PaperRead notes from Zotero."',
             'value: "zotero"',
             'value: "todoist"',
+            'value: "obsidian_files"',
             'url: "https://ai.todoist.net/mcp"',
         ):
             self.assertIn(expected, metadata)
+
+        mcp = json.loads(RESEARCH_MCP.read_text())
+        self.assertNotIn("obsidian_files", mcp["mcpServers"])
 
     def test_skill_keeps_zotero_read_only_and_uses_one_todoist_surface(self) -> None:
         text = self.skill_text()
@@ -94,7 +100,7 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
             self.assertIn(expected, normalized)
 
     def test_skill_deduplicates_and_repairs_descriptions_idempotently(self) -> None:
-        text = self.skill_text()
+        text = " ".join(self.skill_text().split())
 
         for expected in (
             "parent-key select URI",
@@ -104,6 +110,56 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
             "exactly one managed `Zotero:` line",
             "preserve every other description line",
             "continuous synchronization",
+        ):
+            self.assertIn(expected, text)
+
+    def test_skill_couples_one_paperread_draft_per_resolved_parent_by_default(self) -> None:
+        text = " ".join(self.skill_text().split())
+
+        for expected in (
+            "after Zotero identity resolution and before any Todoist write",
+            "`$paper-read-draft` exactly once per uniquely resolved Zotero parent",
+            "named Zotero item or collection request",
+            "at most one create-or-reuse action per uniquely resolved Zotero parent",
+            "without Obsidian notes",
+            "Use only the URI returned by `$paper-read-draft`",
+            "Do not independently infer a note filename or URI",
+        ):
+            self.assertIn(expected, text)
+
+    def test_skill_manages_the_exact_obsidian_line_without_touching_other_content(self) -> None:
+        text = " ".join(self.skill_text().split())
+
+        for expected in (
+            "Obsidian: [Open PaperRead note](obsidian://open?vault=<ENCODED_VAULT>&file=<ENCODED_NOTE_PATH>)",
+            "exactly one managed `Obsidian:` line",
+            "replace all existing managed `Obsidian:` lines with exactly one",
+            "preserve every other description line unchanged and in order",
+            "`obsidian://` URI appears outside a managed line",
+            "ambiguous for manual review",
+        ):
+            self.assertIn(expected, text)
+
+    def test_skill_preserves_obsidian_lines_on_opt_out_and_reports_note_failures(self) -> None:
+        text = " ".join(self.skill_text().split())
+
+        for expected in (
+            "perform no PaperRead note operation",
+            "preserve any existing Obsidian line",
+            "`note-missing`",
+            "without adding a stale Obsidian line",
+            "with the reason",
+        ):
+            self.assertIn(expected, text)
+
+    def test_skill_reads_back_obsidian_state_and_includes_it_in_the_receipt(self) -> None:
+        text = " ".join(self.skill_text().split())
+
+        for expected in (
+            "managed Obsidian line",
+            "PaperRead note status",
+            "`note-missing` with the reason",
+            "opt-out",
         ):
             self.assertIn(expected, text)
 
