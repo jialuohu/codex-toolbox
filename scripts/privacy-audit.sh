@@ -21,11 +21,17 @@ run_current() {
     fail=1
   fi
   while IFS= read -r -d '' path; do
-    if matches="$(rg --no-filename -n -I -e "$AUDIT_RE" -- "$path")"; then
+    if matches="$(git grep --no-index -I -n -h -E -e "$AUDIT_RE" -- "$path")"; then
       while IFS= read -r match; do
         printf '%s:%s\n' "$path" "$match"
       done <<< "$matches"
       fail=1
+    else
+      scan_status=$?
+      if [ "$scan_status" -ne 1 ]; then
+        echo "Privacy audit could not scan untracked file: $path" >&2
+        return "$scan_status"
+      fi
     fi
   done < <(git ls-files --others --exclude-standard -z -- .)
 }

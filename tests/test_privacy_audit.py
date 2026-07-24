@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tempfile
@@ -31,13 +32,18 @@ class PrivacyAuditTests(unittest.TestCase):
         path.write_text(content, encoding="utf-8")
         return path
 
-    def run_audit(self):
+    def run_audit(self, *, path=None):
+        env = None
+        if path is not None:
+            env = os.environ.copy()
+            env["PATH"] = path
         return subprocess.run(
-            ["bash", "scripts/privacy-audit.sh", "current"],
+            [shutil.which("bash"), "scripts/privacy-audit.sh", "current"],
             cwd=self.root,
             text=True,
             capture_output=True,
             check=False,
+            env=env,
         )
 
     def test_current_ignores_git_metadata_and_gitignored_local_artifacts(self):
@@ -89,6 +95,54 @@ class PrivacyAuditTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("untracked.txt", result.stdout)
         self.assertIn("Privacy audit found matches", result.stderr)
+
+    def test_current_scans_untracked_files_without_ripgrep(self):
+        self.write("untracked.txt", PRIVATE_PATH + "\n")
+        subprocess.run(
+            ["git", "add", "scripts/privacy-audit.sh"],
+            cwd=self.root,
+            check=True,
+        )
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").symlink_to(shutil.which("git"))
+
+        result = self.run_audit(path=str(bin_dir))
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("untracked.txt", result.stdout)
+        self.assertIn("Privacy audit found matches", result.stderr)
+
+    def test_current_fails_closed_when_untracked_scan_errors(self):
+        self.write("untracked.txt", "safe public content\n")
+        subprocess.run(
+            ["git", "add", "scripts/privacy-audit.sh"],
+            cwd=self.root,
+            check=True,
+        )
+        git_path = shutil.which("git")
+        git_wrapper = self.write(
+            "bin/git",
+            "#!/bin/sh\n"
+            'if [ "$1" = "grep" ] && [ "$2" = "--no-index" ]; then\n'
+            "  exit 2\n"
+            "fi\n"
+            f'exec "{git_path}" "$@"\n',
+        )
+        git_wrapper.chmod(0o755)
+        subprocess.run(
+            [git_path, "add", "bin/git"],
+            cwd=self.root,
+            check=True,
+        )
+
+        result = self.run_audit(path=str(git_wrapper.parent))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "Privacy audit could not scan untracked file: untracked.txt",
+            result.stderr,
+        )
 
 
 if __name__ == "__main__":
