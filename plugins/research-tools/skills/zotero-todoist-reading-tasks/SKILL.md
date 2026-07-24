@@ -105,15 +105,18 @@ first Todoist write, then reuse the recorded result for all later writes.
   Render the returned URI verbatim in that line; the placeholders illustrate
   only the encoded values already present in the returned URI. Do not construct
   a new URI.
-- A canonical managed Obsidian line is exactly
-  `Obsidian: [Open PaperRead note](obsidian://open?vault=<...>&file=<...>)`:
-  it has the exact label and prefix, an `obsidian://open` target with both
-  `vault` and `file` query values, and no extra text. This predicate is
-  independent of a current PaperRead result. Do not require an existing
-  canonical URI to equal a newly returned URI. Only this managed form is
-  replaceable or removable. Preserve any other `Obsidian:` line or any other
-  `obsidian://` content unchanged and report the task as ambiguous for manual
-  review.
+- A canonical managed Obsidian line has this exact full-line grammar:
+  `Obsidian: [Open PaperRead note](obsidian://open?vault=<ENCODED_VAULT>&file=<ENCODED_NOTE_PATH>)`.
+  It has the exact label and prefix, and an `obsidian://open` target with
+  exactly two non-empty query parameters in that order: `vault`, then `file`.
+  It has no additional query parameters, no fragment, and no extra line text.
+  This predicate is independent of a current PaperRead result. Do not require
+  an existing canonical URI to equal a newly returned URI. Only this managed
+  form is replaceable or removable. Preserve any other `Obsidian:` line or any
+  other `obsidian://` content unchanged and report the task as ambiguous for
+  manual review, including content with reversed query parameter order, an
+  extra query parameter, a fragment, a different label, or another
+  noncanonical form.
 - Treat `link-unavailable`, `skipped`, an unavailable PaperRead call, or a
   missing returned URI as `note-missing`. Continue valid Todoist work without
   adding a stale Obsidian line, and record `note-missing` with the reason.
