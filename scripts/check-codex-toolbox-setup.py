@@ -147,6 +147,35 @@ def normalized(text: str) -> str:
     return " ".join(text.split())
 
 
+def scan_retired_reference_mentions(
+    root: Path,
+    checker_path: Path,
+    retired_orchestrator: str,
+) -> tuple[list[tuple[str, int, str]], list[tuple[str, int, str]]]:
+    """Return retired-orchestrator and retired-tracker mentions outside ignored paths."""
+    retired_mentions = []
+    retired_tracker_mentions = []
+    ignored_scan_parts = {".git", ".worktrees", "__pycache__"}
+    for path in root.rglob("*"):
+        relative_path = path.relative_to(root)
+        if (
+            not path.is_file()
+            or ignored_scan_parts.intersection(relative_path.parts)
+            or path.resolve() == checker_path.resolve()
+        ):
+            continue
+        try:
+            lines = path.read_text().splitlines()
+        except UnicodeDecodeError:
+            continue
+        for line_number, line in enumerate(lines, start=1):
+            if retired_orchestrator in line.lower():
+                retired_mentions.append((str(relative_path), line_number, line.strip()))
+            if re.search(r"\b" + ("lin" + "ear") + r"\b", line, re.IGNORECASE):
+                retired_tracker_mentions.append((str(relative_path), line_number, line.strip()))
+    return retired_mentions, retired_tracker_mentions
+
+
 def daily_skill_frontmatter(skill_text: str) -> str:
     match = re.match(r"\A---\n(?P<frontmatter>.*?)\n---\n", skill_text, re.DOTALL)
     require(match is not None, "daily-command-center must start with YAML frontmatter")
@@ -483,27 +512,11 @@ def main() -> None:
         not (ROOT / "plugins" / retired_plugin_name).exists(),
         "retired orchestration plugin directory must be absent",
     )
-    retired_mentions = []
-    retired_tracker_mentions = []
-    ignored_scan_parts = {".git", ".worktrees", "__pycache__"}
-    for path in ROOT.rglob("*"):
-        if (
-            not path.is_file()
-            or ignored_scan_parts.intersection(path.relative_to(ROOT).parts)
-            or path.resolve() == Path(__file__).resolve()
-        ):
-            continue
-        try:
-            lines = path.read_text().splitlines()
-        except UnicodeDecodeError:
-            continue
-        for line_number, line in enumerate(lines, start=1):
-            if retired_orchestrator in line.lower():
-                retired_mentions.append((str(path.relative_to(ROOT)), line_number, line.strip()))
-            if re.search(r"\b" + ("lin" + "ear") + r"\b", line, re.IGNORECASE):
-                retired_tracker_mentions.append(
-                    (str(path.relative_to(ROOT)), line_number, line.strip())
-                )
+    retired_mentions, retired_tracker_mentions = scan_retired_reference_mentions(
+        ROOT,
+        Path(__file__),
+        retired_orchestrator,
+    )
     allowed_retired_mentions = {
         ("scripts/setup-codex-toolbox.sh", f'"{retired_plugin_name}"'),
         ("scripts/setup-codex-toolbox.sh", f'"{retired_orchestrator}"'),
