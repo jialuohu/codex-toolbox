@@ -91,7 +91,8 @@ any Todoist write, invoke `$paper-read-draft` exactly once per uniquely resolved
 Zotero parent unless the user explicitly requested `without Obsidian notes`.
 Pass only the resolved parent identity and observed metadata that the PaperRead
 skill needs; it remains the sole owner of note identity, safe creation, and URI
-generation.
+generation. Complete this PaperRead action once per parent before that parent's
+first Todoist write, then reuse the recorded result for all later writes.
 
 - Use only the URI returned by `$paper-read-draft` when its result is `created`
   or `reused`. Do not independently infer a note filename or URI.
@@ -104,6 +105,11 @@ generation.
   Render the returned URI verbatim in that line; the placeholders illustrate
   only the encoded values already present in the returned URI. Do not construct
   a new URI.
+- A line is managed only if it begins `Obsidian: [Open PaperRead note](` and
+  has an `obsidian://open?` target that exactly equals the URI returned by
+  `$paper-read-draft` for that parent. Only this managed form is replaceable or
+  removable. Preserve any other `Obsidian:` line or any other `obsidian://`
+  content unchanged and report the task as ambiguous for manual review.
 - Treat `link-unavailable`, `skipped`, an unavailable PaperRead call, or a
   missing returned URI as `note-missing`. Continue valid Todoist work without
   adding a stale Obsidian line, and record `note-missing` with the reason.
@@ -158,9 +164,10 @@ Never claim that later Zotero or Todoist changes will propagate automatically.
 1. Preview the resolved Zotero parents, attachment choice, Todoist target,
    matches, planned dates, final deadline, planned PaperRead action or opt-out,
    and any ambiguity that blocks a write.
-2. Before every Todoist write, perform the authorized PaperRead action and
-   record its `created`, `reused`, `link-unavailable`, `skipped`, or
-   `note-missing` result. Apply only the authorized Todoist creations or
+2. Before each parent's first Todoist write, complete the authorized PaperRead
+   action once and record its `created`, `reused`, `link-unavailable`,
+   `skipped`, or `note-missing` result. Reuse that recorded result for all
+   later writes for the parent. Apply only the authorized Todoist creations or
    updates. Use batch Todoist operations where the tool supports them.
 3. Read back every created or changed task. Confirm its project and section,
    content, managed Zotero line, managed Obsidian line, planned due date, and

@@ -119,6 +119,7 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
         for expected in (
             "after Zotero identity resolution and before any Todoist write",
             "`$paper-read-draft` exactly once per uniquely resolved Zotero parent",
+            "Complete this PaperRead action once per parent before that parent's first Todoist write, then reuse the recorded result for all later writes",
             "named Zotero item or collection request",
             "at most one create-or-reuse action per uniquely resolved Zotero parent",
             "without Obsidian notes",
@@ -133,8 +134,12 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
         for expected in (
             "Obsidian: [Open PaperRead note](obsidian://open?vault=<ENCODED_VAULT>&file=<ENCODED_NOTE_PATH>)",
             "exactly one managed `Obsidian:` line",
+            "begins `Obsidian: [Open PaperRead note](`",
+            "has an `obsidian://open?` target that exactly equals the URI returned by `$paper-read-draft`",
+            "Only this managed form is replaceable or removable",
             "replace all existing managed `Obsidian:` lines with exactly one",
             "preserve every other description line unchanged and in order",
+            "Preserve any other `Obsidian:` line or any other `obsidian://` content unchanged",
             "`obsidian://` URI appears outside a managed line",
             "ambiguous for manual review",
         ):
