@@ -61,6 +61,9 @@ PAPER_READ_DRAFT_SKILL = (
 )
 PAPER_READ_DRAFT_OPENAI = PAPER_READ_DRAFT_SKILL.parent / "agents" / "openai.yaml"
 PAPER_READ_DRAFT_TEMPLATE = PAPER_READ_DRAFT_SKILL.parent / "references" / "paper-read-template.md"
+PAPER_READ_DRAFT_FILENAME = (
+    PAPER_READ_DRAFT_SKILL.parent / "scripts" / "paper_read_filename.py"
+)
 PAPER_READ_REVIEW_SKILL = (
     ROOT / "plugins" / "research-tools" / "skills" / "paper-read-review" / "SKILL.md"
 )
@@ -367,6 +370,10 @@ def main() -> None:
     require(
         PAPER_READ_DRAFT_TEMPLATE.exists(),
         "paper-read-draft must include its compact note template",
+    )
+    require(
+        PAPER_READ_DRAFT_FILENAME.exists(),
+        "paper-read-draft must include its deterministic filename helper",
     )
     require(
         PAPER_READ_REVIEW_SKILL.exists(),
@@ -1292,7 +1299,7 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.4.1",
+        research_plugin.get("version") == "0.4.2",
         "research-tools must use the PaperRead review minor version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
@@ -1406,6 +1413,7 @@ def main() -> None:
         "Fill a metadata field only when the user supplied it or current-task source/tool output actually observed it.",
         "Never claim a Zotero or canonical lookup occurred without actual returned evidence.",
         "Missing evidence means blank optional fields.",
+        "For `year`, prefer the official venue publication year",
     ):
         require(expected in paper_read_draft_text, f"paper-read-draft skill must mention {expected}")
     for expected, message in (
@@ -1426,12 +1434,20 @@ def main() -> None:
             "paper-read-draft must use the configured vault, only write under PaperRead, and never use the current directory as the vault",
         ),
         (
-            "Before any write, perform an exact-path check. If the note already exists, return its path without modifying it.",
+            "PaperRead/<first-author-family-name><YY>-<short-method-name>.md",
+            "paper-read-draft must use the author-year-method filename contract",
+        ),
+        (
+            "Before any write, search `PaperRead/` for the same DOI, arXiv identifier, canonical URL, or exact normalized title.",
+            "paper-read-draft must deduplicate paper identity before creation",
+        ),
+        (
+            "Perform an exact target-path check. If it contains the same paper, return it unchanged.",
             "paper-read-draft must return an exact-path existing note without modification",
         ),
         (
-            "If a normalized filename collision represents a distinct paper, ask before choosing a disambiguated filename.",
-            "paper-read-draft must ask about distinct normalized filename collisions",
+            "Never migrate legacy title-based filenames automatically.",
+            "paper-read-draft must not rename legacy notes without explicit authority",
         ),
         (
             "Do not fill personal sections by default; each is hidden-prompt-only.",
@@ -1454,6 +1470,16 @@ def main() -> None:
         "## Questions",
     ):
         require(expected in paper_read_draft_template, f"paper-read-draft template must mention {expected}")
+    paper_read_draft_filename = PAPER_READ_DRAFT_FILENAME.read_text()
+    for expected in (
+        "def build_filename(",
+        "publication year must contain exactly four digits",
+        'return f"{author_slug}{year_text[-2:]}-{method_slug}.md"',
+    ):
+        require(
+            expected in paper_read_draft_filename,
+            f"paper-read-draft filename helper must mention {expected}",
+        )
     for expected in (
         "## PaperRead Draft",
         "$paper-read-draft",

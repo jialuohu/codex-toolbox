@@ -213,8 +213,12 @@ For a natural-language request, say: “Create a PaperRead draft for this paper
 and put it in my Obsidian vault.” The workflow fills factual metadata only and
 leaves the three personal sections—Summary and takeaway, My thoughts, and
 Questions—for the user. The note title remains in frontmatter and the body has
-no repeated H1. The workflow does not add or update Zotero or ingest the
-Research LLM Wiki.
+no repeated H1. New filenames use
+`<first-author-family-name><YY>-<short-method-name>.md`, such as
+`feng26-StreamDiffusionV2.md`; the venue publication year takes precedence over
+the preprint year. Before creation, the workflow checks all `PaperRead/` notes
+for the same paper identity so a legacy title-based note is not duplicated.
+The workflow does not add or update Zotero or ingest the Research LLM Wiki.
 
 ## PaperRead Annotation
 

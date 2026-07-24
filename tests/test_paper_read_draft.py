@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import unittest
@@ -11,6 +12,7 @@ SKILL_DIR = ROOT / "plugins" / "research-tools" / "skills" / "paper-read-draft"
 SKILL = SKILL_DIR / "SKILL.md"
 OPENAI_METADATA = SKILL_DIR / "agents" / "openai.yaml"
 TEMPLATE = SKILL_DIR / "references" / "paper-read-template.md"
+FILENAME_HELPER = SKILL_DIR / "scripts" / "paper_read_filename.py"
 OBSIDIAN_MCP = ROOT / "plugins" / "obsidian-tools" / ".mcp.json"
 
 
@@ -111,6 +113,10 @@ class PaperReadDraftSkillTests(unittest.TestCase):
         self.assertRegex(skill, r"(?i)do not guess")
         self.assertRegex(skill, r"(?i)metadata remains unavailable.*?leave optional fields blank")
         self.assertRegex(skill, r"(?i)metadata-only")
+        self.assertRegex(
+            skill,
+            r"(?is)for `year`.*?official venue publication year.*?preprint year.*?no venue",
+        )
 
     def test_skill_requires_current_evidence_before_filling_or_claiming_metadata_lookups(self) -> None:
         skill = self.read(SKILL)
@@ -124,7 +130,7 @@ class PaperReadDraftSkillTests(unittest.TestCase):
         )
         self.assertIn("Missing evidence means blank optional fields.", skill)
 
-    def test_skill_preserves_template_filename_and_existing_note_protections(self) -> None:
+    def test_skill_preserves_template_and_existing_note_protections(self) -> None:
         skill = self.read(SKILL)
         self.assertIn(
             "Use the vault template at `PaperRead/_Paper Read Template.md` when it exists and satisfies the contract.",
@@ -134,12 +140,57 @@ class PaperReadDraftSkillTests(unittest.TestCase):
             "If that exact vault template is missing or malformed, never silently rewrite the vault template; use the bundled fallback at `references/paper-read-template.md` for note creation.",
             skill,
         )
-        self.assertRegex(skill, r"(?is)canonical title.*?normalized.*?whitespace collapsed.*?\.md")
-        self.assertRegex(skill, r"(?i)preserve the real title in frontmatter")
+        self.assertRegex(skill, r"(?i)preserve the complete canonical paper title in frontmatter")
         self.assertRegex(skill, r"(?i)do not add a body H1")
-        self.assertRegex(skill, r"(?is)before any write.*?exact-path check")
-        self.assertRegex(skill, r"(?is)note already exists.*?return its path.*?without modifying")
-        self.assertRegex(skill, r"(?is)normalized filename collision.*?distinct paper.*?ask")
+        self.assertRegex(skill, r"(?is)before any write.*?same DOI.*?arXiv.*?canonical URL.*?normalized title")
+        self.assertRegex(skill, r"(?is)same paper already exists.*?return that path.*?without creating")
+        self.assertRegex(skill, r"(?is)exact target-path check.*?distinct paper.*?no-write.*?ask")
+        self.assertRegex(skill, r"(?is)never migrate legacy title-based filenames automatically")
+
+    def test_skill_uses_author_year_method_filename_contract(self) -> None:
+        skill = self.read(SKILL)
+        self.assertIn(
+            "PaperRead/<first-author-family-name><YY>-<short-method-name>.md",
+            skill,
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)family name of the first listed author.*?lowercased.*?single hyphens",
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)official venue publication year.*?otherwise.*?preprint publication year",
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)short official proposed method.*?preserve.*?capitalization.*?do not.*?invent",
+        )
+        self.assertIn("feng26-StreamDiffusionV2.md", skill)
+        self.assertIn("luo26-DirectKV-Offloading.md", skill)
+        self.assertIn("scripts/paper_read_filename.py", skill)
+
+    def test_filename_helper_is_deterministic_and_rejects_bad_years(self) -> None:
+        self.assertTrue(FILENAME_HELPER.is_file())
+        spec = importlib.util.spec_from_file_location("paper_read_filename", FILENAME_HELPER)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)  # type: ignore[union-attr]
+        module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+
+        self.assertEqual(
+            module.build_filename("Feng", 2026, "StreamDiffusionV2"),
+            "feng26-StreamDiffusionV2.md",
+        )
+        self.assertEqual(
+            module.build_filename("Luo", "2026", "DirectKV Offloading"),
+            "luo26-DirectKV-Offloading.md",
+        )
+        self.assertEqual(
+            module.build_filename("Van der Waals", 2025, "Fast KV / Serve"),
+            "van-der-waals25-Fast-KV-Serve.md",
+        )
+        with self.assertRaises(module.FilenameError):
+            module.build_filename("Feng", "26", "StreamDiffusionV2")
 
     def test_skill_limits_tags_and_create_authority(self) -> None:
         skill = self.read(SKILL)
