@@ -63,6 +63,7 @@ Preserve the complete canonical paper title in frontmatter; the short method nam
 
 - After an existing or newly created note is resolved, run `python3 scripts/paper_read_uri.py --vault-path "$CODEX_OBSIDIAN_VAULT" --note-path <vault-relative-path>`.
 - Return `reused` for an existing exact or identity-deduplicated note, `created` for a new note, or `skipped` when no note was written. For `created` or `reused`, return the vault-relative path and the resulting clickable Obsidian URI.
-- If URI generation fails, preserve the resolved note, return its vault-relative path, and report `link-unavailable` rather than modifying, deleting, or recreating it.
-- Otherwise return the created path, with unresolved optional metadata called out plainly.
+- If URI generation fails, preserve the resolved note, return `link-unavailable` with its vault-relative path and no URI, rather than modifying, deleting, or recreating it.
+- Return `skipped` with no path or URI when no note is resolved or written.
+- Report unresolved optional metadata alongside the applicable `created`, `reused`, `skipped`, or `link-unavailable` result.
 - Do not fill personal sections by default; each is hidden-prompt-only.

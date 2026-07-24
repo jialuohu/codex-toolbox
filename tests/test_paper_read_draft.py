@@ -273,6 +273,25 @@ class PaperReadDraftSkillTests(unittest.TestCase):
         self.assertRegex(skill, r"(?i)if uncertain.*?only `?paper-read`?")
         self.assertRegex(skill, r"(?i)standard create-draft request authorizes only one new note")
 
+    def test_skill_completion_statuses_define_path_and_uri_semantics(self) -> None:
+        skill = self.read(SKILL)
+        self.assertIn(
+            "For `created` or `reused`, return the vault-relative path and the resulting clickable Obsidian URI.",
+            skill,
+        )
+        self.assertIn(
+            "return `link-unavailable` with its vault-relative path and no URI",
+            skill,
+        )
+        self.assertIn(
+            "Return `skipped` with no path or URI when no note is resolved or written.",
+            skill,
+        )
+        self.assertIn(
+            "Report unresolved optional metadata alongside the applicable `created`, `reused`, `skipped`, or `link-unavailable` result.",
+            skill,
+        )
+
     def test_skill_leaves_personal_sections_as_hidden_prompts_by_default(self) -> None:
         skill = self.read(SKILL)
         self.assertIn(
