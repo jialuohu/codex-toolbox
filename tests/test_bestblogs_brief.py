@@ -4,8 +4,8 @@ import json
 import os
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from datetime import date
 from pathlib import Path
+from urllib.error import HTTPError
 
 
 MODULE = Path(__file__).parents[1] / "plugins/web-data-tools/skills/bestblogs-brief/scripts/bestblogs_brief.py"
@@ -18,11 +18,11 @@ VALID_API_KEY = "bb_" + "1" * 32
 def item(resource_id, **changes):
     value = {
         "resourceId": resource_id,
-        "score": 0.9,
-        "tags": ["AI"],
-        "oneSentenceSummary": "A concise finding.",
-        "summary": "A longer explanation.",
-        "mainPoints": ["First point"],
+        "sourceId": "brief-source-" + resource_id,
+        "sourceName": "Brief source " + resource_id,
+        "title": "Brief title " + resource_id,
+        "contentType": "ARTICLE",
+        "totalScore": 0.9,
         "deepRead": False,
         "featured": True,
         "personalized": True,
@@ -31,17 +31,22 @@ def item(resource_id, **changes):
     return value
 
 
-def metadata(resource_id, content_type="ARTICLE", **changes):
+def metadata(resource_id, resource_type="ARTICLE", **changes):
     value = {
-        "resourceId": resource_id,
-        "sourceId": "source-" + resource_id,
-        "sourceName": "A source",
-        "title": "Title " + resource_id,
-        "contentType": content_type,
+        "id": resource_id,
+        "resourceType": resource_type,
+        "sourceId": "metadata-source-" + resource_id,
+        "sourceName": "Metadata source " + resource_id,
+        "title": "Metadata title " + resource_id,
         "url": "https://example.com/" + resource_id,
-        "coverUrl": "https://images.example.com/" + resource_id + ".jpg",
-        "publishedAt": "2026-07-24T01:02:03Z",
+        "readUrl": "https://reader.example.com/" + resource_id,
+        "cover": "https://images.example.com/" + resource_id + ".jpg",
+        "publishDateTimeStr": "2026-07-24T01:02:03Z",
         "readTime": 5,
+        "tags": ["AI"],
+        "oneSentenceSummary": "A concise finding.",
+        "summary": "A longer explanation.",
+        "mainPoints": ["First point"],
     }
     value.update(changes)
     return value
@@ -94,7 +99,10 @@ class FakeOpener:
 
     def open(self, request, timeout):
         self.requests.append((request, timeout))
-        return self.responses.pop(0)
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class BestBlogsBriefTests(unittest.TestCase):
@@ -102,20 +110,19 @@ class BestBlogsBriefTests(unittest.TestCase):
         return {
             "briefDate": brief_date,
             "status": status,
-            "generatedAt": "2026-07-24T08:00:00Z",
             "editorIntro": "Today\'s picks",
             "keywords": ["models", "systems"],
-            "items": list(items or [item("one"), item("two")]),
+            "contentItems": list(items or [item("one"), item("two")]),
         }
 
     def pro_client(self, today, batches):
         return FakeClient({"userTier": "PRO"}, today, batches)
 
     def test_normalizes_mixed_content_in_personal_brief_order(self):
-        today = self.stable_brief(items=[item("video"), item("article"), item("tweet")])
+        today = self.stable_brief(items=[item("video", contentType="VIDEO"), item("article"), item("tweet", contentType="TWITTER")])
         client = self.pro_client(today, [[
             metadata("article", "ARTICLE"),
-            metadata("tweet", "TWITTER", coverUrl=None, publishedAt=None),
+            metadata("tweet", "TWITTER", cover=None, publishDateTimeStr=None),
             metadata("video", "VIDEO"),
         ]])
 
@@ -129,6 +136,58 @@ class BestBlogsBriefTests(unittest.TestCase):
         self.assertNotIn("publishedAt", result["items"][2])
         self.assertEqual(client.batch_calls, [["video", "article", "tweet"]])
 
+    def test_normalizes_sanitized_live_contract_with_retrieval_timestamp(self):
+        today = {
+            "briefDate": "2026-07-24",
+            "status": "PUBLISHED",
+            "editorIntro": "Sanitized live intro",
+            "keywords": ["systems"],
+            "contentItems": [
+                item("first", title="Brief wins", sourceName="Brief source", contentType="ARTICLE", totalScore=9.5),
+                item("second", contentType="VIDEO", featured=False),
+            ],
+            "deepReadItems": [],
+        }
+        client = self.pro_client(today, [[
+            metadata(
+                "second", "video", url="https://example.com/second", readUrl="https://reader.example.com/second",
+                publishDateTimeStr=None, publishTimeStamp=1_753_409_600_000,
+            ),
+            metadata(
+                "first", "article", title="Metadata loses", sourceName="Metadata loses",
+                url="https://example.com/first", cover="https://images.example.com/first.jpg",
+                publishDateTimeStr="2026-07-24T01:02:03Z", readTime=7,
+                summary="Metadata summary", oneSentenceSummary="Metadata one sentence",
+                mainPoints=["Point one"], tags=["ML"],
+            ),
+        ]])
+
+        result = brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(client.batch_calls, [["first", "second"]])
+        self.assertEqual(result["generatedAt"], "2026-07-24T09:10:11Z")
+        self.assertEqual([entry["resourceId"] for entry in result["items"]], ["first", "second"])
+        self.assertEqual(result["items"][0], {
+            "resourceId": "first",
+            "sourceId": "brief-source-first",
+            "sourceName": "Brief source",
+            "title": "Brief wins",
+            "contentType": "ARTICLE",
+            "url": "https://example.com/first",
+            "coverUrl": "https://images.example.com/first.jpg",
+            "publishedAt": "2026-07-24T01:02:03Z",
+            "readTime": 7,
+            "score": 9.5,
+            "tags": ["ML"],
+            "oneSentenceSummary": "Metadata one sentence",
+            "summary": "Metadata summary",
+            "mainPoints": ["Point one"],
+            "deepRead": False,
+            "featured": True,
+            "personalized": True,
+        })
+        self.assertEqual(result["items"][1]["publishedAt"], "2025-07-25T02:13:20Z")
+
     def test_client_posts_bounded_batch_to_fixed_endpoint_and_rejects_malformed_envelopes(self):
         client = brief.BestBlogsClient(VALID_API_KEY)
         url = brief.API_ORIGIN + "/resources/batch-meta"
@@ -139,7 +198,7 @@ class BestBlogsBriefTests(unittest.TestCase):
         request, _ = client._opener.requests[0]
         self.assertEqual(request.full_url, url)
         self.assertEqual(request.get_method(), "POST")
-        self.assertEqual(json.loads(request.data.decode("utf-8")), {"resourceIds": ["one"]})
+        self.assertEqual(json.loads(request.data.decode("utf-8")), {"ids": ["one"]})
         self.assertEqual(request.get_header("X-api-key"), VALID_API_KEY)
 
         client._opener = FakeOpener([FakeResponse(b'{"success":true}', url)])
@@ -167,8 +226,11 @@ class BestBlogsBriefTests(unittest.TestCase):
 
     def test_preserves_optional_multiline_summary_without_inventing_missing_text(self):
         client = self.pro_client(
-            self.stable_brief(items=[item("one", summary="First line.\nSecond line.", oneSentenceSummary=None), item("two", summary=None)]),
-            [[metadata("one"), metadata("two")]],
+            self.stable_brief(),
+            [[
+                metadata("one", summary="First line.\nSecond line.", oneSentenceSummary=None),
+                metadata("two", summary=None, oneSentenceSummary=None),
+            ]],
         )
 
         result = brief.read_today(client, "2026-07-24")
@@ -199,16 +261,128 @@ class BestBlogsBriefTests(unittest.TestCase):
             brief.read_today(foreign, "2026-07-24")
 
     def test_rejects_unsafe_urls_and_unknown_content_types(self):
-        for field, unsafe in (("url", "http://example.com/item"), ("url", "https://user@example.com/item"),
-                              ("coverUrl", "https://user@example.com/image")):
+        for field, unsafe in (
+            ("url", "http://example.com/item"),
+            ("url", "https://user@example.com/item"),
+            ("cover", "https://user@example.com/image"),
+            ("url", "https://bad host.example/item"),
+            ("url", "https://example.com:443/item"),
+            ("url", "https://example.com/item#fragment"),
+        ):
             with self.subTest(field=field, unsafe=unsafe):
                 values = {field: unsafe}
+                if field == "url":
+                    values["readUrl"] = None
                 client = self.pro_client(self.stable_brief(), [[metadata("one", **values), metadata("two")]])
                 with self.assertRaisesRegex(brief.BriefError, "HTTPS"):
                     brief.read_today(client, "2026-07-24")
-        client = self.pro_client(self.stable_brief(), [[metadata("one", "PODCAST"), metadata("two")]])
+        client = self.pro_client(
+            self.stable_brief(items=[item("one", contentType="PODCAST"), item("two")]),
+            [[metadata("one"), metadata("two")]],
+        )
         with self.assertRaisesRegex(brief.BriefError, "content type"):
             brief.read_today(client, "2026-07-24")
+
+    def test_keeps_documented_legacy_items_and_metadata_shape_compatible(self):
+        legacy = self.stable_brief()
+        legacy["items"] = [{
+            "resourceId": "legacy",
+            "score": 1.5,
+            "tags": ["legacy"],
+            "mainPoints": ["Compatibility"],
+            "deepRead": True,
+            "featured": False,
+            "personalized": False,
+        }]
+        del legacy["contentItems"]
+        client = self.pro_client(legacy, [[{
+            "resourceId": "legacy",
+            "sourceId": "legacy-source",
+            "sourceName": "Legacy source",
+            "title": "Legacy title",
+            "contentType": "ARTICLE",
+            "url": "https://example.com/legacy",
+            "coverUrl": None,
+            "publishedAt": None,
+            "readTime": 2,
+        }]])
+
+        result = brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(result["generatedAt"], "2026-07-24T09:10:11Z")
+        self.assertEqual(result["items"][0]["title"], "Legacy title")
+
+    def test_rejects_invalid_upstream_generated_timestamp(self):
+        today = self.stable_brief()
+        today["generatedAt"] = "not-a-timestamp"
+        client = self.pro_client(today, [[metadata("one"), metadata("two")]])
+
+        with self.assertRaisesRegex(brief.BriefError, "generatedAt"):
+            brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+    def test_normalizes_structured_live_main_points_to_point_text(self):
+        client = self.pro_client(
+            self.stable_brief(),
+            [[
+                metadata("one", mainPoints=[{"point": "Key point", "explanation": "Sanitized rationale"}]),
+                metadata("two", mainPoints=None),
+            ]],
+        )
+
+        result = brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(result["items"][0]["mainPoints"], ["Key point"])
+        self.assertEqual(result["items"][1]["mainPoints"], [])
+
+    def test_omits_structured_main_point_without_point_text(self):
+        client = self.pro_client(
+            self.stable_brief(),
+            [[
+                metadata("one", mainPoints=[{"explanation": "No displayable point"}]),
+                metadata("two", mainPoints=[]),
+            ]],
+        )
+
+        result = brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(result["items"][0]["mainPoints"], [])
+
+    def test_uses_safe_read_url_when_primary_url_is_invalid(self):
+        client = self.pro_client(
+            self.stable_brief(),
+            [[
+                metadata("one", url="https://bad host.example/item", readUrl="https://reader.example.com/one"),
+                metadata("two"),
+            ]],
+        )
+
+        result = brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(result["items"][0]["url"], "https://reader.example.com/one")
+
+    def test_main_redacts_valid_key_when_http_failure_contains_sensitive_body(self):
+        client = brief.BestBlogsClient(VALID_API_KEY)
+        url = brief.API_ORIGIN + "/me"
+        client._opener = FakeOpener([
+            HTTPError(url, 500, "error", {}, io.BytesIO(("sensitive " + VALID_API_KEY).encode("utf-8"))),
+        ])
+        original_factory = brief.BestBlogsClient
+        original_key = os.environ.get("BESTBLOGS_API_KEY")
+        output, errors = io.StringIO(), io.StringIO()
+        brief.BestBlogsClient = lambda unused_key: client
+        os.environ["BESTBLOGS_API_KEY"] = VALID_API_KEY
+        try:
+            with redirect_stdout(output), redirect_stderr(errors):
+                result = brief.main(["doctor"])
+        finally:
+            brief.BestBlogsClient = original_factory
+            if original_key is None:
+                os.environ.pop("BESTBLOGS_API_KEY", None)
+            else:
+                os.environ["BESTBLOGS_API_KEY"] = original_key
+        self.assertEqual(result, 2)
+        self.assertIn("HTTP request failed", errors.getvalue())
+        self.assertNotIn(VALID_API_KEY, output.getvalue() + errors.getvalue())
 
     def test_doctor_redacts_secret_and_rejects_non_pro_accounts(self):
         secret = VALID_API_KEY + "-never-print"
