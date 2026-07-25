@@ -254,6 +254,36 @@ def retrieved_at_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _utc_timestamp_text(moment):
+    return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _normalized_publication_time(metadata):
+    timestamp = metadata.get("publishTimeStamp")
+    if timestamp is not None:
+        timestamp = _number_or_none(timestamp, "publish timestamp")
+        if abs(timestamp) > 100_000_000_000:
+            timestamp /= 1000
+        try:
+            return _utc_timestamp_text(datetime.fromtimestamp(timestamp, timezone.utc))
+        except (OverflowError, OSError, ValueError) as error:
+            raise BriefError("invalid publication time") from error
+
+    value = _first_present(metadata.get("publishDateTimeStr"), metadata.get("publishedAt"))
+    if value is None:
+        return None
+    value = _required_text(value, "publication time")
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise BriefError("invalid publication time") from error
+    if moment.tzinfo is None:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", value) or ZoneInfo is None:
+            raise BriefError("invalid publication time")
+        moment = moment.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    return _utc_timestamp_text(moment)
+
+
 def _metadata_records(value):
     if isinstance(value, list):
         return value
@@ -293,7 +323,6 @@ def _normalize_item(brief_item, metadata):
         raise BriefError("invalid resource HTTPS URL")
     for source, target, description in (
         (_first_present(metadata.get("cover"), metadata.get("coverUrl")), "coverUrl", "cover"),
-        (_first_present(metadata.get("publishDateTimeStr"), metadata.get("publishedAt")), "publishedAt", "publishedAt"),
         (_first_present(metadata.get("oneSentenceSummary"), brief_item.get("oneSentenceSummary")), "oneSentenceSummary", "one sentence summary"),
         (_first_present(metadata.get("summary"), brief_item.get("summary")), "summary", "summary"),
     ):
@@ -303,15 +332,9 @@ def _normalize_item(brief_item, metadata):
             value = _optional_text(source, description)
         if value is not None:
             normalized[target] = value
-    if "publishedAt" not in normalized and metadata.get("publishTimeStamp") is not None:
-        timestamp = _number_or_none(metadata.get("publishTimeStamp"), "publish timestamp")
-        if timestamp is not None:
-            if abs(timestamp) > 100_000_000_000:
-                timestamp /= 1000
-            try:
-                normalized["publishedAt"] = datetime.fromtimestamp(timestamp, timezone.utc).isoformat().replace("+00:00", "Z")
-            except (OverflowError, OSError, ValueError) as error:
-                raise BriefError("invalid publish timestamp") from error
+    published_at = _normalized_publication_time(metadata)
+    if published_at is not None:
+        normalized["publishedAt"] = published_at
     return normalized
 
 

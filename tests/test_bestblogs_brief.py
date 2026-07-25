@@ -192,6 +192,47 @@ class BestBlogsBriefTests(unittest.TestCase):
         })
         self.assertEqual(result["items"][1]["publishedAt"], "2025-07-25T02:13:20Z")
 
+    def test_prefers_epoch_over_live_naive_publication_text_and_emits_utc(self):
+        client = self.pro_client(
+            self.stable_brief(),
+            [[
+                metadata("one", publishDateTimeStr="2026-07-24 08:30:00", publishTimeStamp=1_753_409_600_000),
+                metadata("two", publishDateTimeStr="2026-07-24 08:30:00", publishTimeStamp=1_753_409_600),
+            ]],
+        )
+
+        result = brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+        for entry in result["items"]:
+            self.assertEqual(entry["publishedAt"], "2025-07-25T02:13:20Z")
+            self.assertRegex(entry["publishedAt"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+    def test_interprets_naive_publication_text_as_beijing_time(self):
+        client = self.pro_client(
+            self.stable_brief(),
+            [[
+                metadata("one", publishDateTimeStr="2026-07-24 08:30:00", publishTimeStamp=None),
+                metadata("two", publishDateTimeStr=None, publishTimeStamp=None),
+            ]],
+        )
+
+        result = brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(result["items"][0]["publishedAt"], "2026-07-24T00:30:00Z")
+        self.assertNotIn("publishedAt", result["items"][1])
+
+    def test_rejects_invalid_naive_publication_time(self):
+        client = self.pro_client(
+            self.stable_brief(),
+            [[
+                metadata("one", publishDateTimeStr="2026-02-30 08:30:00", publishTimeStamp=None),
+                metadata("two"),
+            ]],
+        )
+
+        with self.assertRaisesRegex(brief.BriefError, "publication time"):
+            brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
     def test_client_posts_bounded_batch_to_fixed_endpoint_and_rejects_malformed_envelopes(self):
         client = brief.BestBlogsClient(VALID_API_KEY)
         url = brief.API_ORIGIN + "/resources/batch-meta"
