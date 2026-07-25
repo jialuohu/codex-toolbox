@@ -2,6 +2,8 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -9,6 +11,8 @@ from urllib.error import HTTPError
 
 
 MODULE = Path(__file__).parents[1] / "plugins/web-data-tools/skills/bestblogs-brief/scripts/bestblogs_brief.py"
+SKILL_FILE = MODULE.parents[1] / "SKILL.md"
+WRAPPER_FILE = MODULE.parent / "run_bestblogs_brief.sh"
 SPEC = importlib.util.spec_from_file_location("bestblogs_brief", MODULE)
 brief = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(brief)
@@ -397,6 +401,30 @@ class BestBlogsBriefTests(unittest.TestCase):
         self.assertEqual(result, 2)
         self.assertIn("HTTP request failed", errors.getvalue())
         self.assertNotIn(VALID_API_KEY, output.getvalue() + errors.getvalue())
+
+    def test_launcher_uses_standard_codex_home_fallback_without_personal_path_docs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            codex_home = root / "codex-home"
+            secrets_dir = codex_home / "secrets"
+            fake_bin = root / "bin"
+            secrets_dir.mkdir(parents=True)
+            fake_bin.mkdir()
+            (secrets_dir / "bestblogs.env").write_text("BESTBLOGS_API_KEY=%s\n" % VALID_API_KEY, encoding="utf-8")
+            fake_python = fake_bin / "python3"
+            fake_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            fake_python.chmod(0o700)
+            env = os.environ.copy()
+            env.pop("CODEX_SECRETS_DIR", None)
+            env.update({"CODEX_HOME": str(codex_home), "PATH": str(fake_bin) + os.pathsep + env.get("PATH", "")})
+
+            result = subprocess.run([str(WRAPPER_FILE), "doctor"], env=env, text=True, capture_output=True, check=False)
+
+        self.assertEqual(result.returncode, 0)
+        docs = SKILL_FILE.read_text(encoding="utf-8")
+        self.assertIn("CODEX_SECRETS_DIR", docs)
+        self.assertIn("standard Codex secrets fallback", docs)
+        self.assertNotIn("$HOME" + "/.codex" + "/secrets", docs)
 
     def test_doctor_redacts_secret_and_rejects_non_pro_accounts(self):
         secret = VALID_API_KEY + "-never-print"

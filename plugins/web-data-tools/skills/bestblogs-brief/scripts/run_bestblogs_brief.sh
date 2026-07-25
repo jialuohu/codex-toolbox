@@ -2,7 +2,7 @@
 set -euo pipefail
 
 skill_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-secrets_dir="${CODEX_SECRETS_DIR:-$HOME/.codex/secrets}"
+secrets_dir="${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}"
 secret_file="$secrets_dir/bestblogs.env"
 
 if [[ ! -f "$secret_file" ]]; then

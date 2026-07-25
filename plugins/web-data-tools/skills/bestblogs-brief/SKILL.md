@@ -5,7 +5,7 @@ description: Use when a user wants to read today's personal BestBlogs brief, 今
 
 # BestBlogs Personal Brief
 
-Use `scripts/run_bestblogs_brief.sh` for every command. It loads `bestblogs.env` only from `${CODEX_SECRETS_DIR:-$HOME/.codex/secrets}`. The file must export `BESTBLOGS_API_KEY`; never request, print, log, or echo that key.
+Use `scripts/run_bestblogs_brief.sh` for every command. It loads `bestblogs.env` only from `CODEX_SECRETS_DIR` or the standard Codex secrets fallback. The file must export `BESTBLOGS_API_KEY`; never request, print, log, or echo that key.
 
 This skill is read-only. It makes only `GET /me`, `GET /me/briefs/today`, and `POST /resources/batch-meta` requests. It must never mark an item read, change preferences, modify a brief, save content, or call unrelated BestBlogs endpoints.
 
