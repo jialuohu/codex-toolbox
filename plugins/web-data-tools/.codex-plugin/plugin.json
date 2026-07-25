@@ -1,7 +1,7 @@
 {
   "name": "web-data-tools",
-  "version": "0.3.3",
-  "description": "Web browsing, extraction, crawling, browser automation, and safe WeChat reader and digest tools.",
+  "version": "0.3.4",
+  "description": "Web browsing, extraction, crawling, browser automation, safe WeChat reader and digest tools, and a read-only BestBlogs personal brief reader.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -10,8 +10,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Web Data Tools",
-    "shortDescription": "Firecrawl, Playwright, and WeChat reader and digest tools.",
-    "longDescription": "Web Data Tools packages Firecrawl MCP for web data extraction, Playwright CLI browser automation, and safe BestBlogs-backed WeChat reader and digest workflows.",
+    "shortDescription": "Firecrawl, Playwright, WeChat, and BestBlogs brief tools.",
+    "longDescription": "Web Data Tools packages Firecrawl MCP for web data extraction, Playwright CLI browser automation, safe BestBlogs-backed WeChat reader and digest workflows, and a read-only personal brief reader.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -19,7 +19,7 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "Extract web data, automate a browser flow, or read and safely digest configured WeChat sources."
+      "Extract web data, automate a browser flow, read and safely digest configured WeChat sources, or read today's personal BestBlogs brief."
     ]
   }
 }

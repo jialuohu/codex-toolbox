@@ -1,0 +1,4 @@
+interface:
+  display_name: "BestBlogs Personal Brief"
+  short_description: "Read and normalize today's personal BestBlogs brief"
+  default_prompt: "Use $bestblogs-brief to read today's BestBlogs personal brief without changing account state."
