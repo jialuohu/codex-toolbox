@@ -173,7 +173,7 @@ class BestBlogsBriefTests(unittest.TestCase):
             ),
             metadata(
                 "first", "article", title="Metadata loses", sourceName="Metadata loses",
-                url="https://example.com/first", cover="https://images.example.com/first.jpg",
+                url="https://example.com/first", cover="https://image.jido.dev/first.jpg",
                 publishDateTimeStr="2026-07-24T01:02:03Z", readTime=7,
                 summary="Metadata summary", oneSentenceSummary="Metadata one sentence",
                 mainPoints=["Point one"], tags=["ML"],
@@ -192,7 +192,7 @@ class BestBlogsBriefTests(unittest.TestCase):
             "title": "Brief wins",
             "contentType": "ARTICLE",
             "url": "https://example.com/first",
-            "coverUrl": "https://images.example.com/first.jpg",
+            "coverUrl": "https://image.jido.dev/first.jpg",
             "publishedAt": "2026-07-24T01:02:03Z",
             "readTime": 7,
             "score": 9.5,
@@ -369,7 +369,6 @@ class BestBlogsBriefTests(unittest.TestCase):
 
     def test_rejects_unsafe_urls_and_unknown_content_types(self):
         for field, unsafe in (
-            ("url", "http://example.com/item"),
             ("url", "https://user@example.com/item"),
             ("url", "https://bad host.example/item"),
             ("url", "https://example.com:443/item"),
@@ -543,7 +542,7 @@ class BestBlogsBriefTests(unittest.TestCase):
         })
         client = self.pro_client(today, [[metadata(
             "one", originalUrl="https://publisher.example.com/original", url="https://bestblogs.dev/reader/one",
-            cover="https://images.example.com/one.jpg", publishDateTimeStr="2026-07-24T01:02:03.004+00:00",
+            cover="https://image.jido.dev/one.jpg", publishDateTimeStr="2026-07-24T01:02:03.004+00:00",
             readTime=5, tags=[" AI "], oneSentenceSummary=" concise ", summary=" summary ", mainPoints=[" point "],
         )]])
 
@@ -561,7 +560,7 @@ class BestBlogsBriefTests(unittest.TestCase):
                 "title": "Brief title",
                 "contentType": "ARTICLE",
                 "url": "https://publisher.example.com/original",
-                "coverUrl": "https://images.example.com/one.jpg",
+                "coverUrl": "https://image.jido.dev/one.jpg",
                 "publishedAt": "2026-07-24T01:02:03.004000Z",
                 "readTime": 5,
                 "score": 1.25,
@@ -645,6 +644,15 @@ class BestBlogsBriefTests(unittest.TestCase):
             with self.subTest(unsafe=repr(unsafe)):
                 self.assert_unsafe_item_url_and_omitted_cover(unsafe)
 
+    def test_rejects_empty_fragments_and_bracketed_non_ip_authorities(self):
+        for unsafe in (
+            "https://x.com/item#",
+            "https://[x.com]/item",
+            "https://[v1.foo]/item",
+        ):
+            with self.subTest(unsafe=unsafe):
+                self.assert_unsafe_item_url_and_omitted_cover(unsafe)
+
     def test_rejects_legacy_numeric_and_noncanonical_ip_authorities(self):
         for unsafe in (
             "https://127.1/item",
@@ -687,6 +695,8 @@ class BestBlogsBriefTests(unittest.TestCase):
             "https://home.arpa/item",
             "https://service.svc/item",
             "https://service.onion/item",
+            "https://service.test/item",
+            "https://service.example/item",
             "https://nip.io/item",
             "https://127.0.0.1.nip.io/item",
             "https://sslip.io/item",
@@ -705,6 +715,12 @@ class BestBlogsBriefTests(unittest.TestCase):
             "https://app.vcap.me/item",
             "https://traefik.me/item",
             "https://app.traefik.me/item",
+            "https://my.local-ip.co/item",
+            "https://app.my.local-ip.co/item",
+            "https://local-ip.sh/item",
+            "https://app.local-ip.sh/item",
+            "https://nar0.com/item",
+            "https://app.nar0.com/item",
         ):
             with self.subTest(unsafe=unsafe):
                 self.assert_unsafe_item_url_and_omitted_cover(unsafe)
@@ -720,12 +736,94 @@ class BestBlogsBriefTests(unittest.TestCase):
         ):
             with self.subTest(safe=safe):
                 client = self.pro_client(self.stable_brief(items=[item("one")]), [[
-                    metadata("one", url=safe, cover=safe),
+                    metadata("one", url=safe, cover=None),
                 ]])
 
                 result = brief.read_today(client, "2026-07-24")
                 self.assertEqual(result["items"][0]["url"], safe)
-                self.assertEqual(result["items"][0]["coverUrl"], safe)
+
+    def test_accepts_case_insensitive_https_scheme(self):
+        client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+            metadata("one", url="HTTPS://X.COM/example/status/1", cover=None),
+        ]])
+
+        result = brief.read_today(client, "2026-07-24")
+        self.assertEqual(result["items"][0]["url"], "HTTPS://X.COM/example/status/1")
+
+    def test_upgrades_safe_authoritative_http_publisher_url_to_https(self):
+        client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+            metadata(
+                "one",
+                url="http://www.ruanyifeng.com/blog/2026/07/weekly-issue-405.html",
+                readUrl="https://www.bestblogs.dev/article/example",
+                cover=None,
+            ),
+        ]])
+
+        result = brief.read_today(client, "2026-07-24")
+        self.assertEqual(
+            result["items"][0]["url"],
+            "https://www.ruanyifeng.com/blog/2026/07/weekly-issue-405.html",
+        )
+
+    def test_rejects_unsafe_authoritative_http_urls_and_never_upgrades_covers(self):
+        for unsafe in (
+            "http://user@publisher.example.com/item",
+            "http://publisher.example.com:80/item",
+            "http://publisher.example.com/item#",
+            "http://publisher.example.com/\x00item",
+            "http://localhost/item",
+        ):
+            with self.subTest(unsafe=repr(unsafe)):
+                client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+                    metadata("one", url=unsafe, cover=None),
+                ]])
+                with self.assertRaisesRegex(brief.BriefError, "resource HTTPS URL"):
+                    brief.read_today(client, "2026-07-24")
+
+        client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+            metadata("one", cover="http://image.jido.dev/image.jpg"),
+        ]])
+        result = brief.read_today(client, "2026-07-24")
+        self.assertNotIn("coverUrl", result["items"][0])
+
+    def test_only_emits_allowlisted_public_cover_hosts(self):
+        for cover in (
+            "https://image.jido.dev/image.jpg",
+            "https://ytimg.com/image.jpg",
+            "https://i1.ytimg.com/image.jpg",
+            "https://i4.ytimg.com/image.jpg",
+            "https://storage.googleapis.com/bucket/image.jpg",
+            "https://res.infoq.com/image.jpg",
+            "https://pbs.twimg.com/media/image.jpg",
+            "https://mmbiz.qpic.cn/image.jpg",
+        ):
+            with self.subTest(cover=cover):
+                client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+                    metadata("one", cover=cover),
+                ]])
+
+                result = brief.read_today(client, "2026-07-24")
+                self.assertEqual(result["items"][0]["coverUrl"], cover)
+
+    def test_omits_unlisted_cover_hosts_even_when_public(self):
+        for cover in (
+            "https://media.bestblogs.dev/image.jpg",
+            "https://x.com/image.jpg",
+            "https://video.twimg.com/image.jpg",
+            "https://images.example.com/image.jpg",
+            "https://sub.image.jido.dev/image.jpg",
+            "https://evilstorage.googleapis.com/image.jpg",
+            "https://8.8.8.8/image.jpg",
+            "https://[2606:4700:4700::1111]/image.jpg",
+        ):
+            with self.subTest(cover=cover):
+                client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+                    metadata("one", cover=cover),
+                ]])
+
+                result = brief.read_today(client, "2026-07-24")
+                self.assertNotIn("coverUrl", result["items"][0])
 
     def test_rejects_read_only_metadata_without_an_authoritative_publisher_url(self):
         client = self.pro_client(self.stable_brief(items=[item("one")]), [[

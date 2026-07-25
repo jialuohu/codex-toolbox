@@ -37,9 +37,14 @@ ZONED_TIMESTAMP = re.compile(
 NUMERIC_HOST_LABEL = re.compile(r"^(?:0[xX][0-9A-Fa-f]+|[0-9]+)$")
 BLOCKED_HOST_SUFFIXES = frozenset((
     "bestblogs.dev", "localhost", "local", "internal", "intranet", "private", "invalid", "localdomain",
-    "lan", "home", "corp", "arpa", "svc", "onion", "nip.io", "sslip.io", "xip.io", "localtest.me",
-    "lvh.me", "localhost.direct", "local.gd", "vcap.me", "traefik.me",
+    "lan", "home", "corp", "arpa", "svc", "onion", "test", "example", "nip.io", "sslip.io", "xip.io",
+    "localtest.me", "lvh.me", "localhost.direct", "local.gd", "vcap.me", "traefik.me", "my.local-ip.co",
+    "local-ip.sh", "nar0.com",
 ))
+COVER_EXACT_HOSTS = frozenset((
+    "image.jido.dev", "storage.googleapis.com", "res.infoq.com", "pbs.twimg.com", "mmbiz.qpic.cn",
+))
+COVER_HOST_SUFFIXES = frozenset(("ytimg.com",))
 IPV4_RELAY_NETWORK = ipaddress.ip_network("192.88.99.0/24")
 SIX_TO_FOUR_NETWORK = ipaddress.ip_network("2002::/16")
 NAT64_NETWORKS = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"))
@@ -134,7 +139,7 @@ def _is_public_ip(address):
 def _optional_https_url(value, description):
     if value is None:
         return None
-    if not isinstance(value, str) or not value or len(value) > 4096 or any(
+    if not isinstance(value, str) or not value or len(value) > 4096 or "#" in value or any(
             char.isspace() or ord(char) <= 0x1f or ord(char) == 0x7f or char == "\\" for char in value):
         raise BriefError("invalid %s HTTPS URL" % description)
     try:
@@ -153,7 +158,9 @@ def _optional_https_url(value, description):
                     (isinstance(address, ipaddress.IPv6Address) and not bracketed) or \
                     hostname.lower() != address.compressed.lower() or not _is_public_ip(address):
                 raise BriefError("invalid %s HTTPS URL" % description)
-        except ValueError:
+        except ValueError as error:
+            if bracketed:
+                raise BriefError("invalid %s HTTPS URL" % description) from error
             hostname = hostname.encode("idna").decode("ascii").lower()
             labels = hostname.split(".")
             if len(hostname) > 253 or hostname.endswith(".") or len(labels) < 2 or any(
@@ -166,6 +173,31 @@ def _optional_https_url(value, description):
     except ValueError as error:
         raise BriefError("invalid %s HTTPS URL" % description) from error
     return value
+
+
+def _authoritative_publisher_url(value):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise BriefError("invalid resource HTTPS URL")
+    try:
+        scheme = urlparse(value).scheme
+    except ValueError as error:
+        raise BriefError("invalid resource HTTPS URL") from error
+    if scheme == "http":
+        value = "https" + value[len(scheme):]
+    return _optional_https_url(value, "resource")
+
+
+def _optional_cover_url(value):
+    value = _optional_https_url(value, "cover")
+    if value is None:
+        return None
+    hostname = urlparse(value).hostname.encode("idna").decode("ascii").lower()
+    if hostname in COVER_EXACT_HOSTS or hostname in COVER_HOST_SUFFIXES or any(
+            hostname.endswith("." + suffix) for suffix in COVER_HOST_SUFFIXES):
+        return value
+    raise BriefError("invalid cover HTTPS URL")
 
 
 def _boolean(value, description):
@@ -375,7 +407,7 @@ def _normalize_item(brief_item, metadata):
         "sourceName": _required_text(_first_present(brief_item.get("sourceName"), metadata.get("sourceName")), "source name"),
         "title": _required_text(_first_present(brief_item.get("title"), metadata.get("title")), "title"),
         "contentType": content_type,
-        "url": _optional_https_url(original_url, "resource"),
+        "url": _authoritative_publisher_url(original_url),
         "readTime": _number_or_none(
             _first_present(metadata.get("readTime"), brief_item.get("readTime")), "read time", 0, MAX_READ_TIME_MINUTES,
         ),
@@ -394,7 +426,7 @@ def _normalize_item(brief_item, metadata):
     cover = _first_present(metadata.get("cover"), metadata.get("coverUrl"))
     if cover is not None:
         try:
-            cover = _optional_https_url(cover, "cover")
+            cover = _optional_cover_url(cover)
         except BriefError:
             cover = None
         if cover is not None:
