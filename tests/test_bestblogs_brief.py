@@ -233,6 +233,17 @@ class BestBlogsBriefTests(unittest.TestCase):
         with self.assertRaisesRegex(brief.BriefError, "publication time"):
             brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
 
+    def test_rejects_unrepresentable_epochs_with_bounded_publication_error(self):
+        for timestamp in (10 ** 1000, -(10 ** 1000), float("inf"), float("-inf"), float("nan")):
+            with self.subTest(timestamp_type=type(timestamp).__name__, negative=timestamp < 0):
+                client = self.pro_client(
+                    self.stable_brief(),
+                    [[metadata("one", publishDateTimeStr=None, publishTimeStamp=timestamp), metadata("two")]],
+                )
+
+                with self.assertRaisesRegex(brief.BriefError, r"^invalid publication time$"):
+                    brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
     def test_client_posts_bounded_batch_to_fixed_endpoint_and_rejects_malformed_envelopes(self):
         client = brief.BestBlogsClient(VALID_API_KEY)
         url = brief.API_ORIGIN + "/resources/batch-meta"

@@ -262,9 +262,9 @@ def _normalized_publication_time(metadata):
     timestamp = metadata.get("publishTimeStamp")
     if timestamp is not None:
         timestamp = _number_or_none(timestamp, "publish timestamp")
-        if abs(timestamp) > 100_000_000_000:
-            timestamp /= 1000
         try:
+            if abs(timestamp) > 100_000_000_000:
+                timestamp /= 1000
             return _utc_timestamp_text(datetime.fromtimestamp(timestamp, timezone.utc))
         except (OverflowError, OSError, ValueError) as error:
             raise BriefError("invalid publication time") from error
