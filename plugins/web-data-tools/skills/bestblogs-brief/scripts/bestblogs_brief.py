@@ -30,10 +30,19 @@ CONTENT_TYPES = frozenset(("ARTICLE", "VIDEO", "TWITTER"))
 MAX_READ_TIME_MINUTES = 1_440
 MIN_SCORE = -1_000_000
 MAX_SCORE = 1_000_000
+DATE_TEXT = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ZONED_TIMESTAMP = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$"
 )
-BLOCKED_HOSTS = frozenset(("bestblogs.dev", "localhost", "local", "internal", "intranet", "corp", "home", "lan", "localdomain"))
+NUMERIC_HOST_LABEL = re.compile(r"^(?:0[xX][0-9A-Fa-f]+|[0-9]+)$")
+BLOCKED_HOST_SUFFIXES = frozenset((
+    "bestblogs.dev", "localhost", "local", "internal", "intranet", "private", "invalid", "localdomain",
+    "lan", "home", "corp", "arpa", "svc", "onion", "nip.io", "sslip.io", "xip.io", "localtest.me",
+    "lvh.me", "localhost.direct", "local.gd", "vcap.me", "traefik.me",
+))
+IPV4_RELAY_NETWORK = ipaddress.ip_network("192.88.99.0/24")
+SIX_TO_FOUR_NETWORK = ipaddress.ip_network("2002::/16")
+NAT64_NETWORKS = (ipaddress.ip_network("64:ff9b::/96"), ipaddress.ip_network("64:ff9b:1::/48"))
 
 
 class BriefError(RuntimeError):
@@ -87,31 +96,72 @@ def _validated_timestamp(value, description):
     return _utc_timestamp_text(moment)
 
 
+def _validated_date(value, description):
+    if not isinstance(value, str) or not DATE_TEXT.fullmatch(value):
+        raise BriefError("invalid %s" % description)
+    try:
+        normalized = datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+    except ValueError as error:
+        raise BriefError("invalid %s" % description) from error
+    if normalized != value:
+        raise BriefError("invalid %s" % description)
+    return value
+
+
+def _is_public_ip(address):
+    if getattr(address, "scope_id", None) is not None or not address.is_global or address.is_multicast \
+            or address.is_unspecified or address.is_reserved or address.is_private or address.is_loopback \
+            or address.is_link_local:
+        return False
+    if isinstance(address, ipaddress.IPv4Address):
+        return address not in IPV4_RELAY_NETWORK
+    if address in SIX_TO_FOUR_NETWORK:
+        return False
+    mapped = address.ipv4_mapped
+    if mapped is not None and not _is_public_ip(mapped):
+        return False
+    teredo = address.teredo
+    if teredo is not None and not all(_is_public_ip(component) for component in teredo):
+        return False
+    for network in NAT64_NETWORKS:
+        if address in network:
+            embedded = ipaddress.IPv4Address(int(address) & 0xffffffff)
+            if not _is_public_ip(embedded):
+                return False
+    return True
+
+
 def _optional_https_url(value, description):
     if value is None:
         return None
-    if not isinstance(value, str) or not value or len(value) > 4096 or any(char.isspace() for char in value):
+    if not isinstance(value, str) or not value or len(value) > 4096 or any(
+            char.isspace() or ord(char) <= 0x1f or ord(char) == 0x7f or char == "\\" for char in value):
         raise BriefError("invalid %s HTTPS URL" % description)
     try:
         parsed = urlparse(value)
         hostname = parsed.hostname
+        bracketed = parsed.netloc.startswith("[")
         if parsed.scheme != "https" or not hostname or parsed.username is not None or parsed.password is not None \
                 or parsed.port is not None or parsed.fragment:
             raise BriefError("invalid %s HTTPS URL" % description)
-        if (parsed.netloc.startswith("[") and not re.fullmatch(r"\[[^\]]+\]", parsed.netloc)) or \
-                (not parsed.netloc.startswith("[") and ":" in parsed.netloc):
+        if (bracketed and not re.fullmatch(r"\[[^\]]+\]", parsed.netloc)) or \
+                (not bracketed and ":" in parsed.netloc):
             raise BriefError("invalid %s HTTPS URL" % description)
         try:
             address = ipaddress.ip_address(hostname)
-            if not address.is_global or address.is_multicast or address.is_unspecified or address.is_reserved:
+            if (isinstance(address, ipaddress.IPv4Address) and bracketed) or \
+                    (isinstance(address, ipaddress.IPv6Address) and not bracketed) or \
+                    hostname.lower() != address.compressed.lower() or not _is_public_ip(address):
                 raise BriefError("invalid %s HTTPS URL" % description)
         except ValueError:
             hostname = hostname.encode("idna").decode("ascii").lower()
-            if len(hostname) > 253 or hostname.endswith(".") or any(
+            labels = hostname.split(".")
+            if len(hostname) > 253 or hostname.endswith(".") or len(labels) < 2 or any(
                     not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
-                    for label in hostname.split(".")):
+                    for label in labels) or all(NUMERIC_HOST_LABEL.fullmatch(label) for label in labels):
                 raise BriefError("invalid %s HTTPS URL" % description)
-            if hostname in BLOCKED_HOSTS or any(hostname.endswith("." + suffix) for suffix in BLOCKED_HOSTS):
+            if hostname in BLOCKED_HOST_SUFFIXES or any(
+                    hostname.endswith("." + suffix) for suffix in BLOCKED_HOST_SUFFIXES):
                 raise BriefError("invalid %s HTTPS URL" % description)
     except ValueError as error:
         raise BriefError("invalid %s HTTPS URL" % description) from error
@@ -364,14 +414,11 @@ def _normalize_item(brief_item, metadata):
 
 def read_today(client, expected_date=None, clock=None):
     expected_date = beijing_date_now() if expected_date is None else expected_date
-    try:
-        datetime.strptime(expected_date, "%Y-%m-%d")
-    except (TypeError, ValueError) as error:
-        raise BriefError("invalid Beijing date") from error
+    expected_date = _validated_date(expected_date, "Beijing date")
     require_pro(client.me())
     source = _object(client.today_brief(), "today brief")
-    brief_date = source.get("briefDate")
-    if not isinstance(brief_date, str) or brief_date != expected_date:
+    brief_date = _validated_date(source.get("briefDate"), "brief date")
+    if brief_date != expected_date:
         raise BriefError("brief date does not match Beijing date")
     status = source.get("status")
     if status not in STABLE_STATUSES:
@@ -380,6 +427,8 @@ def read_today(client, expected_date=None, clock=None):
     if items_value is None:
         items_value = source.get("items")
     items = _list(items_value, "brief items")
+    if not items:
+        raise BriefError("brief items are empty")
     ids = []
     for entry in items:
         entry = _object(entry, "brief item")

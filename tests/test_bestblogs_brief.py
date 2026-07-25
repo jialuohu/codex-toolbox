@@ -111,16 +111,30 @@ class FakeOpener:
 
 class BestBlogsBriefTests(unittest.TestCase):
     def stable_brief(self, status="PUBLISHED", items=None, brief_date="2026-07-24"):
+        content_items = [item("one"), item("two")] if items is None else list(items)
         return {
             "briefDate": brief_date,
             "status": status,
             "editorIntro": "Today\'s picks",
             "keywords": ["models", "systems"],
-            "contentItems": list(items or [item("one"), item("two")]),
+            "contentItems": content_items,
         }
 
     def pro_client(self, today, batches):
         return FakeClient({"userTier": "PRO"}, today, batches)
+
+    def assert_unsafe_item_url_and_omitted_cover(self, unsafe):
+        item_client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+            metadata("one", url=unsafe, cover=None),
+        ]])
+        with self.assertRaisesRegex(brief.BriefError, "resource HTTPS URL"):
+            brief.read_today(item_client, "2026-07-24")
+
+        cover_client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+            metadata("one", url="https://publisher.example.com/one", cover=unsafe),
+        ]])
+        result = brief.read_today(cover_client, "2026-07-24")
+        self.assertNotIn("coverUrl", result["items"][0])
 
     def test_normalizes_mixed_content_in_personal_brief_order(self):
         today = self.stable_brief(items=[item("video", contentType="VIDEO"), item("article"), item("tweet", contentType="TWITTER")])
@@ -315,6 +329,31 @@ class BestBlogsBriefTests(unittest.TestCase):
             with self.subTest(status=status):
                 client = self.pro_client(self.stable_brief(status=status), [])
                 with self.assertRaisesRegex(brief.BriefError, "status"):
+                    brief.read_today(client, "2026-07-24")
+
+    def test_requires_exact_calendar_brief_date_grammar(self):
+        for malformed in (
+            "2026-7-24",
+            "2026-07-4",
+            "2026-02-29",
+            "2026-13-01",
+            "2026-00-01",
+            "2026-07-24T00:00:00Z",
+        ):
+            with self.subTest(malformed=malformed):
+                client = self.pro_client(
+                    self.stable_brief(items=[item("one")], brief_date=malformed),
+                    [[metadata("one")]],
+                )
+                with self.assertRaisesRegex(brief.BriefError, "date"):
+                    brief.read_today(client, malformed)
+
+    def test_rejects_empty_stable_editions(self):
+        for status in ("COMPLETED", "PUBLISHED"):
+            with self.subTest(status=status):
+                client = self.pro_client(self.stable_brief(status=status, items=[]), [])
+
+                with self.assertRaisesRegex(brief.BriefError, "brief items"):
                     brief.read_today(client, "2026-07-24")
 
     def test_rejects_duplicate_brief_ids_and_missing_or_foreign_metadata(self):
@@ -594,6 +633,99 @@ class BestBlogsBriefTests(unittest.TestCase):
         ]])
         result = brief.read_today(client, "2026-07-24")
         self.assertNotIn("coverUrl", result["items"][0])
+
+    def test_rejects_url_controls_del_and_backslash_in_items_and_covers(self):
+        for unsafe in (
+            "https://publisher.example.com/\x00item",
+            "https://publisher.example.com/\x01item",
+            "https://publisher.example.com/\x1fitem",
+            "https://publisher.example.com/\x7fitem",
+            "https://publisher.example.com/path\\item",
+        ):
+            with self.subTest(unsafe=repr(unsafe)):
+                self.assert_unsafe_item_url_and_omitted_cover(unsafe)
+
+    def test_rejects_legacy_numeric_and_noncanonical_ip_authorities(self):
+        for unsafe in (
+            "https://127.1/item",
+            "https://2130706433/item",
+            "https://0x7f000001/item",
+            "https://0177.0.0.1/item",
+            "https://[8.8.8.8]/item",
+            "https://[2606:4700:4700:0000:0000:0000:0000:1111]/item",
+        ):
+            with self.subTest(unsafe=unsafe):
+                self.assert_unsafe_item_url_and_omitted_cover(unsafe)
+
+    def test_rejects_special_transition_and_scoped_ip_authorities(self):
+        for unsafe in (
+            "https://192.88.99.1/item",
+            "https://[2002:808:808::]/item",
+            "https://[2002:7f00:1::]/item",
+            "https://[2606:4700:4700::1111%25eth0]/item",
+            "https://[::ffff:7f00:1]/item",
+            "https://[64:ff9b::7f00:1]/item",
+            "https://[2001:0:4136:e378:8000:63bf:3fff:fdd2]/item",
+        ):
+            with self.subTest(unsafe=unsafe):
+                self.assert_unsafe_item_url_and_omitted_cover(unsafe)
+
+    def test_rejects_single_label_internal_and_wildcard_alias_hosts(self):
+        for unsafe in (
+            "https://printer/item",
+            "https://service.bestblogs.dev/item",
+            "https://service.localhost/item",
+            "https://service.local/item",
+            "https://service.internal/item",
+            "https://service.intranet/item",
+            "https://service.private/item",
+            "https://service.invalid/item",
+            "https://service.localdomain/item",
+            "https://service.lan/item",
+            "https://service.home/item",
+            "https://service.corp/item",
+            "https://home.arpa/item",
+            "https://service.svc/item",
+            "https://service.onion/item",
+            "https://nip.io/item",
+            "https://127.0.0.1.nip.io/item",
+            "https://sslip.io/item",
+            "https://127-0-0-1.sslip.io/item",
+            "https://xip.io/item",
+            "https://127.0.0.1.xip.io/item",
+            "https://localtest.me/item",
+            "https://app.localtest.me/item",
+            "https://lvh.me/item",
+            "https://app.lvh.me/item",
+            "https://localhost.direct/item",
+            "https://app.localhost.direct/item",
+            "https://local.gd/item",
+            "https://app.local.gd/item",
+            "https://vcap.me/item",
+            "https://app.vcap.me/item",
+            "https://traefik.me/item",
+            "https://app.traefik.me/item",
+        ):
+            with self.subTest(unsafe=unsafe):
+                self.assert_unsafe_item_url_and_omitted_cover(unsafe)
+
+    def test_accepts_known_public_web_and_canonical_ip_destinations(self):
+        for safe in (
+            "https://x.com/example/status/1",
+            "https://www.youtube.com/watch?v=example",
+            "https://pbs.twimg.com/media/example.jpg",
+            "https://video.twimg.com/ext_tw_video/example.mp4",
+            "https://8.8.8.8/item",
+            "https://[2606:4700:4700::1111]/item",
+        ):
+            with self.subTest(safe=safe):
+                client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+                    metadata("one", url=safe, cover=safe),
+                ]])
+
+                result = brief.read_today(client, "2026-07-24")
+                self.assertEqual(result["items"][0]["url"], safe)
+                self.assertEqual(result["items"][0]["coverUrl"], safe)
 
     def test_rejects_read_only_metadata_without_an_authoritative_publisher_url(self):
         client = self.pro_client(self.stable_brief(items=[item("one")]), [[
