@@ -194,7 +194,7 @@ def _optional_cover_url(value):
     if value is None:
         return None
     hostname = urlparse(value).hostname.encode("idna").decode("ascii").lower()
-    if hostname in COVER_EXACT_HOSTS or hostname in COVER_HOST_SUFFIXES or any(
+    if hostname in COVER_EXACT_HOSTS or any(
             hostname.endswith("." + suffix) for suffix in COVER_HOST_SUFFIXES):
         return value
     raise BriefError("invalid cover HTTPS URL")

@@ -790,7 +790,6 @@ class BestBlogsBriefTests(unittest.TestCase):
     def test_only_emits_allowlisted_public_cover_hosts(self):
         for cover in (
             "https://image.jido.dev/image.jpg",
-            "https://ytimg.com/image.jpg",
             "https://i1.ytimg.com/image.jpg",
             "https://i4.ytimg.com/image.jpg",
             "https://storage.googleapis.com/bucket/image.jpg",
@@ -809,6 +808,7 @@ class BestBlogsBriefTests(unittest.TestCase):
     def test_omits_unlisted_cover_hosts_even_when_public(self):
         for cover in (
             "https://media.bestblogs.dev/image.jpg",
+            "https://ytimg.com/image.jpg",
             "https://x.com/image.jpg",
             "https://video.twimg.com/image.jpg",
             "https://images.example.com/image.jpg",
