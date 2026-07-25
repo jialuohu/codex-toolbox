@@ -295,7 +295,7 @@ def _normalize_item(brief_item, metadata):
         (_first_present(metadata.get("cover"), metadata.get("coverUrl")), "coverUrl", "cover"),
         (_first_present(metadata.get("publishDateTimeStr"), metadata.get("publishedAt")), "publishedAt", "publishedAt"),
         (_first_present(metadata.get("oneSentenceSummary"), brief_item.get("oneSentenceSummary")), "oneSentenceSummary", "one sentence summary"),
-        (_first_present(metadata.get("summary"), brief_item.get("summary"), metadata.get("oneSentenceSummary")), "summary", "summary"),
+        (_first_present(metadata.get("summary"), brief_item.get("summary")), "summary", "summary"),
     ):
         if target == "coverUrl":
             value = _optional_https_url(source, description)

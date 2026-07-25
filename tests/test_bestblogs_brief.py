@@ -239,6 +239,20 @@ class BestBlogsBriefTests(unittest.TestCase):
         self.assertNotIn("oneSentenceSummary", result["items"][0])
         self.assertNotIn("summary", result["items"][1])
 
+    def test_keeps_one_sentence_summary_without_inventing_summary(self):
+        client = self.pro_client(
+            self.stable_brief(),
+            [[
+                metadata("one", summary=None, oneSentenceSummary="Concise only"),
+                metadata("two", summary=None, oneSentenceSummary=None),
+            ]],
+        )
+
+        result = brief.read_today(client, "2026-07-24", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(result["items"][0]["oneSentenceSummary"], "Concise only")
+        self.assertNotIn("summary", result["items"][0])
+
     def test_rejects_wrong_date_and_unstable_or_unknown_statuses(self):
         client = self.pro_client(self.stable_brief(brief_date="2026-07-23"), [])
         with self.assertRaisesRegex(brief.BriefError, "date"):
