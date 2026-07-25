@@ -5,6 +5,7 @@ import argparse
 import http.client
 import ipaddress
 import json
+import math
 import os
 import re
 import sys
@@ -26,6 +27,13 @@ API_KEY = re.compile(r"^bb_[0-9A-Fa-f]{32}$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 STABLE_STATUSES = frozenset(("COMPLETED", "PUBLISHED"))
 CONTENT_TYPES = frozenset(("ARTICLE", "VIDEO", "TWITTER"))
+MAX_READ_TIME_MINUTES = 1_440
+MIN_SCORE = -1_000_000
+MAX_SCORE = 1_000_000
+ZONED_TIMESTAMP = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$"
+)
+BLOCKED_HOSTS = frozenset(("bestblogs.dev", "localhost", "local", "internal", "intranet", "corp", "home", "lan", "localdomain"))
 
 
 class BriefError(RuntimeError):
@@ -54,7 +62,10 @@ def _list(value, description):
 
 
 def _required_text(value, description):
-    if not isinstance(value, str) or not value or len(value) > 16_384 or "\x00" in value:
+    if not isinstance(value, str) or "\x00" in value:
+        raise BriefError("invalid %s" % description)
+    value = value.strip()
+    if not value or len(value) > 16_384:
         raise BriefError("invalid %s" % description)
     return value
 
@@ -67,11 +78,13 @@ def _optional_text(value, description):
 
 def _validated_timestamp(value, description):
     value = _required_text(value, description)
+    if not ZONED_TIMESTAMP.fullmatch(value):
+        raise BriefError("invalid %s" % description)
     try:
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as error:
         raise BriefError("invalid %s" % description) from error
-    return value
+    return _utc_timestamp_text(moment)
 
 
 def _optional_https_url(value, description):
@@ -81,35 +94,28 @@ def _optional_https_url(value, description):
         raise BriefError("invalid %s HTTPS URL" % description)
     try:
         parsed = urlparse(value)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username is not None or parsed.password is not None \
+        hostname = parsed.hostname
+        if parsed.scheme != "https" or not hostname or parsed.username is not None or parsed.password is not None \
                 or parsed.port is not None or parsed.fragment:
             raise BriefError("invalid %s HTTPS URL" % description)
+        if (parsed.netloc.startswith("[") and not re.fullmatch(r"\[[^\]]+\]", parsed.netloc)) or \
+                (not parsed.netloc.startswith("[") and ":" in parsed.netloc):
+            raise BriefError("invalid %s HTTPS URL" % description)
         try:
-            ipaddress.ip_address(parsed.hostname)
+            address = ipaddress.ip_address(hostname)
+            if not address.is_global or address.is_multicast or address.is_unspecified or address.is_reserved:
+                raise BriefError("invalid %s HTTPS URL" % description)
         except ValueError:
-            hostname = parsed.hostname.encode("idna").decode("ascii")
+            hostname = hostname.encode("idna").decode("ascii").lower()
             if len(hostname) > 253 or hostname.endswith(".") or any(
                     not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
                     for label in hostname.split(".")):
                 raise BriefError("invalid %s HTTPS URL" % description)
+            if hostname in BLOCKED_HOSTS or any(hostname.endswith("." + suffix) for suffix in BLOCKED_HOSTS):
+                raise BriefError("invalid %s HTTPS URL" % description)
     except ValueError as error:
         raise BriefError("invalid %s HTTPS URL" % description) from error
     return value
-
-
-def _first_safe_https_url(values, description):
-    saw_candidate = False
-    for value in values:
-        if value is None:
-            continue
-        saw_candidate = True
-        try:
-            return _optional_https_url(value, description)
-        except BriefError:
-            continue
-    if saw_candidate:
-        raise BriefError("invalid %s HTTPS URL" % description)
-    return None
 
 
 def _boolean(value, description):
@@ -118,10 +124,16 @@ def _boolean(value, description):
     return value
 
 
-def _number_or_none(value, description):
+def _number_or_none(value, description, minimum=None, maximum=None):
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise BriefError("invalid %s" % description)
+    if isinstance(value, float) and not math.isfinite(value):
+        raise BriefError("invalid %s" % description)
+    if minimum is not None and value < minimum:
+        raise BriefError("invalid %s" % description)
+    if maximum is not None and value > maximum:
         raise BriefError("invalid %s" % description)
     return value
 
@@ -195,7 +207,9 @@ class BestBlogsClient:
         if method not in ("GET", "POST") or not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
             raise ValueError("invalid BestBlogs request")
         url = self.origin + path
-        body = None if payload is None else json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        body = None if payload is None else json.dumps(
+            payload, separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
         headers = {"X-API-KEY": self.api_key, "Accept": "application/json"}
         if body is not None:
             headers["Content-Type"] = "application/json"
@@ -212,8 +226,8 @@ class BestBlogsClient:
         if len(raw) > MAX_RESPONSE_BYTES:
             raise BriefError("BestBlogs response exceeds size limit")
         try:
-            return validate_envelope(json.loads(raw.decode("utf-8")))
-        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
+            return validate_envelope(json.loads(raw.decode("utf-8"), parse_constant=_reject_json_constant))
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError) as error:
             raise BriefError("invalid JSON response from BestBlogs") from error
 
     def me(self):
@@ -258,10 +272,17 @@ def _utc_timestamp_text(moment):
     return moment.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _reject_json_constant(value):
+    raise ValueError("non-standard JSON constant")
+
+
 def _normalized_publication_time(metadata):
     timestamp = metadata.get("publishTimeStamp")
     if timestamp is not None:
-        timestamp = _number_or_none(timestamp, "publish timestamp")
+        try:
+            timestamp = _number_or_none(timestamp, "publish timestamp")
+        except BriefError as error:
+            raise BriefError("invalid publication time") from error
         try:
             if abs(timestamp) > 100_000_000_000:
                 timestamp /= 1000
@@ -272,16 +293,7 @@ def _normalized_publication_time(metadata):
     value = _first_present(metadata.get("publishDateTimeStr"), metadata.get("publishedAt"))
     if value is None:
         return None
-    value = _required_text(value, "publication time")
-    try:
-        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError as error:
-        raise BriefError("invalid publication time") from error
-    if moment.tzinfo is None:
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", value) or ZoneInfo is None:
-            raise BriefError("invalid publication time")
-        moment = moment.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
-    return _utc_timestamp_text(moment)
+    return _validated_timestamp(value, "publication time")
 
 
 def _metadata_records(value):
@@ -304,32 +316,44 @@ def _normalize_item(brief_item, metadata):
     content_type = _normalized_content_type(_first_present(
         brief_item.get("contentType"), metadata.get("resourceType"), metadata.get("contentType"),
     ))
+    original_url = _first_present(
+        metadata.get("originalUrl"), metadata.get("canonicalUrl"), metadata.get("publisherUrl"), metadata.get("url"),
+    )
     normalized = {
         "resourceId": resource_id,
         "sourceId": _required_text(_first_present(brief_item.get("sourceId"), metadata.get("sourceId")), "source ID"),
         "sourceName": _required_text(_first_present(brief_item.get("sourceName"), metadata.get("sourceName")), "source name"),
         "title": _required_text(_first_present(brief_item.get("title"), metadata.get("title")), "title"),
         "contentType": content_type,
-        "url": _first_safe_https_url((metadata.get("url"), metadata.get("readUrl")), "resource"),
-        "readTime": _number_or_none(_first_present(metadata.get("readTime"), brief_item.get("readTime")), "read time"),
-        "score": _number_or_none(_first_present(brief_item.get("totalScore"), brief_item.get("weightedScore"), brief_item.get("score")), "score"),
+        "url": _optional_https_url(original_url, "resource"),
+        "readTime": _number_or_none(
+            _first_present(metadata.get("readTime"), brief_item.get("readTime")), "read time", 0, MAX_READ_TIME_MINUTES,
+        ),
+        "score": _number_or_none(
+            _first_present(brief_item.get("totalScore"), brief_item.get("weightedScore"), brief_item.get("score")),
+            "score", MIN_SCORE, MAX_SCORE,
+        ),
         "tags": _string_list(_first_present(metadata.get("tags"), brief_item.get("tags"), []), "tags"),
         "mainPoints": _main_points(_first_present(metadata.get("mainPoints"), brief_item.get("mainPoints"), [])),
-        "deepRead": _boolean(brief_item.get("deepRead", False), "deepRead"),
-        "featured": _boolean(brief_item.get("featured", False), "featured"),
-        "personalized": _boolean(brief_item.get("personalized", False), "personalized"),
+        "deepRead": _boolean(brief_item.get("deepRead") if "deepRead" in brief_item else None, "deepRead"),
+        "featured": _boolean(brief_item.get("featured") if "featured" in brief_item else None, "featured"),
+        "personalized": _boolean(brief_item.get("personalized") if "personalized" in brief_item else None, "personalized"),
     }
     if normalized["url"] is None:
         raise BriefError("invalid resource HTTPS URL")
+    cover = _first_present(metadata.get("cover"), metadata.get("coverUrl"))
+    if cover is not None:
+        try:
+            cover = _optional_https_url(cover, "cover")
+        except BriefError:
+            cover = None
+        if cover is not None:
+            normalized["coverUrl"] = cover
     for source, target, description in (
-        (_first_present(metadata.get("cover"), metadata.get("coverUrl")), "coverUrl", "cover"),
         (_first_present(metadata.get("oneSentenceSummary"), brief_item.get("oneSentenceSummary")), "oneSentenceSummary", "one sentence summary"),
         (_first_present(metadata.get("summary"), brief_item.get("summary")), "summary", "summary"),
     ):
-        if target == "coverUrl":
-            value = _optional_https_url(source, description)
-        else:
-            value = _optional_text(source, description)
+        value = _optional_text(source, description)
         if value is not None:
             normalized[target] = value
     published_at = _normalized_publication_time(metadata)
@@ -415,7 +439,7 @@ def main(argv=None):
             result = {"configured": True, "tier": tier, "proAccess": True}
         else:
             result = read_today(client, args.beijing_date)
-        print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+        print(json.dumps(result, ensure_ascii=False, separators=(",", ":"), allow_nan=False))
         return 0
     except (BriefError, ValueError) as error:
         print("bestblogs-brief: %s" % str(error), file=sys.stderr)
