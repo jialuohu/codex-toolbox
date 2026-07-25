@@ -421,6 +421,7 @@ class BestBlogsBriefTests(unittest.TestCase):
             result = subprocess.run([str(WRAPPER_FILE), "doctor"], env=env, text=True, capture_output=True, check=False)
 
         self.assertEqual(result.returncode, 0)
+        self.assertNotIn(VALID_API_KEY, result.stdout + result.stderr)
         docs = SKILL_FILE.read_text(encoding="utf-8")
         self.assertIn("CODEX_SECRETS_DIR", docs)
         self.assertIn("standard Codex secrets fallback", docs)
