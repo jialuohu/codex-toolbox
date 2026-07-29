@@ -79,21 +79,22 @@ class PaperReadDraftSkillTests(unittest.TestCase):
             "\n".join(
                 [
                     "",
+                    "## One-sentence summary",
+                    "",
+                    "%% Summarize the paper in one sentence. %%",
+                    "",
                     "## Summary and takeaway",
                     "",
-                    "%% Summarize the paper and state its core takeaway in your own words. %%",
+                    "%% Briefly explain the paper and its core takeaway in your own words. %%",
                     "",
                     "## My thoughts",
                     "",
-                    "%% Add your reflections. %%",
-                    "",
-                    "## Questions",
-                    "",
-                    "%% Record open questions. %%",
+                    "%% Add your reflections and open questions. %%",
                     "",
                 ]
             ),
         )
+        self.assertNotIn("## Questions", body)
 
     def test_skill_resolves_the_configured_vault_and_only_paperread(self) -> None:
         skill = self.read(SKILL)

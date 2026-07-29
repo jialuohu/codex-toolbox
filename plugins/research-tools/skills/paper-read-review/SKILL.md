@@ -32,12 +32,12 @@ A praise-only review is invalid: include at least one evidence-backed correction
 
 Use this deterministic anchor map:
 
-- Current layout: insert `Summary and takeaway` feedback immediately before `My thoughts`.
-- Legacy layout: combine `Takeaway` and `Summary in my own words` feedback immediately before `My thoughts`; the legacy four-section layout remains supported for review.
-- In either layout, insert `My thoughts` feedback immediately before `Questions`.
-- Append `Questions` feedback followed by the final block at end of file (EOF).
+- Current layout: combine `One-sentence summary` and `Summary and takeaway` feedback immediately before `My thoughts`. Append `My thoughts` feedback, including open research questions, followed by the final block at end of file (EOF).
+- Previous layout: insert `Summary and takeaway` feedback immediately before `My thoughts`. The previous three-section layout with a separate `Questions` heading remains supported for review.
+- Legacy four-section layout: combine `Takeaway` and `Summary in my own words` feedback immediately before `My thoughts`; it remains supported for review.
+- In either Questions-bearing layout, insert `My thoughts` feedback immediately before `Questions`, then append `Questions` feedback followed by the final block at end of file (EOF).
 
-Require every anchor heading exactly once. Do not migrate either layout.
+Require every anchor heading exactly once. Do not migrate any layout.
 Require every existing marker pair to occupy its exact layout-specific anchor; otherwise return no-write.
 
 ## Callout Contract
@@ -60,7 +60,7 @@ Keep the review scannable:
 - `> [!question]` open research question
 - `> [!abstract]` final priorities
 
-Legal marker order is `summary-and-takeaway`, `my-thoughts`, `questions`, then `final`. Each slug may have zero or one start/end pair, with no nesting. Duplicate, unmatched, crossed, malformed, or out-of-order pairs require no-write. Any unknown `paper-read-review:` marker requires no-write.
+Legal marker order for the current layout is `summary-and-takeaway`, `my-thoughts`, then `final`; a `questions` marker is layout-incompatible. For either Questions-bearing layout, legal marker order is `summary-and-takeaway`, `my-thoughts`, `questions`, then `final`. Each legal slug may have zero or one start/end pair, with no nesting. Duplicate, unmatched, crossed, malformed, layout-incompatible, or out-of-order pairs require no-write. Any unknown `paper-read-review:` marker requires no-write.
 
 Use these exact hidden markers:
 
@@ -77,6 +77,8 @@ Use these exact hidden markers:
 > [!tip] Strengthen the analysis
 > Feedback.
 %% paper-read-review:my-thoughts:end %%
+
+Questions-bearing layouts only:
 
 %% paper-read-review:questions:start %%
 > [!question] Research questions

@@ -1407,8 +1407,8 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.6.0",
-        "research-tools must use the Zotero-Todoist workflow minor version",
+        research_plugin.get("version") == "0.6.1",
+        "research-tools must use the current PaperRead workflow version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
     for expected in (
@@ -1598,11 +1598,15 @@ def main() -> None:
     paper_read_draft_template = PAPER_READ_DRAFT_TEMPLATE.read_text()
     for expected in (
         "tags: [paper-read]",
+        "## One-sentence summary",
         "## Summary and takeaway",
         "## My thoughts",
-        "## Questions",
     ):
         require(expected in paper_read_draft_template, f"paper-read-draft template must mention {expected}")
+    require(
+        "## Questions" not in paper_read_draft_template,
+        "paper-read-draft template must fold open questions into My thoughts",
+    )
     paper_read_draft_filename = PAPER_READ_DRAFT_FILENAME.read_text()
     for expected in (
         "def build_filename(",
@@ -1619,6 +1623,8 @@ def main() -> None:
         "create a compact Obsidian PaperRead draft",
         "fills factual metadata only",
         "three personal sections",
+        "One-sentence summary",
+        "Open questions belong in My thoughts",
     ):
         require(expected in readme_text, f"README PaperRead draft section must mention {expected}")
     paper_read_review_text = PAPER_READ_REVIEW_SKILL.read_text()

@@ -82,7 +82,11 @@ class PaperReadReviewSkillTests(unittest.TestCase):
         self.assertRegex(skill, r"(?i)at most two callouts")
         self.assertRegex(
             skill,
-            r"(?is)legal marker order.*?summary-and-takeaway.*?my-thoughts.*?questions.*?final",
+            r"(?is)current.*?legal marker order.*?summary-and-takeaway.*?my-thoughts.*?final",
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)questions-bearing.*?legal marker order.*?summary-and-takeaway.*?my-thoughts.*?questions.*?final",
         )
         self.assertRegex(skill, r"(?is)zero or one.*?pair.*?no nesting")
         self.assertRegex(
@@ -143,19 +147,23 @@ class PaperReadReviewSkillTests(unittest.TestCase):
         skill = self.read(SKILL)
         self.assertRegex(
             skill,
-            r"(?is)current layout.*?Summary and takeaway.*?before `My thoughts`",
+            r"(?is)current layout.*?One-sentence summary.*?Summary and takeaway.*?before `My thoughts`",
         )
         self.assertRegex(
             skill,
-            r"(?is)legacy layout.*?Summary in my own words.*?before `My thoughts`",
+            r"(?is)current layout.*?`My thoughts`.*?(end of file|EOF)",
         )
         self.assertRegex(
             skill,
-            r"(?is)`My thoughts`.*?before `Questions`",
+            r"(?is)previous layout.*?Summary and takeaway.*?before `My thoughts`",
         )
         self.assertRegex(
             skill,
-            r"(?is)`Questions`.*?(end of file|EOF)",
+            r"(?is)legacy four-section layout.*?Summary in my own words.*?before `My thoughts`",
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)questions-bearing.*?`My thoughts`.*?before `Questions`.*?`Questions`.*?(end of file|EOF)",
         )
         self.assertIn(
             "Require every existing marker pair to occupy its exact layout-specific anchor; otherwise return no-write.",
@@ -215,6 +223,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
     def test_skill_supports_current_and_legacy_notes_without_migration(self) -> None:
         skill = self.read(SKILL)
         for heading in (
+            "One-sentence summary",
             "Summary and takeaway",
             "My thoughts",
             "Questions",
@@ -222,7 +231,12 @@ class PaperReadReviewSkillTests(unittest.TestCase):
             "Summary in my own words",
         ):
             self.assertIn(heading, skill)
+        self.assertRegex(skill, r"(?is)previous.*?three-section.*?(review|supported)")
         self.assertRegex(skill, r"(?is)legacy.*?four-section.*?(review|supported)")
+        self.assertRegex(
+            skill,
+            r"(?is)current layout.*?open (research )?questions.*?`My thoughts`",
+        )
         self.assertRegex(skill, r"(?is)do not migrate|never migrate")
 
     def test_skill_reports_a_completion_receipt(self) -> None:
@@ -240,7 +254,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
 
     def test_plugin_packaging_and_docs_expose_the_review_skill(self) -> None:
         manifest = json.loads(self.read(RESEARCH_PLUGIN))
-        self.assertEqual(manifest["version"], "0.6.0")
+        self.assertEqual(manifest["version"], "0.6.1")
         interface = manifest["interface"]
         self.assertIn("review", interface["description"].lower())
         self.assertIn("review", interface["shortDescription"].lower())

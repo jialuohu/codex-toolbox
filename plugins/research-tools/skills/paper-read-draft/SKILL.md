@@ -27,7 +27,7 @@ Create one compact, factual note shell for a paper. The note records verified me
 
 Use the vault template at `PaperRead/_Paper Read Template.md` when it exists and satisfies the contract. If that exact vault template is missing or malformed, never silently rewrite the vault template; use the bundled fallback at `references/paper-read-template.md` for note creation.
 
-The frontmatter contains only `title`, `authors`, `year`, `venue`, `url`, `tags`, and `created`. Do not add a body H1. The body has exactly these H2 sections, in order: `Summary and takeaway`, `My thoughts`, and `Questions`. Each section contains only its short `%% ... %%` prompt.
+The frontmatter contains only `title`, `authors`, `year`, `venue`, `url`, `tags`, and `created`. Do not add a body H1. The body has exactly these H2 sections, in order: `One-sentence summary`, `Summary and takeaway`, and `My thoughts`. Each section contains only its short `%% ... %%` prompt. The `My thoughts` prompt includes both reflections and open questions; do not create a separate `Questions` section.
 
 The base tag is `paper-read`. A concrete note may add at most three conservative lowercase hyphenated topic tags. If uncertain, use only `paper-read`.
 
