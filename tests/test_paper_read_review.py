@@ -72,21 +72,32 @@ class PaperReadReviewSkillTests(unittest.TestCase):
             "%% paper-read-review:my-thoughts:end %%",
             "%% paper-read-review:questions:start %%",
             "%% paper-read-review:questions:end %%",
-            "%% paper-read-review:final:start %%",
-            "%% paper-read-review:final:end %%",
         ):
             self.assertIn(marker, skill)
-        for callout_type in ("success", "warning", "info", "tip", "question", "abstract"):
+        for callout_type in ("success", "warning", "info", "tip", "question"):
             self.assertIn(f"> [!{callout_type}]", skill)
+        self.assertNotIn("%% paper-read-review:final:start %%", skill)
+        self.assertNotIn("%% paper-read-review:final:end %%", skill)
+        self.assertNotIn("> [!abstract]", skill)
+        self.assertNotIn("Priority revisions", skill)
+        self.assertIn("Generate only section-level comment blocks.", skill)
+        self.assertIn(
+            "Do not append a final synthesis, priority list, action summary, or other standalone review block.",
+            skill,
+        )
         self.assertRegex(skill, r"(?i)no new H1 or H2")
         self.assertRegex(skill, r"(?i)at most two callouts")
-        self.assertRegex(
+        self.assertIn(
+            "Legal marker order for the current layout is `summary-and-takeaway`, then `my-thoughts`;",
             skill,
-            r"(?is)current.*?legal marker order.*?summary-and-takeaway.*?my-thoughts.*?final",
+        )
+        self.assertIn(
+            "For either Questions-bearing layout, legal marker order is `summary-and-takeaway`, `my-thoughts`, then `questions`.",
+            skill,
         )
         self.assertRegex(
             skill,
-            r"(?is)questions-bearing.*?legal marker order.*?summary-and-takeaway.*?my-thoughts.*?questions.*?final",
+            r"(?is)deprecated `final` slug.*?not legal output.*?remove.*?do not recreate",
         )
         self.assertRegex(skill, r"(?is)zero or one.*?pair.*?no nesting")
         self.assertRegex(

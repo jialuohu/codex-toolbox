@@ -11,7 +11,9 @@ Add source-backed, research-grade feedback inside the user's note without rewrit
 
 A matching review, critique, fact-check, strengthening, or annotation request authorizes annotation of one exact existing note beneath `PaperRead/`. There is no chat-only review mode.
 
-If the note has no generated markers, insert the annotation blocks. If it has a complete valid marker set, replace only the skill-owned generated blocks so repeated reviews remain idempotent.
+Generate only section-level comment blocks. Do not append a final synthesis, priority list, action summary, or other standalone review block.
+
+If the note has no generated markers, insert the comment blocks. If it has a complete valid comment-marker set, replace only the skill-owned generated blocks so repeated reviews remain idempotent. A complete legacy `final` marker pair may be removed during the same update; never create or recreate it.
 
 Prefer `obsidian_files` with `CODEX_OBSIDIAN_VAULT`, never the working directory. If it is unavailable and Obsidian CLI is enabled, use `obsidian read` to capture the preimage and `obsidian eval` to compare and apply the exact edit through Obsidian. If neither `obsidian_files` nor Obsidian CLI is available, return no-write. Do not create, move, delete, or rewrite another note. Resolve an ambiguous path or paper identity before reviewing.
 
@@ -32,10 +34,10 @@ A praise-only review is invalid: include at least one evidence-backed correction
 
 Use this deterministic anchor map:
 
-- Current layout: combine `One-sentence summary` and `Summary and takeaway` feedback immediately before `My thoughts`. Append `My thoughts` feedback, including open research questions, followed by the final block at end of file (EOF).
+- Current layout: combine `One-sentence summary` and `Summary and takeaway` feedback immediately before `My thoughts`. Append `My thoughts` feedback, including open research questions, at end of file (EOF).
 - Previous layout: insert `Summary and takeaway` feedback immediately before `My thoughts`. The previous three-section layout with a separate `Questions` heading remains supported for review.
 - Legacy four-section layout: combine `Takeaway` and `Summary in my own words` feedback immediately before `My thoughts`; it remains supported for review.
-- In either Questions-bearing layout, insert `My thoughts` feedback immediately before `Questions`, then append `Questions` feedback followed by the final block at end of file (EOF).
+- In either Questions-bearing layout, insert `My thoughts` feedback immediately before `Questions`, then append `Questions` feedback at end of file (EOF).
 
 Require every anchor heading exactly once. Do not migrate any layout.
 Require every existing marker pair to occupy its exact layout-specific anchor; otherwise return no-write.
@@ -58,9 +60,10 @@ Keep the review scannable:
 - `> [!info]` missing context or evidence
 - `> [!tip]` stronger analysis or wording
 - `> [!question]` open research question
-- `> [!abstract]` final priorities
 
-Legal marker order for the current layout is `summary-and-takeaway`, `my-thoughts`, then `final`; a `questions` marker is layout-incompatible. For either Questions-bearing layout, legal marker order is `summary-and-takeaway`, `my-thoughts`, `questions`, then `final`. Each legal slug may have zero or one start/end pair, with no nesting. Duplicate, unmatched, crossed, malformed, layout-incompatible, or out-of-order pairs require no-write. Any unknown `paper-read-review:` marker requires no-write.
+Legal marker order for the current layout is `summary-and-takeaway`, then `my-thoughts`; a `questions` marker is layout-incompatible. For either Questions-bearing layout, legal marker order is `summary-and-takeaway`, `my-thoughts`, then `questions`. Each legal comment slug may have zero or one start/end pair, with no nesting. Duplicate, unmatched, crossed, malformed, layout-incompatible, or out-of-order pairs require no-write. Any unknown `paper-read-review:` marker requires no-write.
+
+The deprecated `final` slug is not legal output. Accept a complete, well-formed legacy `final` pair only when it is the last generated block at EOF from an older review; remove that pair during the update and do not recreate it. An unmatched, malformed, misplaced, or duplicated legacy pair requires no-write.
 
 Use these exact hidden markers:
 
@@ -84,14 +87,10 @@ Questions-bearing layouts only:
 > [!question] Research questions
 > Feedback.
 %% paper-read-review:questions:end %%
-
-%% paper-read-review:final:start %%
-> [!abstract] Priority revisions
-> Highest-value revisions.
-%% paper-read-review:final:end %%
 ```
 
 Omit empty blocks rather than generating filler.
+Never generate a standalone priorities, synthesis, or action-summary block.
 Before editing, lint every generated block: count the callout headers, enforce the section word limit, and require `\n\n> [!` before each adjacent callout after the first. Reject any `\n>\n> [!` separator.
 
 ## Safe Editing and Verification
@@ -102,8 +101,9 @@ Construct the candidate by interleaving untouched byte slices from the captured 
 
 - With no generated markers, interleave blocks between untouched slices and require those untouched slices to concatenate to the exact preimage.
 - With a complete valid marker set, locate each start marker and matching end marker; compare the untouched prefix, every untouched infix between complete pairs, and suffix byte-for-byte with the exact preimage, then replace only bytes inside each pair.
+- When cleaning up a complete legacy `final` pair, treat only that generated block and its exact skill-owned separator as removable bytes. Preserve and compare every surrounding user-owned byte exactly.
 
-Immediately before editing, re-read and compare against the exact preimage. A mismatch or changed preimage requires no-write. On a concurrent edit, re-read; never use a whole-file overwrite. After editing, repeat the applicable insertion or replacement comparison and verify marker order, callout count, separators, section word limits, and callout syntax.
+Immediately before editing, re-read and compare against the exact preimage. A mismatch or changed preimage requires no-write. On a concurrent edit, re-read; never use a whole-file overwrite. After editing, repeat the applicable insertion, replacement, or legacy-cleanup comparison and verify marker order, callout count, separators, section word limits, callout syntax, and absence of the deprecated `final` slug.
 
 ## Completion Receipt
 
