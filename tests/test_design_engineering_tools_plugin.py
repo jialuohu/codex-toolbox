@@ -18,6 +18,7 @@ SKILLS = (
 )
 EXPLICIT_ONLY = {"pick-ui-library", "prototype", "review-animations"}
 UPSTREAM_COMMIT = "70744e3816f1d93eafb697161a8b880a7384c5ff"
+REQUIRED_SKILL_LINKS = {"references/upstream.md", "../../SHARED-BOUNDARIES.md"}
 
 
 def read_frontmatter(path: Path) -> dict[str, str]:
@@ -36,10 +37,41 @@ def read_frontmatter(path: Path) -> dict[str, str]:
 
 def direct_markdown_references(text: str) -> set[str]:
     return {
-        target
+        target.split("#", 1)[0]
         for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", text)
-        if not re.match(r"(?:https?://|mailto:|#)", target)
+        if target and not re.match(r"(?:https?://|mailto:|#)", target)
     }
+
+
+def parse_openai_yaml(path: Path) -> dict:
+    """Parse the deliberately small, scalar-only openai.yaml schema safely."""
+    root: dict[str, dict] = {}
+    section = None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" "):
+            key, separator, value = line.partition(":")
+            if not separator or value.strip():
+                raise AssertionError(f"invalid top-level YAML in {path}: {line}")
+            if key in root:
+                raise AssertionError(f"duplicate YAML section in {path}: {key}")
+            root[key] = {}
+            section = key
+            continue
+        if not line.startswith("  ") or line.startswith("   ") or section is None:
+            raise AssertionError(f"unsupported YAML indentation in {path}: {line}")
+        key, separator, value = line.strip().partition(":")
+        if not separator or key in root[section]:
+            raise AssertionError(f"invalid YAML field in {path}: {line}")
+        value = value.strip()
+        if value in {"true", "false"}:
+            root[section][key] = value == "true"
+        elif len(value) >= 2 and value[0] == value[-1] == '"':
+            root[section][key] = value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        else:
+            raise AssertionError(f"unquoted or unsupported YAML scalar in {path}: {line}")
+    return root
 
 
 class DesignEngineeringToolsPluginTests(unittest.TestCase):
@@ -78,36 +110,64 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
             self.assertTrue(frontmatter["description"].startswith("Use when"))
             self.assertNotIn("disable-model-invocation", skill_file.read_text(encoding="utf-8"))
 
-            metadata = metadata_file.read_text(encoding="utf-8")
-            self.assertIn("display_name:", metadata)
-            self.assertIn("short_description:", metadata)
-            self.assertIn("default_prompt:", metadata)
-            expected_policy = "false" if skill in EXPLICIT_ONLY else "true"
-            self.assertIn(
-                f"allow_implicit_invocation: {expected_policy}", metadata,
+            metadata = parse_openai_yaml(metadata_file)
+            self.assertEqual(set(metadata), {"interface", "policy"})
+            self.assertEqual(
+                set(metadata["interface"]),
+                {"display_name", "short_description", "default_prompt"},
+            )
+            self.assertTrue(all(isinstance(value, str) and value for value in metadata["interface"].values()))
+            self.assertEqual(set(metadata["policy"]), {"allow_implicit_invocation"})
+            self.assertEqual(
+                metadata["policy"]["allow_implicit_invocation"], skill not in EXPLICIT_ONLY,
                 f"{skill} has the wrong invocation policy",
             )
-            for reference in direct_markdown_references(skill_file.read_text(encoding="utf-8")):
+            references = direct_markdown_references(skill_file.read_text(encoding="utf-8"))
+            self.assertTrue(REQUIRED_SKILL_LINKS.issubset(references), f"{skill} omits required linked guidance")
+            for reference in references:
                 self.assertTrue((skill_dir / reference).is_file(), f"{skill}: missing {reference}")
+
+            for markdown in skill_dir.rglob("*.md"):
+                for reference in direct_markdown_references(markdown.read_text(encoding="utf-8")):
+                    self.assertTrue(
+                        (markdown.parent / reference).is_file(),
+                        f"{markdown.relative_to(PLUGIN)}: missing {reference}",
+                    )
+
+            upstream = skill_dir / "references" / "upstream.md"
+            self.assertGreaterEqual(len(upstream.read_text(encoding="utf-8").splitlines()), 40)
 
         emil = (PLUGIN / "skills" / "emil-design-eng" / "SKILL.md").read_text(encoding="utf-8")
         self.assertLess(len(emil.splitlines()), 500)
         self.assertIn("references/principles.md", emil)
 
         improve = (PLUGIN / "skills" / "improve-animations" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("source-read-only", improve)
-        self.assertIn("explicit authorization", improve)
-        self.assertIn("superpowers:writing-plans", improve)
-        self.assertIn("superpowers:subagent-driven-development", improve)
+        self.assertRegex(improve, r"(?s)source-read-only.*response-only")
+        self.assertRegex(improve, r"(?s)explicit authorization.*save")
+        self.assertRegex(improve, r"(?s)Plan Mode.*never write.*dispatch")
+        self.assertRegex(improve, r"(?s)superpowers:writing-plans.*superpowers:subagent-driven-development")
 
         prototype = (PLUGIN / "skills" / "prototype" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("Plan Mode", prototype)
-        self.assertIn("selected variant", prototype)
-        self.assertIn("separate explicit deletion confirmation", prototype)
+        self.assertRegex(prototype, r"(?s)Plan Mode.*do not write.*do not dispatch")
+        self.assertRegex(prototype, r"(?s)selected variant.*before.*promotion")
+        self.assertRegex(prototype, r"(?s)keep <variant>.*selects or promotes only.*never deletes")
+        self.assertRegex(prototype, r"(?s)cleanup targets.*separate explicit deletion confirmation")
 
         picker = (PLUGIN / "skills" / "pick-ui-library" / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("installed dependencies", picker)
-        self.assertIn("Context7 or official documentation", picker)
+        self.assertRegex(picker, r"(?s)installed dependencies.*package manager.*lockfile")
+        self.assertRegex(picker, r"(?s)Context7 or official documentation.*before.*recommendation")
+        self.assertRegex(picker, r"(?s)recommendation-only by default.*explicit implementation authorization")
+
+        shared = (PLUGIN / "SHARED-BOUNDARIES.md").read_text(encoding="utf-8")
+        hierarchy = [
+            "Explicit user direction",
+            "Target project conventions and design system",
+            "Accessibility requirements",
+            "Current official documentation",
+            "Imported opinions are advisory",
+        ]
+        positions = [shared.index(item) for item in hierarchy]
+        self.assertEqual(positions, sorted(positions))
 
 
 if __name__ == "__main__":

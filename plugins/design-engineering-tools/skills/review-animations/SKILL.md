@@ -12,6 +12,9 @@ with an exact correction and accessibility consideration.
 
 Check purpose, frequency, easing, duration, origin, interruptibility,
 performance, reduced motion, hover capability, and token cohesion. Use
-[the standards](references/standards.md) when a finding needs a concrete
-threshold. Approval requires evidence; do not flag a deliberate, documented
-tradeoff without explaining the remaining concern.
+[the standards](references/standards.md) and
+[the complete upstream reference](references/upstream.md) when a finding needs
+a concrete threshold. Apply the
+[shared authority boundaries](../../SHARED-BOUNDARIES.md). Approval requires
+evidence; do not flag a deliberate, documented tradeoff without explaining the
+remaining concern.

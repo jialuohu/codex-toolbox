@@ -16,10 +16,11 @@ do not dispatch an executor. In an implementation task, verify the picker by
 rendering each variant and checking interactions and console output; screenshots
 are optional when browser tooling is unavailable.
 
-Stop after presenting the picker until the user names a selected variant.
-`keep <variant>` selects or promotes only the selected variant. It never
-deletes prototypes. Prototype cleanup targets are the isolated route/page,
+Stop after presenting the picker: require a selected variant before promotion.
+`keep <variant>` selects or promotes only the selected variant. It never deletes
+prototypes. Prototype cleanup targets are the isolated route/page,
 variant files, harness file, and any prototype-only assets; enumerate exact
 existing targets and require separate explicit deletion confirmation before
-removing any of them. Read [picker requirements](references/picker.md) before
-building the harness.
+removing any of them. Read [picker requirements](references/picker.md) and
+[the complete upstream reference](references/upstream.md) before building the
+harness. Apply the [shared authority boundaries](../../SHARED-BOUNDARIES.md).
