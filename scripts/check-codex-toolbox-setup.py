@@ -110,6 +110,11 @@ PAPER_FIGURE_REFERENCE = (
 )
 PRODUCTIVITY_PLUGIN = ROOT / "plugins" / "productivity-tools" / ".codex-plugin" / "plugin.json"
 PRODUCTIVITY_MCP = ROOT / "plugins" / "productivity-tools" / ".mcp.json"
+DESIGN_ENGINEERING_DIR = ROOT / "plugins" / "design-engineering-tools"
+DESIGN_ENGINEERING_PLUGIN = DESIGN_ENGINEERING_DIR / ".codex-plugin" / "plugin.json"
+DESIGN_ENGINEERING_PROVENANCE = DESIGN_ENGINEERING_DIR / "PROVENANCE.md"
+DESIGN_ENGINEERING_BOUNDARIES = DESIGN_ENGINEERING_DIR / "SHARED-BOUNDARIES.md"
+DESIGN_ENGINEERING_SKILLS_DIR = DESIGN_ENGINEERING_DIR / "skills"
 TODOIST_TASK_PLANNING_SKILL = (
     ROOT
     / "plugins"
@@ -155,7 +160,7 @@ def scan_retired_reference_mentions(
     """Return retired-orchestrator and retired-tracker mentions outside ignored paths."""
     retired_mentions = []
     retired_tracker_mentions = []
-    ignored_scan_parts = {".git", ".worktrees", "__pycache__"}
+    ignored_scan_parts = {".git", ".superpowers", ".worktrees", "__pycache__"}
     for path in root.rglob("*"):
         relative_path = path.relative_to(root)
         if (
@@ -163,6 +168,8 @@ def scan_retired_reference_mentions(
             or ignored_scan_parts.intersection(relative_path.parts)
             or path.resolve() == checker_path.resolve()
         ):
+            continue
+        if relative_path.parts[:3] == ("plugins", "design-engineering-tools", "skills"):
             continue
         try:
             lines = path.read_text().splitlines()
@@ -194,6 +201,147 @@ def markdown_section(skill_text: str, heading: str) -> str:
 
 def plain_normalized(text: str) -> str:
     return re.sub(r"[`*_]", "", normalized(text)).lower()
+
+
+def validate_design_engineering_tools_contract(
+    marketplace: dict,
+    global_agents_text: str,
+    readme_text: str,
+    default_plugins: str,
+    managed_mcp_servers: str,
+) -> None:
+    """Validate the installed design-engineering plugin and its routing boundary."""
+    require(
+        DESIGN_ENGINEERING_PLUGIN.exists(),
+        "design-engineering-tools plugin manifest must exist",
+    )
+    require(
+        DESIGN_ENGINEERING_PROVENANCE.exists(),
+        "design-engineering-tools provenance must exist",
+    )
+    require(
+        DESIGN_ENGINEERING_BOUNDARIES.exists(),
+        "design-engineering-tools shared authority boundaries must exist",
+    )
+    design_plugin = json.loads(DESIGN_ENGINEERING_PLUGIN.read_text())
+    expected_skills = {
+        "animation-vocabulary",
+        "apple-design",
+        "emil-design-eng",
+        "find-animation-opportunities",
+        "improve-animations",
+        "pick-ui-library",
+        "prototype",
+        "review-animations",
+    }
+    actual_skills = {
+        path.name
+        for path in DESIGN_ENGINEERING_SKILLS_DIR.iterdir()
+        if path.is_dir() and (path / "SKILL.md").exists()
+    }
+    require(
+        actual_skills == expected_skills,
+        "design-engineering-tools must expose exactly eight skills",
+    )
+    require(
+        design_plugin.get("name") == "design-engineering-tools"
+        and design_plugin.get("version") == "0.1.0"
+        and design_plugin.get("skills") == "./skills/",
+        "design-engineering-tools manifest must expose version 0.1.0 and its skills directory",
+    )
+    require(
+        "mcpServers" not in design_plugin and not (DESIGN_ENGINEERING_DIR / ".mcp.json").exists(),
+        "design-engineering-tools must not define an MCP server",
+    )
+    design_entry = next(
+        (
+            plugin
+            for plugin in marketplace.get("plugins", [])
+            if plugin.get("name") == "design-engineering-tools"
+        ),
+        None,
+    )
+    require(design_entry is not None, "marketplace must include design-engineering-tools")
+    require(
+        design_entry.get("source") == {
+            "source": "local",
+            "path": "./plugins/design-engineering-tools",
+        },
+        "design-engineering-tools marketplace source must point to its local plugin directory",
+    )
+    require(
+        design_entry.get("policy") == {
+            "installation": "AVAILABLE",
+            "authentication": "ON_INSTALL",
+        },
+        "design-engineering-tools marketplace policy must be AVAILABLE with ON_INSTALL authentication",
+    )
+    require(
+        '  "design-engineering-tools"' in default_plugins,
+        "setup script must install the design-engineering-tools plugin",
+    )
+    require(
+        '  "design-engineering-tools"' not in managed_mcp_servers,
+        "design-engineering-tools must not be a managed MCP server",
+    )
+    provenance_text = DESIGN_ENGINEERING_PROVENANCE.read_text()
+    require(
+        "https://github.com/emilkowalski/skills" in provenance_text
+        and "70744e3816f1d93eafb697161a8b880a7384c5ff" in provenance_text
+        and "MIT" in provenance_text,
+        "design-engineering-tools provenance must cite the upstream URL and commit",
+    )
+    boundaries_text = DESIGN_ENGINEERING_BOUNDARIES.read_text()
+    for expected in (
+        "Explicit user direction",
+        "Target project conventions and design system",
+        "Accessibility requirements",
+        "Current official documentation",
+        "Imported opinions are advisory",
+    ):
+        require(
+            expected in boundaries_text,
+            f"design-engineering-tools shared authority boundaries must preserve {expected}",
+        )
+    for expected in (
+        "Use the `ui-ux-pro-max` skill",
+        "Use `ui-ux-pro-max` as the broad default",
+        "$animation-vocabulary",
+        "$apple-design",
+        "$emil-design-eng` only for an explicit Emil Kowalski or animations.dev request",
+        "$find-animation-opportunities",
+        "$improve-animations",
+        "`$review-animations`, `$pick-ui-library`, and `$prototype` are explicit-only skills",
+        "project design system, explicit user direction, accessibility requirements, and current official documentation override",
+    ):
+        require(
+            expected in global_agents_text,
+            "global AGENTS design-engineering routing must keep ui-ux-pro-max broad and focused skills bounded",
+        )
+    design_readme_match = re.search(
+        r"^## Design Engineering Tools\n(?P<body>.*?)(?=^## |\Z)",
+        readme_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    require(
+        design_readme_match is not None,
+        "README must include a Design Engineering Tools section",
+    )
+    design_readme_text = design_readme_match.group("body")
+    for expected in (
+        "`design-engineering-tools`",
+        "motion vocabulary",
+        "`review-animations`",
+        "`pick-ui-library`",
+        "`prototype` are explicit-only",
+        "https://github.com/emilkowalski/skills",
+        "70744e3816f1d93eafb697161a8b880a7384c5ff",
+        "fresh Codex task",
+    ):
+        require(
+            expected in design_readme_text,
+            "README design-engineering guidance must require a fresh task and document scope, attribution, and explicit-only skills",
+        )
 
 
 def main() -> None:
@@ -499,6 +647,14 @@ def main() -> None:
     todoist_server = productivity_mcp.get("mcpServers", {}).get("todoist")
     coder_server = coder_mcp.get("mcpServers", {}).get("coder")
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
+
+    validate_design_engineering_tools_contract(
+        marketplace,
+        global_agents_text,
+        readme_text,
+        default_plugins,
+        managed_mcp_servers,
+    )
 
     require(obsidian_files_server is not None, "obsidian-tools must define obsidian_files")
     require(

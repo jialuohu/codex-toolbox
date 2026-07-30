@@ -69,6 +69,22 @@ A marketplace **Upgrade** refreshes plugins but does not copy runtime pet
 files. Rerun the toolbox setup after upgrading when a managed pet changes, then
 start a fresh Codex Desktop session to load and animate the updated atlas.
 
+## Design Engineering Tools
+
+The default `design-engineering-tools` plugin supplies focused guidance for
+motion vocabulary, Apple-like interaction, focused design craft, motion
+discovery, and animation audits. `review-animations`, `pick-ui-library`, and
+`prototype` are explicit-only skills; broad page or component visual design,
+layout, typography/color, and accessibility remain the `ui-ux-pro-max` default.
+Project conventions, explicit user direction, accessibility, and current
+official documentation override imported opinions.
+
+The skills adapt the MIT-licensed
+[emilkowalski/skills](https://github.com/emilkowalski/skills) snapshot at commit
+`70744e3816f1d93eafb697161a8b880a7384c5ff`; they are an unofficial,
+non-affiliated adaptation. Start a fresh Codex task after installing or
+upgrading so the plugin is available to the task from its start.
+
 ## Todoist Task Planning
 
 The default `productivity-tools` plugin bundles `$todoist-task-planning` and

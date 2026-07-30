@@ -25,6 +25,7 @@ DEFAULT_PLUGINS=(
   "research-tools"
   "web-data-tools"
   "game-asset-tools"
+  "design-engineering-tools"
   "workflow-tools"
   "coder-tools"
   "paper-figure-tools"
