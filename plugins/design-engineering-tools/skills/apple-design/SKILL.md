@@ -1,9 +1,13 @@
 ---
 name: apple-design
-description: Use when building or reviewing gesture-driven interfaces, spring motion, drag or sheet interactions, depth, typography, reduced motion, or Apple-style interaction principles for the web.
+description: Use when explicitly building or reviewing Apple-like physical interactions such as gestures, springs, drag or sheet behavior, or direct manipulation on the web.
 ---
 
 # Apple Design for the Web
+
+Use this skill only when the requested interaction is explicitly Apple-like and
+physical. Generic typography, color, accessibility, or reduced-motion requests
+stay with `ui-ux-pro-max`.
 
 Favor direct manipulation: respond on pointer-down, track the grabbed point
 1:1, and make motion interruptible from its current presentation value. Use

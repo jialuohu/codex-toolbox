@@ -200,6 +200,9 @@ def scan_retired_reference_mentions(
                 r"workspace|workspaces|integration|integrations|api|mcp|connector|connectors)\b)",
                 line,
                 re.IGNORECASE,
+            ) or re.search(
+                r"\bLinear(?:\s+(?:client|app)\b|\s+to\s+(?:track|manage)\b)",
+                line,
             ):
                 retired_tracker_mentions.append((str(relative_path), line_number, line.strip()))
     return retired_mentions, retired_tracker_mentions
@@ -384,8 +387,12 @@ def validate_design_engineering_tools_contract(
             "global AGENTS design-engineering routing must map vague motion naming to animation-vocabulary",
         ),
         (
-            "$apple-design",
+            "Use `$apple-design` only for explicitly Apple-like physical interactions, gestures, springs, or direct manipulation",
             "global AGENTS design-engineering routing must map Apple-like interactions to apple-design",
+        ),
+        (
+            "Generic typography, color, accessibility, and reduced-motion requests remain with `ui-ux-pro-max`",
+            "global AGENTS design-engineering routing must keep generic typography, accessibility, and reduced motion with ui-ux-pro-max",
         ),
         (
             "$emil-design-eng` only for an explicit Emil Kowalski or animations.dev request",

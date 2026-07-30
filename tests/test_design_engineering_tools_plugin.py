@@ -93,6 +93,39 @@ def lexical_relative_path(markdown: Path, reference: str) -> str:
 
 
 class DesignEngineeringToolsPluginTests(unittest.TestCase):
+    def test_apple_design_implicit_trigger_is_physical_not_generic_ui_guidance(self):
+        skill = PLUGIN / "skills" / "apple-design" / "SKILL.md"
+        metadata = parse_openai_yaml(
+            PLUGIN / "skills" / "apple-design" / "agents" / "openai.yaml"
+        )
+        frontmatter = read_frontmatter(skill)
+        trigger_surface = " ".join(
+            (
+                frontmatter["description"],
+                metadata["interface"]["short_description"],
+                metadata["interface"]["default_prompt"],
+            )
+        ).lower()
+        normalized_skill = " ".join(skill.read_text(encoding="utf-8").split())
+
+        self.assertRegex(
+            trigger_surface,
+            r"apple-like.*(?:physical interaction|gesture|spring|direct manipulation)",
+        )
+        for generic_concern in (
+            "typography",
+            "color",
+            "accessibility",
+            "reduced motion",
+            "reduced-motion",
+        ):
+            self.assertNotIn(generic_concern, trigger_surface)
+        self.assertIn(
+            "Generic typography, color, accessibility, or reduced-motion requests stay with `ui-ux-pro-max`.",
+            normalized_skill,
+        )
+        self.assertTrue(metadata["policy"]["allow_implicit_invocation"])
+
     def test_pick_ui_library_requires_current_version_and_license_before_mutation(self):
         picker = (
             PLUGIN / "skills" / "pick-ui-library" / "SKILL.md"

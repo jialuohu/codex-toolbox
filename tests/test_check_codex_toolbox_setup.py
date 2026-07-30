@@ -60,13 +60,26 @@ class SetupCheckerScanTests(unittest.TestCase):
                 / "upstream.md"
             )
             tracker_name = "lin" + "ear"
+            tracker_brand = tracker_name.title()
             tracker_url = f"https://{tracker_name}.app/example/issue/ABC-1"
             tracker_env = f"{tracker_name.upper()}_TEAM_ID"
+            brand_policy = repo_root / "docs" / "brand-policy.md"
             policy.parent.mkdir(parents=True)
             planning.parent.mkdir(parents=True)
             imported_motion.parent.mkdir(parents=True)
             policy.write_text(f"Retired tracker: {tracker_url}\n")
             planning.write_text(f"Retired integration uses {tracker_env}.\n")
+            brand_policy.write_text(
+                "\n".join(
+                    (
+                        f"Use {tracker_brand} to track work.",
+                        f"Retired {tracker_brand} client configuration.",
+                        f"Remove the {tracker_brand} app integration.",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             imported_motion.write_text(
                 f"Use a {tracker_name} timing function for a spinner.\n", encoding="utf-8"
             )
@@ -79,19 +92,36 @@ class SetupCheckerScanTests(unittest.TestCase):
 
         self.assertEqual(retired_mentions, [])
         self.assertEqual(
-            tracker_mentions,
-            [
-                (
-                    "docs/policy.md",
-                    1,
-                    f"Retired tracker: {tracker_url}",
-                ),
-                (
-                    ".superpowers/plan.md",
-                    1,
-                    f"Retired integration uses {tracker_env}.",
-                ),
-            ],
+            sorted(tracker_mentions),
+            sorted(
+                [
+                    (
+                        "docs/policy.md",
+                        1,
+                        f"Retired tracker: {tracker_url}",
+                    ),
+                    (
+                        ".superpowers/plan.md",
+                        1,
+                        f"Retired integration uses {tracker_env}.",
+                    ),
+                    (
+                        "docs/brand-policy.md",
+                        1,
+                        f"Use {tracker_brand} to track work.",
+                    ),
+                    (
+                        "docs/brand-policy.md",
+                        2,
+                        f"Retired {tracker_brand} client configuration.",
+                    ),
+                    (
+                        "docs/brand-policy.md",
+                        3,
+                        f"Remove the {tracker_brand} app integration.",
+                    ),
+                ]
+            ),
         )
 
 

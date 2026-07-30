@@ -293,7 +293,24 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
         def erase_apple_routing(root: Path) -> None:
             path = root / "config" / "codex" / "AGENTS.global.md"
             path.write_text(
-                path.read_text(encoding="utf-8").replace("$apple-design", "$ios-design", 1),
+                path.read_text(encoding="utf-8").replace(
+                    "Use `$apple-design` only for explicitly Apple-like physical interactions, "
+                    "gestures, springs, or direct manipulation",
+                    "Use `$ios-design` for interactions",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+        def erase_apple_generic_ui_boundary(root: Path) -> None:
+            path = root / "config" / "codex" / "AGENTS.global.md"
+            path.write_text(
+                path.read_text(encoding="utf-8").replace(
+                    "Generic typography, color, accessibility, and reduced-motion requests "
+                    "remain with `ui-ux-pro-max`",
+                    "Generic visual requests may use either skill",
+                    1,
+                ),
                 encoding="utf-8",
             )
 
@@ -431,6 +448,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             (erase_routing_boundary, "global AGENTS design-engineering routing must keep ui-ux-pro-max broad"),
             (erase_animation_vocabulary_routing, "global AGENTS design-engineering routing must map vague motion naming to animation-vocabulary"),
             (erase_apple_routing, "global AGENTS design-engineering routing must map Apple-like interactions to apple-design"),
+            (erase_apple_generic_ui_boundary, "global AGENTS design-engineering routing must keep generic typography, accessibility, and reduced motion with ui-ux-pro-max"),
             (erase_emil_routing, "global AGENTS design-engineering routing must reserve emil-design-eng for explicit Emil or animations.dev requests"),
             (erase_discovery_routing, "global AGENTS design-engineering routing must map motion discovery to find-animation-opportunities"),
             (erase_audit_routing, "global AGENTS design-engineering routing must map motion audits to improve-animations"),
