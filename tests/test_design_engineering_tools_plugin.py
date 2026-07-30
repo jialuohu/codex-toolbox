@@ -93,6 +93,30 @@ def lexical_relative_path(markdown: Path, reference: str) -> str:
 
 
 class DesignEngineeringToolsPluginTests(unittest.TestCase):
+    def test_pick_ui_library_requires_current_version_and_license_before_mutation(self):
+        picker = (
+            PLUGIN / "skills" / "pick-ui-library" / "SKILL.md"
+        ).read_text(encoding="utf-8")
+        normalized_picker = " ".join(picker.split())
+
+        self.assertRegex(
+            normalized_picker,
+            r"(?s)Context7 or official documentation.*current version",
+        )
+        self.assertRegex(
+            normalized_picker,
+            r"(?s)authoritative.*current license",
+        )
+        mutation_gate = normalized_picker.index(
+            "Before proposing or requesting authorization for a dependency mutation"
+        )
+        self.assertLess(normalized_picker.index("current version"), mutation_gate)
+        self.assertLess(normalized_picker.index("current license"), mutation_gate)
+        self.assertRegex(
+            normalized_picker[mutation_gate:],
+            r"(?s)cannot verify.*do not recommend or install",
+        )
+
     def test_plugin_artifact_contract(self):
         """The vendored plugin remains a safe, self-contained skill package."""
         manifest_path = PLUGIN / ".codex-plugin" / "plugin.json"
