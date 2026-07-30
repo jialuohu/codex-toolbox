@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -74,6 +76,22 @@ def parse_openai_yaml(path: Path) -> dict:
     return root
 
 
+def git_path_inventory() -> set[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "plugins/design-engineering-tools"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return set(result.stdout.splitlines())
+
+
+def lexical_relative_path(markdown: Path, reference: str) -> str:
+    path = os.path.normpath(str(markdown.parent.relative_to(REPO_ROOT) / reference))
+    return Path(path).as_posix()
+
+
 class DesignEngineeringToolsPluginTests(unittest.TestCase):
     def test_plugin_artifact_contract(self):
         """The vendored plugin remains a safe, self-contained skill package."""
@@ -95,6 +113,7 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
         self.assertIn("https://github.com/emilkowalski/skills", provenance)
         self.assertIn(UPSTREAM_COMMIT, provenance)
 
+        inventory = git_path_inventory()
         actual_skills = {path.name for path in (PLUGIN / "skills").iterdir() if path.is_dir()}
         self.assertEqual(actual_skills, set(SKILLS))
         for skill in SKILLS:
@@ -125,13 +144,15 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
             references = direct_markdown_references(skill_file.read_text(encoding="utf-8"))
             self.assertTrue(REQUIRED_SKILL_LINKS.issubset(references), f"{skill} omits required linked guidance")
             for reference in references:
-                self.assertTrue((skill_dir / reference).is_file(), f"{skill}: missing {reference}")
+                expected = lexical_relative_path(skill_file, reference)
+                self.assertIn(expected, inventory, f"{skill}: missing exact-case {reference}")
 
             for markdown in skill_dir.rglob("*.md"):
                 for reference in direct_markdown_references(markdown.read_text(encoding="utf-8")):
+                    expected = lexical_relative_path(markdown, reference)
                     self.assertTrue(
-                        (markdown.parent / reference).is_file(),
-                        f"{markdown.relative_to(PLUGIN)}: missing {reference}",
+                        expected in inventory,
+                        f"{markdown.relative_to(PLUGIN)}: missing exact-case {reference}",
                     )
 
             upstream = skill_dir / "references" / "upstream.md"
@@ -168,6 +189,13 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
         ]
         positions = [shared.index(item) for item in hierarchy]
         self.assertEqual(positions, sorted(positions))
+
+        for markdown in PLUGIN.rglob("*.md"):
+            self.assertNotIn(
+                "disable-model-invocation",
+                markdown.read_text(encoding="utf-8"),
+                f"unsupported metadata in {markdown.relative_to(PLUGIN)}",
+            )
 
 
 if __name__ == "__main__":

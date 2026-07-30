@@ -12,7 +12,7 @@ with an exact correction and accessibility consideration.
 
 Check purpose, frequency, easing, duration, origin, interruptibility,
 performance, reduced motion, hover capability, and token cohesion. Use
-[the standards](references/standards.md) and
+[the standards](references/STANDARDS.md) and
 [the complete upstream reference](references/upstream.md) when a finding needs
 a concrete threshold. Apply the
 [shared authority boundaries](../../SHARED-BOUNDARIES.md). Approval requires

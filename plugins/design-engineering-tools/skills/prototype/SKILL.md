@@ -21,6 +21,6 @@ Stop after presenting the picker: require a selected variant before promotion.
 prototypes. Prototype cleanup targets are the isolated route/page,
 variant files, harness file, and any prototype-only assets; enumerate exact
 existing targets and require separate explicit deletion confirmation before
-removing any of them. Read [picker requirements](references/picker.md) and
+removing any of them. Read [picker requirements](references/PICKER.md) and
 [the complete upstream reference](references/upstream.md) before building the
 harness. Apply the [shared authority boundaries](../../SHARED-BOUNDARIES.md).
