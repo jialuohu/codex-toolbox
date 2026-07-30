@@ -3,6 +3,7 @@
 
 import json
 import re
+import shlex
 from pathlib import Path
 
 
@@ -148,6 +149,23 @@ def array_body(script: str, name: str) -> str:
     return match.group("body")
 
 
+def shell_array_entries(script: str, name: str) -> list[str]:
+    """Parse the literal entries in a simple shell array, excluding comments."""
+    entries = []
+    for line in array_body(script, name).splitlines():
+        try:
+            tokens = shlex.split(line, comments=True, posix=True)
+        except ValueError as error:
+            raise SystemExit(f"setup script {name} has invalid shell syntax: {error}") from error
+        require(
+            len(tokens) <= 1,
+            f"setup script {name} must contain one literal entry per line",
+        )
+        if tokens:
+            entries.append(tokens[0])
+    return entries
+
+
 def normalized(text: str) -> str:
     return " ".join(text.split())
 
@@ -160,7 +178,7 @@ def scan_retired_reference_mentions(
     """Return retired-orchestrator and retired-tracker mentions outside ignored paths."""
     retired_mentions = []
     retired_tracker_mentions = []
-    ignored_scan_parts = {".git", ".superpowers", ".worktrees", "__pycache__"}
+    ignored_scan_parts = {".git", ".worktrees", "__pycache__"}
     for path in root.rglob("*"):
         relative_path = path.relative_to(root)
         if (
@@ -169,8 +187,6 @@ def scan_retired_reference_mentions(
             or path.resolve() == checker_path.resolve()
         ):
             continue
-        if relative_path.parts[:3] == ("plugins", "design-engineering-tools", "skills"):
-            continue
         try:
             lines = path.read_text().splitlines()
         except UnicodeDecodeError:
@@ -178,7 +194,13 @@ def scan_retired_reference_mentions(
         for line_number, line in enumerate(lines, start=1):
             if retired_orchestrator in line.lower():
                 retired_mentions.append((str(relative_path), line_number, line.strip()))
-            if re.search(r"\b" + ("lin" + "ear") + r"\b", line, re.IGNORECASE):
+            if re.search(
+                r"(?:https?://(?:www\.)?linear\.app\b|\bLINEAR_[A-Z0-9_]+\b|"
+                r"\blinear\s+(?:issue|issues|ticket|tickets|project|projects|team|teams|"
+                r"workspace|workspaces|integration|integrations|api|mcp|connector|connectors)\b)",
+                line,
+                re.IGNORECASE,
+            ):
                 retired_tracker_mentions.append((str(relative_path), line_number, line.strip()))
     return retired_mentions, retired_tracker_mentions
 
@@ -223,6 +245,10 @@ def validate_design_engineering_tools_contract(
         DESIGN_ENGINEERING_BOUNDARIES.exists(),
         "design-engineering-tools shared authority boundaries must exist",
     )
+    require(
+        DESIGN_ENGINEERING_SKILLS_DIR.exists(),
+        "design-engineering-tools skills directory must exist",
+    )
     design_plugin = json.loads(DESIGN_ENGINEERING_PLUGIN.read_text())
     expected_skills = {
         "animation-vocabulary",
@@ -241,17 +267,32 @@ def validate_design_engineering_tools_contract(
     }
     require(
         actual_skills == expected_skills,
-        "design-engineering-tools must expose exactly eight skills",
+        "design-engineering-tools skills inventory must be exactly eight expected skills",
     )
     require(
-        design_plugin.get("name") == "design-engineering-tools"
-        and design_plugin.get("version") == "0.1.0"
-        and design_plugin.get("skills") == "./skills/",
-        "design-engineering-tools manifest must expose version 0.1.0 and its skills directory",
+        design_plugin.get("name") == "design-engineering-tools",
+        "design-engineering-tools manifest name must be exact",
     )
     require(
-        "mcpServers" not in design_plugin and not (DESIGN_ENGINEERING_DIR / ".mcp.json").exists(),
-        "design-engineering-tools must not define an MCP server",
+        design_plugin.get("version") == "0.1.0",
+        "design-engineering-tools manifest version must be 0.1.0",
+    )
+    require(
+        design_plugin.get("skills") == "./skills/",
+        "design-engineering-tools manifest must expose ./skills/",
+    )
+    require(
+        design_plugin.get("interface", {}).get("capabilities")
+        == ["Read", "Write", "Interactive"],
+        "design-engineering-tools manifest capabilities must be Read, Write, and Interactive",
+    )
+    require(
+        "mcpServers" not in design_plugin,
+        "design-engineering-tools manifest must not declare MCP servers",
+    )
+    require(
+        not (DESIGN_ENGINEERING_DIR / ".mcp.json").exists(),
+        "design-engineering-tools must not define an MCP config file",
     )
     design_entry = next(
         (
@@ -262,62 +303,113 @@ def validate_design_engineering_tools_contract(
         None,
     )
     require(design_entry is not None, "marketplace must include design-engineering-tools")
+    source = design_entry.get("source", {})
     require(
-        design_entry.get("source") == {
-            "source": "local",
-            "path": "./plugins/design-engineering-tools",
-        },
-        "design-engineering-tools marketplace source must point to its local plugin directory",
+        source.get("source") == "local",
+        "design-engineering-tools marketplace source must be local",
     )
     require(
-        design_entry.get("policy") == {
-            "installation": "AVAILABLE",
-            "authentication": "ON_INSTALL",
-        },
-        "design-engineering-tools marketplace policy must be AVAILABLE with ON_INSTALL authentication",
+        source.get("path") == "./plugins/design-engineering-tools",
+        "design-engineering-tools marketplace path must be ./plugins/design-engineering-tools",
+    )
+    policy = design_entry.get("policy", {})
+    require(
+        policy.get("installation") == "AVAILABLE",
+        "design-engineering-tools marketplace installation policy must be AVAILABLE",
     )
     require(
-        '  "design-engineering-tools"' in default_plugins,
-        "setup script must install the design-engineering-tools plugin",
+        policy.get("authentication") == "ON_INSTALL",
+        "design-engineering-tools marketplace authentication policy must be ON_INSTALL",
     )
     require(
-        '  "design-engineering-tools"' not in managed_mcp_servers,
+        default_plugins.count("design-engineering-tools") == 1,
+        "setup script must install design-engineering-tools as an active default plugin",
+    )
+    require(
+        "design-engineering-tools" not in managed_mcp_servers,
         "design-engineering-tools must not be a managed MCP server",
     )
     provenance_text = DESIGN_ENGINEERING_PROVENANCE.read_text()
     require(
-        "https://github.com/emilkowalski/skills" in provenance_text
-        and "70744e3816f1d93eafb697161a8b880a7384c5ff" in provenance_text
-        and "MIT" in provenance_text,
-        "design-engineering-tools provenance must cite the upstream URL and commit",
+        "https://github.com/emilkowalski/skills" in provenance_text,
+        "design-engineering-tools provenance must cite the upstream URL",
+    )
+    require(
+        "70744e3816f1d93eafb697161a8b880a7384c5ff" in provenance_text,
+        "design-engineering-tools provenance must cite the upstream commit",
+    )
+    require(
+        "MIT" in provenance_text,
+        "design-engineering-tools provenance must cite the MIT license",
     )
     boundaries_text = DESIGN_ENGINEERING_BOUNDARIES.read_text()
-    for expected in (
-        "Explicit user direction",
-        "Target project conventions and design system",
-        "Accessibility requirements",
-        "Current official documentation",
-        "Imported opinions are advisory",
-    ):
+    boundary_order = (
+        ("Explicit user direction", "explicit user direction"),
+        ("Target project conventions and design system", "the project design system"),
+        ("Accessibility requirements", "accessibility requirements"),
+        ("Current official documentation", "current official documentation"),
+        ("Imported opinions are advisory", "imported opinions as advisory"),
+    )
+    boundary_positions = []
+    for expected, description in boundary_order:
         require(
             expected in boundaries_text,
-            f"design-engineering-tools shared authority boundaries must preserve {expected}",
+            f"design-engineering-tools shared authority boundary must preserve {description}",
         )
-    for expected in (
-        "Use the `ui-ux-pro-max` skill",
-        "Use `ui-ux-pro-max` as the broad default",
-        "$animation-vocabulary",
-        "$apple-design",
-        "$emil-design-eng` only for an explicit Emil Kowalski or animations.dev request",
-        "$find-animation-opportunities",
-        "$improve-animations",
-        "`$review-animations`, `$pick-ui-library`, and `$prototype` are explicit-only skills",
-        "project design system, explicit user direction, accessibility requirements, and current official documentation override",
-    ):
+        boundary_positions.append(boundaries_text.index(expected))
+    require(
+        boundary_positions == sorted(boundary_positions),
+        "design-engineering-tools shared authority boundary must preserve priority order",
+    )
+    for skill in expected_skills:
+        metadata = DESIGN_ENGINEERING_SKILLS_DIR / skill / "agents" / "openai.yaml"
+        policy_match = re.search(
+            r"^  allow_implicit_invocation: (?P<value>true|false)$",
+            metadata.read_text(),
+            re.MULTILINE,
+        ) if metadata.exists() else None
+        expected_value = skill not in {"pick-ui-library", "prototype", "review-animations"}
         require(
-            expected in global_agents_text,
-            "global AGENTS design-engineering routing must keep ui-ux-pro-max broad and focused skills bounded",
+            policy_match is not None
+            and (policy_match.group("value") == "true") == expected_value,
+            "design-engineering-tools skill invocation policies must preserve explicit-only skills",
         )
+    routing_requirements = (
+        (
+            "Use `ui-ux-pro-max` as the broad default",
+            "global AGENTS design-engineering routing must keep ui-ux-pro-max broad",
+        ),
+        (
+            "$animation-vocabulary",
+            "global AGENTS design-engineering routing must map vague motion naming to animation-vocabulary",
+        ),
+        (
+            "$apple-design",
+            "global AGENTS design-engineering routing must map Apple-like interactions to apple-design",
+        ),
+        (
+            "$emil-design-eng` only for an explicit Emil Kowalski or animations.dev request",
+            "global AGENTS design-engineering routing must reserve emil-design-eng for explicit Emil or animations.dev requests",
+        ),
+        (
+            "$find-animation-opportunities",
+            "global AGENTS design-engineering routing must map motion discovery to find-animation-opportunities",
+        ),
+        (
+            "$improve-animations",
+            "global AGENTS design-engineering routing must map motion audits to improve-animations",
+        ),
+        (
+            "`$review-animations`, `$pick-ui-library`, and `$prototype` are explicit-only skills",
+            "global AGENTS design-engineering routing must keep review, library, and prototype skills explicit-only",
+        ),
+        (
+            "project design system, explicit user direction, accessibility requirements, and current official documentation override",
+            "global AGENTS design-engineering routing must preserve the authority override order",
+        ),
+    )
+    for expected, message in routing_requirements:
+        require(expected in global_agents_text, message)
     design_readme_match = re.search(
         r"^## Design Engineering Tools\n(?P<body>.*?)(?=^## |\Z)",
         readme_text,
@@ -328,20 +420,30 @@ def validate_design_engineering_tools_contract(
         "README must include a Design Engineering Tools section",
     )
     design_readme_text = design_readme_match.group("body")
-    for expected in (
-        "`design-engineering-tools`",
-        "motion vocabulary",
-        "`review-animations`",
-        "`pick-ui-library`",
-        "`prototype` are explicit-only",
-        "https://github.com/emilkowalski/skills",
-        "70744e3816f1d93eafb697161a8b880a7384c5ff",
-        "fresh Codex task",
-    ):
-        require(
-            expected in design_readme_text,
-            "README design-engineering guidance must require a fresh task and document scope, attribution, and explicit-only skills",
-        )
+    readme_requirements = (
+        (
+            "motion vocabulary",
+            "README design-engineering section must describe motion vocabulary scope",
+        ),
+        (
+            "https://github.com/emilkowalski/skills",
+            "README design-engineering section must cite the upstream URL",
+        ),
+        (
+            "70744e3816f1d93eafb697161a8b880a7384c5ff",
+            "README design-engineering section must cite the upstream commit",
+        ),
+        (
+            "`review-animations`, `pick-ui-library`, and\n`prototype` are explicit-only skills",
+            "README design-engineering section must identify explicit-only skills",
+        ),
+        (
+            "fresh Codex task",
+            "README design-engineering section must require a fresh Codex task",
+        ),
+    )
+    for expected, message in readme_requirements:
+        require(expected in design_readme_text, message)
 
 
 def main() -> None:
@@ -639,8 +741,10 @@ def main() -> None:
     productivity_mcp = json.loads(PRODUCTIVITY_MCP.read_text())
     trading_mcp = json.loads(TRADING_MCP.read_text())
     default_plugins = array_body(script, "DEFAULT_PLUGINS")
+    default_plugin_entries = shell_array_entries(script, "DEFAULT_PLUGINS")
     retired_plugins = array_body(script, "RETIRED_PLUGINS")
     managed_mcp_servers = array_body(script, "MANAGED_MCP_SERVERS")
+    managed_mcp_server_entries = shell_array_entries(script, "MANAGED_MCP_SERVERS")
     retired_mcp_servers = array_body(script, "RETIRED_MCP_SERVERS")
     pixellab_server = game_asset_mcp.get("mcpServers", {}).get("pixellab")
     robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
@@ -652,8 +756,8 @@ def main() -> None:
         marketplace,
         global_agents_text,
         readme_text,
-        default_plugins,
-        managed_mcp_servers,
+        default_plugin_entries,
+        managed_mcp_server_entries,
     )
 
     require(obsidian_files_server is not None, "obsidian-tools must define obsidian_files")

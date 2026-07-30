@@ -43,6 +43,57 @@ class SetupCheckerScanTests(unittest.TestCase):
         )
         self.assertEqual(tracker_mentions, [])
 
+    def test_retired_reference_scan_distinguishes_tracker_integration_from_motion_vocabulary(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir) / "fixture-repo"
+            policy = repo_root / "docs" / "policy.md"
+            planning = repo_root / ".superpowers" / "plan.md"
+            imported_motion = (
+                repo_root
+                / "plugins"
+                / "design-engineering-tools"
+                / "skills"
+                / "animation-vocabulary"
+                / "references"
+                / "upstream.md"
+            )
+            tracker_name = "lin" + "ear"
+            tracker_url = f"https://{tracker_name}.app/example/issue/ABC-1"
+            tracker_env = f"{tracker_name.upper()}_TEAM_ID"
+            policy.parent.mkdir(parents=True)
+            planning.parent.mkdir(parents=True)
+            imported_motion.parent.mkdir(parents=True)
+            policy.write_text(f"Retired tracker: {tracker_url}\n")
+            planning.write_text(f"Retired integration uses {tracker_env}.\n")
+            imported_motion.write_text(
+                f"Use a {tracker_name} timing function for a spinner.\n", encoding="utf-8"
+            )
+
+            retired_mentions, tracker_mentions = CHECKER.scan_retired_reference_mentions(
+                repo_root,
+                CHECKER_PATH,
+                "sym" + "phony",
+            )
+
+        self.assertEqual(retired_mentions, [])
+        self.assertEqual(
+            tracker_mentions,
+            [
+                (
+                    "docs/policy.md",
+                    1,
+                    f"Retired tracker: {tracker_url}",
+                ),
+                (
+                    ".superpowers/plan.md",
+                    1,
+                    f"Retired integration uses {tracker_env}.",
+                ),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
