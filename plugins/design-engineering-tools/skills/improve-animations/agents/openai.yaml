@@ -1,0 +1,6 @@
+interface:
+  display_name: "Improve Animations"
+  short_description: "Read-only motion audits and plans."
+  default_prompt: "Use $improve-animations to audit this codebase motion."
+policy:
+  allow_implicit_invocation: true

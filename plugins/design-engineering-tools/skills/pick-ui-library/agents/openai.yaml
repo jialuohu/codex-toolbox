@@ -1,0 +1,6 @@
+interface:
+  display_name: "Pick UI Library"
+  short_description: "Choose a verified frontend library."
+  default_prompt: "Use $pick-ui-library to recommend a library for this UI task."
+policy:
+  allow_implicit_invocation: false

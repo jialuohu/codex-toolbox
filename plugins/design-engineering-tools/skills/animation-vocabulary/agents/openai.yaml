@@ -1,0 +1,6 @@
+interface:
+  display_name: "Animation Vocabulary"
+  short_description: "Name web motion effects precisely."
+  default_prompt: "Use $animation-vocabulary to name this motion effect."
+policy:
+  allow_implicit_invocation: true

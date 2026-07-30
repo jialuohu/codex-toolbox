@@ -1,0 +1,6 @@
+interface:
+  display_name: "Find Animation Opportunities"
+  short_description: "Find restrained, purposeful motion ideas."
+  default_prompt: "Use $find-animation-opportunities to inspect this interface."
+policy:
+  allow_implicit_invocation: true

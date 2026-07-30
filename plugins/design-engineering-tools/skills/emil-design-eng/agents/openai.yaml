@@ -1,0 +1,6 @@
+interface:
+  display_name: "Emil Design Engineering"
+  short_description: "Focused UI polish and motion craft."
+  default_prompt: "Use $emil-design-eng to polish this component interaction."
+policy:
+  allow_implicit_invocation: true

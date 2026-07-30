@@ -1,0 +1,6 @@
+interface:
+  display_name: "Apple Design"
+  short_description: "Guide fluid web interaction craft."
+  default_prompt: "Use $apple-design to review this gesture interaction."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Prototype Variants"
+  short_description: "Explore distinct UI variants safely."
+  default_prompt: "Use $prototype to create UI variants for this component."
+policy:
+  allow_implicit_invocation: false

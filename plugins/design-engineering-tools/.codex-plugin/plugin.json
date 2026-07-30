@@ -1,0 +1,18 @@
+{
+  "name": "design-engineering-tools",
+  "version": "0.1.0",
+  "description": "Focused design-engineering guidance for motion, UI libraries, and prototype variants.",
+  "author": {
+    "name": "Codex Toolbox Maintainers"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Design Engineering Tools",
+    "shortDescription": "Focused motion and UI craft guidance.",
+    "longDescription": "Focused animation vocabulary, motion review, library selection, and prototype-variant workflows adapted from an MIT-licensed upstream snapshot.",
+    "developerName": "Codex Toolbox Maintainers",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write", "Interactive"],
+    "defaultPrompt": "Use focused design-engineering guidance for motion, a UI library choice, or explicit prototype variants."
+  }
+}
