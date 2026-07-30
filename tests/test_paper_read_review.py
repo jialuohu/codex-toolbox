@@ -129,6 +129,30 @@ class PaperReadReviewSkillTests(unittest.TestCase):
         self.assertIn("\n\n> [!info]", body)
         self.assertNotIn("\n>\n> [!info]", body)
 
+    def test_skill_drafts_unwritten_sections_inside_review_callouts(self) -> None:
+        skill = self.read(SKILL)
+        self.assertRegex(
+            skill,
+            r"(?is)unwritten supported section.*?hidden template prompt.*?whitespace.*?media embeds",
+        )
+        self.assertIn(
+            "For every unwritten supported section, add one source-backed "
+            "`[!info] Suggested <section name>` callout inside that section's normal generated marker block.",
+            skill,
+        )
+        self.assertIn(
+            "Leave the user-owned section body unchanged; never insert the draft as unquoted prose.",
+            skill,
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)suggested draft.*?match.*?(tone|style).*?length",
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)unwritten supported section.*?full paper evidence.*?unavailable.*?omit",
+        )
+
     def test_skill_preserves_non_generated_content_and_fails_closed(self) -> None:
         skill = self.read(SKILL)
         self.assertIn(

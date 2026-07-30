@@ -46,6 +46,10 @@ Require every existing marker pair to occupy its exact layout-specific anchor; o
 
 Default to one callout per reviewed section. Use a second only when a technical correction and missing evidence must remain distinct. Add no new H1 or H2.
 
+Treat a supported section as an unwritten supported section when, after ignoring its hidden template prompt, whitespace, and media embeds, it contains no substantive user-authored prose.
+For every unwritten supported section, add one source-backed `[!info] Suggested <section name>` callout inside that section's normal generated marker block. The suggested draft must match the note's established tone and approximate length, cover only paper-backed content, and end with a source locator. Leave the user-owned section body unchanged; never insert the draft as unquoted prose.
+If full paper evidence for an unwritten supported section is unavailable, omit the unsupported draft, label the review limited, and report the gap under `Limitations`. A required source-backed suggested draft is substantive feedback, not filler.
+
 Keep the review scannable:
 
 - Use at most two callouts and 160 generated words per reviewed section.
