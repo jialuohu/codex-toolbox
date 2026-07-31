@@ -33,6 +33,7 @@ DEFAULT_PLUGINS=(
   "trading-tools"
   "vibe-trading-tools"
   "chronicle-tools"
+  "google-workspace-tools"
 )
 THIRD_PARTY_DEFAULT_PLUGINS=(
   "ui-ux-pro-max"

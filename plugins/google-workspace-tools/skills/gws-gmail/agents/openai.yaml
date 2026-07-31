@@ -1,0 +1,6 @@
+interface:
+  display_name: "gws Gmail"
+  short_description: "Search, read, and draft from an isolated Gmail account."
+  default_prompt: "Use $gws-gmail with an explicit account alias to search mail or make a draft."
+policy:
+  allow_implicit_invocation: true

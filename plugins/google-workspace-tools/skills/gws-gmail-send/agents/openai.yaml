@@ -1,0 +1,6 @@
+interface:
+  display_name: "Draft or Send Gmail"
+  short_description: "Prepare a Gmail draft or send with explicit intent."
+  default_prompt: "Use $gws-gmail-send with an explicit alias to prepare a draft."
+policy:
+  allow_implicit_invocation: true

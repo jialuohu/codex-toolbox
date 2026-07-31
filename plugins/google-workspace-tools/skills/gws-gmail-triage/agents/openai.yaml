@@ -1,0 +1,6 @@
+interface:
+  display_name: "Triage Gmail"
+  short_description: "Summarize unread mail from one isolated Gmail profile."
+  default_prompt: "Use $gws-gmail-triage with an explicit Gmail alias."
+policy:
+  allow_implicit_invocation: true

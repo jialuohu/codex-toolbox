@@ -1,0 +1,19 @@
+{
+  "name": "google-workspace-tools",
+  "version": "0.1.0",
+  "description": "Fail-closed, isolated-profile Gmail workflows using a pinned gws CLI.",
+  "author": {
+    "name": "Codex Toolbox Maintainers"
+  },
+  "license": "Apache-2.0",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Google Workspace Tools",
+    "shortDescription": "Use isolated Gmail profiles through gws.",
+    "longDescription": "Gmail-only skill guidance for direct gws use with explicit account aliases, identity checks, and draft-first composition.",
+    "developerName": "Codex Toolbox Maintainers",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write", "Interactive"],
+    "defaultPrompt": "Use an explicit Gmail account alias to search mail or prepare a draft."
+  }
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Draft or Reply-All Gmail"
+  short_description: "Prepare a reply-all draft from an isolated Gmail profile."
+  default_prompt: "Use $gws-gmail-reply-all with an explicit alias to prepare a draft."
+policy:
+  allow_implicit_invocation: true

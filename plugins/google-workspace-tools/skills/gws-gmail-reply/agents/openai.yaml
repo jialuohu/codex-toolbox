@@ -1,0 +1,6 @@
+interface:
+  display_name: "Draft or Reply Gmail"
+  short_description: "Prepare a thread reply from an isolated Gmail profile."
+  default_prompt: "Use $gws-gmail-reply with an explicit alias to prepare a reply draft."
+policy:
+  allow_implicit_invocation: true

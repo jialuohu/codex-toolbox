@@ -1,0 +1,6 @@
+interface:
+  display_name: "Isolated gws Gmail"
+  short_description: "Select and verify an isolated Gmail profile."
+  default_prompt: "Use $gws-shared before direct gws Gmail work with an explicit account alias."
+policy:
+  allow_implicit_invocation: true

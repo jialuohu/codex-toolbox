@@ -1,0 +1,6 @@
+interface:
+  display_name: "Read Gmail"
+  short_description: "Read a selected message from an isolated Gmail profile."
+  default_prompt: "Use $gws-gmail-read with an explicit alias and message ID."
+policy:
+  allow_implicit_invocation: true
