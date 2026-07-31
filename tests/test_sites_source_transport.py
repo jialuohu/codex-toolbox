@@ -463,7 +463,7 @@ class SitesSourceTransportTests(unittest.TestCase):
         self.assertNotIn(SYNTHETIC_TOKEN, text)
 
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.3.4")
+        self.assertEqual(plugin["version"], "0.3.5")
 
     def test_boundary_config_is_private_strict_and_fail_closed(self):
         spec = importlib.util.spec_from_file_location(

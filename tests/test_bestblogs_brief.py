@@ -367,7 +367,7 @@ class BestBlogsBriefTests(unittest.TestCase):
         with self.assertRaisesRegex(brief.BriefError, "foreign"):
             brief.read_today(foreign, "2026-07-24")
 
-    def test_rejects_unsafe_urls_and_unknown_content_types(self):
+    def test_rejects_unsafe_urls(self):
         for field, unsafe in (
             ("url", "https://user@example.com/item"),
             ("url", "https://bad host.example/item"),
@@ -382,8 +382,29 @@ class BestBlogsBriefTests(unittest.TestCase):
                 client = self.pro_client(self.stable_brief(), [[metadata("one", **values), metadata("two")]])
                 with self.assertRaisesRegex(brief.BriefError, "HTTPS"):
                     brief.read_today(client, "2026-07-24")
+
+    def test_normalizes_documented_podcasts_from_brief_and_metadata(self):
         client = self.pro_client(
-            self.stable_brief(items=[item("one", contentType="PODCAST"), item("two")]),
+            self.stable_brief(items=[
+                item("brief-podcast", contentType="PODCAST"),
+                item("metadata-podcast", contentType=None),
+            ]),
+            [[
+                metadata("brief-podcast", "ARTICLE"),
+                metadata("metadata-podcast", "PODCAST"),
+            ]],
+        )
+
+        result = brief.read_today(client, "2026-07-24")
+
+        self.assertEqual(
+            [(entry["resourceId"], entry["contentType"]) for entry in result["items"]],
+            [("brief-podcast", "PODCAST"), ("metadata-podcast", "PODCAST")],
+        )
+
+    def test_rejects_undocumented_content_types(self):
+        client = self.pro_client(
+            self.stable_brief(items=[item("one", contentType="AUDIOBOOK"), item("two")]),
             [[metadata("one"), metadata("two")]],
         )
         with self.assertRaisesRegex(brief.BriefError, "content type"):

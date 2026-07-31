@@ -26,7 +26,7 @@ MAX_BATCH_SIZE = 100
 API_KEY = re.compile(r"^bb_[0-9A-Fa-f]{32}$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 STABLE_STATUSES = frozenset(("COMPLETED", "PUBLISHED"))
-CONTENT_TYPES = frozenset(("ARTICLE", "VIDEO", "TWITTER"))
+CONTENT_TYPES = frozenset(("ARTICLE", "PODCAST", "VIDEO", "TWITTER"))
 MAX_READ_TIME_MINUTES = 1_440
 MIN_SCORE = -1_000_000
 MAX_SCORE = 1_000_000
@@ -253,7 +253,7 @@ def _first_present(*values):
 def _normalized_content_type(value):
     if not isinstance(value, str):
         raise BriefError("unknown content type")
-    mapping = {"ARTICLE": "ARTICLE", "VIDEO": "VIDEO", "TWITTER": "TWITTER", "TWEET": "TWITTER"}
+    mapping = {"ARTICLE": "ARTICLE", "PODCAST": "PODCAST", "VIDEO": "VIDEO", "TWITTER": "TWITTER", "TWEET": "TWITTER"}
     try:
         return mapping[value.upper()]
     except KeyError as error:
