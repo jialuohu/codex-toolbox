@@ -102,8 +102,20 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "gws shared runtime must use the pinned absolute managed binary",
             ),
             (
-                '[ -f "$gws_bin" ] && [ ! -L "$gws_bin" ] && [ -x "$gws_bin" ] || exit 1\n',
-                "gws shared runtime must require a regular non-symlink executable",
+                "        metadata = os.lstat(component)\n",
+                "gws shared runtime must validate every managed runtime path component",
+            ),
+            (
+                "            or not stat.S_ISDIR(metadata.st_mode)\n"
+                "            or metadata.st_uid not in trusted_owners\n"
+                "            or mode & (stat.S_IWGRP | stat.S_IWOTH)\n",
+                "gws shared runtime must reject untrusted or writable runtime directories",
+            ),
+            (
+                "        or not stat.S_ISREG(metadata.st_mode)\n"
+                "        or metadata.st_uid not in trusted_owners\n"
+                "        or mode & (stat.S_IWGRP | stat.S_IWOTH)\n",
+                "gws shared runtime must reject an untrusted or writable runtime binary",
             ),
             (
                 'gws_sha_output="$(/usr/bin/shasum -a 256 "$gws_bin" 2>/dev/null)" || exit 1\n',
@@ -498,6 +510,23 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         setup_script = "scripts/setup-gws.sh"
 
         mutations = (
+            (
+                "  runtime_path_is_trusted 0 || return 1\n",
+                "",
+                "setup-gws must validate the complete managed runtime trust path",
+            ),
+            (
+                "            or not stat.S_ISDIR(metadata.st_mode)\n"
+                "            or metadata.st_uid not in trusted_owners\n"
+                "            or mode & (stat.S_IWGRP | stat.S_IWOTH)\n",
+                "            or not stat.S_ISDIR(metadata.st_mode)\n",
+                "setup-gws must reject untrusted or writable runtime directories",
+            ),
+            (
+                "  ensure_runtime_dir\n",
+                '  ensure_executable_dir "$RUNTIME_DIR"\n',
+                "setup-gws installer must reject unsafe preexisting runtime paths",
+            ),
             (
                 '  profile_state_is_private_shallow "$SECRETS_BASE" || return 1\n',
                 "",

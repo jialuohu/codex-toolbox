@@ -184,9 +184,11 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
         for required in (
             '${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws',
             'gws_bin=',
-            '[ -f "$gws_bin" ]',
-            '[ ! -L "$gws_bin" ]',
-            'gws_runtime_root="$(cd -P "$gws_runtime_dir" && pwd)"',
+            'RUNTIME_DIR_PATH="$gws_runtime_dir"',
+            "metadata = os.lstat(component)",
+            "metadata.st_uid not in trusted_owners",
+            "mode & (stat.S_IWGRP | stat.S_IWOTH)",
+            "not stat.S_ISREG(metadata.st_mode)",
             '/usr/bin/shasum -a 256 "$gws_bin"',
             GWS_BINARY_SHA256,
             '"$gws_bin" --version',
@@ -198,7 +200,7 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
         ):
             self.assertIn(required, shared)
         self.assertEqual(shared_source.count(GWS_BINARY_SHA256), 1)
-        self.assertEqual(shared_source.count("/usr/bin/python3 -I - <<'PY'"), 2)
+        self.assertEqual(shared_source.count("/usr/bin/python3 -I - <<'PY'"), 3)
         self.assertIn("/usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN", shared_source)
         self.assertIn("same scrubbed absolute `/usr/bin/env` prefix", shared)
         self.assertNotIn("auth status --format", shared)

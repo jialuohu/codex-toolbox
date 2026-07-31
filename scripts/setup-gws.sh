@@ -89,15 +89,75 @@ platform_ready() {
 }
 
 runtime_ready() {
-  local version_output first_line runtime_root canonical_binary
-  [ -f "$GWS_BIN" ] && [ ! -L "$GWS_BIN" ] && [ -x "$GWS_BIN" ] || return 1
-  runtime_root="$(canonical_dir "$RUNTIME_DIR")" || return 1
-  canonical_binary="$(cd -P "$RUNTIME_DIR" && printf '%s/gws\n' "$PWD")" || return 1
-  [ "$canonical_binary" = "$runtime_root/gws" ] || return 1
+  local version_output first_line
+  runtime_path_is_trusted 0 || return 1
   [ "$(file_sha256 "$GWS_BIN")" = "$BINARY_SHA256" ] || return 1
   version_output="$("$GWS_BIN" --version 2>/dev/null)" || return 1
   first_line="${version_output%%$'\n'*}"
   [ "$first_line" = "gws $VERSION" ]
+}
+
+runtime_path_is_trusted() {
+  RUNTIME_DIR_PATH="$RUNTIME_DIR" \
+  RUNTIME_BINARY_PATH="$GWS_BIN" \
+  ALLOW_MISSING_RUNTIME="$1" \
+    /usr/bin/python3 -I - <<'PY'
+import os
+import stat
+import sys
+
+try:
+    runtime_dir = os.environ["RUNTIME_DIR_PATH"]
+    binary = os.environ["RUNTIME_BINARY_PATH"]
+    allow_missing = os.environ["ALLOW_MISSING_RUNTIME"] == "1"
+    if (
+        not os.path.isabs(runtime_dir)
+        or os.path.normpath(runtime_dir) != runtime_dir
+        or binary != os.path.join(runtime_dir, "gws")
+    ):
+        raise ValueError("non-canonical runtime path")
+
+    trusted_owners = {0, os.getuid()}
+    current = os.path.sep
+    components = [current]
+    for component in runtime_dir.split(os.path.sep)[1:]:
+        current = os.path.join(current, component)
+        components.append(current)
+
+    missing = False
+    for component in components:
+        try:
+            metadata = os.lstat(component)
+        except FileNotFoundError:
+            if not allow_missing:
+                raise
+            missing = True
+            continue
+        if missing:
+            raise ValueError("runtime path exists below a missing ancestor")
+        mode = stat.S_IMODE(metadata.st_mode)
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid not in trusted_owners
+            or mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            raise ValueError("unsafe runtime directory")
+
+    if not allow_missing:
+        metadata = os.lstat(binary)
+        mode = stat.S_IMODE(metadata.st_mode)
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid not in trusted_owners
+            or mode & (stat.S_IWGRP | stat.S_IWOTH)
+            or not mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        ):
+            raise ValueError("unsafe runtime binary")
+except (KeyError, OSError, ValueError):
+    sys.exit(1)
+PY
 }
 
 canonical_dir() {
@@ -123,6 +183,13 @@ ensure_executable_dir() {
   fi
   mkdir -p "$1" || die "unable to create executable directory"
   chmod 755 "$1" || die "unable to set executable directory permissions"
+}
+
+ensure_runtime_dir() {
+  runtime_path_is_trusted 1 || die "unsafe gws runtime path"
+  mkdir -p "$RUNTIME_DIR" || die "unable to create gws runtime path"
+  chmod 755 "$RUNTIME_DIR" || die "unable to protect gws runtime path"
+  runtime_path_is_trusted 1 || die "unsafe gws runtime path"
 }
 
 file_sha256() {
@@ -512,7 +579,7 @@ install_gws() {
     printf 'gws %s already installed\n' "$VERSION"
     return 0
   fi
-  ensure_executable_dir "$RUNTIME_DIR"
+  ensure_runtime_dir
   ensure_executable_dir "$LOCAL_BIN_DIR"
   local archive stage actual extracted_sha
   INSTALL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/codex-toolbox-gws.XXXXXX")" || die "unable to create temporary directory"

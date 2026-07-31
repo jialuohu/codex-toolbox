@@ -333,6 +333,33 @@ exit 3
         linked = self.run("--check")
         self.assertIn("gws runtime: missing (expected 0.22.5)", linked.stdout)
 
+    def test_runtime_rejects_writable_or_symlinked_release_paths(self) -> None:
+        self.install_fake_runtime()
+        runtime_dir = self.runtime_gws.parent
+
+        runtime_dir.chmod(0o777)
+        writable = self.run("--check")
+        self.assertIn("gws runtime: missing (expected 0.22.5)", writable.stdout)
+
+        runtime_dir.chmod(0o755)
+        real_data_home = self.home / "real-data"
+        self.data_home.rename(real_data_home)
+        self.data_home.symlink_to(real_data_home, target_is_directory=True)
+        linked_ancestor = self.run("--check")
+        self.assertIn(
+            "gws runtime: missing (expected 0.22.5)",
+            linked_ancestor.stdout,
+        )
+
+    def test_install_refuses_an_untrusted_preexisting_runtime_path(self) -> None:
+        self.install_fake_runtime()
+        self.runtime_gws.parent.chmod(0o777)
+
+        result = self.run("--install")
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("unsafe gws runtime path", result.stderr)
+
     def test_install_rejects_extracted_binary_digest_before_activation(self) -> None:
         stage = self.home / "release-stage"
         stage.mkdir()

@@ -131,17 +131,60 @@ PY
 ```
 
 Only after profile validation passed, resolve the pinned managed binary. Require
-a canonical, non-symlinked managed release directory and a regular,
-non-symlinked executable; verify the exact published binary checksum and
-version. Never invoke an ambient PATH `gws`:
+every lexical path component from `/` through the managed release directory to
+be a real directory owned by root or the current user and not group- or
+world-writable. Require the executable to be a regular, non-symlinked file with
+the same ownership constraint and no group/world write bits; verify the exact
+published binary checksum and version. Never invoke an ambient PATH `gws`:
 
 ```bash
 gws_runtime_path="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"
 gws_runtime_dir="${gws_runtime_path%/gws}"
-[ -d "$gws_runtime_dir" ] && [ ! -L "$gws_runtime_dir" ] || exit 1
-gws_runtime_root="$(cd -P "$gws_runtime_dir" && pwd)" || exit 1
-gws_bin="$gws_runtime_root/gws"
-[ -f "$gws_bin" ] && [ ! -L "$gws_bin" ] && [ -x "$gws_bin" ] || exit 1
+RUNTIME_DIR_PATH="$gws_runtime_dir" RUNTIME_BINARY_PATH="$gws_runtime_path" \
+  /usr/bin/python3 -I - <<'PY' || exit 1
+import os
+import stat
+import sys
+
+try:
+    runtime_dir = os.environ["RUNTIME_DIR_PATH"]
+    binary = os.environ["RUNTIME_BINARY_PATH"]
+    if (
+        not os.path.isabs(runtime_dir)
+        or os.path.normpath(runtime_dir) != runtime_dir
+        or binary != os.path.join(runtime_dir, "gws")
+    ):
+        raise ValueError("non-canonical runtime path")
+    trusted_owners = {0, os.getuid()}
+    current = os.path.sep
+    components = [current]
+    for component in runtime_dir.split(os.path.sep)[1:]:
+        current = os.path.join(current, component)
+        components.append(current)
+    for component in components:
+        metadata = os.lstat(component)
+        mode = stat.S_IMODE(metadata.st_mode)
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid not in trusted_owners
+            or mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            raise ValueError("unsafe runtime directory")
+    metadata = os.lstat(binary)
+    mode = stat.S_IMODE(metadata.st_mode)
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid not in trusted_owners
+        or mode & (stat.S_IWGRP | stat.S_IWOTH)
+        or not mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    ):
+        raise ValueError("unsafe runtime binary")
+except (KeyError, OSError, ValueError):
+    sys.exit(1)
+PY
+gws_bin="$gws_runtime_path"
 gws_sha_output="$(/usr/bin/shasum -a 256 "$gws_bin" 2>/dev/null)" || exit 1
 gws_sha256="${gws_sha_output%% *}"
 [ "$gws_sha256" = "0f27b8b0815bf09cdf95da48d3c604f05ceb8f16bf5c9f0ba355b1f957cdd47e" ] || exit 1

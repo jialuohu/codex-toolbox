@@ -161,7 +161,7 @@ GOOGLE_WORKSPACE_LICENSE_SHA256 = (
     "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
 )
 GWS_SHARED_SKILL_SHA256 = (
-    "c04047f10c29aec2b72222b3acb975bc781227ab94f991bcb04dbc1ee252ba67"
+    "f4a3c44f994335838d44eaa5a00c64969169d7a352629c93e534e91fce23a95b"
 )
 GWS_GMAIL_SKILL_SHA256 = (
     "5dec2f19457737a4611fe073c9cb943c0e2337af12b7bb7cdd9e3b8571216ef3"
@@ -188,10 +188,19 @@ GOOGLE_WORKSPACE_PROVENANCE_SHA256 = (
     "aff66c1f8bacb72b7a28d74a9718a9dafe54a66d457c7cc54245f4767493970c"
 )
 GWS_INSTALL_FUNCTION_SHA256 = (
-    "1da1cfc9ee65cbc0921b7de21d0e7f5b092d6914d176f0c5a0197077cd2f915d"
+    "6583f835538eaa503fd0118f48beccf97ea0af36930f24956e6f93ede8657198"
+)
+GWS_RUNTIME_READY_FUNCTION_SHA256 = (
+    "20967ce89c5fc49eb56cffb7f325e2f124e9aeca14c6072530c48eb77a8e54b4"
+)
+GWS_RUNTIME_TRUST_FUNCTION_SHA256 = (
+    "0502a0a4e0167e199f25e5d1767a46a42c73a99a474088dd60dedacbf7d3c5f4"
+)
+GWS_ENSURE_RUNTIME_FUNCTION_SHA256 = (
+    "2ab4dacc442950d52d571e8acdabc6209635e2596c4d84ad204b5f71069ea366"
 )
 GWS_SETUP_SHA256 = (
-    "a8520d60e770ceb1dc12794d6cb75168f2fb46202f08cba8b86711b0ee22d034"
+    "f156b8c52464b2ec3bcec6a677313dec596f8702e52d90010999586250e27a2c"
 )
 GLOBAL_GMAIL_ROUTING_PARAGRAPH = (
     "Keep the official Gmail connector available for ordinary connected Gmail requests. "
@@ -725,7 +734,70 @@ def validate_google_workspace_tools_contract(
         == 1,
         "setup-gws must actively compare the downloaded archive checksum",
     )
+    runtime_ready_blocks = shell_function_blocks(gws_setup_text, "runtime_ready")
+    require(
+        len(runtime_ready_blocks) == 1
+        and "  runtime_path_is_trusted 0 || return 1\n" in runtime_ready_blocks[0]
+        and hashlib.sha256(runtime_ready_blocks[0].encode()).hexdigest()
+        == GWS_RUNTIME_READY_FUNCTION_SHA256,
+        "setup-gws must validate the complete managed runtime trust path",
+    )
+    runtime_trust_blocks = shell_function_blocks(
+        gws_setup_text,
+        "runtime_path_is_trusted",
+    )
+    require(
+        len(runtime_trust_blocks) == 1
+        and all(
+            expected in runtime_trust_blocks[0]
+            for expected in (
+                "not os.path.isabs(runtime_dir)",
+                "os.path.normpath(runtime_dir) != runtime_dir",
+                'binary != os.path.join(runtime_dir, "gws")',
+                "components = [current]",
+                "metadata = os.lstat(component)",
+                "stat.S_ISLNK(metadata.st_mode)",
+                "not stat.S_ISDIR(metadata.st_mode)",
+            )
+        ),
+        "setup-gws must validate every managed runtime path component",
+    )
+    require(
+        len(runtime_trust_blocks) == 1
+        and (
+            "            or not stat.S_ISDIR(metadata.st_mode)\n"
+            "            or metadata.st_uid not in trusted_owners\n"
+            "            or mode & (stat.S_IWGRP | stat.S_IWOTH)\n"
+        )
+        in runtime_trust_blocks[0],
+        "setup-gws must reject untrusted or writable runtime directories",
+    )
+    require(
+        len(runtime_trust_blocks) == 1
+        and (
+            "            stat.S_ISLNK(metadata.st_mode)\n"
+            "            or not stat.S_ISREG(metadata.st_mode)\n"
+            "            or metadata.st_uid not in trusted_owners\n"
+            "            or mode & (stat.S_IWGRP | stat.S_IWOTH)\n"
+        )
+        in runtime_trust_blocks[0]
+        and hashlib.sha256(runtime_trust_blocks[0].encode()).hexdigest()
+        == GWS_RUNTIME_TRUST_FUNCTION_SHA256,
+        "setup-gws must reject an untrusted or writable runtime binary",
+    )
+    ensure_runtime_blocks = shell_function_blocks(gws_setup_text, "ensure_runtime_dir")
     install_gws_blocks = shell_function_blocks(gws_setup_text, "install_gws")
+    require(
+        len(ensure_runtime_blocks) == 1
+        and ensure_runtime_blocks[0].count("runtime_path_is_trusted 1") == 2
+        and 'mkdir -p "$RUNTIME_DIR"' in ensure_runtime_blocks[0]
+        and 'chmod 755 "$RUNTIME_DIR"' in ensure_runtime_blocks[0]
+        and hashlib.sha256(ensure_runtime_blocks[0].encode()).hexdigest()
+        == GWS_ENSURE_RUNTIME_FUNCTION_SHA256
+        and len(install_gws_blocks) == 1
+        and "  ensure_runtime_dir\n" in install_gws_blocks[0],
+        "setup-gws installer must reject unsafe preexisting runtime paths",
+    )
     require(
         len(install_gws_blocks) == 1
         and hashlib.sha256(install_gws_blocks[0].encode()).hexdigest()
@@ -956,12 +1028,20 @@ def validate_google_workspace_tools_contract(
             "gws shared runtime must use the pinned absolute managed binary",
         ),
         (
-            'gws_runtime_root="$(cd -P "$gws_runtime_dir" && pwd)" || exit 1\n',
-            "gws shared runtime must canonicalize the managed binary directory",
+            "        metadata = os.lstat(component)\n",
+            "gws shared runtime must validate every managed runtime path component",
         ),
         (
-            '[ -f "$gws_bin" ] && [ ! -L "$gws_bin" ] && [ -x "$gws_bin" ] || exit 1\n',
-            "gws shared runtime must require a regular non-symlink executable",
+            "            or not stat.S_ISDIR(metadata.st_mode)\n"
+            "            or metadata.st_uid not in trusted_owners\n"
+            "            or mode & (stat.S_IWGRP | stat.S_IWOTH)\n",
+            "gws shared runtime must reject untrusted or writable runtime directories",
+        ),
+        (
+            "        or not stat.S_ISREG(metadata.st_mode)\n"
+            "        or metadata.st_uid not in trusted_owners\n"
+            "        or mode & (stat.S_IWGRP | stat.S_IWOTH)\n",
+            "gws shared runtime must reject an untrusted or writable runtime binary",
         ),
         (
             'gws_sha_output="$(/usr/bin/shasum -a 256 "$gws_bin" 2>/dev/null)" || exit 1\n',
