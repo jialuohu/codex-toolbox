@@ -26,6 +26,7 @@ TX_BACKUP=""
 TX_LIVE=""
 TX_RESERVATION=""
 TX_LOCK=""
+TX_CLIENT_CANDIDATE=""
 PROFILE_ENTRIES=()
 
 cleanup_install_tmp() {
@@ -35,6 +36,9 @@ cleanup_install_tmp() {
 }
 
 cleanup_profile_transaction() {
+  if [ -n "${TX_CLIENT_CANDIDATE:-}" ] && { [ -e "$TX_CLIENT_CANDIDATE" ] || [ -L "$TX_CLIENT_CANDIDATE" ]; }; then
+    /bin/rm -- "$TX_CLIENT_CANDIDATE" || printf 'warning: failed to clean OAuth client candidate\n' >&2
+  fi
   if [ -n "${TX_CANDIDATE:-}" ] && [ -e "$TX_CANDIDATE" ]; then
     /bin/rm -rf -- "$TX_CANDIDATE" || printf 'warning: failed to clean candidate profile\n' >&2
   fi
@@ -145,8 +149,17 @@ sys.exit(0 if valid else 1)
 PY
 }
 
+secrets_base_is_private() {
+  local base
+  [ -d "$SECRETS_BASE" ] && [ ! -L "$SECRETS_BASE" ] || return 1
+  profile_state_is_private_shallow "$SECRETS_BASE" || return 1
+  base="$(canonical_dir "$SECRETS_BASE")" || return 1
+  [ "$base" = "$SECRETS_BASE" ]
+}
+
 secrets_root_is_private() {
   local root
+  secrets_base_is_private || return 1
   [ -d "$SECRETS_ROOT" ] && [ ! -L "$SECRETS_ROOT" ] || return 1
   profile_state_is_private_shallow "$SECRETS_ROOT" || return 1
   root="$(canonical_dir "$SECRETS_ROOT")" || return 1
@@ -241,15 +254,23 @@ PY
 }
 
 ensure_secrets_root() {
-  local base
+  local parent
+  if [ -e "$SECRETS_BASE" ] || [ -L "$SECRETS_BASE" ]; then
+    secrets_base_is_private || die "secrets base is unsafe"
+  else
+    parent="${SECRETS_BASE%/*}"
+    [ "$parent" != "$SECRETS_BASE" ] || die "secrets base must be an absolute canonical path"
+    [ ! -L "$parent" ] || die "refusing symlinked secrets base parent"
+    /bin/mkdir -p "$parent" || die "unable to create secrets base parent"
+    [ "$(canonical_dir "$parent")" = "$parent" ] || die "secrets base parent is not canonical"
+    /bin/mkdir "$SECRETS_BASE" || die "unable to create secrets base"
+    chmod 700 "$SECRETS_BASE" || die "unable to protect secrets base"
+    secrets_base_is_private || die "secrets base is unsafe"
+  fi
   if [ -e "$SECRETS_ROOT" ] || [ -L "$SECRETS_ROOT" ]; then
     secrets_root_is_private || die "secrets root is unsafe"
     return 0
   fi
-  [ ! -L "$SECRETS_BASE" ] || die "refusing symlinked secrets base"
-  /bin/mkdir -p "$SECRETS_BASE" || die "unable to create secrets base"
-  base="$(canonical_dir "$SECRETS_BASE")" || die "secrets base is unsafe"
-  [ "$base" = "$SECRETS_BASE" ] || die "secrets base is not canonical"
   /bin/mkdir "$SECRETS_ROOT" || die "unable to create secrets root"
   chmod 700 "$SECRETS_ROOT" || die "unable to protect secrets root"
   secrets_root_is_private || die "secrets root is unsafe"
@@ -289,6 +310,29 @@ import sys
 try:
     os.rename(os.environ["SOURCE_PATH"], os.environ["DESTINATION_PATH"])
 except OSError:
+    sys.exit(1)
+PY
+}
+
+unlink_destination_if_same_file() {
+  SOURCE_PATH="$1" DESTINATION_PATH="$2" /usr/bin/python3 -I - <<'PY'
+import os
+import stat
+import sys
+
+try:
+    source = os.lstat(os.environ["SOURCE_PATH"])
+    destination = os.lstat(os.environ["DESTINATION_PATH"])
+    same = (
+        stat.S_ISREG(source.st_mode)
+        and stat.S_ISREG(destination.st_mode)
+        and source.st_dev == destination.st_dev
+        and source.st_ino == destination.st_ino
+    )
+    if not same:
+        raise ValueError("destination changed")
+    os.unlink(os.environ["DESTINATION_PATH"])
+except (OSError, ValueError):
     sys.exit(1)
 PY
 }
@@ -477,13 +521,24 @@ install_gws() {
 
 register_client() {
   [ "$#" -eq 1 ] || usage
+  local candidate
   validate_client_json "$1" || die "invalid Desktop OAuth client JSON"
   [ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || die "OAuth client already registered; refusing replacement"
   ensure_secrets_root
   [ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || die "OAuth client already registered; refusing replacement"
-  cp "$1" "$CLIENT_PATH" || die "unable to store OAuth client"
-  chmod 600 "$CLIENT_PATH" || die "unable to protect OAuth client"
-  registered_client_is_private || die "stored OAuth client failed readback"
+  candidate="$(mktemp "$SECRETS_ROOT/.client_secret.json.XXXXXX")" || die "unable to create OAuth client candidate"
+  TX_CLIENT_CANDIDATE="$candidate"
+  /bin/cp "$1" "$candidate" || die "unable to copy OAuth client candidate"
+  chmod 600 "$candidate" || die "unable to protect OAuth client candidate"
+  validate_client_json "$candidate" || die "copied OAuth client candidate is invalid"
+  private_regular_file "$candidate" || die "copied OAuth client candidate is unsafe"
+  /bin/ln "$candidate" "$CLIENT_PATH" || die "OAuth client already registered; refusing replacement"
+  if ! registered_client_is_private; then
+    unlink_destination_if_same_file "$candidate" "$CLIENT_PATH" || die "stored OAuth client failed readback and rollback"
+    die "stored OAuth client failed readback"
+  fi
+  /bin/rm -- "$candidate" || die "unable to clean OAuth client candidate"
+  TX_CLIENT_CANDIDATE=""
   printf 'OAuth client registered\n'
 }
 
@@ -611,7 +666,15 @@ check_all() {
   local failed=0 alias alias_path
   if platform_ready; then printf 'Platform: ready (macOS arm64)\n'; else printf 'Platform: unsupported (requires macOS arm64)\n'; failed=1; fi
   if runtime_ready; then printf 'gws runtime: ready (%s)\n' "$VERSION"; else printf 'gws runtime: missing (expected %s)\n' "$VERSION"; failed=1; fi
-  if [ ! -e "$SECRETS_ROOT" ] && [ ! -L "$SECRETS_ROOT" ]; then
+  if [ ! -e "$SECRETS_BASE" ] && [ ! -L "$SECRETS_BASE" ]; then
+    printf 'OAuth client: missing\n'
+    printf 'Profiles: none\n'
+    failed=1
+  elif ! secrets_base_is_private; then
+    printf 'OAuth client: unsafe\n'
+    printf 'Profiles: unsafe\n'
+    failed=1
+  elif [ ! -e "$SECRETS_ROOT" ] && [ ! -L "$SECRETS_ROOT" ]; then
     printf 'OAuth client: missing\n'
     printf 'Profiles: none\n'
     failed=1
@@ -663,6 +726,14 @@ check_all() {
 
 list_accounts() {
   [ "$#" -eq 0 ] || usage
+  if [ ! -e "$SECRETS_BASE" ] && [ ! -L "$SECRETS_BASE" ]; then
+    printf 'Profiles: none\n'
+    return 0
+  fi
+  if ! secrets_base_is_private; then
+    printf 'Profiles: unsafe\n'
+    return 1
+  fi
   if [ ! -e "$SECRETS_ROOT" ] && [ ! -L "$SECRETS_ROOT" ]; then
     printf 'Profiles: none\n'
     return 0

@@ -396,6 +396,7 @@ exit 3
                 self.assertIn("invalid Desktop OAuth client JSON", bad.stderr)
                 self.assertFalse(copied, "invalid client must be rejected before copying")
         self.register_client()
+        self.assert_mode(self.secrets_home, 0o700)
         self.assert_mode(self.secrets_home / "gws", 0o700)
         self.assert_mode(self.client_path, 0o600)
         again = self.run("--register-client", str(self.write_client()))
@@ -552,6 +553,87 @@ exit 0
                 result = self.run(*command)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertNotIn("Overall: ready", result.stdout)
+
+    def test_every_health_surface_rejects_an_unsafe_secrets_base_before_status(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        commands = (
+            ("--check",),
+            ("--check-account", "account"),
+            ("--list-accounts",),
+        )
+        status_calls_before = sum(
+            line.startswith("auth status|")
+            for line in self.gws_log.read_text().splitlines()
+        )
+
+        os.chmod(self.secrets_home, 0o777)
+        for command in commands:
+            with self.subTest(base="mode", command=command):
+                result = self.run(*command)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertNotIn("Overall: ready", result.stdout)
+        os.chmod(self.secrets_home, 0o700)
+
+        linked_base = self.home / "linked-secrets-base"
+        linked_base.symlink_to(self.secrets_home, target_is_directory=True)
+        self.env["CODEX_SECRETS_DIR"] = str(linked_base)
+        for command in commands:
+            with self.subTest(base="symlink", command=command):
+                result = self.run(*command)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertNotIn("Overall: ready", result.stdout)
+
+        status_calls_after = sum(
+            line.startswith("auth status|")
+            for line in self.gws_log.read_text().splitlines()
+        )
+        self.assertEqual(
+            status_calls_after,
+            status_calls_before,
+            "unsafe secrets bases must fail before auth status",
+        )
+
+    def test_register_client_refuses_an_existing_unsafe_secrets_base_without_repair(self) -> None:
+        self.secrets_home.mkdir()
+        os.chmod(self.secrets_home, 0o777)
+        result = self.run("--register-client", str(self.write_client()))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assert_mode(self.secrets_home, 0o777)
+        self.assertFalse(self.client_path.exists() or self.client_path.is_symlink())
+        self.assertFalse((self.secrets_home / "gws").exists())
+
+        os.chmod(self.secrets_home, 0o700)
+        retried = self.run("--register-client", str(self.write_client()))
+        self.assertEqual(retried.returncode, 0, retried.stdout + retried.stderr)
+        self.assert_mode(self.client_path, 0o600)
+
+    def test_register_client_protection_failure_leaves_no_final_or_candidate_and_can_retry(self) -> None:
+        source = self.write_client()
+        self.write_executable("chmod", """#!/bin/sh
+if [ "${FAKE_CHMOD_CLIENT_FAILURE:-0}" = 1 ]; then
+  case "${2:-}" in
+    */client_secret.json|*/.client_secret.json.*) exit 1 ;;
+  esac
+fi
+exec /bin/chmod "$@"
+""")
+        self.env["FAKE_CHMOD_CLIENT_FAILURE"] = "1"
+        failed = self.run("--register-client", str(source))
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertFalse(self.client_path.exists() or self.client_path.is_symlink())
+        gws_root = self.secrets_home / "gws"
+        self.assertEqual(
+            list(gws_root.glob(".client_secret.json.*")) if gws_root.exists() else [],
+            [],
+        )
+
+        self.env.pop("FAKE_CHMOD_CLIENT_FAILURE")
+        retried = self.run("--register-client", str(source))
+        self.assertEqual(retried.returncode, 0, retried.stdout + retried.stderr)
+        self.assert_mode(self.client_path, 0o600)
 
     def test_check_and_list_reject_hidden_or_broken_profile_entries(self) -> None:
         self.install_fake_runtime()
