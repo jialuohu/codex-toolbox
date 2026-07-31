@@ -90,6 +90,246 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_setup_checker_rejects_shared_runtime_isolation_regressions(self) -> None:
+        shared_skill = "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+        mutations = (
+            (
+                "  cd / || exit 1\n",
+                "gws shared runtime must run from the filesystem root",
+            ),
+            (
+                'gws_bin="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"\n',
+                "gws shared runtime must use the pinned absolute managed binary",
+            ),
+            (
+                '[ "$first_line" = "gws 0.22.5" ] || exit 1\n',
+                "gws shared runtime must verify the pinned binary version",
+            ),
+            (
+                "  /usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_TOKEN",
+            ),
+            (
+                "    -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE",
+            ),
+            (
+                "    -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_CLIENT_ID",
+            ),
+            (
+                "    -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",
+            ),
+            (
+                "    -u GOOGLE_WORKSPACE_CLI_LOG \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_LOG",
+            ),
+            (
+                "    -u GOOGLE_WORKSPACE_CLI_LOG_FILE \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_LOG_FILE",
+            ),
+            (
+                "    -u GOOGLE_WORKSPACE_PROJECT_ID \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_PROJECT_ID",
+            ),
+            (
+                "    -u GOOGLE_APPLICATION_CREDENTIALS \\\n",
+                "gws shared runtime must unset ambient GOOGLE_APPLICATION_CREDENTIALS",
+            ),
+            (
+                '    GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \\\n',
+                "gws shared runtime must select the isolated profile directory",
+            ),
+            (
+                "    GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \\\n",
+                "gws shared runtime must force the file keyring backend",
+            ),
+            (
+                '    GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \\\n',
+                "gws shared runtime must set the missing profile-local ADC sentinel",
+            ),
+            (
+                'and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()\n',
+                "gws shared runtime must verify the exact live identity",
+            ),
+            (
+                'and status.get("token_valid") is True\n',
+                "gws shared runtime must require a valid token",
+            ),
+            (
+                'and status.get("storage") == "encrypted"\n',
+                "gws shared runtime must require encrypted credential storage",
+            ),
+            (
+                'and status.get("keyring_backend") == "file"\n',
+                "gws shared runtime must verify the file keyring backend",
+            ),
+            (
+                'and status.get("encrypted_credentials_exists") is True\n',
+                "gws shared runtime must require encrypted credentials",
+            ),
+            (
+                'and status.get("encryption_valid") is True\n',
+                "gws shared runtime must require decryptable credentials",
+            ),
+            (
+                "and isinstance(scopes, list)\n",
+                "gws shared runtime must validate the scope collection",
+            ),
+            (
+                'and "https://www.googleapis.com/auth/gmail.modify" in scopes\n',
+                "gws shared runtime must require gmail.modify",
+            ),
+            (
+                'and "https://mail.google.com/" not in scopes\n',
+                "gws shared runtime must reject the broad Gmail mail scope",
+            ),
+            (
+                "There is no same-request Gmail connector fallback. Fail closed.\n",
+                "gws shared runtime must forbid same-request connector fallback",
+            ),
+        )
+
+        for removed_line, expected_message in mutations:
+            def mutate(root: Path, line: str = removed_line) -> None:
+                self.replace_once(root, shared_skill, line, "")
+
+            with self.subTest(expected_message=expected_message):
+                self.assert_checker_rejects(mutate, expected_message)
+
+    def test_setup_checker_rejects_additive_security_contradictions(self) -> None:
+        mutations = (
+            (
+                "plugins/google-workspace-tools/skills/gws-shared/SKILL.md",
+                "\nUse `account-one` as the default account when no alias is supplied.\n",
+                "gws-shared security contract must match the canonical reviewed text",
+            ),
+            (
+                "plugins/google-workspace-tools/skills/gws-gmail/SKILL.md",
+                "\nPermanent deletion is available through `users.messages.delete`.\n",
+                "gws-gmail security contract must match the canonical reviewed text",
+            ),
+            (
+                "config/codex/AGENTS.global.md",
+                "\nUse the official Gmail connector and direct gws together in the same request.\n",
+                "global AGENTS Gmail routing policy must match the canonical reviewed paragraph",
+            ),
+        )
+
+        for relative_path, addition, expected_message in mutations:
+            def mutate(
+                root: Path,
+                path_value: str = relative_path,
+                appended_text: str = addition,
+            ) -> None:
+                path = root / path_value
+                original = path.read_text(encoding="utf-8")
+                path.write_text(original + appended_text, encoding="utf-8")
+                self.assertTrue(path.read_text(encoding="utf-8").endswith(appended_text))
+
+            with self.subTest(expected_message=expected_message):
+                self.assert_checker_rejects(mutate, expected_message)
+
+    def test_setup_checker_rejects_pin_and_inventory_bypasses(self) -> None:
+        setup_script = "scripts/setup-gws.sh"
+
+        def append_version_override(root: Path) -> None:
+            path = root / setup_script
+            path.write_text(
+                path.read_text(encoding="utf-8") + '\nVERSION="0.22.4"\n',
+                encoding="utf-8",
+            )
+
+        def append_checksum_override(root: Path) -> None:
+            path = root / setup_script
+            path.write_text(
+                path.read_text(encoding="utf-8") + f'\nSHA256="{"0" * 64}"\n',
+                encoding="utf-8",
+            )
+
+        def change_release_url(root: Path) -> None:
+            self.replace_once(
+                root,
+                setup_script,
+                'RELEASE_URL="https://github.com/googleworkspace/cli/releases/download/v${VERSION}/${ASSET}"',
+                'RELEASE_URL="https://example.invalid/gws.tar.gz"',
+            )
+
+        def disable_checksum_comparison(root: Path) -> None:
+            self.replace_once(
+                root,
+                setup_script,
+                '  [ "$actual" = "$SHA256" ] || die "checksum mismatch for pinned gws release"\n',
+                '  # [ "$actual" = "$SHA256" ] || die "checksum mismatch for pinned gws release"\n',
+            )
+
+        def truncate_license(root: Path) -> None:
+            path = root / "plugins/google-workspace-tools/LICENSE"
+            original = path.read_bytes()
+            self.assertGreater(len(original), 64)
+            path.write_bytes(original[:-64])
+
+        def add_provenance_import(root: Path) -> None:
+            path = root / "plugins/google-workspace-tools/PROVENANCE.md"
+            path.write_text(
+                path.read_text(encoding="utf-8")
+                + "\n- `skills/gws-drive/SKILL.md`\n",
+                encoding="utf-8",
+            )
+
+        def append_provenance_runtime_vendoring_claim(root: Path) -> None:
+            path = root / "plugins/google-workspace-tools/PROVENANCE.md"
+            path.write_text(
+                path.read_text(encoding="utf-8")
+                + "\nAdditional upstream runtime code is vendored alongside these skills.\n",
+                encoding="utf-8",
+            )
+
+        def add_empty_skill_directory(root: Path) -> None:
+            path = root / "plugins/google-workspace-tools/skills/unexpected-empty"
+            self.assertFalse(path.exists())
+            path.mkdir()
+
+        cases: tuple[tuple[Callable[[Path], None], str], ...] = (
+            (
+                append_version_override,
+                "setup-gws must pin gws version 0.22.5 exactly once",
+            ),
+            (
+                append_checksum_override,
+                "setup-gws must pin the expected release checksum exactly once",
+            ),
+            (
+                change_release_url,
+                "setup-gws must pin the exact upstream release URL",
+            ),
+            (
+                disable_checksum_comparison,
+                "setup-gws must actively compare the downloaded archive checksum",
+            ),
+            (
+                truncate_license,
+                "google-workspace-tools license must match the canonical Apache-2.0 text",
+            ),
+            (
+                add_provenance_import,
+                "google-workspace-tools provenance imported skill inventory must be exact",
+            ),
+            (
+                append_provenance_runtime_vendoring_claim,
+                "google-workspace-tools provenance must match the canonical reviewed text",
+            ),
+            (
+                add_empty_skill_directory,
+                "google-workspace-tools skills inventory must be exactly the eight Gmail skills",
+            ),
+        )
+
+        for mutate, expected_message in cases:
+            with self.subTest(expected_message=expected_message):
+                self.assert_checker_rejects(mutate, expected_message)
+
     def test_setup_checker_rejects_google_workspace_contract_regressions(self) -> None:
         plugin_manifest = (
             "plugins/google-workspace-tools/.codex-plugin/plugin.json"

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Static checks for the Codex toolbox setup script."""
 
+import hashlib
 import json
 import re
 import shlex
@@ -144,6 +145,27 @@ GOOGLE_WORKSPACE_LICENSE = GOOGLE_WORKSPACE_DIR / "LICENSE"
 GOOGLE_WORKSPACE_SKILLS_DIR = GOOGLE_WORKSPACE_DIR / "skills"
 GWS_SHARED_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-shared" / "SKILL.md"
 GWS_GMAIL_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail" / "SKILL.md"
+GOOGLE_WORKSPACE_LICENSE_SHA256 = (
+    "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+)
+GWS_SHARED_SKILL_SHA256 = (
+    "f6c57a45e6a9710fb8b263663b5e7fe4a6e81771c79f9d7ccc351338175f5586"
+)
+GWS_GMAIL_SKILL_SHA256 = (
+    "f0ca1c04e87022a74b3689d88349b05727967f0ded47ff0032f72c298c963670"
+)
+GOOGLE_WORKSPACE_PROVENANCE_SHA256 = (
+    "aff66c1f8bacb72b7a28d74a9718a9dafe54a66d457c7cc54245f4767493970c"
+)
+GLOBAL_GMAIL_ROUTING_PARAGRAPH = (
+    "Keep the official Gmail connector available for ordinary connected Gmail requests. "
+    "Use `$gws-gmail` from `google-workspace-tools` only when the user explicitly requests "
+    "direct `gws` or multi-account Gmail and supplies an explicit account alias. Never infer "
+    "or default an alias; ask for one when it is missing. Use exactly one Gmail surface per "
+    "request: do not mix the official Gmail connector and direct `gws` in the same request. "
+    "Direct `gws` work must apply `$gws-shared` and fail closed if its isolated profile or "
+    "live identity preflight fails."
+)
 
 
 def require(condition: bool, message: str) -> None:
@@ -176,6 +198,15 @@ def shell_array_entries(script: str, name: str) -> list[str]:
 
 def normalized(text: str) -> str:
     return " ".join(text.split())
+
+
+def shell_assignment_values(script: str, name: str) -> list[str]:
+    """Return every active whole-line assignment for one shell variable."""
+    return re.findall(
+        rf"^[ \t]*{re.escape(name)}=(?P<value>[^\r\n]*)$",
+        script,
+        re.MULTILINE,
+    )
 
 
 def scan_retired_reference_mentions(
@@ -509,13 +540,21 @@ def validate_google_workspace_tools_contract(
         "gws-gmail-reply-all",
         "gws-gmail-forward",
     }
-    actual_skills = {
+    require(
+        GOOGLE_WORKSPACE_SKILLS_DIR.is_dir(),
+        "google-workspace-tools skills inventory must be exactly the eight Gmail skills",
+    )
+    actual_skill_directories = {
         path.name
         for path in GOOGLE_WORKSPACE_SKILLS_DIR.iterdir()
-        if path.is_dir() and (path / "SKILL.md").exists()
+        if path.is_dir()
     }
     require(
-        actual_skills == expected_skills,
+        actual_skill_directories == expected_skills
+        and all(
+            (GOOGLE_WORKSPACE_SKILLS_DIR / skill / "SKILL.md").is_file()
+            for skill in expected_skills
+        ),
         "google-workspace-tools skills inventory must be exactly the eight Gmail skills",
     )
 
@@ -573,39 +612,69 @@ def validate_google_workspace_tools_contract(
         ),
     ):
         require(expected in provenance_text, message)
-    for skill in expected_skills:
-        require(
-            f"`skills/{skill}/SKILL.md`" in provenance_text,
-            "google-workspace-tools provenance must list every imported skill",
-        )
+    expected_imported_skills = {
+        f"skills/{skill}/SKILL.md" for skill in expected_skills
+    }
+    imported_skill_paths = re.findall(
+        r"^- `(?P<path>skills/[^`\r\n]+/SKILL\.md)`$",
+        provenance_text,
+        re.MULTILINE,
+    )
+    require(
+        len(imported_skill_paths) == len(expected_imported_skills)
+        and set(imported_skill_paths) == expected_imported_skills,
+        "google-workspace-tools provenance imported skill inventory must be exact",
+    )
+    require(
+        hashlib.sha256(GOOGLE_WORKSPACE_PROVENANCE.read_bytes()).hexdigest()
+        == GOOGLE_WORKSPACE_PROVENANCE_SHA256,
+        "google-workspace-tools provenance must match the canonical reviewed text",
+    )
     require(
         GOOGLE_WORKSPACE_LICENSE.exists(),
         "google-workspace-tools Apache-2.0 license must exist",
     )
-    license_text = GOOGLE_WORKSPACE_LICENSE.read_text()
     require(
-        "Apache License" in license_text
-        and "Version 2.0, January 2004" in license_text,
-        "google-workspace-tools license must contain Apache License 2.0",
+        hashlib.sha256(GOOGLE_WORKSPACE_LICENSE.read_bytes()).hexdigest()
+        == GOOGLE_WORKSPACE_LICENSE_SHA256,
+        "google-workspace-tools license must match the canonical Apache-2.0 text",
     )
 
     require(GWS_SETUP.exists(), "toolbox must include the opt-in setup-gws helper")
     gws_setup_text = GWS_SETUP.read_text()
-    for pattern, message in (
+    for name, expected_value, message in (
         (
-            r'^VERSION="0\.22\.5"$',
-            "setup-gws must pin gws version 0.22.5",
+            "VERSION",
+            '"0.22.5"',
+            "setup-gws must pin gws version 0.22.5 exactly once",
         ),
         (
-            r'^ASSET="google-workspace-cli-aarch64-apple-darwin\.tar\.gz"$',
-            "setup-gws must pin the macOS arm64 release asset",
+            "ASSET",
+            '"google-workspace-cli-aarch64-apple-darwin.tar.gz"',
+            "setup-gws must pin the macOS arm64 release asset exactly once",
         ),
         (
-            r'^SHA256="1d2a9ffd5bc9b2c2c4b48630daf082fad13d9e57d741988a2c248eed562f7dac"$',
-            "setup-gws must pin the expected release checksum",
+            "SHA256",
+            '"1d2a9ffd5bc9b2c2c4b48630daf082fad13d9e57d741988a2c248eed562f7dac"',
+            "setup-gws must pin the expected release checksum exactly once",
+        ),
+        (
+            "RELEASE_URL",
+            '"https://github.com/googleworkspace/cli/releases/download/v${VERSION}/${ASSET}"',
+            "setup-gws must pin the exact upstream release URL",
         ),
     ):
-        require(re.search(pattern, gws_setup_text, re.MULTILINE) is not None, message)
+        require(
+            shell_assignment_values(gws_setup_text, name) == [expected_value],
+            message,
+        )
+    require(
+        gws_setup_text.splitlines().count(
+            '  [ "$actual" = "$SHA256" ] || die "checksum mismatch for pinned gws release"'
+        )
+        == 1,
+        "setup-gws must actively compare the downloaded archive checksum",
+    )
     setup_requirements = (
         (
             'GMAIL_SCOPE="https://www.googleapis.com/auth/gmail.modify"',
@@ -683,9 +752,114 @@ def validate_google_workspace_tools_contract(
         and "If it is absent, stop and\nask." in gws_shared_text,
         "gws shared contract must reject default account inference",
     )
+    shared_runtime_requirements = (
+        (
+            "  cd / || exit 1\n",
+            "gws shared runtime must run from the filesystem root",
+        ),
+        (
+            'gws_bin="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"\n',
+            "gws shared runtime must use the pinned absolute managed binary",
+        ),
+        (
+            '[ "$first_line" = "gws 0.22.5" ] || exit 1\n',
+            "gws shared runtime must verify the pinned binary version",
+        ),
+        (
+            "  /usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_TOKEN",
+        ),
+        (
+            "    -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE",
+        ),
+        (
+            "    -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_CLIENT_ID",
+        ),
+        (
+            "    -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",
+        ),
+        (
+            "    -u GOOGLE_WORKSPACE_CLI_LOG \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_LOG",
+        ),
+        (
+            "    -u GOOGLE_WORKSPACE_CLI_LOG_FILE \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_LOG_FILE",
+        ),
+        (
+            "    -u GOOGLE_WORKSPACE_PROJECT_ID \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_PROJECT_ID",
+        ),
+        (
+            "    -u GOOGLE_APPLICATION_CREDENTIALS \\\n",
+            "gws shared runtime must unset ambient GOOGLE_APPLICATION_CREDENTIALS",
+        ),
+        (
+            '    GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \\\n',
+            "gws shared runtime must select the isolated profile directory",
+        ),
+        (
+            "    GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \\\n",
+            "gws shared runtime must force the file keyring backend",
+        ),
+        (
+            '    GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \\\n',
+            "gws shared runtime must set the missing profile-local ADC sentinel",
+        ),
+        (
+            'and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()\n',
+            "gws shared runtime must verify the exact live identity",
+        ),
+        (
+            'and status.get("token_valid") is True\n',
+            "gws shared runtime must require a valid token",
+        ),
+        (
+            'and status.get("storage") == "encrypted"\n',
+            "gws shared runtime must require encrypted credential storage",
+        ),
+        (
+            'and status.get("keyring_backend") == "file"\n',
+            "gws shared runtime must verify the file keyring backend",
+        ),
+        (
+            'and status.get("encrypted_credentials_exists") is True\n',
+            "gws shared runtime must require encrypted credentials",
+        ),
+        (
+            'and status.get("encryption_valid") is True\n',
+            "gws shared runtime must require decryptable credentials",
+        ),
+        (
+            "and isinstance(scopes, list)\n",
+            "gws shared runtime must validate the scope collection",
+        ),
+        (
+            'and "https://www.googleapis.com/auth/gmail.modify" in scopes\n',
+            "gws shared runtime must require gmail.modify",
+        ),
+        (
+            'and "https://mail.google.com/" not in scopes\n',
+            "gws shared runtime must reject the broad Gmail mail scope",
+        ),
+        (
+            "There is no same-request Gmail connector fallback. Fail closed.\n",
+            "gws shared runtime must forbid same-request connector fallback",
+        ),
+    )
+    for expected, message in shared_runtime_requirements:
+        require(expected in gws_shared_text, message)
     require(
         "    -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \\" in gws_shared_text,
         "gws shared contract must clear ambient GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE",
+    )
+    require(
+        hashlib.sha256(GWS_SHARED_SKILL.read_bytes()).hexdigest()
+        == GWS_SHARED_SKILL_SHA256,
+        "gws-shared security contract must match the canonical reviewed text",
     )
     require(
         GWS_GMAIL_SKILL.exists(),
@@ -696,6 +870,11 @@ def validate_google_workspace_tools_contract(
         "Do not invoke `users.messages.delete`,\n"
         "`users.messages.batchDelete`" in gws_gmail_text,
         "gws Gmail contract must keep permanent deletion unavailable",
+    )
+    require(
+        hashlib.sha256(GWS_GMAIL_SKILL.read_bytes()).hexdigest()
+        == GWS_GMAIL_SKILL_SHA256,
+        "gws-gmail security contract must match the canonical reviewed text",
     )
 
     global_agents_requirements = (
@@ -730,6 +909,16 @@ def validate_google_workspace_tools_contract(
     )
     for expected, message in global_agents_requirements:
         require(expected in global_agents_text, message)
+    gmail_routing_paragraphs = [
+        paragraph
+        for paragraph in re.split(r"\n[ \t]*\n", global_agents_text.strip())
+        if "official Gmail connector" in paragraph
+        and re.search(r"\bdirect\s+`?gws`?", paragraph)
+    ]
+    require(
+        gmail_routing_paragraphs == [GLOBAL_GMAIL_ROUTING_PARAGRAPH],
+        "global AGENTS Gmail routing policy must match the canonical reviewed paragraph",
+    )
 
     readme_section_match = re.search(
         r"^## Isolated Multi-Account Gmail with gws\n"
