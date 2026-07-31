@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,11 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "setup-gws.sh"
 VERSION = "0.22.5"
 SCOPE = "https://www.googleapis.com/auth/gmail.modify"
+IDENTITY_SCOPES = (
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+)
 
 
 class SetupGwsTest(unittest.TestCase):
@@ -37,6 +43,9 @@ class SetupGwsTest(unittest.TestCase):
         self.gws_log = self.home / "gws.log"
         self.python_hook_dir = self.home / "python-hooks"
         self.python_hook_dir.mkdir()
+        self.script = self.home / "setup-gws.sh"
+        self.script.write_text(SCRIPT.read_text())
+        self.script.chmod(0o755)
         self.env = os.environ.copy()
         self.env.update({
             "HOME": str(self.home),
@@ -104,26 +113,66 @@ cp "$FAKE_DOWNLOAD" "$out"
         """Keep unittest's runner contract while exposing the shell interface."""
         if not isinstance(result, str):
             return super().run(result)
-        return subprocess.run(["bash", str(SCRIPT), result, *args], cwd=ROOT, env=self.env, text=True, capture_output=True, check=False)
+        return subprocess.run(["bash", str(self.script), result, *args], cwd=ROOT, env=self.env, text=True, capture_output=True, check=False)
+
+    def pin_test_script(self, *, archive_sha: str | None = None, binary_sha: str | None = None) -> None:
+        lines = self.script.read_text().splitlines()
+        replacements = {"SHA256": archive_sha, "BINARY_SHA256": binary_sha}
+        seen: set[str] = set()
+        rewritten: list[str] = []
+        for line in lines:
+            name = line.split("=", 1)[0]
+            if name in replacements and replacements[name] is not None:
+                rewritten.append(f'{name}="{replacements[name]}"')
+                seen.add(name)
+            else:
+                rewritten.append(line)
+            if name == "SHA256" and binary_sha is not None and "BINARY_SHA256" not in seen and not any(item.startswith("BINARY_SHA256=") for item in lines):
+                rewritten.append(f'BINARY_SHA256="{binary_sha}"')
+                seen.add("BINARY_SHA256")
+        self.script.write_text("\n".join(rewritten) + "\n")
+        self.script.chmod(0o755)
 
     def install_fake_runtime(self) -> None:
         self.runtime_gws.parent.mkdir(parents=True)
         self.runtime_gws.write_text("""#!/bin/sh
-printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\\n' "$*" "$PWD" "${GOOGLE_WORKSPACE_CLI_TOKEN:-}" "${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE:-}" "${GOOGLE_WORKSPACE_CLI_CLIENT_ID:-}" "${GOOGLE_WORKSPACE_CLI_CLIENT_SECRET:-}" "${GOOGLE_WORKSPACE_PROJECT_ID:-}" "${GOOGLE_WORKSPACE_CLI_LOG:-}" "${GOOGLE_WORKSPACE_CLI_LOG_FILE:-}" "${GOOGLE_WORKSPACE_CLI_CONFIG_DIR:-}" "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:-}" "${GOOGLE_APPLICATION_CREDENTIALS:-}" >> "$FAKE_GWS_LOG"
+state() { if [ "$1" = x ]; then printf 'set:%s' "$2"; else printf unset; fi; }
+printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\\n' \
+  "$*" "$PWD" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_TOKEN+x}" "${GOOGLE_WORKSPACE_CLI_TOKEN-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE+x}" "${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE+x}" "${GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_CLIENT_ID+x}" "${GOOGLE_WORKSPACE_CLI_CLIENT_ID-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_CLIENT_SECRET+x}" "${GOOGLE_WORKSPACE_CLI_CLIENT_SECRET-}")" \
+  "$(state "${GOOGLE_WORKSPACE_PROJECT_ID+x}" "${GOOGLE_WORKSPACE_PROJECT_ID-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_LOG+x}" "${GOOGLE_WORKSPACE_CLI_LOG-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_LOG_FILE+x}" "${GOOGLE_WORKSPACE_CLI_LOG_FILE-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE+x}" "${GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_SANITIZE_MODE+x}" "${GOOGLE_WORKSPACE_CLI_SANITIZE_MODE-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_CONFIG_DIR+x}" "${GOOGLE_WORKSPACE_CLI_CONFIG_DIR-}")" \
+  "$(state "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND+x}" "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND-}")" \
+  "$(state "${GOOGLE_APPLICATION_CREDENTIALS+x}" "${GOOGLE_APPLICATION_CREDENTIALS-}")" >> "$FAKE_GWS_LOG"
 if [ "$1" = "--version" ]; then printf '%b' "${FAKE_GWS_VERSION_OUTPUT:-gws 0.22.5\\nThis software is not an officially supported Google product.\\n}"; exit 0; fi
 if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
   mkdir -p "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR"
   printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/credentials.enc"
   printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.encryption_key"
   printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/token-cache.json"
+  if [ -n "${FAKE_GWS_POST_LOGIN_STATUS:-}" ]; then printf '%s' "$FAKE_GWS_POST_LOGIN_STATUS" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json"; fi
+  if [ -n "${FAKE_GWS_SWAP_BLOCK_ROOT:-}" ]; then chmod 500 "$FAKE_GWS_SWAP_BLOCK_ROOT"; fi
   [ "${FAKE_GWS_LOGIN_MODE:-ok}" = "fail" ] && exit 1
   exit 0
 fi
-if [ "$1" = "auth" ] && [ "$2" = "status" ]; then printf '%s\\n' "$FAKE_GWS_STATUS"; exit 0; fi
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  if [ -f "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json" ]; then cat "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json"; else printf '%s\\n' "$FAKE_GWS_STATUS"; fi
+  exit 0
+fi
 exit 3
 """)
         self.runtime_gws.chmod(0o755)
+        self.pin_test_script(binary_sha=hashlib.sha256(self.runtime_gws.read_bytes()).hexdigest())
         self.local_bin.mkdir(exist_ok=True)
+        os.chmod(self.local_bin, 0o755)
         (self.local_bin / "gws").symlink_to(self.runtime_gws)
 
     def write_client(self, payload: object | None = None) -> Path:
@@ -136,7 +185,7 @@ exit 3
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def status(self, address: str, **changes: object) -> None:
-        value: dict[str, object] = {"user": address, "token_valid": True, "scopes": [SCOPE], "storage": "encrypted", "keyring_backend": "file", "encrypted_credentials_exists": True, "encryption_valid": True}
+        value: dict[str, object] = {"user": address, "token_valid": True, "scopes": [SCOPE, *IDENTITY_SCOPES], "storage": "encrypted", "keyring_backend": "file", "encrypted_credentials_exists": True, "encryption_valid": True}
         value.update(changes)
         self.env["FAKE_GWS_STATUS"] = json.dumps(value)
 
@@ -191,10 +240,48 @@ exit 3
         self.assertEqual(unmanaged.read_text(), "user binary")
         unmanaged.unlink()
         self.install_fake_runtime()
+        self.assert_mode(self.local_bin, 0o755)
         result = self.run("--install")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("already installed", result.stdout)
         self.assertEqual((self.local_bin / "gws").resolve(), self.runtime_gws.resolve())
+        self.assert_mode(self.local_bin, 0o755)
+
+    def test_runtime_rejects_same_version_tampering_and_binary_symlink(self) -> None:
+        self.install_fake_runtime()
+        original = self.runtime_gws.read_bytes()
+        ready = self.run("--check")
+        self.assertIn("gws runtime: ready (0.22.5)", ready.stdout)
+        self.runtime_gws.write_bytes(original + b"\n# tampered\n")
+        tampered = self.run("--check")
+        self.assertIn("gws runtime: missing (expected 0.22.5)", tampered.stdout)
+        outside = self.home / "same-version-gws"
+        outside.write_bytes(original)
+        outside.chmod(0o755)
+        self.runtime_gws.unlink()
+        self.runtime_gws.symlink_to(outside)
+        linked = self.run("--check")
+        self.assertIn("gws runtime: missing (expected 0.22.5)", linked.stdout)
+
+    def test_install_rejects_extracted_binary_digest_before_activation(self) -> None:
+        stage = self.home / "release-stage"
+        stage.mkdir()
+        extracted = stage / "gws"
+        extracted.write_text("#!/bin/sh\nprintf 'gws 0.22.5\\n'\n")
+        extracted.chmod(0o755)
+        with tarfile.open(self.download, "w:gz") as archive:
+            archive.add(extracted, arcname="gws")
+        archive_sha = hashlib.sha256(self.download.read_bytes()).hexdigest()
+        extracted_sha = hashlib.sha256(extracted.read_bytes()).hexdigest()
+        self.pin_test_script(archive_sha=archive_sha, binary_sha=hashlib.sha256(b"different trusted binary").hexdigest())
+        rejected = self.run("--install")
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertIn("extracted gws checksum mismatch", rejected.stderr)
+        self.assertFalse(self.runtime_gws.exists())
+        self.pin_test_script(archive_sha=archive_sha, binary_sha=extracted_sha)
+        installed = self.run("--install")
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        self.assertEqual(hashlib.sha256(self.runtime_gws.read_bytes()).hexdigest(), extracted_sha)
 
     def test_runtime_version_requires_exact_first_output_line(self) -> None:
         self.install_fake_runtime()
@@ -240,13 +327,16 @@ exit 0
         self.assert_mode(profile / "profile.json", 0o600)
         self.assert_mode(profile / "client_secret.json", 0o600)
         login_rows = [line.split("|") for line in self.gws_log.read_text().splitlines() if line.startswith(f"auth login --scopes {SCOPE}|")]
-        self.assertEqual(login_rows[-1], [
-            f"auth login --scopes {SCOPE}", "/", "", "", "", "", "", "", "", str(profile), "file", str(profile / "missing-adc.json"),
-        ])
+        first_login = login_rows[-1]
+        self.assertEqual(first_login[:2], [f"auth login --scopes {SCOPE}", "/"])
+        self.assertEqual(first_login[2:12], ["unset"] * 10)
+        self.assertRegex(first_login[12], r"^set:.*/\.first\.name-tag\.add\.[^/]+$")
+        self.assertEqual(first_login[13], "set:file")
+        self.assertTrue(first_login[14].startswith(first_login[12] + "/missing-adc.json"))
         self.status("second@example.test")
         second = self.run("--add-account", "second@example.test")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn(str(self.accounts_root / "second"), self.gws_log.read_text())
+        self.assertRegex(self.gws_log.read_text(), r"set:.*/\.second\.add\.[^/|]+")
 
     def test_add_account_rejects_alias_traversal_symlink_and_expected_email_collision(self) -> None:
         self.install_fake_runtime()
@@ -289,13 +379,17 @@ exit 0
         self.env.update({
             "GOOGLE_WORKSPACE_CLI_TOKEN": "ambient-token",
             "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/ambient/credentials.json",
+            "GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE": "/ambient/credential.json",
             "GOOGLE_WORKSPACE_CLI_CLIENT_ID": "ambient-client-id",
             "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET": "ambient-client-secret",
             "GOOGLE_WORKSPACE_PROJECT_ID": "ambient-project",
             "GOOGLE_WORKSPACE_CLI_LOG": "ambient-log",
             "GOOGLE_WORKSPACE_CLI_LOG_FILE": "/ambient/logs",
+            "GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE": "projects/ambient/templates/unsafe",
+            "GOOGLE_WORKSPACE_CLI_SANITIZE_MODE": "block",
+            "GOOGLE_APPLICATION_CREDENTIALS": "/ambient/adc.json",
         })
-        for changes in ({"user": "wrong@example.test"}, {"scopes": []}, {"token_valid": False}, {"encrypted_credentials_exists": False}, {"encryption_valid": False}, {"storage": "file"}, {"keyring_backend": "keyring"}, {"scopes": [SCOPE, "https://mail.google.com/"]}):
+        for changes in ({"user": "wrong@example.test"}, {"scopes": []}, {"scopes": [SCOPE, *IDENTITY_SCOPES[:-1]]}, {"scopes": [SCOPE, *IDENTITY_SCOPES, "https://www.googleapis.com/auth/calendar"]}, {"token_valid": False}, {"encrypted_credentials_exists": False}, {"encryption_valid": False}, {"storage": "file"}, {"keyring_backend": "keyring"}, {"scopes": [SCOPE, *IDENTITY_SCOPES, "https://mail.google.com/"]}):
             self.status("account@example.test", **changes)
             self.assertEqual(self.run("--check-account", "account").returncode, 1)
         self.status("ACCOUNT@example.test")
@@ -306,8 +400,30 @@ exit 0
         status_rows = [line.split("|") for line in self.gws_log.read_text().splitlines() if line.startswith("auth status|")]
         self.assertTrue(status_rows)
         self.assertEqual(status_rows[-1], [
-            "auth status", "/", "", "", "", "", "", "", "", str(profile.resolve()), "file", str((profile / "missing-adc.json").resolve()),
+            "auth status", "/", *(["unset"] * 10), f"set:{profile.resolve()}", "set:file", f"set:{(profile / 'missing-adc.json').resolve()}",
         ])
+
+    def test_empty_accounts_and_unsafe_root_or_client_fail_closed(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.accounts_root.mkdir()
+        os.chmod(self.accounts_root, 0o700)
+        checked = self.run("--check")
+        self.assertEqual(checked.returncode, 1, checked.stdout + checked.stderr)
+        self.assertIn("Profiles: none", checked.stdout)
+        self.assertNotIn("Overall: ready", checked.stdout)
+        listed = self.run("--list-accounts")
+        self.assertEqual(listed.returncode, 0, listed.stdout + listed.stderr)
+        self.assertIn("Profiles: none", listed.stdout)
+        os.chmod(self.accounts_root, 0o755)
+        unsafe_root = self.run("--check")
+        self.assertEqual(unsafe_root.returncode, 1, unsafe_root.stdout + unsafe_root.stderr)
+        self.assertIn("Profiles: unsafe", unsafe_root.stdout)
+        os.chmod(self.accounts_root, 0o700)
+        os.chmod(self.client_path, 0o644)
+        unsafe_client = self.run("--check")
+        self.assertEqual(unsafe_client.returncode, 1, unsafe_client.stdout + unsafe_client.stderr)
+        self.assertIn("OAuth client: unsafe", unsafe_client.stdout)
 
     def test_reauth_preserves_identity_and_list_never_prints_email(self) -> None:
         self.install_fake_runtime()
@@ -322,18 +438,35 @@ exit 0
         self.assertIn("account: ready", listed.stdout)
         self.assertNotIn("account@example.test", listed.stdout)
 
-    def test_reauth_refuses_an_unhealthy_existing_profile_before_login(self) -> None:
+    def test_reauth_repairs_an_unhealthy_token_without_changing_expected_identity(self) -> None:
         self.install_fake_runtime()
         self.register_client()
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
-        artifact = self.accounts_root / "account" / "token-cache.json"
-        artifact.unlink()
         self.status("account@example.test", token_valid=False)
+        healthy = {"user": "ACCOUNT@example.test", "token_valid": True, "scopes": [SCOPE, *IDENTITY_SCOPES], "storage": "encrypted", "keyring_backend": "file", "encrypted_credentials_exists": True, "encryption_valid": True}
+        self.env["FAKE_GWS_POST_LOGIN_STATUS"] = json.dumps(healthy)
         result = self.run("--reauth-account", "account")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertFalse(artifact.exists(), "an unhealthy profile must not start a new OAuth login")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(json.loads((self.accounts_root / "account" / "profile.json").read_text())["expected_email"], "account@example.test")
+
+    def test_reauth_swap_failure_keeps_live_profile_and_never_claims_restoration(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.env["FAKE_GWS_LOGIN_VALUE"] = "original"
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        profile = self.accounts_root / "account"
+        original = {name: (profile / name).read_bytes() for name in ("profile.json", "credentials.enc", ".encryption_key", "token-cache.json")}
+        self.env["FAKE_GWS_LOGIN_VALUE"] = "candidate"
+        self.env["FAKE_GWS_POST_LOGIN_STATUS"] = self.env["FAKE_GWS_STATUS"]
+        self.env["FAKE_GWS_SWAP_BLOCK_ROOT"] = str(self.accounts_root)
+        result = self.run("--reauth-account", "account")
+        os.chmod(self.accounts_root, 0o700)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertNotIn("reauthenticated", result.stdout)
+        self.assertTrue(profile.is_dir())
+        self.assertEqual({name: (profile / name).read_bytes() for name in original}, original)
 
     def test_check_account_rejects_profile_permissions_that_expose_oauth_state(self) -> None:
         self.install_fake_runtime()
@@ -382,7 +515,8 @@ exit 0
 
     def test_extracted_profile_traversal_body_propagates_walk_errors(self) -> None:
         source = SCRIPT.read_text()
-        command_start = source.index('PROFILE_DIR="$1" ')
+        function_start = source.index("profile_state_is_private() {")
+        command_start = source.index('PROFILE_DIR="$1" ', function_start)
         body_start = source.index("\n", command_start) + 1
         body_end = source.index("\nPY\n", body_start)
         traversal_body = source[body_start:body_end]
