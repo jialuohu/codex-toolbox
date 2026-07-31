@@ -145,14 +145,44 @@ GOOGLE_WORKSPACE_LICENSE = GOOGLE_WORKSPACE_DIR / "LICENSE"
 GOOGLE_WORKSPACE_SKILLS_DIR = GOOGLE_WORKSPACE_DIR / "skills"
 GWS_SHARED_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-shared" / "SKILL.md"
 GWS_GMAIL_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail" / "SKILL.md"
+GWS_GMAIL_SEND_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail-send" / "SKILL.md"
+GWS_GMAIL_REPLY_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail-reply" / "SKILL.md"
+GWS_GMAIL_REPLY_ALL_SKILL = (
+    GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail-reply-all" / "SKILL.md"
+)
+GWS_GMAIL_FORWARD_SKILL = (
+    GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail-forward" / "SKILL.md"
+)
+GWS_GMAIL_READ_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail-read" / "SKILL.md"
+GWS_GMAIL_TRIAGE_SKILL = (
+    GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail-triage" / "SKILL.md"
+)
 GOOGLE_WORKSPACE_LICENSE_SHA256 = (
     "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
 )
 GWS_SHARED_SKILL_SHA256 = (
-    "ef878acf863c368952b5ceb037e113381eda63027bdeb62ae8f7e00af1966fac"
+    "c04047f10c29aec2b72222b3acb975bc781227ab94f991bcb04dbc1ee252ba67"
 )
 GWS_GMAIL_SKILL_SHA256 = (
-    "f0ca1c04e87022a74b3689d88349b05727967f0ded47ff0032f72c298c963670"
+    "5dec2f19457737a4611fe073c9cb943c0e2337af12b7bb7cdd9e3b8571216ef3"
+)
+GWS_GMAIL_SEND_SKILL_SHA256 = (
+    "58e25295e204e414d429aa0fa80cc349eafaaea2816d6e64a25e2182367a9e42"
+)
+GWS_GMAIL_REPLY_SKILL_SHA256 = (
+    "0f8debeb36280fa48d1fd2767544dab45999925519b2a754f69c35736b6bc303"
+)
+GWS_GMAIL_REPLY_ALL_SKILL_SHA256 = (
+    "d1cfe8753e1cb151e7d93b679a0013fec29371311694c6f2d76a96f9d62f4648"
+)
+GWS_GMAIL_FORWARD_SKILL_SHA256 = (
+    "f03e8693bb59705edd17379f9c745e57b9d40f5b89edfff994f7719781f3a7a1"
+)
+GWS_GMAIL_READ_SKILL_SHA256 = (
+    "b5712fccedc4a706652633d8fa10c68c36c8b436da7a64a6c634f628c8feb60f"
+)
+GWS_GMAIL_TRIAGE_SKILL_SHA256 = (
+    "9ce72c66fbe1afe34d4183404c3e82be6ae89a4752334b2d11e6f8c20c6778d7"
 )
 GOOGLE_WORKSPACE_PROVENANCE_SHA256 = (
     "aff66c1f8bacb72b7a28d74a9718a9dafe54a66d457c7cc54245f4767493970c"
@@ -161,7 +191,7 @@ GWS_INSTALL_FUNCTION_SHA256 = (
     "1da1cfc9ee65cbc0921b7de21d0e7f5b092d6914d176f0c5a0197077cd2f915d"
 )
 GWS_SETUP_SHA256 = (
-    "40181959a0eef6fe4bae0373a24ce0e01b7229e7dc13c79ed760c3cc623a0c43"
+    "a8520d60e770ceb1dc12794d6cb75168f2fb46202f08cba8b86711b0ee22d034"
 )
 GLOBAL_GMAIL_ROUTING_PARAGRAPH = (
     "Keep the official Gmail connector available for ordinary connected Gmail requests. "
@@ -792,6 +822,115 @@ def validate_google_workspace_tools_contract(
             f"setup-gws must clear ambient {variable}",
         )
     require(
+        all(
+            expected in gws_setup_text
+            for expected in (
+                'SECRETS_ROOT="${SECRETS_BASE}/gws"',
+                'ACCOUNTS_ROOT="${SECRETS_ROOT}/accounts"',
+                'profile_state_is_private_shallow "$SECRETS_BASE" || return 1',
+                'profile_state_is_private_shallow "$SECRETS_ROOT" || return 1',
+                'profile_state_is_private_shallow "$ACCOUNTS_ROOT" || return 1',
+                '[ "$base" = "$SECRETS_BASE" ]',
+                '[ "$root" = "$SECRETS_ROOT" ]',
+                '[ "$root" = "$SECRETS_ROOT/accounts" ] && [ "$root" = "$ACCOUNTS_ROOT" ]',
+                "and stat.S_IMODE(metadata.st_mode) == 0o700",
+            )
+        ),
+        "setup-gws must enforce the canonical private secrets hierarchy",
+    )
+    require(
+        all(
+            expected in gws_setup_text
+            for expected in (
+                'required = ("client_id", "client_secret", "project_id", "auth_uri", "token_uri")',
+                'installed["auth_uri"] == "https://accounts.google.com/o/oauth2/auth"',
+                'installed["token_uri"] == "https://oauth2.googleapis.com/token"',
+                'validate_client_json "$1" || die "invalid Desktop OAuth client JSON"',
+                'validate_client_json "$candidate" || die "copied OAuth client candidate is invalid"',
+                'private_regular_file "$candidate" || die "copied OAuth client candidate is unsafe"',
+            )
+        ),
+        "setup-gws must validate the complete Desktop OAuth client contract",
+    )
+    client_no_clobber = (
+        '[ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || '
+        'die "OAuth client already registered; refusing replacement"'
+    )
+    require(
+        gws_setup_text.count(client_no_clobber) == 2
+        and all(
+            expected in gws_setup_text
+            for expected in (
+                'candidate="$(mktemp "$SECRETS_ROOT/.client_secret.json.XXXXXX")"',
+                'TX_CLIENT_CANDIDATE="$candidate"',
+                '/bin/ln "$candidate" "$CLIENT_PATH"',
+                'unlink_destination_if_same_file "$candidate" "$CLIENT_PATH"',
+                '/bin/rm -- "$candidate" || die "unable to clean OAuth client candidate"',
+                'TX_CLIENT_CANDIDATE=""',
+            )
+        ),
+        "setup-gws must register the OAuth client transactionally without clobbering",
+    )
+    require(
+        gws_setup_text.count('acquire_alias_lock "$alias"') == 2
+        and gws_setup_text.count('release_alias_lock') == 3
+        and gws_setup_text.count('if ! check_account "$alias"; then') == 2
+        and all(
+            expected in gws_setup_text
+            for expected in (
+                '/bin/mkdir "$profile" || die "unable to reserve account profile path"',
+                'TX_RESERVATION="$profile"',
+                'rename_path "$candidate" "$profile" || die "unable to activate candidate account profile"',
+                'rename_path "$profile" "$backup"',
+                'rename_path "$candidate" "$profile"',
+            )
+        ),
+        "setup-gws must serialize and reserve account activation",
+    )
+    require(
+        gws_setup_text.count("shopt -s dotglob nullglob") == 2
+        and gws_setup_text.count("secrets_root_inventory_is_clean") == 3
+        and gws_setup_text.count('elif check_account "$alias"; then') == 2
+        and all(
+            expected in gws_setup_text
+            for expected in (
+                'PROFILE_ENTRIES=("$ACCOUNTS_ROOT"/*)',
+                'SECRETS_ROOT_ENTRIES=("$SECRETS_ROOT"/*)',
+                "client_secret.json|accounts) ;;",
+                "*) return 1 ;;",
+            )
+        ),
+        "setup-gws must inspect hidden and broken profile entries fail closed",
+    )
+    credential_state_blocks = shell_function_blocks(
+        gws_setup_text,
+        "credential_state_is_complete",
+    )
+    health_check_blocks = shell_function_blocks(gws_setup_text, "check_profile_health")
+    require(
+        len(credential_state_blocks) == 1
+        and all(
+            expected in credential_state_blocks[0]
+            for expected in (
+                'private_regular_file "$profile/profile.json" || return 1',
+                'private_regular_file "$profile/client_secret.json" || return 1',
+                'private_regular_file "$profile/credentials.enc" || return 1',
+                'private_regular_file "$profile/.encryption_key" || return 1',
+            )
+        )
+        and len(health_check_blocks) == 1
+        and health_check_blocks[0].index("credential_state_is_complete")
+        < health_check_blocks[0].index('status="$(run_isolated'),
+        "setup-gws must require encrypted credential files before auth status",
+    )
+    require(
+        len(credential_state_blocks) == 1
+        and '[ ! -e "$profile/credentials.json" ] && [ ! -L "$profile/credentials.json" ]'
+        in credential_state_blocks[0]
+        and 'status.get("plain_credentials_exists") is False' in gws_setup_text,
+        "setup-gws must reject plaintext credential state",
+    )
+    require(
         hashlib.sha256(GWS_SETUP.read_bytes()).hexdigest() == GWS_SETUP_SHA256,
         "setup-gws profile manager must match the canonical reviewed text",
     )
@@ -952,6 +1091,74 @@ def validate_google_workspace_tools_contract(
         "gws shared contract must clear ambient GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE",
     )
     require(
+        all(
+            expected in gws_shared_text
+            for expected in (
+                'secrets_root_path="${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}"',
+                '[ "$secrets_root" = "$secrets_root_path" ] || exit 1',
+                'gws_root_path="$secrets_root/gws"',
+                '[ "$gws_root" = "$gws_root_path" ] || exit 1',
+                'accounts_root_path="$gws_root/accounts"',
+                '[ "$accounts_root" = "$accounts_root_path" ] || exit 1',
+                "check(secrets_root, stat.S_ISDIR, 0o700)",
+                "check(gws_root, stat.S_ISDIR, 0o700)",
+                "check(root, stat.S_ISDIR, 0o700)",
+                "check(profile, stat.S_ISDIR, 0o700)",
+            )
+        ),
+        "gws shared contract must enforce the full canonical private secrets hierarchy",
+    )
+    require(
+        all(
+            expected in gws_shared_text
+            for expected in (
+                '        "profile.json",',
+                '        "client_secret.json",',
+                '        "credentials.enc",',
+                '        ".encryption_key",',
+            )
+        )
+        and gws_shared_text.index('        "credentials.enc",')
+        < gws_shared_text.index('status_json="$('),
+        "gws shared contract must require encrypted credential files before status",
+    )
+    require(
+        'if os.path.lexists(os.path.join(profile, "credentials.json")):'
+        in gws_shared_text
+        and 'status.get("plain_credentials_exists") is False' in gws_shared_text,
+        "gws shared contract must reject plaintext credential state",
+    )
+    require(
+        all(
+            expected in gws_shared_text
+            for expected in (
+                "Create a private temporary directory with mode `700`",
+                "one mode-`700` child directory",
+                "mode-`600` staged file",
+                "cleanup for\n   every success and failure path",
+            )
+        ),
+        "gws shared contract must stage attachments as private immutable copies",
+    )
+    require(
+        "After the copy, perform a post-copy original restat and rehash"
+        in gws_shared_text
+        and "same non-symlink regular object, canonical target, device/inode, byte size,\n"
+        "   and digest recorded initially" in gws_shared_text,
+        "gws shared contract must restat and rehash the original after staging",
+    )
+    require(
+        "require its staged\n   digest and size to match the original record"
+        in gws_shared_text,
+        "gws shared contract must verify staged size and digest",
+    )
+    require(
+        "Require the final staged digest and identity to match the\n"
+        "   staged record. Invoke gws with only the staged copy; never pass the mutable\n"
+        "   original path." in gws_shared_text,
+        "gws shared contract must verify the final staged copy and never pass the original path",
+    )
+    require(
         hashlib.sha256(GWS_SHARED_SKILL.read_bytes()).hexdigest()
         == GWS_SHARED_SKILL_SHA256,
         "gws-shared security contract must match the canonical reviewed text",
@@ -961,16 +1168,179 @@ def validate_google_workspace_tools_contract(
         "gws-gmail skill must exist",
     )
     gws_gmail_text = GWS_GMAIL_SKILL.read_text()
+    gws_gmail_normalized = normalized(gws_gmail_text)
     require(
         "Do not invoke `users.messages.delete`,\n"
         "`users.messages.batchDelete`" in gws_gmail_text,
         "gws Gmail contract must keep permanent deletion unavailable",
     )
     require(
+        all(
+            expected in gws_gmail_normalized
+            for expected in (
+                "Raw Gmail resource access is read-only",
+                "Raw `users.messages.send` is unavailable",
+                "for the exact newly created server-side draft",
+                "immediate unchanged readback",
+                "unavailable for an existing, user-selected, guessed, or modified draft",
+            )
+        ),
+        "gws Gmail contract must keep raw send inside the exact new-draft helper boundary",
+    )
+    require(
         hashlib.sha256(GWS_GMAIL_SKILL.read_bytes()).hexdigest()
         == GWS_GMAIL_SKILL_SHA256,
         "gws-gmail security contract must match the canonical reviewed text",
     )
+    compose_skills = {
+        "gws-gmail-send": (
+            GWS_GMAIL_SEND_SKILL,
+            GWS_GMAIL_SEND_SKILL_SHA256,
+            r"\+send",
+        ),
+        "gws-gmail-reply": (
+            GWS_GMAIL_REPLY_SKILL,
+            GWS_GMAIL_REPLY_SKILL_SHA256,
+            r"\+reply",
+        ),
+        "gws-gmail-reply-all": (
+            GWS_GMAIL_REPLY_ALL_SKILL,
+            GWS_GMAIL_REPLY_ALL_SKILL_SHA256,
+            r"\+reply-all",
+        ),
+        "gws-gmail-forward": (
+            GWS_GMAIL_FORWARD_SKILL,
+            GWS_GMAIL_FORWARD_SKILL_SHA256,
+            r"\+forward",
+        ),
+    }
+    for skill_name, (skill_path, expected_sha256, helper_pattern) in compose_skills.items():
+        require(skill_path.exists(), f"{skill_name} skill must exist")
+        skill_text = skill_path.read_text()
+        skill_normalized = normalized(skill_text)
+        helper_prefix = rf'`"\$gws_bin" gmail {helper_pattern} [^`\r\n]*'
+        require(
+            re.search(
+                helper_prefix + r'--from "\$expected_email"',
+                skill_text,
+            )
+            is not None,
+            f"{skill_name} must bind the helper draft to the verified From identity",
+        )
+        require(
+            "Always create a server-side draft first" in skill_normalized
+            or "always create a server-side draft first" in skill_normalized,
+            f"{skill_name} must always create a server-side draft first",
+        )
+        require(
+            re.search(helper_prefix + r"--draft`", skill_text) is not None,
+            f"{skill_name} must always create a server-side draft first",
+        )
+        require(
+            all(
+                expected in skill_text
+                for expected in (
+                    '"userId": "me",',
+                    '"id": os.environ["DRAFT_ID"],',
+                    '"format": "full",',
+                    'draft_json="$(isolated_gws gmail users drafts get --params "$draft_get_params")" || exit 1',
+                )
+            ),
+            f"{skill_name} must fetch the exact new draft in full",
+        )
+        require(
+            all(
+                expected in skill_normalized
+                for expected in (
+                    "Validate the actual From",
+                    "case-insensitively against `$expected_email`",
+                    "actual To/CC/BCC",
+                    "subject",
+                    "thread context",
+                    "attachment names and count",
+                )
+            ),
+            f"{skill_name} must validate authoritative draft envelope and attachment fields",
+        )
+        require(
+            all(
+                expected in skill_normalized
+                for expected in (
+                    "Recursively base64url-decode every inline",
+                    "`text/plain` and `text/html` MIME leaf",
+                    "Validate decoded body content against the requested body",
+                    "Missing or undecodable body bytes fail",
+                )
+            ),
+            f"{skill_name} must validate decoded draft body content",
+        )
+        require(
+            all(
+                expected in skill_normalized
+                for expected in (
+                    "canonical MIME content digest from each part path",
+                    "decoded byte length, and SHA-256 of its decoded bytes",
+                    "decoded body bytes and canonical MIME content digest",
+                )
+            ),
+            f"{skill_name} must validate the canonical MIME content digest",
+        )
+        require(
+            'draft_json_again="$(isolated_gws gmail users drafts get '
+            '--params "$draft_get_params")" || exit 1' in skill_text,
+            f"{skill_name} must immediately reread the exact new draft before send",
+        )
+        require(
+            skill_text.count('"id": os.environ["DRAFT_ID"]') == 2
+            and 'print(json.dumps({"id": os.environ["DRAFT_ID"]}, separators=(",", ":")))'
+            in skill_text,
+            f"{skill_name} must send only the exact newly created draft ID",
+        )
+        require(
+            'isolated_gws gmail users drafts send --params \'{"userId":"me"}\' '
+            '--json "$draft_send_body" || exit 1' in skill_text
+            and "never rebuild or send with `users.messages.send`"
+            in skill_normalized,
+            f"{skill_name} must use the narrow exact raw drafts.send command",
+        )
+        require(
+            all(
+                expected in skill_normalized
+                for expected in (
+                    "shared attachment safety contract",
+                    "private temporary directory",
+                    "initial lstat",
+                    "device/inode",
+                    "SHA-256",
+                    "byte size",
+                    "copy the exact bytes",
+                    "post-copy original restat",
+                    "staged digest",
+                    "final staged digest check",
+                    "pass only the staged copy to gws",
+                    "Never pass the mutable user-supplied path",
+                    "cleanup on every exit",
+                )
+            ),
+            f"{skill_name} must enforce staged attachment integrity",
+        )
+        require(
+            hashlib.sha256(skill_path.read_bytes()).hexdigest() == expected_sha256,
+            f"{skill_name} security contract must match the canonical reviewed text",
+        )
+    for skill_name, skill_path, expected_sha256 in (
+        ("gws-gmail-read", GWS_GMAIL_READ_SKILL, GWS_GMAIL_READ_SKILL_SHA256),
+        (
+            "gws-gmail-triage",
+            GWS_GMAIL_TRIAGE_SKILL,
+            GWS_GMAIL_TRIAGE_SKILL_SHA256,
+        ),
+    ):
+        require(skill_path.exists(), f"{skill_name} skill must exist")
+        require(
+            hashlib.sha256(skill_path.read_bytes()).hexdigest() == expected_sha256,
+            f"{skill_name} security contract must match the canonical reviewed text",
+        )
 
     global_agents_requirements = (
         (
