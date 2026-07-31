@@ -111,18 +111,11 @@ def shared_bash_blocks(source: Optional[str] = None) -> list[str]:
 
 def shared_preflight_script(
     source: Optional[str] = None,
-    *,
-    binary_sha256: Optional[str] = None,
 ) -> str:
     blocks = shared_bash_blocks(source)
     if len(blocks) != 3:
         raise AssertionError(f"expected three ordered shared bash blocks, found {len(blocks)}")
-    script = "\n\n".join((*blocks, "printf 'PREFLIGHT_OK\\n'"))
-    if binary_sha256 is not None:
-        if script.count(GWS_BINARY_SHA256) != 1:
-            raise AssertionError("expected one canonical binary digest in copied preflight")
-        script = script.replace(GWS_BINARY_SHA256, binary_sha256, 1)
-    return script
+    return "\n\n".join((*blocks, "printf 'PREFLIGHT_OK\\n'"))
 
 
 def profile_validator_python(source: Optional[str] = None) -> str:
@@ -219,12 +212,16 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "`.`",
             "`..`",
             "accounts_root",
+            "secrets_root",
             'profile="$accounts_root/$alias"',
             "canonical",
             "direct child",
-            "root, profile, or descendant symlink",
+            "secrets root, accounts root, profile, or descendant symlink",
             "profile.json",
             "client_secret.json",
+            "credentials.enc",
+            ".encryption_key",
+            "Reject `credentials.json`",
             "regular file",
             "700",
             "600",
@@ -254,6 +251,8 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "encrypted",
             "keyring_backend",
             "encrypted_credentials_exists",
+            "plain_credentials_exists",
+            "status.get(\"plain_credentials_exists\") is False",
             "encryption_valid",
             "https://www.googleapis.com/auth/gmail.modify",
             "openid",
@@ -272,51 +271,105 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
         gws_start = shared.index('"$gws_bin" --version')
         self.assertLess(validation_end, gws_start)
 
-    def test_each_compose_skill_independently_enforces_draft_and_send_boundary(self):
+    def test_each_compose_skill_requires_authoritative_draft_readback_and_send_boundary(self):
+        expected_helpers = {
+            "gws-gmail-send": "+send",
+            "gws-gmail-reply": "+reply",
+            "gws-gmail-reply-all": "+reply-all",
+            "gws-gmail-forward": "+forward",
+        }
         for name in COMPOSE_SKILLS:
             text = normalized(PLUGIN / "skills" / name / "SKILL.md").lower()
             self.assertIn("../gws-shared/skill.md", text, name)
             self.assertIn("--draft", text, name)
+            self.assertRegex(
+                text,
+                rf'"\$gws_bin" gmail {re.escape(expected_helpers[name])} '
+                rf'[^\n]*--from "\$expected_email"[^\n]*--draft',
+                name,
+            )
             self.assertIn("explicit user intent to send", text, name)
             self.assertIn("identity/recipient preview", text, name)
             self.assertIn('"$gws_bin" gmail', text, name)
+            for authoritative_requirement in (
+                "primary verified identity is the only permitted from",
+                "always create a server-side draft first",
+                "parse exactly one draft id",
+                "users.drafts.get",
+                "full draft",
+                "case-insensitively",
+                "actual from",
+                "to/cc/bcc",
+                "subject",
+                "thread context",
+                "attachment names and count",
+                "preview the readback",
+                "draft-only request stops",
+                "immediate unchanged readback",
+                "users.drafts.send",
+                "exact newly created draft",
+                "mismatch",
+                "fail closed",
+            ):
+                self.assertIn(
+                    authoritative_requirement,
+                    text,
+                    f"{name}: {authoritative_requirement}",
+                )
             for attachment_requirement in (
-                "before draft or send",
                 "attachment safety contract",
-                "user-supplied path",
-                "absolute",
-                "lstat",
-                "regular final object",
-                "final symlink",
-                "canonical target path",
+                "private temporary directory",
+                "initial lstat",
+                "device/inode",
+                "sha-256",
+                "byte size",
+                "copy the exact bytes",
+                "post-copy",
+                "restat and rehash",
+                "staged digest",
+                "original absolute path",
                 "basename",
-                "immediately revalidate",
-                "same path and canonical target",
-                "fail closed on change",
+                "size and digest",
+                "only the staged copy",
+                "final staged digest",
+                "cleanup",
             ):
                 self.assertIn(attachment_requirement, text, f"{name}: {attachment_requirement}")
 
         forward = normalized(PLUGIN / "skills" / "gws-gmail-forward" / "SKILL.md").lower()
         self.assertIn("server-side original attachments", forward)
         self.assertIn("separate", forward)
+        self.assertIn("authoritative attachment names and count", forward)
+        reply_all = normalized(PLUGIN / "skills" / "gws-gmail-reply-all" / "SKILL.md").lower()
+        self.assertIn("authoritative resolved recipients", reply_all)
 
-    def test_shared_attachment_contract_rejects_symlinks_and_revalidates_identity(self):
+    def test_shared_attachment_contract_stages_exact_bytes_and_revalidates_identity(self):
         shared = normalized(PLUGIN / "skills" / "gws-shared" / "SKILL.md").lower()
         for required in (
             "before draft or send",
             "user-supplied attachment",
             "absolute path",
-            "lstat",
+            "initial `lstat`",
             "regular final object",
             "final symlink",
             "canonical target path",
-            "basename",
             "device/inode",
+            "sha-256 digest",
+            "byte size",
+            "private temporary directory",
+            "copy the exact bytes",
+            "post-copy",
+            "restat and rehash",
+            "staged digest",
             "identity/recipient preview",
-            "immediately before invoking",
-            "same user-supplied path",
-            "same canonical target",
-            "fail closed on any change",
+            "original absolute path",
+            "basename",
+            "size",
+            "digest",
+            "final staged digest",
+            "only the staged copy",
+            "cleanup",
+            "fail closed",
             "trusted `/usr/bin/python3 -i`",
             "never path-resolved `python3`",
         ):
@@ -330,6 +383,8 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "users.messages.send",
             "users.drafts.send",
             "helper skills",
+            "exact newly created",
+            "immediate unchanged readback",
             "explicit user intent",
             "exact action",
             "explicit alias",
@@ -342,7 +397,7 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "trash/untrash",
             "bounded batch mutation",
             "raw label",
-            "raw draft",
+            "raw draft create/update/delete",
         ):
             self.assertIn(required, gmail)
         all_skill_text = "\n".join(
@@ -377,10 +432,12 @@ class SharedPreflightExecutionTests(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
-        self.root = Path(self.tempdir.name)
+        self.root = Path(self.tempdir.name).resolve()
         self.secrets = self.root / "secrets"
         self.accounts = self.secrets / "gws" / "accounts"
         self.accounts.mkdir(parents=True)
+        self.secrets.chmod(0o700)
+        (self.secrets / "gws").chmod(0o700)
         self.accounts.chmod(0o700)
         self.data = self.root / "data"
         self.log = self.root / "gws.log"
@@ -466,6 +523,10 @@ if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
   exit 0
 fi
 if [ "$#" -eq 2 ] && [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  if [ "${FAKE_STATUS_CREATE_KEY:-0}" = "1" ]; then
+    printf 'fake-key\n' > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.encryption_key"
+    chmod 600 "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.encryption_key"
+  fi
   printf '%s\n' "$FAKE_GWS_STATUS"
   exit "${FAKE_STATUS_EXIT:-0}"
 fi
@@ -483,6 +544,7 @@ exit 97
             "storage": "encrypted",
             "keyring_backend": "file",
             "encrypted_credentials_exists": True,
+            "plain_credentials_exists": False,
             "encryption_valid": True,
         }
 
@@ -496,6 +558,7 @@ exit 97
                 {"installed": {"client_id": "id", "client_secret": "secret", "project_id": "project"}}
             ),
             "credentials.enc": "encrypted",
+            ".encryption_key": "encryption-key",
         }
         for name, contents in files.items():
             path = profile / name
@@ -509,6 +572,8 @@ exit 97
         alias: str = "personal",
         status: Optional[dict] = None,
         status_exit: int = 0,
+        status_create_key: bool = False,
+        secrets_dir: Optional[Path] = None,
         script: Optional[str] = None,
     ) -> subprocess.CompletedProcess:
         if self.log.exists():
@@ -520,10 +585,11 @@ exit 97
             {
                 "HOME": str(self.root / "home"),
                 "XDG_DATA_HOME": str(self.data),
-                "CODEX_SECRETS_DIR": str(self.secrets),
+                "CODEX_SECRETS_DIR": str(self.secrets if secrets_dir is None else secrets_dir),
                 "FAKE_GWS_LOG": str(self.log),
                 "FAKE_GWS_STATUS": json.dumps(self.status if status is None else status),
                 "FAKE_STATUS_EXIT": str(status_exit),
+                "FAKE_STATUS_CREATE_KEY": "1" if status_create_key else "0",
                 "GOOGLE_WORKSPACE_CLI_TOKEN": "ambient-token",
                 "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/ambient/credentials.json",
                 "GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE": "/ambient/credential.json",
@@ -547,7 +613,7 @@ exit 97
                 "bash",
                 "-c",
                 (
-                    shared_preflight_script(binary_sha256=self.test_binary_sha256)
+                    self.copied_preflight_script(binary_sha256=self.test_binary_sha256)
                     if script is None
                     else script
                 ),
@@ -558,6 +624,28 @@ exit 97
             capture_output=True,
             check=False,
         )
+
+    def copied_preflight_script(
+        self,
+        *,
+        binary_sha256: str,
+        replace: Optional[tuple[str, str]] = None,
+    ) -> str:
+        source_path = PLUGIN / "skills" / "gws-shared" / "SKILL.md"
+        copied_path = self.root / f"gws-shared-copy-{len(list(self.root.glob('gws-shared-copy-*')))}.md"
+        source = source_path.read_text(encoding="utf-8")
+        self.assertEqual(
+            source.count(GWS_BINARY_SHA256),
+            1,
+            "source skill must contain one canonical managed-binary digest",
+        )
+        source = source.replace(GWS_BINARY_SHA256, binary_sha256, 1)
+        if replace is not None:
+            old, new = replace
+            self.assertIn(old, source, "requested temporary-copy mutation is absent")
+            source = source.replace(old, new, 1)
+        copied_path.write_text(source, encoding="utf-8")
+        return shared_preflight_script(copied_path.read_text(encoding="utf-8"))
 
     def run_profile_validator(
         self,
@@ -581,6 +669,8 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         env = os.environ.copy()
         env.update(
             {
+                "SECRETS_ROOT": str(self.secrets.resolve()),
+                "GWS_ROOT": str((self.secrets / "gws").resolve()),
                 "ACCOUNTS_ROOT": str(self.accounts.resolve()),
                 "PROFILE_DIR": str(self.profile.resolve()),
                 "PROFILE_ALIAS": "personal",
@@ -608,6 +698,62 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         self.assertEqual(status_call[4], str(self.profile.resolve() / "missing-adc.json"))
         self.assertEqual(status_call[5:], [""] * 10)
         self.assertFalse(self.shim_log.exists())
+
+    def test_preflight_rejects_non_private_or_noncanonical_secrets_root_before_status(self):
+        self.secrets.chmod(0o755)
+        exposed = self.run_preflight()
+        self.assertNotEqual(exposed.returncode, 0, exposed.stdout + exposed.stderr)
+        self.assertFalse(self.log.exists(), "unsafe secrets root must fail before invoking gws")
+
+        self.secrets.chmod(0o700)
+        secrets_link = self.root / "secrets-link"
+        secrets_link.symlink_to(self.secrets, target_is_directory=True)
+        linked = self.run_preflight(secrets_dir=secrets_link)
+        self.assertNotEqual(linked.returncode, 0, linked.stdout + linked.stderr)
+        self.assertFalse(self.log.exists(), "symlinked secrets root must fail before invoking gws")
+
+    def test_missing_credentials_or_key_never_calls_status_or_creates_key(self):
+        credentials = self.profile / "credentials.enc"
+        credentials.unlink()
+        missing_credentials = self.run_preflight(status_create_key=True)
+        self.assertNotEqual(
+            missing_credentials.returncode,
+            0,
+            missing_credentials.stdout + missing_credentials.stderr,
+        )
+        calls = (
+            [line.split("|")[0] for line in self.log.read_text(encoding="utf-8").splitlines()]
+            if self.log.exists()
+            else []
+        )
+        self.assertNotIn("auth status", calls)
+
+        credentials.write_text("encrypted", encoding="utf-8")
+        credentials.chmod(0o600)
+        encryption_key = self.profile / ".encryption_key"
+        encryption_key.unlink()
+        missing_key = self.run_preflight(status_create_key=True)
+        self.assertNotEqual(missing_key.returncode, 0, missing_key.stdout + missing_key.stderr)
+        calls = (
+            [line.split("|")[0] for line in self.log.read_text(encoding="utf-8").splitlines()]
+            if self.log.exists()
+            else []
+        )
+        self.assertNotIn("auth status", calls)
+        self.assertFalse(encryption_key.exists(), "preflight must not let auth status create a key")
+
+    def test_profile_rejects_plain_credentials_before_status(self):
+        plaintext = self.profile / "credentials.json"
+        plaintext.write_text('{"type":"authorized_user"}', encoding="utf-8")
+        plaintext.chmod(0o600)
+        result = self.run_preflight()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = (
+            [line.split("|")[0] for line in self.log.read_text(encoding="utf-8").splitlines()]
+            if self.log.exists()
+            else []
+        )
+        self.assertNotIn("auth status", calls)
 
     def test_hostile_path_and_pythonpath_cannot_force_profile_or_status_healthy(self):
         credentials = self.profile / "credentials.enc"
@@ -649,6 +795,7 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
             {"storage": "plaintext"},
             {"keyring_backend": "keychain"},
             {"encrypted_credentials_exists": False},
+            {"plain_credentials_exists": True},
             {"encryption_valid": False},
         )
         for changes in cases:
@@ -657,6 +804,11 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
                 status.update(changes)
                 result = self.run_preflight(status=status)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        missing_plaintext_state = dict(self.status)
+        missing_plaintext_state.pop("plain_credentials_exists")
+        result = self.run_preflight(status=missing_plaintext_state)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_profile_rejects_exposed_file_and_descendant_symlink(self):
         credentials = self.profile / "credentials.enc"
@@ -692,10 +844,12 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
             "auth status",
         )
 
-        mutated = shared_preflight_script(binary_sha256=self.test_binary_sha256).replace(
-            '"$gws_bin" auth status',
-            '"$gws_bin" auth status --bogus',
-            1,
+        mutated = self.copied_preflight_script(
+            binary_sha256=self.test_binary_sha256,
+            replace=(
+                '"$gws_bin" auth status',
+                '"$gws_bin" auth status --bogus',
+            ),
         )
         suffixed = self.run_preflight(script=mutated)
         self.assertNotEqual(suffixed.returncode, 0, suffixed.stdout + suffixed.stderr)
@@ -705,7 +859,7 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         )
 
     def test_binary_digest_and_non_symlink_checks_fail_closed(self):
-        pinned_script = shared_preflight_script(binary_sha256=self.test_binary_sha256)
+        pinned_script = self.copied_preflight_script(binary_sha256=self.test_binary_sha256)
         self.gws_bin.write_text(
             self.gws_bin.read_text(encoding="utf-8") + "\n# unexpected replacement\n",
             encoding="utf-8",
@@ -720,7 +874,7 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         target.chmod(0o755)
         self.gws_bin.symlink_to(target)
-        symlink_script = shared_preflight_script(
+        symlink_script = self.copied_preflight_script(
             binary_sha256=hashlib.sha256(target.read_bytes()).hexdigest()
         )
         symlinked = self.run_preflight(script=symlink_script)

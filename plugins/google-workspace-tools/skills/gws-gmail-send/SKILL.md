@@ -5,17 +5,40 @@ description: Use when drafting or explicitly sending a Gmail message through gws
 
 # Draft or send Gmail
 
-**REQUIRED:** Apply [gws-shared](../gws-shared/SKILL.md) first. Compose with
-`"$gws_bin" gmail +send --to <recipients> --subject <subject> --body <body> --draft`
-in its exact isolated environment. A request to “write” means draft only.
+**REQUIRED:** Apply [gws-shared](../gws-shared/SKILL.md) first. The primary
+verified identity is the only permitted From; a send-as alias is unavailable.
 
-Remove `--draft` only after explicit user intent to send now. Immediately before
-that command, show an identity/recipient preview: verified sender, To/CC/BCC
-recipients, subject, attachment basenames, and draft/send state. A deadline,
-prior draft, or ambiguous request is not send authorization.
+## Authoritative draft preview
 
-Before draft or send, apply the shared attachment safety contract to every
-user-supplied path: require an absolute path; use `lstat` to require a regular
-final object and reject a final symlink; preview its canonical target path and
-basename in the identity/recipient preview; then immediately revalidate the
-same path and canonical target before invoking gws. Fail closed on change.
+Always create a server-side draft first with
+`"$gws_bin" gmail +send --from "$expected_email" --to <recipients> --subject <subject> --body <body> --draft`
+in the exact isolated environment. Parse exactly one draft ID from the helper's
+JSON result; zero, duplicate, or malformed IDs fail closed. Fetch that ID with
+raw `users.drafts.get` using the `full` format.
+
+Treat the full draft readback as authoritative. Validate the actual From
+case-insensitively against `$expected_email`; validate actual To/CC/BCC,
+subject, new-message thread context, and attachment names and count against the
+request and staged inputs. Preview the readback in the identity/recipient
+preview, including draft state. A draft-only request stops after this preview.
+
+## Optional send-now boundary
+
+Only explicit user intent to send now is pre-authorization. Immediately before
+sending, perform another full `users.drafts.get` and require an immediate
+unchanged readback of the exact newly created draft, including From, To/CC/BCC,
+subject, thread context, and attachment names and count. Then, and only then,
+invoke raw `users.drafts.send` with that exact draft ID. Any mismatch, deadline,
+prior draft, or ambiguous request must fail closed; never rebuild or send with
+`users.messages.send`.
+
+## Attachment staging
+
+Apply the shared attachment safety contract independently to each attachment:
+perform the initial lstat, canonical device/inode, SHA-256, and byte size
+record; create a private temporary directory; copy the exact bytes to a
+mode-`600` file with the same basename; perform the post-copy original restat
+and rehash; and require the staged digest to match. Preview the original
+absolute path, basename, size and digest. Perform the final staged digest check,
+pass only the staged copy to gws, and cleanup on every exit. Never pass the
+mutable user-supplied path.

@@ -13,13 +13,16 @@ ask.
 ## Resolve and validate the profile
 
 An alias must match `^[a-z0-9][a-z0-9._-]{0,62}$`; also reject `.` and `..`.
-Resolve only a canonical direct child of
-`${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/gws/accounts`.
-Fail closed on a root, profile, or descendant symlink; a missing required file;
-`profile.json` or `client_secret.json` not being a regular file; any directory
-mode other than `700`; any file mode other than `600`; or any traversal error.
-`profile.json` must have `schema_version: 1` and a non-empty string
-`expected_email`.
+Resolve a canonical, non-symlink, mode-`700` `secrets_root` first, then require
+canonical non-symlink mode-`700` `gws` and `accounts` directories beneath it.
+The selected profile must be a canonical direct child of the accounts root.
+Fail closed on a secrets root, accounts root, profile, or descendant symlink;
+a missing required file; any directory mode other than `700`; any file mode
+other than `600`; or any traversal error. Require `profile.json`,
+`client_secret.json`, `credentials.enc`, and `.encryption_key` to be regular
+files, non-symlink, and mode-`600` before `auth status`. Reject `credentials.json`
+even when it is otherwise private. `profile.json` must have `schema_version: 1`
+and a non-empty string `expected_email`.
 
 Set `alias` from the user's explicit value, then run this validation before
 exposing the profile or any environment to the CLI:
@@ -30,19 +33,33 @@ case "$alias" in
 esac
 [[ "$alias" =~ ^[a-z0-9][a-z0-9._-]{0,62}$ ]] || exit 1
 
-accounts_root_path="${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/gws/accounts"
+secrets_root_path="${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}"
+[ -d "$secrets_root_path" ] && [ ! -L "$secrets_root_path" ] || exit 1
+secrets_root="$(cd -P "$secrets_root_path" && pwd)" || exit 1
+[ "$secrets_root" = "$secrets_root_path" ] || exit 1
+
+gws_root_path="$secrets_root/gws"
+[ -d "$gws_root_path" ] && [ ! -L "$gws_root_path" ] || exit 1
+gws_root="$(cd -P "$gws_root_path" && pwd)" || exit 1
+[ "$gws_root" = "$gws_root_path" ] || exit 1
+
+accounts_root_path="$gws_root/accounts"
 [ -d "$accounts_root_path" ] && [ ! -L "$accounts_root_path" ] || exit 1
 accounts_root="$(cd -P "$accounts_root_path" && pwd)" || exit 1
+[ "$accounts_root" = "$accounts_root_path" ] || exit 1
 profile="$accounts_root/$alias"
 
 expected_email="$(
-  ACCOUNTS_ROOT="$accounts_root" PROFILE_DIR="$profile" PROFILE_ALIAS="$alias" \
+  SECRETS_ROOT="$secrets_root" GWS_ROOT="$gws_root" \
+    ACCOUNTS_ROOT="$accounts_root" PROFILE_DIR="$profile" PROFILE_ALIAS="$alias" \
     /usr/bin/python3 -I - <<'PY'
 import json
 import os
 import stat
 import sys
 
+secrets_root = os.environ["SECRETS_ROOT"]
+gws_root = os.environ["GWS_ROOT"]
 root = os.environ["ACCOUNTS_ROOT"]
 profile = os.environ["PROFILE_DIR"]
 alias = os.environ["PROFILE_ALIAS"]
@@ -58,13 +75,27 @@ def check(path, kind, mode):
         raise ValueError("unsafe profile mode")
 
 try:
+    secrets_real = os.path.realpath(secrets_root)
+    gws_real = os.path.realpath(gws_root)
     root_real = os.path.realpath(root)
     profile_real = os.path.realpath(profile)
-    if root != root_real or os.path.dirname(profile_real) != root_real:
+    if secrets_root != secrets_real:
+        raise ValueError("secrets root is not canonical")
+    if gws_root != gws_real or os.path.dirname(gws_real) != secrets_real:
+        raise ValueError("gws root is not a canonical direct child")
+    if os.path.basename(gws_real) != "gws":
+        raise ValueError("gws root name mismatch")
+    if root != root_real or os.path.dirname(root_real) != gws_real:
+        raise ValueError("accounts root is not a canonical direct child")
+    if os.path.basename(root_real) != "accounts":
+        raise ValueError("accounts root name mismatch")
+    if os.path.dirname(profile_real) != root_real:
         raise ValueError("profile is not a canonical direct child")
     if os.path.basename(profile_real) != alias or profile != os.path.join(root, alias):
         raise ValueError("profile alias mismatch")
 
+    check(secrets_root, stat.S_ISDIR, 0o700)
+    check(gws_root, stat.S_ISDIR, 0o700)
     check(root, stat.S_ISDIR, 0o700)
     check(profile, stat.S_ISDIR, 0o700)
     for current, directories, files in os.walk(
@@ -75,7 +106,15 @@ try:
         for name in files:
             check(os.path.join(current, name), stat.S_ISREG, 0o600)
 
-    for name in ("profile.json", "client_secret.json"):
+    if os.path.lexists(os.path.join(profile, "credentials.json")):
+        raise ValueError("plaintext profile credentials are forbidden")
+
+    for name in (
+        "profile.json",
+        "client_secret.json",
+        "credentials.enc",
+        ".encryption_key",
+    ):
         check(os.path.join(profile, name), stat.S_ISREG, 0o600)
 
     with open(os.path.join(profile, "profile.json"), encoding="utf-8") as source:
@@ -119,9 +158,10 @@ sentinel:
 Require an exact case-insensitive email match between live status and
 `profile.json.expected_email`. Also require `token_valid: true`,
 `storage: encrypted`, `keyring_backend: file`,
-`encrypted_credentials_exists: true`, `encryption_valid: true`, and exactly
-`gmail.modify`, `openid`, `userinfo.email`, and `userinfo.profile`. Reject
-missing, duplicate, or extra scopes, including the broad
+`encrypted_credentials_exists: true`, `plain_credentials_exists: false`,
+`encryption_valid: true`, and exactly `gmail.modify`, `openid`,
+`userinfo.email`, and `userinfo.profile`. Reject missing, duplicate, or extra
+status fields and scopes, including the broad
 `https://mail.google.com/` scope.
 
 ```bash
@@ -166,6 +206,7 @@ try:
         and status.get("storage") == "encrypted"
         and status.get("keyring_backend") == "file"
         and status.get("encrypted_credentials_exists") is True
+        and status.get("plain_credentials_exists") is False
         and status.get("encryption_valid") is True
         and isinstance(scopes, list)
         and len(scopes) == len(required_scopes)
@@ -183,22 +224,34 @@ There is no same-request Gmail connector fallback. Fail closed.
 
 ## Attachment safety contract
 
-Use absolute attachment paths only. Before draft or send, validate every
-user-supplied attachment path:
+Use absolute attachment paths only. Before draft or send, stage every
+user-supplied attachment as immutable input to the compose operation:
 
-1. Require an absolute path.
-2. Use `lstat` on the final object, require a regular final object, and reject a
-   final symlink even when its target is regular.
-3. Resolve the canonical target path. Record its `lstat` device/inode identity,
-   then include the canonical target path and basename in the
-   identity/recipient preview.
-4. Immediately before invoking gws, repeat `lstat` on the same user-supplied
-   path. Require the same regular, non-symlink final object, device/inode, and
-   same canonical target that was previewed. Fail closed on any change.
+1. Perform an initial `lstat` on the original absolute path. Require a regular
+   final object, reject a final symlink, resolve its canonical target path, and
+   record device/inode identity, basename, byte size, and SHA-256 digest.
+2. Create a private temporary directory with mode `700`, register cleanup for
+   every success and failure path, and create one mode-`700` child directory
+   per attachment. Copy the exact bytes into a new mode-`600` staged file that
+   preserves the original basename.
+3. After the copy, perform a post-copy original restat and rehash. Require the
+   same non-symlink regular object, canonical target, device/inode, byte size,
+   and digest recorded initially. `lstat` and hash the staged copy; record its
+   canonical target, device/inode, size, and digest, and require its staged
+   digest and size to match the original record.
+4. In the identity/recipient preview show the original absolute path, basename,
+   size and digest. Do not substitute or expose the temporary path as the
+   user's attachment identity.
+5. Immediately before invoking gws, repeat `lstat`, size, and SHA-256 checks on
+   the staged file. Require the final staged digest and identity to match the
+   staged record. Invoke gws with only the staged copy; never pass the mutable
+   original path.
+6. Cleanup the private temporary directory after a draft, a send, or any
+   failure. Fail closed on every mismatch or cleanup-registration failure.
 
-This contract applies to drafts as well as immediate sends. Do not attach a
-path that fails either check. Perform any Python attachment validation with
-trusted `/usr/bin/python3 -I`, never PATH-resolved `python3`.
+Perform all validation, copying, and hashing with trusted
+`/usr/bin/python3 -I`, never PATH-resolved `python3`. Open the original and
+staged files without following symlinks where the platform supports it.
 
 Run the requested Gmail command from `/` with the same scrubbed absolute
 `/usr/bin/env` prefix and the same absolute `$gws_bin`; replace only
