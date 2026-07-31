@@ -87,9 +87,16 @@ cp "$FAKE_DOWNLOAD" "$out"
     def install_fake_runtime(self) -> None:
         self.runtime_gws.parent.mkdir(parents=True)
         self.runtime_gws.write_text("""#!/bin/sh
-printf '%s|%s|%s|%s|%s|%s\\n' "$*" "$PWD" "${GOOGLE_WORKSPACE_CLI_CONFIG_DIR:-}" "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:-}" "${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE:-}" "${GOOGLE_APPLICATION_CREDENTIALS:-}" >> "$FAKE_GWS_LOG"
-if [ "$1" = "--version" ]; then printf '0.22.5\\n'; exit 0; fi
-if [ "$1" = "auth" ] && [ "$2" = "login" ]; then mkdir -p "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR"; printf login > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/login-artifact"; exit 0; fi
+printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\\n' "$*" "$PWD" "${GOOGLE_WORKSPACE_CLI_TOKEN:-}" "${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE:-}" "${GOOGLE_WORKSPACE_CLI_CLIENT_ID:-}" "${GOOGLE_WORKSPACE_CLI_CLIENT_SECRET:-}" "${GOOGLE_WORKSPACE_PROJECT_ID:-}" "${GOOGLE_WORKSPACE_CLI_LOG:-}" "${GOOGLE_WORKSPACE_CLI_LOG_FILE:-}" "${GOOGLE_WORKSPACE_CLI_CONFIG_DIR:-}" "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:-}" "${GOOGLE_APPLICATION_CREDENTIALS:-}" >> "$FAKE_GWS_LOG"
+if [ "$1" = "--version" ]; then printf 'gws 0.22.5\\nThis software is not an officially supported Google product.\\n'; exit 0; fi
+if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
+  mkdir -p "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR"
+  printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/credentials.enc"
+  printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.encryption_key"
+  printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/token-cache.json"
+  [ "${FAKE_GWS_LOGIN_MODE:-ok}" = "fail" ] && exit 1
+  exit 0
+fi
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then printf '%s\\n' "$FAKE_GWS_STATUS"; exit 0; fi
 exit 3
 """)
@@ -107,7 +114,7 @@ exit 3
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def status(self, address: str, **changes: object) -> None:
-        value: dict[str, object] = {"email": address, "valid": True, "scopes": [SCOPE], "keyring_backend": "file", "credentials_encrypted": True, "credentials_decryptable": True}
+        value: dict[str, object] = {"user": address, "token_valid": True, "scopes": [SCOPE], "storage": "file", "encrypted_credentials_exists": True, "encryption_valid": True}
         value.update(changes)
         self.env["FAKE_GWS_STATUS"] = json.dumps(value)
 
@@ -141,6 +148,9 @@ exit 3
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("checksum mismatch", result.stderr)
         self.assertFalse(self.runtime_gws.exists())
+        download_fields = self.download_log.read_text().split()
+        download_output = Path(download_fields[download_fields.index("-o") + 1])
+        self.assertFalse(download_output.parent.exists(), "failed installation must clean temporary release artifacts")
 
     def test_install_refuses_unmanaged_binary_and_is_idempotent_when_healthy(self) -> None:
         self.local_bin.mkdir()
@@ -186,13 +196,14 @@ exit 3
         self.assert_mode(profile, 0o700)
         self.assert_mode(profile / "profile.json", 0o600)
         self.assert_mode(profile / "client_secret.json", 0o600)
-        log = self.gws_log.read_text()
-        self.assertIn(f"auth login --scopes {SCOPE}|/|{profile}|file", log)
-        self.assertIn(str(profile / "missing-adc.json"), log)
+        login_rows = [line.split("|") for line in self.gws_log.read_text().splitlines() if line.startswith(f"auth login --scopes {SCOPE}|")]
+        self.assertEqual(login_rows[-1], [
+            f"auth login --scopes {SCOPE}", "/", "", "", "", "", "", "", "", str(profile), "file", str(profile / "missing-adc.json"),
+        ])
         self.status("second@example.test")
         second = self.run("--add-account", "second@example.test")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
-        self.assertIn(f"auth login --scopes {SCOPE}|/|{self.accounts_root / 'second'}|file", self.gws_log.read_text())
+        self.assertIn(str(self.accounts_root / "second"), self.gws_log.read_text())
 
     def test_add_account_rejects_alias_traversal_symlink_and_expected_email_collision(self) -> None:
         self.install_fake_runtime()
@@ -218,20 +229,33 @@ exit 3
         self.assertIn("identity", result.stderr)
         self.assertFalse((self.accounts_root / "right").exists())
 
-    def test_health_checks_reject_bad_status_and_clear_ambient_credentials(self) -> None:
+    def test_health_checks_real_status_contract_rejects_bad_scopes_and_clears_every_ambient_override(self) -> None:
         self.install_fake_runtime()
         self.register_client()
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
-        self.env["GOOGLE_WORKSPACE_CLI_TOKEN"] = "ambient-token"
-        for changes in ({"email": "wrong@example.test"}, {"scopes": []}, {"valid": False}, {"credentials_decryptable": False}):
+        self.env.update({
+            "GOOGLE_WORKSPACE_CLI_TOKEN": "ambient-token",
+            "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/ambient/credentials.json",
+            "GOOGLE_WORKSPACE_CLI_CLIENT_ID": "ambient-client-id",
+            "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET": "ambient-client-secret",
+            "GOOGLE_WORKSPACE_PROJECT_ID": "ambient-project",
+            "GOOGLE_WORKSPACE_CLI_LOG": "ambient-log",
+            "GOOGLE_WORKSPACE_CLI_LOG_FILE": "/ambient/logs",
+        })
+        for changes in ({"user": "wrong@example.test"}, {"scopes": []}, {"token_valid": False}, {"encrypted_credentials_exists": False}, {"encryption_valid": False}, {"storage": "keyring"}, {"scopes": [SCOPE, "https://mail.google.com/"]}):
             self.status("account@example.test", **changes)
             self.assertEqual(self.run("--check-account", "account").returncode, 1)
         self.status("ACCOUNT@example.test")
         result = self.run("--check-account", "account")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("account: ready", result.stdout)
-        self.assertIn("||", self.gws_log.read_text())
+        profile = self.accounts_root / "account"
+        status_rows = [line.split("|") for line in self.gws_log.read_text().splitlines() if line.startswith("auth status|")]
+        self.assertTrue(status_rows)
+        self.assertEqual(status_rows[-1], [
+            "auth status", "/", "", "", "", "", "", "", "", str(profile.resolve()), "file", str((profile / "missing-adc.json").resolve()),
+        ])
 
     def test_reauth_preserves_identity_and_list_never_prints_email(self) -> None:
         self.install_fake_runtime()
@@ -251,9 +275,9 @@ exit 3
         self.register_client()
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
-        artifact = self.accounts_root / "account" / "login-artifact"
+        artifact = self.accounts_root / "account" / "token-cache.json"
         artifact.unlink()
-        self.status("account@example.test", valid=False)
+        self.status("account@example.test", token_valid=False)
         result = self.run("--reauth-account", "account")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertFalse(artifact.exists(), "an unhealthy profile must not start a new OAuth login")
@@ -264,10 +288,31 @@ exit 3
         self.register_client()
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
-        os.chmod(self.accounts_root / "account", 0o755)
-        result = self.run("--check-account", "account")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("private permissions", result.stderr)
+        profile = self.accounts_root / "account"
+        for path in (profile, profile / ".encryption_key", profile / "credentials.enc", profile / "token-cache.json"):
+            os.chmod(path, 0o755 if path == profile else 0o644)
+            result = self.run("--check-account", "account")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("private permissions", result.stderr)
+            os.chmod(path, 0o700 if path == profile else 0o600)
+
+    def test_reauth_restores_replaced_credential_state_after_login_failure_or_wrong_account(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.env["FAKE_GWS_LOGIN_VALUE"] = "original"
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        profile = self.accounts_root / "account"
+        original = {name: (profile / name).read_text() for name in ("credentials.enc", ".encryption_key", "token-cache.json")}
+        self.env.update({"FAKE_GWS_LOGIN_VALUE": "failed-replacement", "FAKE_GWS_LOGIN_MODE": "fail"})
+        failed = self.run("--reauth-account", "account")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        self.assertEqual({name: (profile / name).read_text() for name in original}, original)
+        self.env.update({"FAKE_GWS_LOGIN_VALUE": "wrong-replacement", "FAKE_GWS_LOGIN_MODE": "ok"})
+        self.status("wrong@example.test")
+        wrong = self.run("--reauth-account", "account")
+        self.assertEqual(wrong.returncode, 1, wrong.stdout + wrong.stderr)
+        self.assertEqual({name: (profile / name).read_text() for name in original}, original)
 
 
 if __name__ == "__main__":

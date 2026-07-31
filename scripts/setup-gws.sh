@@ -19,6 +19,14 @@ SECRETS_BASE="${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}"
 SECRETS_ROOT="${SECRETS_BASE}/gws"
 CLIENT_PATH="${SECRETS_ROOT}/client_secret.json"
 ACCOUNTS_ROOT="${SECRETS_ROOT}/accounts"
+INSTALL_TMP=""
+
+cleanup_install_tmp() {
+  if [ -n "${INSTALL_TMP:-}" ] && [ -d "$INSTALL_TMP" ]; then
+    rm -rf "$INSTALL_TMP"
+  fi
+}
+trap cleanup_install_tmp EXIT
 
 die() {
   printf '%s\n' "$*" >&2
@@ -44,7 +52,8 @@ platform_ready() {
 }
 
 runtime_ready() {
-  [ -x "$GWS_BIN" ] && [ "$("$GWS_BIN" --version 2>/dev/null || true)" = "$VERSION" ]
+  [ -x "$GWS_BIN" ] || return 1
+  "$GWS_BIN" --version 2>/dev/null | grep -Eq "^gws ${VERSION}[[:space:]]*$"
 }
 
 canonical_dir() {
@@ -64,6 +73,17 @@ has_private_mode() {
   local path="$1" expected="$2" actual
   actual="$(stat -f '%Lp' "$path" 2>/dev/null || stat -c '%a' "$path" 2>/dev/null || true)"
   [ "$actual" = "$expected" ]
+}
+
+profile_state_is_private() {
+  local profile="$1" entry
+  find "$profile" -type l -print -quit | grep -q . && return 1
+  while IFS= read -r -d '' entry; do
+    has_private_mode "$entry" 700 || return 1
+  done < <(find "$profile" -type d -print0)
+  while IFS= read -r -d '' entry; do
+    has_private_mode "$entry" 600 || return 1
+  done < <(find "$profile" -type f -print0)
 }
 
 validate_client_json() {
@@ -158,14 +178,16 @@ try:
     status = json.loads(os.environ["STATUS_JSON"])
     scopes = status["scopes"]
     healthy = (
-        isinstance(status.get("email"), str)
-        and status["email"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
-        and status.get("valid") is True
-        and status.get("keyring_backend") == "file"
-        and status.get("credentials_encrypted") is True
-        and status.get("credentials_decryptable") is True
+        isinstance(status.get("user"), str)
+        and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
+        and status.get("token_valid") is True
+        and isinstance(status.get("storage"), str)
+        and status["storage"].casefold() == "file"
+        and status.get("encrypted_credentials_exists") is True
+        and status.get("encryption_valid") is True
         and isinstance(scopes, list)
         and "https://www.googleapis.com/auth/gmail.modify" in scopes
+        and "https://mail.google.com/" not in scopes
     )
 except (ValueError, TypeError, KeyError):
     healthy = False
@@ -179,7 +201,7 @@ check_account() {
   profile="$(profile_for_alias "$alias")" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
   expected="$(profile_expected_email "$profile")" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
   [ -f "$profile/client_secret.json" ] && [ ! -L "$profile/client_secret.json" ] || { printf '%s: missing client\n' "$alias" >&2; return 1; }
-  has_private_mode "$profile" 700 && has_private_mode "$profile/profile.json" 600 && has_private_mode "$profile/client_secret.json" 600 || { printf '%s: private permissions check failed\n' "$alias" >&2; return 1; }
+  profile_state_is_private "$profile" || { printf '%s: private permissions check failed\n' "$alias" >&2; return 1; }
   runtime_ready || { printf '%s: gws runtime unavailable\n' "$alias" >&2; return 1; }
   status="$(run_isolated "$profile" auth status 2>/dev/null)" || { printf '%s: credentials unavailable\n' "$alias" >&2; return 1; }
   status_is_healthy "$expected" "$status" || { printf '%s: identity, token, keyring, encryption, or scope check failed\n' "$alias" >&2; return 1; }
@@ -202,14 +224,13 @@ install_gws() {
   fi
   ensure_private_dir "$RUNTIME_DIR"
   ensure_private_dir "$LOCAL_BIN_DIR"
-  local tmp archive stage actual
-  tmp="$(mktemp -d "${TMPDIR:-/tmp}/codex-toolbox-gws.XXXXXX")" || die "unable to create temporary directory"
-  trap 'rm -rf "$tmp"' RETURN
-  archive="$tmp/$ASSET"
+  local archive stage actual
+  INSTALL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/codex-toolbox-gws.XXXXXX")" || die "unable to create temporary directory"
+  archive="$INSTALL_TMP/$ASSET"
   curl -fsSL "$RELEASE_URL" -o "$archive" || die "download failed"
   actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
   [ "$actual" = "$SHA256" ] || die "checksum mismatch for pinned gws release"
-  stage="$tmp/stage"
+  stage="$INSTALL_TMP/stage"
   mkdir "$stage" || die "unable to prepare release extraction"
   tar -xzf "$archive" -C "$stage" || die "archive extraction failed"
   [ -f "$stage/gws" ] && [ ! -L "$stage/gws" ] || die "release archive did not contain gws"
@@ -287,13 +308,25 @@ PY
 
 reauth_account() {
   [ "$#" -eq 1 ] || usage
-  local alias="$1" profile
+  local alias="$1" profile snapshot
   profile="$(profile_for_alias "$alias")" || die "invalid profile"
   profile_expected_email "$profile" >/dev/null || die "invalid profile"
   validate_client_json "$profile/client_secret.json" || die "invalid profile client"
   check_account "$alias" >/dev/null || die "existing profile is unhealthy; refusing reauthentication"
-  run_isolated "$profile" auth login --scopes "$GMAIL_SCOPE" || die "OAuth login failed"
-  check_account "$alias" || die "OAuth login identity check failed"
+  snapshot="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.reauth.XXXXXX")" || die "unable to snapshot existing profile"
+  chmod 700 "$snapshot" || die "unable to protect profile snapshot"
+  cp -pR "$profile/." "$snapshot" || { rm -rf "$snapshot"; die "unable to snapshot existing profile"; }
+  if ! run_isolated "$profile" auth login --scopes "$GMAIL_SCOPE"; then
+    rm -rf "$profile"
+    mv "$snapshot" "$profile" || die "OAuth login failed and profile restoration failed"
+    die "OAuth login failed; existing profile restored"
+  fi
+  if ! check_account "$alias"; then
+    rm -rf "$profile"
+    mv "$snapshot" "$profile" || die "OAuth login identity check failed and profile restoration failed"
+    die "OAuth login identity check failed; existing profile restored"
+  fi
+  rm -rf "$snapshot"
   printf 'Account %s reauthenticated\n' "$alias"
 }
 
