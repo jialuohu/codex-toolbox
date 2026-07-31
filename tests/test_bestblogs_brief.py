@@ -8,6 +8,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from urllib.error import HTTPError
+from unittest.mock import ANY
 
 
 MODULE = Path(__file__).parents[1] / "plugins/web-data-tools/skills/bestblogs-brief/scripts/bestblogs_brief.py"
@@ -57,17 +58,23 @@ def metadata(resource_id, resource_type="ARTICLE", **changes):
 
 
 class FakeClient:
-    def __init__(self, account, today, batches):
+    def __init__(self, account, today, batches, history=None):
         self.account = account
         self.today = today
         self.batches = list(batches)
         self.batch_calls = []
+        self.history = history
+        self.history_calls = []
 
     def me(self):
         return self.account
 
     def today_brief(self):
         return self.today
+
+    def brief_history(self, page=1, page_size=30):
+        self.history_calls.append((page, page_size))
+        return self.history
 
     def batch_meta(self, resource_ids):
         self.batch_calls.append(list(resource_ids))
@@ -272,6 +279,143 @@ class BestBlogsBriefTests(unittest.TestCase):
         client._opener = FakeOpener([FakeResponse(b'{"success":true}', url)])
         with self.assertRaisesRegex(brief.BriefError, "envelope"):
             client.batch_meta(["one"])
+
+    def test_client_gets_bounded_history_from_fixed_endpoint_and_rejects_malformed_envelopes(self):
+        client = brief.BestBlogsClient(VALID_API_KEY)
+        url = brief.API_ORIGIN + "/me/briefs/history?page=1&pageSize=30"
+        valid = json.dumps({
+            "success": True, "code": None, "message": None, "requestId": "request", "data": [],
+        }).encode()
+        client._opener = FakeOpener([FakeResponse(valid, url)])
+
+        self.assertEqual(client.brief_history(), [])
+        request, _ = client._opener.requests[0]
+        self.assertEqual(request.full_url, url)
+        self.assertEqual(request.get_method(), "GET")
+        self.assertIsNone(request.data)
+        self.assertEqual(request.get_header("X-api-key"), VALID_API_KEY)
+
+        client._opener = FakeOpener([FakeResponse(b'{"success":true}', url)])
+        with self.assertRaisesRegex(brief.BriefError, "envelope"):
+            client.brief_history()
+
+    def test_history_selects_one_complete_mixed_type_edition_before_normalizing(self):
+        requested = self.stable_brief(
+            status="COMPLETED",
+            brief_date="2026-07-23",
+            items=[
+                item("podcast", contentType="PODCAST"),
+                item("video", contentType="VIDEO"),
+                item("tweet", contentType="TWITTER"),
+                item("article", contentType="ARTICLE"),
+            ],
+        )
+        client = FakeClient(
+            {"userTier": "PRO"},
+            self.stable_brief(),
+            [[
+                metadata("article", "ARTICLE"),
+                metadata("podcast", "PODCAST"),
+                metadata("tweet", "TWITTER"),
+                metadata("video", "VIDEO"),
+            ]],
+            history=[self.stable_brief(brief_date="2026-07-24"), requested],
+        )
+
+        result = brief.read_history(client, "2026-07-23", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(client.history_calls, [(1, 30)])
+        self.assertEqual(client.batch_calls, [["podcast", "video", "tweet", "article"]])
+        self.assertEqual(result["briefDate"], "2026-07-23")
+        self.assertEqual(result["status"], "COMPLETED")
+        self.assertEqual(
+            [(entry["resourceId"], entry["contentType"]) for entry in result["items"]],
+            [("podcast", "PODCAST"), ("video", "VIDEO"), ("tweet", "TWITTER"), ("article", "ARTICLE")],
+        )
+
+    def test_history_rejects_absent_duplicate_incomplete_and_empty_matching_editions_before_metadata(self):
+        requested_date = "2026-07-23"
+        cases = (
+            ("absent", [self.stable_brief(brief_date="2026-07-24")], "not available"),
+            (
+                "duplicate",
+                [self.stable_brief(brief_date=requested_date), self.stable_brief(brief_date=requested_date)],
+                "ambiguous",
+            ),
+            ("incomplete", [self.stable_brief(status="GENERATING", brief_date=requested_date)], "not complete"),
+            ("empty", [self.stable_brief(brief_date=requested_date, items=[])], "items are empty"),
+        )
+        for name, history, expected_error in cases:
+            with self.subTest(name=name):
+                client = FakeClient({"userTier": "PRO"}, self.stable_brief(), [], history=history)
+
+                with self.assertRaisesRegex(brief.BriefError, expected_error):
+                    brief.read_history(client, requested_date)
+
+                self.assertEqual(client.history_calls, [(1, 30)])
+                self.assertEqual(client.batch_calls, [])
+
+    def test_history_cli_emits_one_normalized_object(self):
+        history_client = FakeClient(
+            {"userTier": "PRO"},
+            self.stable_brief(),
+            [[metadata("podcast", "PODCAST")]],
+            history=[self.stable_brief(status="COMPLETED", brief_date="2026-07-23", items=[item("podcast", contentType="PODCAST")])],
+        )
+        original_factory = brief.BestBlogsClient
+        original_key = os.environ.get("BESTBLOGS_API_KEY")
+        output, errors = io.StringIO(), io.StringIO()
+        brief.BestBlogsClient = lambda unused_key: history_client
+        os.environ["BESTBLOGS_API_KEY"] = VALID_API_KEY
+        try:
+            with redirect_stdout(output), redirect_stderr(errors):
+                result = brief.main(["history", "--date", "2026-07-23"])
+        finally:
+            brief.BestBlogsClient = original_factory
+            if original_key is None:
+                os.environ.pop("BESTBLOGS_API_KEY", None)
+            else:
+                os.environ["BESTBLOGS_API_KEY"] = original_key
+        self.assertEqual(result, 0)
+        self.assertEqual(errors.getvalue(), "")
+        self.assertEqual(json.loads(output.getvalue()), {
+            "schemaVersion": 1,
+            "briefDate": "2026-07-23",
+            "status": "COMPLETED",
+            "generatedAt": ANY,
+            "editorIntro": "Today's picks",
+            "keywords": ["models", "systems"],
+            "items": [ANY],
+        })
+
+    def test_history_cli_redacts_http_failure(self):
+        original_factory = brief.BestBlogsClient
+        original_key = os.environ.get("BESTBLOGS_API_KEY")
+        client = brief.BestBlogsClient(VALID_API_KEY)
+        me_url = brief.API_ORIGIN + "/me"
+        history_url = brief.API_ORIGIN + "/me/briefs/history?page=1&pageSize=30"
+        account = json.dumps({
+            "success": True, "code": None, "message": None, "requestId": "request", "data": {"userTier": "PRO"},
+        }).encode()
+        client._opener = FakeOpener([
+            FakeResponse(account, me_url),
+            HTTPError(history_url, 500, "error", {}, io.BytesIO(("sensitive " + VALID_API_KEY).encode("utf-8"))),
+        ])
+        output, errors = io.StringIO(), io.StringIO()
+        brief.BestBlogsClient = lambda unused_key: client
+        os.environ["BESTBLOGS_API_KEY"] = VALID_API_KEY
+        try:
+            with redirect_stdout(output), redirect_stderr(errors):
+                result = brief.main(["history", "--date", "2026-07-23"])
+        finally:
+            brief.BestBlogsClient = original_factory
+            if original_key is None:
+                os.environ.pop("BESTBLOGS_API_KEY", None)
+            else:
+                os.environ["BESTBLOGS_API_KEY"] = original_key
+        self.assertEqual(result, 2)
+        self.assertIn("HTTP request failed", errors.getvalue())
+        self.assertNotIn(VALID_API_KEY, output.getvalue() + errors.getvalue())
 
     def test_batches_metadata_requests_at_one_hundred_ids(self):
         items = [item("resource-%03d" % index) for index in range(101)]

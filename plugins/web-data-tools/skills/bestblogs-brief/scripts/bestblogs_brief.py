@@ -23,6 +23,7 @@ except ImportError:  # pragma: no cover - Python 3.9 includes zoneinfo
 API_ORIGIN = "https://api.bestblogs.dev/openapi/v2"
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_BATCH_SIZE = 100
+MAX_HISTORY_EDITIONS = 30
 API_KEY = re.compile(r"^bb_[0-9A-Fa-f]{32}$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 STABLE_STATUSES = frozenset(("COMPLETED", "PUBLISHED"))
@@ -318,6 +319,12 @@ class BestBlogsClient:
     def today_brief(self):
         return self._request("GET", "/me/briefs/today")
 
+    def brief_history(self, page=1, page_size=30):
+        if isinstance(page, bool) or not isinstance(page, int) or page != 1 or \
+                isinstance(page_size, bool) or not isinstance(page_size, int) or not 1 <= page_size <= MAX_HISTORY_EDITIONS:
+            raise ValueError("brief history requires page 1 and one to %d editions" % MAX_HISTORY_EDITIONS)
+        return _list(self._request("GET", "/me/briefs/history?page=%d&pageSize=%d" % (page, page_size)), "brief history")
+
     def batch_meta(self, resource_ids):
         if not isinstance(resource_ids, list) or not resource_ids or len(resource_ids) > MAX_BATCH_SIZE or \
                 any(not _safe_id(resource_id) for resource_id in resource_ids):
@@ -444,11 +451,8 @@ def _normalize_item(brief_item, metadata):
     return normalized
 
 
-def read_today(client, expected_date=None, clock=None):
-    expected_date = beijing_date_now() if expected_date is None else expected_date
-    expected_date = _validated_date(expected_date, "Beijing date")
-    require_pro(client.me())
-    source = _object(client.today_brief(), "today brief")
+def _normalize_brief(client, source, expected_date, clock=None):
+    source = _object(source, "brief")
     brief_date = _validated_date(source.get("briefDate"), "brief date")
     if brief_date != expected_date:
         raise BriefError("brief date does not match Beijing date")
@@ -502,12 +506,49 @@ def read_today(client, expected_date=None, clock=None):
     }
 
 
+def read_today(client, expected_date=None, clock=None):
+    expected_date = beijing_date_now() if expected_date is None else expected_date
+    expected_date = _validated_date(expected_date, "Beijing date")
+    require_pro(client.me())
+    return _normalize_brief(client, client.today_brief(), expected_date, clock)
+
+
+def _select_history_brief(history, requested_date):
+    matches = []
+    for source in _list(history, "brief history"):
+        source = _object(source, "history brief")
+        if _validated_date(source.get("briefDate"), "brief date") == requested_date:
+            matches.append(source)
+    if not matches:
+        raise BriefError("requested brief is not available in the most recent 30 editions")
+    if len(matches) != 1:
+        raise BriefError("requested brief date is ambiguous in history")
+    source = matches[0]
+    if source.get("status") not in STABLE_STATUSES:
+        raise BriefError("requested history brief is not complete")
+    items_value = source.get("contentItems")
+    if items_value is None:
+        items_value = source.get("items")
+    if not _list(items_value, "brief items"):
+        raise BriefError("brief items are empty")
+    return source
+
+
+def read_history(client, requested_date, clock=None):
+    requested_date = _validated_date(requested_date, "history date")
+    require_pro(client.me())
+    source = _select_history_brief(client.brief_history(page=1, page_size=MAX_HISTORY_EDITIONS), requested_date)
+    return _normalize_brief(client, source, requested_date, clock)
+
+
 def _parser():
     parser = argparse.ArgumentParser(prog="bestblogs_brief.py")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("doctor")
     today = commands.add_parser("today")
     today.add_argument("--beijing-date")
+    history = commands.add_parser("history")
+    history.add_argument("--date", required=True)
     return parser
 
 
@@ -518,8 +559,10 @@ def main(argv=None):
         if args.command == "doctor":
             tier = require_pro(client.me())
             result = {"configured": True, "tier": tier, "proAccess": True}
-        else:
+        elif args.command == "today":
             result = read_today(client, args.beijing_date)
+        else:
+            result = read_history(client, args.date)
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":"), allow_nan=False))
         return 0
     except (BriefError, ValueError) as error:
