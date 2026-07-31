@@ -303,9 +303,15 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
                 "subject",
                 "thread context",
                 "attachment names and count",
+                "decoded body content",
+                "`text/plain` and `text/html`",
+                "canonical mime content digest",
+                "body content against the requested body",
+                "preview the decoded body",
                 "preview the readback",
                 "draft-only request stops",
                 "immediate unchanged readback",
+                "body bytes and canonical mime content digest",
                 "users.drafts.send",
                 "exact newly created draft",
                 "mismatch",
@@ -316,6 +322,27 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
                     text,
                     f"{name}: {authoritative_requirement}",
                 )
+            for command_requirement in (
+                "gws v0.22.5 schema",
+                "isolated_gws()",
+                "cd / || exit 1",
+                "/usr/bin/env -u google_workspace_cli_token",
+                'google_workspace_cli_config_dir="$profile"',
+                "google_workspace_cli_keyring_backend=file",
+                'isolated_gws gmail users drafts get --params "$draft_get_params"',
+                'draft_json_again="$(isolated_gws gmail users drafts get '
+                '--params "$draft_get_params")" || exit 1',
+                'isolated_gws gmail users drafts send --params \'{"userid":"me"}\' '
+                '--json "$draft_send_body" || exit 1',
+                '"userid": "me"',
+                '"format": "full"',
+            ):
+                self.assertIn(command_requirement, text, f"{name}: {command_requirement}")
+            self.assertGreaterEqual(
+                text.count('"id": os.environ["draft_id"]'),
+                2,
+                f"{name}: raw get params and send body must use the exact parsed draft ID",
+            )
             for attachment_requirement in (
                 "attachment safety contract",
                 "private temporary directory",
