@@ -385,7 +385,24 @@ class BestBlogsBriefTests(unittest.TestCase):
             "generatedAt": ANY,
             "editorIntro": "Today's picks",
             "keywords": ["models", "systems"],
-            "items": [ANY],
+            "items": [{
+                "resourceId": "podcast",
+                "sourceId": "brief-source-podcast",
+                "sourceName": "Brief source podcast",
+                "title": "Brief title podcast",
+                "contentType": "PODCAST",
+                "url": "https://example.com/podcast",
+                "publishedAt": "2026-07-24T01:02:03Z",
+                "readTime": 5,
+                "score": 0.9,
+                "tags": ["AI"],
+                "oneSentenceSummary": "A concise finding.",
+                "summary": "A longer explanation.",
+                "mainPoints": ["First point"],
+                "deepRead": False,
+                "featured": True,
+                "personalized": True,
+            }],
         })
 
     def test_history_cli_redacts_http_failure(self):
