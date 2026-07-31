@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -22,6 +23,13 @@ SKILLS = (
 )
 UPSTREAM_TAG = "v0.22.5"
 UPSTREAM_COMMIT = "705fb0ecac6f4249679958f6325b809b63fdde17"
+GWS_BINARY_SHA256 = "0f27b8b0815bf09cdf95da48d3c604f05ceb8f16bf5c9f0ba355b1f957cdd47e"
+REQUIRED_SCOPES = (
+    "openid",
+    "https://www.googleapis.com/auth/gmail.modify",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+)
 COMPOSE_SKILLS = (
     "gws-gmail-send",
     "gws-gmail-reply",
@@ -101,11 +109,20 @@ def shared_bash_blocks(source: Optional[str] = None) -> list[str]:
     return re.findall(r"```bash\n(.*?)\n```", source, re.DOTALL)
 
 
-def shared_preflight_script(source: Optional[str] = None) -> str:
+def shared_preflight_script(
+    source: Optional[str] = None,
+    *,
+    binary_sha256: Optional[str] = None,
+) -> str:
     blocks = shared_bash_blocks(source)
     if len(blocks) != 3:
         raise AssertionError(f"expected three ordered shared bash blocks, found {len(blocks)}")
-    return "\n\n".join((*blocks, "printf 'PREFLIGHT_OK\\n'"))
+    script = "\n\n".join((*blocks, "printf 'PREFLIGHT_OK\\n'"))
+    if binary_sha256 is not None:
+        if script.count(GWS_BINARY_SHA256) != 1:
+            raise AssertionError("expected one canonical binary digest in copied preflight")
+        script = script.replace(GWS_BINARY_SHA256, binary_sha256, 1)
+    return script
 
 
 def profile_validator_python(source: Optional[str] = None) -> str:
@@ -174,7 +191,11 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
         for required in (
             '${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws',
             'gws_bin=',
-            '[ -x "$gws_bin" ]',
+            '[ -f "$gws_bin" ]',
+            '[ ! -L "$gws_bin" ]',
+            'gws_runtime_root="$(cd -P "$gws_runtime_dir" && pwd)"',
+            '/usr/bin/shasum -a 256 "$gws_bin"',
+            GWS_BINARY_SHA256,
             '"$gws_bin" --version',
             'first_line',
             'gws 0.22.5',
@@ -183,6 +204,7 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             'Fail closed',
         ):
             self.assertIn(required, shared)
+        self.assertEqual(shared_source.count(GWS_BINARY_SHA256), 1)
         self.assertEqual(shared_source.count("/usr/bin/python3 -I - <<'PY'"), 2)
         self.assertIn("/usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN", shared_source)
         self.assertIn("same scrubbed absolute `/usr/bin/env` prefix", shared)
@@ -222,6 +244,8 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "-u GOOGLE_WORKSPACE_CLI_LOG",
             "-u GOOGLE_WORKSPACE_CLI_LOG_FILE",
             "-u GOOGLE_WORKSPACE_PROJECT_ID",
+            "-u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE",
+            "-u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE",
             "-u GOOGLE_APPLICATION_CREDENTIALS",
             "from `/`",
             "exact case-insensitive email match",
@@ -232,6 +256,11 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "encrypted_credentials_exists",
             "encryption_valid",
             "https://www.googleapis.com/auth/gmail.modify",
+            "openid",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "len(scopes) == len(required_scopes)",
+            "set(scopes) == required_scopes",
             "https://mail.google.com/",
             "absolute attachment paths",
             "no same-request Gmail connector fallback",
@@ -344,7 +373,6 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
 
 
 class SharedPreflightExecutionTests(unittest.TestCase):
-    SCOPE = "https://www.googleapis.com/auth/gmail.modify"
 
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
@@ -418,7 +446,7 @@ if os.environ.get("FORCE_GWS_VALIDATORS_HEALTHY") == "1":
         self.gws_bin.parent.mkdir(parents=True)
         self.gws_bin.write_text(
             """#!/bin/sh
-printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
   "$*" "$PWD" \
   "${GOOGLE_WORKSPACE_CLI_CONFIG_DIR:-}" \
   "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:-}" \
@@ -430,7 +458,9 @@ printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
   "${GOOGLE_WORKSPACE_CLI_CLIENT_SECRET:-}" \
   "${GOOGLE_WORKSPACE_PROJECT_ID:-}" \
   "${GOOGLE_WORKSPACE_CLI_LOG:-}" \
-  "${GOOGLE_WORKSPACE_CLI_LOG_FILE:-}" >> "$FAKE_GWS_LOG"
+  "${GOOGLE_WORKSPACE_CLI_LOG_FILE:-}" \
+  "${GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE:-}" \
+  "${GOOGLE_WORKSPACE_CLI_SANITIZE_MODE:-}" >> "$FAKE_GWS_LOG"
 if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
   printf 'gws 0.22.5\nThis software is not an officially supported Google product.\n'
   exit 0
@@ -444,11 +474,12 @@ exit 97
             encoding="utf-8",
         )
         self.gws_bin.chmod(0o755)
+        self.test_binary_sha256 = hashlib.sha256(self.gws_bin.read_bytes()).hexdigest()
         self.profile = self.make_profile("personal")
         self.status = {
             "user": "personal@example.com",
             "token_valid": True,
-            "scopes": [self.SCOPE],
+            "scopes": list(REQUIRED_SCOPES),
             "storage": "encrypted",
             "keyring_backend": "file",
             "encrypted_credentials_exists": True,
@@ -501,6 +532,8 @@ exit 97
                 "GOOGLE_WORKSPACE_PROJECT_ID": "ambient-project",
                 "GOOGLE_WORKSPACE_CLI_LOG": "ambient-log",
                 "GOOGLE_WORKSPACE_CLI_LOG_FILE": "/ambient/gws.log",
+                "GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE": "ambient-template",
+                "GOOGLE_WORKSPACE_CLI_SANITIZE_MODE": "model-armor",
                 "GOOGLE_APPLICATION_CREDENTIALS": "/ambient/school-adc.json",
                 "PATH": os.pathsep.join((str(self.hostile_bin), env["PATH"])),
                 "PYTHONPATH": str(self.hostile_pythonpath),
@@ -510,7 +543,15 @@ exit 97
             }
         )
         return subprocess.run(
-            ["bash", "-c", shared_preflight_script() if script is None else script],
+            [
+                "bash",
+                "-c",
+                (
+                    shared_preflight_script(binary_sha256=self.test_binary_sha256)
+                    if script is None
+                    else script
+                ),
+            ],
             cwd=REPO_ROOT,
             env=env,
             text=True,
@@ -565,7 +606,7 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         self.assertEqual(status_call[2], str(self.profile.resolve()))
         self.assertEqual(status_call[3], "file")
         self.assertEqual(status_call[4], str(self.profile.resolve() / "missing-adc.json"))
-        self.assertEqual(status_call[5:], [""] * 8)
+        self.assertEqual(status_call[5:], [""] * 10)
         self.assertFalse(self.shim_log.exists())
 
     def test_hostile_path_and_pythonpath_cannot_force_profile_or_status_healthy(self):
@@ -601,7 +642,9 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         cases = (
             {"user": "school@example.com"},
             {"scopes": []},
-            {"scopes": [self.SCOPE, "https://mail.google.com/"]},
+            {"scopes": list(REQUIRED_SCOPES[1:])},
+            {"scopes": [*REQUIRED_SCOPES, "https://mail.google.com/"]},
+            {"scopes": [*REQUIRED_SCOPES, REQUIRED_SCOPES[0]]},
             {"token_valid": False},
             {"storage": "plaintext"},
             {"keyring_backend": "keychain"},
@@ -649,7 +692,7 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
             "auth status",
         )
 
-        mutated = shared_preflight_script().replace(
+        mutated = shared_preflight_script(binary_sha256=self.test_binary_sha256).replace(
             '"$gws_bin" auth status',
             '"$gws_bin" auth status --bogus',
             1,
@@ -660,6 +703,29 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
             self.log.read_text(encoding="utf-8").splitlines()[-1].split("|")[0],
             "auth status --bogus",
         )
+
+    def test_binary_digest_and_non_symlink_checks_fail_closed(self):
+        pinned_script = shared_preflight_script(binary_sha256=self.test_binary_sha256)
+        self.gws_bin.write_text(
+            self.gws_bin.read_text(encoding="utf-8") + "\n# unexpected replacement\n",
+            encoding="utf-8",
+        )
+        self.gws_bin.chmod(0o755)
+        replaced = self.run_preflight(script=pinned_script)
+        self.assertNotEqual(replaced.returncode, 0, replaced.stdout + replaced.stderr)
+        self.assertFalse(self.log.exists(), "untrusted binary must fail before invocation")
+
+        self.gws_bin.unlink()
+        target = self.gws_bin.parent / "gws-target"
+        target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        target.chmod(0o755)
+        self.gws_bin.symlink_to(target)
+        symlink_script = shared_preflight_script(
+            binary_sha256=hashlib.sha256(target.read_bytes()).hexdigest()
+        )
+        symlinked = self.run_preflight(script=symlink_script)
+        self.assertNotEqual(symlinked.returncode, 0, symlinked.stdout + symlinked.stderr)
+        self.assertFalse(self.log.exists(), "symlinked binary must fail before invocation")
 
 
 if __name__ == "__main__":

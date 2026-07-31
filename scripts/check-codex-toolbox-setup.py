@@ -149,7 +149,7 @@ GOOGLE_WORKSPACE_LICENSE_SHA256 = (
     "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
 )
 GWS_SHARED_SKILL_SHA256 = (
-    "f6c57a45e6a9710fb8b263663b5e7fe4a6e81771c79f9d7ccc351338175f5586"
+    "ef878acf863c368952b5ceb037e113381eda63027bdeb62ae8f7e00af1966fac"
 )
 GWS_GMAIL_SKILL_SHA256 = (
     "f0ca1c04e87022a74b3689d88349b05727967f0ded47ff0032f72c298c963670"
@@ -158,7 +158,10 @@ GOOGLE_WORKSPACE_PROVENANCE_SHA256 = (
     "aff66c1f8bacb72b7a28d74a9718a9dafe54a66d457c7cc54245f4767493970c"
 )
 GWS_INSTALL_FUNCTION_SHA256 = (
-    "6f5da94496fee25d8e1981db1d4d5301fd6260f324e94baf7c229aac1017bc51"
+    "1da1cfc9ee65cbc0921b7de21d0e7f5b092d6914d176f0c5a0197077cd2f915d"
+)
+GWS_SETUP_SHA256 = (
+    "40181959a0eef6fe4bae0373a24ce0e01b7229e7dc13c79ed760c3cc623a0c43"
 )
 GLOBAL_GMAIL_ROUTING_PARAGRAPH = (
     "Keep the official Gmail connector available for ordinary connected Gmail requests. "
@@ -671,6 +674,11 @@ def validate_google_workspace_tools_contract(
             "setup-gws must pin the expected release checksum exactly once",
         ),
         (
+            "BINARY_SHA256",
+            '"0f27b8b0815bf09cdf95da48d3c604f05ceb8f16bf5c9f0ba355b1f957cdd47e"',
+            "setup-gws must pin the expected binary checksum exactly once",
+        ),
+        (
             "RELEASE_URL",
             '"https://github.com/googleworkspace/cli/releases/download/v${VERSION}/${ASSET}"',
             "setup-gws must pin the exact upstream release URL",
@@ -732,8 +740,28 @@ def validate_google_workspace_tools_contract(
             "setup-gws must verify the exact live account identity",
         ),
         (
-            'and "https://mail.google.com/" not in scopes',
-            "setup-gws must reject the broad Gmail mail scope",
+            '        "openid",',
+            "setup-gws must require the openid identity scope",
+        ),
+        (
+            '        "https://www.googleapis.com/auth/gmail.modify",',
+            "setup-gws must require gmail.modify",
+        ),
+        (
+            '        "https://www.googleapis.com/auth/userinfo.email",',
+            "setup-gws must require the userinfo.email identity scope",
+        ),
+        (
+            '        "https://www.googleapis.com/auth/userinfo.profile",',
+            "setup-gws must require the userinfo.profile identity scope",
+        ),
+        (
+            "and len(scopes) == len(required_scopes)",
+            "setup-gws must reject duplicate or extra scopes",
+        ),
+        (
+            "and set(scopes) == required_scopes",
+            "setup-gws must require the exact scope set",
         ),
         (
             "chmod 700",
@@ -749,16 +777,24 @@ def validate_google_workspace_tools_contract(
     for variable in (
         "GOOGLE_WORKSPACE_CLI_TOKEN",
         "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE",
+        "GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE",
         "GOOGLE_WORKSPACE_CLI_CLIENT_ID",
         "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",
         "GOOGLE_WORKSPACE_CLI_LOG",
         "GOOGLE_WORKSPACE_CLI_LOG_FILE",
         "GOOGLE_WORKSPACE_PROJECT_ID",
+        "GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE",
+        "GOOGLE_WORKSPACE_CLI_SANITIZE_MODE",
+        "GOOGLE_APPLICATION_CREDENTIALS",
     ):
         require(
-            f"  {variable}= \\" in gws_setup_text,
+            f"    -u {variable} \\" in gws_setup_text,
             f"setup-gws must clear ambient {variable}",
         )
+    require(
+        hashlib.sha256(GWS_SETUP.read_bytes()).hexdigest() == GWS_SETUP_SHA256,
+        "setup-gws profile manager must match the canonical reviewed text",
+    )
 
     require(GWS_SHARED_SKILL.exists(), "gws-shared skill must exist")
     gws_shared_text = GWS_SHARED_SKILL.read_text()
@@ -777,8 +813,24 @@ def validate_google_workspace_tools_contract(
             "gws shared runtime must run from the filesystem root",
         ),
         (
-            'gws_bin="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"\n',
+            'gws_runtime_path="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"\n',
             "gws shared runtime must use the pinned absolute managed binary",
+        ),
+        (
+            'gws_runtime_root="$(cd -P "$gws_runtime_dir" && pwd)" || exit 1\n',
+            "gws shared runtime must canonicalize the managed binary directory",
+        ),
+        (
+            '[ -f "$gws_bin" ] && [ ! -L "$gws_bin" ] && [ -x "$gws_bin" ] || exit 1\n',
+            "gws shared runtime must require a regular non-symlink executable",
+        ),
+        (
+            'gws_sha_output="$(/usr/bin/shasum -a 256 "$gws_bin" 2>/dev/null)" || exit 1\n',
+            "gws shared runtime must hash the managed binary with /usr/bin/shasum",
+        ),
+        (
+            '[ "$gws_sha256" = "0f27b8b0815bf09cdf95da48d3c604f05ceb8f16bf5c9f0ba355b1f957cdd47e" ] || exit 1\n',
+            "gws shared runtime must verify the pinned binary checksum",
         ),
         (
             '[ "$first_line" = "gws 0.22.5" ] || exit 1\n',
@@ -811,6 +863,14 @@ def validate_google_workspace_tools_contract(
         (
             "    -u GOOGLE_WORKSPACE_PROJECT_ID \\\n",
             "gws shared runtime must clear ambient GOOGLE_WORKSPACE_PROJECT_ID",
+        ),
+        (
+            "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE",
+        ),
+        (
+            "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \\\n",
+            "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_SANITIZE_MODE",
         ),
         (
             "    -u GOOGLE_APPLICATION_CREDENTIALS \\\n",
@@ -857,12 +917,28 @@ def validate_google_workspace_tools_contract(
             "gws shared runtime must validate the scope collection",
         ),
         (
-            'and "https://www.googleapis.com/auth/gmail.modify" in scopes\n',
+            '        "openid",\n',
+            "gws shared runtime must require the openid identity scope",
+        ),
+        (
+            '        "https://www.googleapis.com/auth/gmail.modify",\n',
             "gws shared runtime must require gmail.modify",
         ),
         (
-            'and "https://mail.google.com/" not in scopes\n',
-            "gws shared runtime must reject the broad Gmail mail scope",
+            '        "https://www.googleapis.com/auth/userinfo.email",\n',
+            "gws shared runtime must require the userinfo.email identity scope",
+        ),
+        (
+            '        "https://www.googleapis.com/auth/userinfo.profile",\n',
+            "gws shared runtime must require the userinfo.profile identity scope",
+        ),
+        (
+            "and len(scopes) == len(required_scopes)\n",
+            "gws shared runtime must reject duplicate or extra scopes",
+        ),
+        (
+            "and set(scopes) == required_scopes\n",
+            "gws shared runtime must require the exact scope set",
         ),
         (
             "There is no same-request Gmail connector fallback. Fail closed.\n",
@@ -1020,6 +1096,16 @@ def validate_google_workspace_tools_contract(
             "README must require only the gmail.modify OAuth scope",
         ),
         (
+            "The only Gmail permission requested is "
+            "`https://www.googleapis.com/auth/gmail.modify`",
+            "README must distinguish gmail.modify as the only Gmail permission",
+        ),
+        (
+            "`gws` v0.22.5 automatically adds the three identity scopes "
+            "`openid`, `userinfo.email`, and `userinfo.profile`",
+            "README must document the three identity scopes added by gws v0.22.5",
+        ),
+        (
             "Never request `https://mail.google.com/`",
             "README must forbid the broad Gmail mail scope",
         ),
@@ -1034,6 +1120,11 @@ def validate_google_workspace_tools_contract(
         (
             "scripts/setup-gws.sh --reauth-account account-one",
             "README must document account reauthentication",
+        ),
+        (
+            "Reauthenticate an existing profile, including one with an expired or "
+            "revoked token, without changing its expected identity",
+            "README must document repair reauthentication for unhealthy tokens",
         ),
         (
             "scripts/setup-gws.sh --check-account account-one",

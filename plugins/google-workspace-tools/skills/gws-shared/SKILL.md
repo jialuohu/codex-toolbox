@@ -91,12 +91,21 @@ PY
 )" || exit 1
 ```
 
-Only after profile validation passed, resolve the pinned managed binary. Never
-invoke an ambient PATH `gws`:
+Only after profile validation passed, resolve the pinned managed binary. Require
+a canonical, non-symlinked managed release directory and a regular,
+non-symlinked executable; verify the exact published binary checksum and
+version. Never invoke an ambient PATH `gws`:
 
 ```bash
-gws_bin="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"
-[ -x "$gws_bin" ] || exit 1
+gws_runtime_path="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"
+gws_runtime_dir="${gws_runtime_path%/gws}"
+[ -d "$gws_runtime_dir" ] && [ ! -L "$gws_runtime_dir" ] || exit 1
+gws_runtime_root="$(cd -P "$gws_runtime_dir" && pwd)" || exit 1
+gws_bin="$gws_runtime_root/gws"
+[ -f "$gws_bin" ] && [ ! -L "$gws_bin" ] && [ -x "$gws_bin" ] || exit 1
+gws_sha_output="$(/usr/bin/shasum -a 256 "$gws_bin" 2>/dev/null)" || exit 1
+gws_sha256="${gws_sha_output%% *}"
+[ "$gws_sha256" = "0f27b8b0815bf09cdf95da48d3c604f05ceb8f16bf5c9f0ba355b1f957cdd47e" ] || exit 1
 version_output="$("$gws_bin" --version 2>/dev/null)" || exit 1
 first_line="${version_output%%$'\n'*}"
 [ "$first_line" = "gws 0.22.5" ] || exit 1
@@ -104,13 +113,16 @@ first_line="${version_output%%$'\n'*}"
 
 ## Isolated live identity preflight
 
-Run from `/`. Clear ambient gws credential, client, project, and log overrides;
-force the file keyring; and point ADC at a missing profile-local sentinel:
+Run from `/`. Clear ambient gws credential, client, project, sanitizer, and log
+overrides; force the file keyring; and point ADC at a missing profile-local
+sentinel:
 Require an exact case-insensitive email match between live status and
 `profile.json.expected_email`. Also require `token_valid: true`,
 `storage: encrypted`, `keyring_backend: file`,
-`encrypted_credentials_exists: true`, `encryption_valid: true`, and
-`gmail.modify` without the broad mail scope.
+`encrypted_credentials_exists: true`, `encryption_valid: true`, and exactly
+`gmail.modify`, `openid`, `userinfo.email`, and `userinfo.profile`. Reject
+missing, duplicate, or extra scopes, including the broad
+`https://mail.google.com/` scope.
 
 ```bash
 status_json="$(
@@ -123,6 +135,8 @@ status_json="$(
     -u GOOGLE_WORKSPACE_CLI_LOG \
     -u GOOGLE_WORKSPACE_CLI_LOG_FILE \
     -u GOOGLE_WORKSPACE_PROJECT_ID \
+    -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \
+    -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \
     -u GOOGLE_APPLICATION_CREDENTIALS \
     GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \
     GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
@@ -139,6 +153,12 @@ import sys
 try:
     status = json.loads(os.environ["STATUS_JSON"])
     scopes = status["scopes"]
+    required_scopes = {
+        "openid",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+    }
     healthy = (
         isinstance(status.get("user"), str)
         and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
@@ -148,8 +168,8 @@ try:
         and status.get("encrypted_credentials_exists") is True
         and status.get("encryption_valid") is True
         and isinstance(scopes, list)
-        and "https://www.googleapis.com/auth/gmail.modify" in scopes
-        and "https://mail.google.com/" not in scopes
+        and len(scopes) == len(required_scopes)
+        and set(scopes) == required_scopes
     )
 except (ValueError, TypeError, KeyError):
     healthy = False

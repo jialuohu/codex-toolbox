@@ -98,8 +98,20 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "gws shared runtime must run from the filesystem root",
             ),
             (
-                'gws_bin="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"\n',
+                'gws_runtime_path="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"\n',
                 "gws shared runtime must use the pinned absolute managed binary",
+            ),
+            (
+                '[ -f "$gws_bin" ] && [ ! -L "$gws_bin" ] && [ -x "$gws_bin" ] || exit 1\n',
+                "gws shared runtime must require a regular non-symlink executable",
+            ),
+            (
+                'gws_sha_output="$(/usr/bin/shasum -a 256 "$gws_bin" 2>/dev/null)" || exit 1\n',
+                "gws shared runtime must hash the managed binary with /usr/bin/shasum",
+            ),
+            (
+                '[ "$gws_sha256" = "0f27b8b0815bf09cdf95da48d3c604f05ceb8f16bf5c9f0ba355b1f957cdd47e" ] || exit 1\n',
+                "gws shared runtime must verify the pinned binary checksum",
             ),
             (
                 '[ "$first_line" = "gws 0.22.5" ] || exit 1\n',
@@ -132,6 +144,14 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             (
                 "    -u GOOGLE_WORKSPACE_PROJECT_ID \\\n",
                 "gws shared runtime must clear ambient GOOGLE_WORKSPACE_PROJECT_ID",
+            ),
+            (
+                "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE",
+            ),
+            (
+                "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \\\n",
+                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_CLI_SANITIZE_MODE",
             ),
             (
                 "    -u GOOGLE_APPLICATION_CREDENTIALS \\\n",
@@ -178,12 +198,28 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "gws shared runtime must validate the scope collection",
             ),
             (
-                'and "https://www.googleapis.com/auth/gmail.modify" in scopes\n',
+                '        "openid",\n',
+                "gws shared runtime must require the openid identity scope",
+            ),
+            (
+                '        "https://www.googleapis.com/auth/gmail.modify",\n',
                 "gws shared runtime must require gmail.modify",
             ),
             (
-                'and "https://mail.google.com/" not in scopes\n',
-                "gws shared runtime must reject the broad Gmail mail scope",
+                '        "https://www.googleapis.com/auth/userinfo.email",\n',
+                "gws shared runtime must require the userinfo.email identity scope",
+            ),
+            (
+                '        "https://www.googleapis.com/auth/userinfo.profile",\n',
+                "gws shared runtime must require the userinfo.profile identity scope",
+            ),
+            (
+                "and len(scopes) == len(required_scopes)\n",
+                "gws shared runtime must reject duplicate or extra scopes",
+            ),
+            (
+                "and set(scopes) == required_scopes\n",
+                "gws shared runtime must require the exact scope set",
             ),
             (
                 "There is no same-request Gmail connector fallback. Fail closed.\n",
@@ -253,6 +289,14 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
+        def remove_binary_checksum_pin(root: Path) -> None:
+            self.replace_once(
+                root,
+                setup_script,
+                'BINARY_SHA256="0f27b8b0815bf09cdf95da48d3c604f05ceb8f16bf5c9f0ba355b1f957cdd47e"\n',
+                "",
+            )
+
         def change_release_url(root: Path) -> None:
             self.replace_once(
                 root,
@@ -281,7 +325,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 setup_script,
-                '  actual="$(shasum -a 256 "$archive" | awk \'{print $1}\')"\n',
+                '  actual="$(file_sha256 "$archive")" || die "unable to hash downloaded gws release"\n',
                 '  actual="$SHA256"\n',
             )
 
@@ -295,6 +339,35 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 setup_script,
                 comparison,
                 f"  if false; then\n{comparison}  fi\n",
+            )
+
+        def bypass_isolated_login(root: Path) -> None:
+            self.replace_once(
+                root,
+                setup_script,
+                '  if ! run_isolated "$candidate" auth login --scopes "$GMAIL_SCOPE"; then\n'
+                '    die "OAuth login failed; candidate profile will be removed"\n',
+                '  if ! "$GWS_BIN" auth login --scopes "$GMAIL_SCOPE"; then\n'
+                '    die "OAuth login failed; candidate profile will be removed"\n',
+            )
+
+        def make_post_login_health_check_dead(root: Path) -> None:
+            self.replace_once(
+                root,
+                setup_script,
+                '  if ! check_profile_health "$candidate" "$email" "$alias"; then\n'
+                '    die "OAuth login identity check failed; candidate profile will be removed"\n',
+                '  if false && ! check_profile_health "$candidate" "$email" "$alias"; then\n'
+                '    die "OAuth login identity check failed; candidate profile will be removed"\n',
+            )
+
+        def add_extra_setup_scope(root: Path) -> None:
+            self.replace_once(
+                root,
+                setup_script,
+                '        "https://www.googleapis.com/auth/userinfo.profile",\n',
+                '        "https://www.googleapis.com/auth/userinfo.profile",\n'
+                '        "https://www.googleapis.com/auth/calendar.readonly",\n',
             )
 
         def truncate_license(root: Path) -> None:
@@ -334,6 +407,10 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "setup-gws must pin the expected release checksum exactly once",
             ),
             (
+                remove_binary_checksum_pin,
+                "setup-gws must pin the expected binary checksum exactly once",
+            ),
+            (
                 change_release_url,
                 "setup-gws must pin the exact upstream release URL",
             ),
@@ -352,6 +429,18 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             (
                 make_checksum_comparison_unreachable,
                 "setup-gws install_gws function must match the canonical reviewed text",
+            ),
+            (
+                bypass_isolated_login,
+                "setup-gws profile manager must match the canonical reviewed text",
+            ),
+            (
+                make_post_login_health_check_dead,
+                "setup-gws profile manager must match the canonical reviewed text",
+            ),
+            (
+                add_extra_setup_scope,
+                "setup-gws profile manager must match the canonical reviewed text",
             ),
             (
                 truncate_license,
@@ -412,6 +501,14 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 f'SHA256="{"0" * 64}"',
             )
 
+        def remove_installer_sanitizer_scrub(root: Path) -> None:
+            self.replace_once(
+                root,
+                gws_setup,
+                "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \\\n",
+                "",
+            )
+
         def remove_provenance(root: Path) -> None:
             path = root / "plugins/google-workspace-tools/PROVENANCE.md"
             self.assertTrue(path.is_file())
@@ -442,7 +539,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 gws_setup,
-                '  GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \\\n',
+                '    GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \\\n',
                 "",
             )
 
@@ -452,6 +549,15 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 shared_skill,
                 "    -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \\\n",
                 "",
+            )
+
+        def add_extra_shared_scope(root: Path) -> None:
+            self.replace_once(
+                root,
+                shared_skill,
+                '        "https://www.googleapis.com/auth/userinfo.profile",\n',
+                '        "https://www.googleapis.com/auth/userinfo.profile",\n'
+                '        "https://www.googleapis.com/auth/calendar.readonly",\n',
             )
 
         def allow_permanent_delete(root: Path) -> None:
@@ -558,6 +664,24 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "https://mail.google.com/",
             )
 
+        def remove_readme_identity_scope(root: Path) -> None:
+            self.replace_once(
+                root,
+                "README.md",
+                "`openid`, `userinfo.email`, and\n"
+                "   `userinfo.profile`",
+                "`openid` and `userinfo.email`",
+            )
+
+        def restore_healthy_only_reauth_wording(root: Path) -> None:
+            self.replace_once(
+                root,
+                "README.md",
+                "Reauthenticate an existing profile, including one with an expired or revoked\n"
+                "token, without changing its expected identity",
+                "Reauthenticate an existing healthy profile without changing its expected identity",
+            )
+
         def make_readme_client_path_non_executable(root: Path) -> None:
             self.replace_once(
                 root,
@@ -584,6 +708,10 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "setup-gws must pin the expected release checksum",
             ),
             (
+                remove_installer_sanitizer_scrub,
+                "setup-gws must clear ambient GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE",
+            ),
+            (
                 remove_provenance,
                 "google-workspace-tools provenance must exist",
             ),
@@ -606,6 +734,10 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             (
                 remove_singular_credential_override_scrub,
                 "gws shared contract must clear ambient GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE",
+            ),
+            (
+                add_extra_shared_scope,
+                "gws-shared security contract must match the canonical reviewed text",
             ),
             (
                 allow_permanent_delete,
@@ -658,6 +790,14 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             (
                 remove_readme_oauth_scope,
                 "README must require only the gmail.modify OAuth scope",
+            ),
+            (
+                remove_readme_identity_scope,
+                "README must document the three identity scopes added by gws v0.22.5",
+            ),
+            (
+                restore_healthy_only_reauth_wording,
+                "README must document repair reauthentication for unhealthy tokens",
             ),
             (
                 make_readme_client_path_non_executable,
