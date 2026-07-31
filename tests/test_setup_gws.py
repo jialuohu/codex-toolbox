@@ -248,6 +248,15 @@ exit 3
         self.assertEqual(result.returncode, 1)
         self.assertIn("symlink", result.stderr)
 
+    def test_add_account_rejects_newline_and_control_bearing_alias_as_one_string(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("new@example.test")
+        result = self.run("--add-account", "new@example.test", "--alias", "personal\n!")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("invalid account alias", result.stderr)
+        self.assertFalse(self.accounts_root.exists(), "invalid alias must be rejected before creating profiles")
+
     def test_wrong_login_rolls_back_new_profile_without_touching_existing_profiles(self) -> None:
         self.install_fake_runtime()
         self.register_client()

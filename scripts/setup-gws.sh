@@ -134,7 +134,7 @@ validate_alias() {
   case "$1" in
     ''|.|..|*/*|*'\\'* ) return 1 ;;
   esac
-  printf '%s\n' "$1" | grep -Eq '^[a-z0-9][a-z0-9._-]{0,62}$'
+  [[ "$1" =~ ^[a-z0-9][a-z0-9._-]{0,62}$ ]]
 }
 
 profile_for_alias() {
