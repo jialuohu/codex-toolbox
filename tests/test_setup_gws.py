@@ -69,7 +69,12 @@ if os.environ.get("FAKE_PYTHON_VALIDATION_BYPASS") == "1":
         json.loads = lambda *args, **kwargs: {
             "user": os.environ.get("EXPECTED_EMAIL", "wrong@example.test"),
             "token_valid": True,
-            "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
+            "scopes": [
+                "openid",
+                "https://www.googleapis.com/auth/gmail.modify",
+                "https://www.googleapis.com/auth/userinfo.email",
+                "https://www.googleapis.com/auth/userinfo.profile",
+            ],
             "storage": "encrypted",
             "keyring_backend": "file",
             "encrypted_credentials_exists": True,
