@@ -5,11 +5,31 @@ description: Use when searching, reading, drafting, replying to, or forwarding G
 
 # Gmail through isolated gws
 
-**REQUIRED:** Apply [gws-shared](../gws-shared/SKILL.md) before every command. Do not recreate its environment logic or use guessed `--profile` or `--config` flags. Reads and searches may proceed only after its successful preflight.
+**REQUIRED:** Apply [gws-shared](../gws-shared/SKILL.md) before every command.
+Use its validated `profile`, isolated environment, and absolute `$gws_bin`; do
+not use guessed `--profile` or `--config` flags. Reads and searches may proceed
+only after successful preflight.
 
-Use only Gmail message/thread search, list, get, labels, drafts, and the helper skills below. Inspect a new raw method with `gws schema` in the same isolated environment, then keep it inside this Gmail-only boundary.
+Raw Gmail resource access is read-only: restrict messages, threads, drafts, and
+labels to list/get/search. Inspect those methods with `"$gws_bin" schema` in the
+same isolated environment.
 
 - [Read](../gws-gmail-read/SKILL.md) and [triage](../gws-gmail-triage/SKILL.md) are read-only after preflight.
-- [Send](../gws-gmail-send/SKILL.md), [reply](../gws-gmail-reply/SKILL.md), [reply-all](../gws-gmail-reply-all/SKILL.md), and [forward](../gws-gmail-forward/SKILL.md) compose `--draft` by default.
+- Route every compose, send, reply, reply-all, and forward through the linked
+  [send](../gws-gmail-send/SKILL.md), [reply](../gws-gmail-reply/SKILL.md),
+  [reply-all](../gws-gmail-reply-all/SKILL.md), and
+  [forward](../gws-gmail-forward/SKILL.md) helper skills. Raw
+  `users.messages.send` and `users.drafts.send` are unavailable.
 
-Trash and multi-message changes require explicit user intent plus the live identity/recipient preview. Do not invoke `users.messages.delete`, `users.messages.batchDelete`, settings resources, or non-Gmail commands.
+The only permitted mutations outside those helper skills are requested label
+application/removal, Trash/untrash, and a bounded batch mutation. Each requires
+explicit user intent and a target preview containing the exact action, explicit
+alias and verified identity, query snapshot if used, count, exact
+message/thread IDs, labels being added or removed, and all targets before
+execution. A query alone never authorizes a mutation.
+
+Raw label create/update/patch/delete and raw draft create/update/delete/send
+methods are unavailable. Do not invoke `users.messages.delete`,
+`users.messages.batchDelete`, `users.settings`, watch methods, or non-Gmail
+commands. Any raw method outside the read-only and narrow mutation allowlists
+above is unavailable; fail closed.

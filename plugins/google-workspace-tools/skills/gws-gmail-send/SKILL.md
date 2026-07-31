@@ -5,6 +5,12 @@ description: Use when drafting or explicitly sending a Gmail message through gws
 
 # Draft or send Gmail
 
-**REQUIRED:** Apply [gws-shared](../gws-shared/SKILL.md) first. Compose with `gws gmail +send --to <recipients> --subject <subject> --body <body> --draft` by default. A request to “write” means draft only.
+**REQUIRED:** Apply [gws-shared](../gws-shared/SKILL.md) first. Compose with
+`"$gws_bin" gmail +send --to <recipients> --subject <subject> --body <body> --draft`
+in its exact isolated environment. A request to “write” means draft only.
 
-Remove `--draft` only when the user explicitly says to send now. Immediately before that command, show an identity/recipient preview: verified sender, To/CC/BCC recipients, subject, attachment basenames, and whether it is a draft or send. Do not convert a deadline, a prior draft, or an ambiguous request into send authorization. Each `--attach` value must be an absolute path specifically identified by the user.
+Remove `--draft` only after explicit user intent to send now. Immediately before
+that command, show an identity/recipient preview: verified sender, To/CC/BCC
+recipients, subject, attachment basenames, and draft/send state. A deadline,
+prior draft, or ambiguous request is not send authorization. Each `--attach`
+must be a user-identified absolute path.
