@@ -7,10 +7,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import tarfile
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -32,7 +34,7 @@ class SetupGwsTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tempdir.cleanup)
-        self.home = Path(self.tempdir.name)
+        self.home = Path(self.tempdir.name).resolve()
         self.bin_dir = self.home / "fake-bin"
         self.bin_dir.mkdir()
         self.data_home = self.home / "data"
@@ -79,6 +81,7 @@ if os.environ.get("FAKE_PYTHON_VALIDATION_BYPASS") == "1":
             "keyring_backend": "file",
             "encrypted_credentials_exists": True,
             "encryption_valid": True,
+            "plain_credentials_exists": False,
         }
 """)
         self.write_executable("uname", """#!/bin/sh
@@ -159,17 +162,31 @@ printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\\n' \
   "$(state "${GOOGLE_APPLICATION_CREDENTIALS+x}" "${GOOGLE_APPLICATION_CREDENTIALS-}")" >> "$FAKE_GWS_LOG"
 if [ "$1" = "--version" ]; then printf '%b' "${FAKE_GWS_VERSION_OUTPUT:-gws 0.22.5\\nThis software is not an officially supported Google product.\\n}"; exit 0; fi
 if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
+  if [ -n "${FAKE_GWS_LOGIN_READY:-}" ]; then
+    printf ready > "$FAKE_GWS_LOGIN_READY"
+    while [ ! -e "$FAKE_GWS_LOGIN_RELEASE" ]; do /bin/sleep 0.01; done
+  fi
   mkdir -p "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR"
   printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/credentials.enc"
   printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.encryption_key"
-  printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/token-cache.json"
+  printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/token_cache.json"
   if [ -n "${FAKE_GWS_POST_LOGIN_STATUS:-}" ]; then printf '%s' "$FAKE_GWS_POST_LOGIN_STATUS" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json"; fi
   if [ -n "${FAKE_GWS_SWAP_BLOCK_ROOT:-}" ]; then chmod 500 "$FAKE_GWS_SWAP_BLOCK_ROOT"; fi
   [ "${FAKE_GWS_LOGIN_MODE:-ok}" = "fail" ] && exit 1
   exit 0
 fi
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
-  if [ -f "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json" ]; then cat "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json"; else printf '%s\\n' "$FAKE_GWS_STATUS"; fi
+  if [ "${FAKE_GWS_STATUS_REPAIRS_KEY:-0}" = 1 ] && [ ! -e "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.encryption_key" ]; then
+    printf repaired > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.encryption_key"
+  fi
+  profile_name="${GOOGLE_WORKSPACE_CLI_CONFIG_DIR##*/}"
+  if [ "${profile_name#\.}" = "$profile_name" ] && [ -n "${FAKE_GWS_LIVE_STATUS:-}" ]; then
+    printf '%s\\n' "$FAKE_GWS_LIVE_STATUS"
+  elif [ -f "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json" ]; then
+    cat "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json"
+  else
+    printf '%s\\n' "$FAKE_GWS_STATUS"
+  fi
   exit 0
 fi
 exit 3
@@ -180,9 +197,20 @@ exit 3
         os.chmod(self.local_bin, 0o755)
         (self.local_bin / "gws").symlink_to(self.runtime_gws)
 
+    def valid_client_payload(self) -> dict[str, object]:
+        return {
+            "installed": {
+                "client_id": "desktop-id.apps.googleusercontent.com",
+                "client_secret": "desktop-secret",
+                "project_id": "project-id",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        }
+
     def write_client(self, payload: object | None = None) -> Path:
         source = self.home / "desktop-client.json"
-        source.write_text(json.dumps(payload if payload is not None else {"installed": {"client_id": "desktop-id.apps.googleusercontent.com", "client_secret": "desktop-secret", "project_id": "project-id"}}))
+        source.write_text(json.dumps(payload if payload is not None else self.valid_client_payload()))
         return source
 
     def register_client(self) -> None:
@@ -190,12 +218,49 @@ exit 3
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def status(self, address: str, **changes: object) -> None:
-        value: dict[str, object] = {"user": address, "token_valid": True, "scopes": [SCOPE, *IDENTITY_SCOPES], "storage": "encrypted", "keyring_backend": "file", "encrypted_credentials_exists": True, "encryption_valid": True}
+        value: dict[str, object] = {
+            "user": address,
+            "token_valid": True,
+            "scopes": [SCOPE, *IDENTITY_SCOPES],
+            "storage": "encrypted",
+            "keyring_backend": "file",
+            "encrypted_credentials_exists": True,
+            "encryption_valid": True,
+            "plain_credentials_exists": False,
+        }
         value.update(changes)
         self.env["FAKE_GWS_STATUS"] = json.dumps(value)
 
     def assert_mode(self, path: Path, mode: int) -> None:
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode, path)
+
+    def snapshot_tree(self, root: Path) -> dict[str, tuple[int, str, bytes | str]]:
+        snapshot: dict[str, tuple[int, str, bytes | str]] = {}
+        for path in [root, *sorted(root.rglob("*"))]:
+            metadata = path.lstat()
+            relative = "." if path == root else str(path.relative_to(root))
+            if stat.S_ISREG(metadata.st_mode):
+                kind = "file"
+                value: bytes | str = path.read_bytes()
+            elif stat.S_ISLNK(metadata.st_mode):
+                kind = "symlink"
+                value = os.readlink(path)
+            else:
+                kind = "directory"
+                value = b""
+            snapshot[relative] = (stat.S_IMODE(metadata.st_mode), kind, value)
+        return snapshot
+
+    def wait_for_path(self, path: Path, process: subprocess.Popen[str]) -> None:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if path.exists():
+                return
+            if process.poll() is not None:
+                stdout, stderr = process.communicate()
+                self.fail(f"process exited before readiness marker: {stdout}{stderr}")
+            time.sleep(0.01)
+        self.fail(f"timed out waiting for {path}")
 
     def test_check_is_non_mutating_when_runtime_and_profiles_are_absent(self) -> None:
         before = sorted(path.relative_to(self.home) for path in self.home.rglob("*"))
@@ -296,10 +361,40 @@ exit 3
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("gws runtime: missing (expected 0.22.5)", result.stdout)
 
-    def test_register_client_validates_shape_refuses_replacement_and_protects_copy(self) -> None:
-        bad = self.run("--register-client", str(self.write_client({"installed": {"client_id": "only"}})))
-        self.assertEqual(bad.returncode, 1, bad.stdout + bad.stderr)
-        self.assertFalse(self.client_path.exists())
+    def test_register_client_requires_the_exact_desktop_oauth_shape_before_copy(self) -> None:
+        valid_installed = self.valid_client_payload()["installed"]
+        assert isinstance(valid_installed, dict)
+        invalid_clients = (
+            {
+                "installed": {
+                    "client_id": "desktop-id.apps.googleusercontent.com",
+                    "client_secret": "desktop-secret",
+                    "project_id": "project-id",
+                }
+            },
+            {
+                "installed": {
+                    **valid_installed,
+                    "auth_uri": "https://example.test/o/oauth2/auth",
+                }
+            },
+            {
+                "installed": {
+                    **valid_installed,
+                    "token_uri": "https://example.test/token",
+                }
+            },
+            {"web": dict(valid_installed)},
+        )
+        for payload in invalid_clients:
+            with self.subTest(payload=payload):
+                bad = self.run("--register-client", str(self.write_client(payload)))
+                copied = self.client_path.exists() or self.client_path.is_symlink()
+                if copied:
+                    self.client_path.unlink()
+                self.assertEqual(bad.returncode, 1, bad.stdout + bad.stderr)
+                self.assertIn("invalid Desktop OAuth client JSON", bad.stderr)
+                self.assertFalse(copied, "invalid client must be rejected before copying")
         self.register_client()
         self.assert_mode(self.secrets_home / "gws", 0o700)
         self.assert_mode(self.client_path, 0o600)
@@ -394,7 +489,7 @@ exit 0
             "GOOGLE_WORKSPACE_CLI_SANITIZE_MODE": "block",
             "GOOGLE_APPLICATION_CREDENTIALS": "/ambient/adc.json",
         })
-        for changes in ({"user": "wrong@example.test"}, {"scopes": []}, {"scopes": [SCOPE, *IDENTITY_SCOPES[:-1]]}, {"scopes": [SCOPE, *IDENTITY_SCOPES, "https://www.googleapis.com/auth/calendar"]}, {"token_valid": False}, {"encrypted_credentials_exists": False}, {"encryption_valid": False}, {"storage": "file"}, {"keyring_backend": "keyring"}, {"scopes": [SCOPE, *IDENTITY_SCOPES, "https://mail.google.com/"]}):
+        for changes in ({"user": "wrong@example.test"}, {"scopes": []}, {"scopes": [SCOPE, *IDENTITY_SCOPES[:-1]]}, {"scopes": [SCOPE, *IDENTITY_SCOPES, "https://www.googleapis.com/auth/calendar"]}, {"token_valid": False}, {"encrypted_credentials_exists": False}, {"encryption_valid": False}, {"plain_credentials_exists": True}, {"plain_credentials_exists": None}, {"storage": "file"}, {"keyring_backend": "keyring"}, {"scopes": [SCOPE, *IDENTITY_SCOPES, "https://mail.google.com/"]}):
             self.status("account@example.test", **changes)
             self.assertEqual(self.run("--check-account", "account").returncode, 1)
         self.status("ACCOUNT@example.test")
@@ -430,6 +525,221 @@ exit 0
         self.assertEqual(unsafe_client.returncode, 1, unsafe_client.stdout + unsafe_client.stderr)
         self.assertIn("OAuth client: unsafe", unsafe_client.stdout)
 
+    def test_every_health_surface_rejects_an_unsafe_or_noncanonical_secrets_root(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        commands = (
+            ("--check",),
+            ("--check-account", "account"),
+            ("--list-accounts",),
+        )
+        secrets_root = self.secrets_home / "gws"
+        os.chmod(secrets_root, 0o755)
+        for command in commands:
+            with self.subTest(parent="mode", command=command):
+                result = self.run(*command)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertNotIn("Overall: ready", result.stdout)
+        os.chmod(secrets_root, 0o700)
+
+        linked_base = self.home / "linked-secrets"
+        linked_base.symlink_to(self.secrets_home, target_is_directory=True)
+        self.env["CODEX_SECRETS_DIR"] = str(linked_base)
+        for command in commands:
+            with self.subTest(parent="symlink-ancestor", command=command):
+                result = self.run(*command)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertNotIn("Overall: ready", result.stdout)
+
+    def test_check_and_list_reject_hidden_or_broken_profile_entries(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+
+        hidden_orphan = self.accounts_root / ".account.add.orphan"
+        hidden_orphan.mkdir()
+        os.chmod(hidden_orphan, 0o700)
+        for command in (("--check",), ("--list-accounts",)):
+            result = self.run(*command)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertNotIn("Overall: ready", result.stdout)
+        shutil.rmtree(hidden_orphan)
+
+        broken = self.accounts_root / "broken"
+        broken.symlink_to(self.home / "missing-profile", target_is_directory=True)
+        for command in (("--check",), ("--list-accounts",)):
+            result = self.run(*command)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertNotIn("Overall: ready", result.stdout)
+
+    def test_health_checks_never_repair_or_read_incomplete_static_credentials(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        profile = self.accounts_root / "account"
+        credential = profile / "credentials.enc"
+        encryption_key = profile / ".encryption_key"
+        original_credential = credential.read_bytes()
+        original_key = encryption_key.read_bytes()
+        self.env["FAKE_GWS_STATUS_REPAIRS_KEY"] = "1"
+
+        def restore_complete_state() -> None:
+            for path in (credential, encryption_key, profile / "credentials.json"):
+                if path.exists() or path.is_symlink():
+                    path.unlink()
+            credential.write_bytes(original_credential)
+            encryption_key.write_bytes(original_key)
+            credential.chmod(0o600)
+            encryption_key.chmod(0o600)
+
+        def remove_key() -> None:
+            encryption_key.unlink()
+
+        def remove_encrypted_credentials() -> None:
+            credential.unlink()
+
+        def add_plaintext_credentials() -> None:
+            plaintext = profile / "credentials.json"
+            plaintext.write_text('{"access_token":"plaintext"}')
+            plaintext.chmod(0o600)
+
+        for name, make_incomplete in (
+            ("missing-encryption-key", remove_key),
+            ("missing-encrypted-credentials", remove_encrypted_credentials),
+            ("plaintext-credentials", add_plaintext_credentials),
+        ):
+            with self.subTest(state=name):
+                restore_complete_state()
+                make_incomplete()
+                before = self.snapshot_tree(profile)
+                status_calls_before = sum(
+                    line.startswith("auth status|")
+                    for line in self.gws_log.read_text().splitlines()
+                )
+                for command in (
+                    ("--check",),
+                    ("--check-account", "account"),
+                    ("--list-accounts",),
+                ):
+                    result = self.run(*command)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertEqual(self.snapshot_tree(profile), before)
+                status_calls_after = sum(
+                    line.startswith("auth status|")
+                    for line in self.gws_log.read_text().splitlines()
+                )
+                self.assertEqual(
+                    status_calls_after,
+                    status_calls_before,
+                    "static rejection must occur before auth status",
+                )
+
+    def test_same_alias_add_and_reauth_are_serialized_without_nested_activation(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+
+        add_ready = self.home / "add-ready"
+        add_release = self.home / "add-release"
+        blocking_add_env = self.env.copy()
+        blocking_add_env.update({
+            "FAKE_GWS_LOGIN_READY": str(add_ready),
+            "FAKE_GWS_LOGIN_RELEASE": str(add_release),
+        })
+        first_add = subprocess.Popen(
+            ["bash", str(self.script), "--add-account", "account@example.test"],
+            cwd=ROOT,
+            env=blocking_add_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            self.wait_for_path(add_ready, first_add)
+            final_path_was_reserved = (self.accounts_root / "account").is_dir()
+            second_add = self.run("--add-account", "account@example.test")
+        finally:
+            add_release.touch()
+        first_add_stdout, first_add_stderr = first_add.communicate(timeout=10)
+
+        self.assertTrue(final_path_was_reserved, "the final add path must be reserved before OAuth")
+        self.assertEqual(first_add.returncode, 0, first_add_stdout + first_add_stderr)
+        self.assertEqual(second_add.returncode, 1, second_add.stdout + second_add.stderr)
+        self.assertNotIn("added", second_add.stdout)
+        profile = self.accounts_root / "account"
+        self.assertTrue(profile.is_dir())
+        self.assertFalse(
+            any(path.name.startswith(".account.add.") for path in profile.rglob("*")),
+            "candidate activation must never nest inside a raced destination",
+        )
+
+        reauth_ready = self.home / "reauth-ready"
+        reauth_release = self.home / "reauth-release"
+        blocking_reauth_env = self.env.copy()
+        blocking_reauth_env.update({
+            "FAKE_GWS_LOGIN_READY": str(reauth_ready),
+            "FAKE_GWS_LOGIN_RELEASE": str(reauth_release),
+        })
+        first_reauth = subprocess.Popen(
+            ["bash", str(self.script), "--reauth-account", "account"],
+            cwd=ROOT,
+            env=blocking_reauth_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            self.wait_for_path(reauth_ready, first_reauth)
+            second_reauth = self.run("--reauth-account", "account")
+        finally:
+            reauth_release.touch()
+        first_reauth_stdout, first_reauth_stderr = first_reauth.communicate(timeout=10)
+
+        self.assertEqual(first_reauth.returncode, 0, first_reauth_stdout + first_reauth_stderr)
+        self.assertEqual(second_reauth.returncode, 1, second_reauth.stdout + second_reauth.stderr)
+        self.assertNotIn("reauthenticated", second_reauth.stdout)
+        self.assertEqual(
+            [path.name for path in self.accounts_root.iterdir()],
+            ["account"],
+            "successful operations must remove candidates and locks",
+        )
+
+    def test_live_activation_readback_gates_success_and_restores_reauth(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        wrong_live = {
+            "user": "wrong@example.test",
+            "token_valid": True,
+            "scopes": [SCOPE, *IDENTITY_SCOPES],
+            "storage": "encrypted",
+            "keyring_backend": "file",
+            "encrypted_credentials_exists": True,
+            "encryption_valid": True,
+            "plain_credentials_exists": False,
+        }
+        self.env["FAKE_GWS_LIVE_STATUS"] = json.dumps(wrong_live)
+        added = self.run("--add-account", "account@example.test")
+        self.assertEqual(added.returncode, 1, added.stdout + added.stderr)
+        self.assertNotIn("Account account added", added.stdout)
+        self.assertFalse((self.accounts_root / "account").exists())
+
+        self.env.pop("FAKE_GWS_LIVE_STATUS")
+        self.env["FAKE_GWS_LOGIN_VALUE"] = "original"
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        profile = self.accounts_root / "account"
+        original = self.snapshot_tree(profile)
+        self.env["FAKE_GWS_LOGIN_VALUE"] = "replacement"
+        self.env["FAKE_GWS_LIVE_STATUS"] = json.dumps(wrong_live)
+        reauthenticated = self.run("--reauth-account", "account")
+        self.assertEqual(reauthenticated.returncode, 1, reauthenticated.stdout + reauthenticated.stderr)
+        self.assertNotIn("Account account reauthenticated", reauthenticated.stdout)
+        self.assertEqual(self.snapshot_tree(profile), original)
+
     def test_reauth_preserves_identity_and_list_never_prints_email(self) -> None:
         self.install_fake_runtime()
         self.register_client()
@@ -449,7 +759,7 @@ exit 0
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
         self.status("account@example.test", token_valid=False)
-        healthy = {"user": "ACCOUNT@example.test", "token_valid": True, "scopes": [SCOPE, *IDENTITY_SCOPES], "storage": "encrypted", "keyring_backend": "file", "encrypted_credentials_exists": True, "encryption_valid": True}
+        healthy = {"user": "ACCOUNT@example.test", "token_valid": True, "scopes": [SCOPE, *IDENTITY_SCOPES], "storage": "encrypted", "keyring_backend": "file", "encrypted_credentials_exists": True, "encryption_valid": True, "plain_credentials_exists": False}
         self.env["FAKE_GWS_POST_LOGIN_STATUS"] = json.dumps(healthy)
         result = self.run("--reauth-account", "account")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -462,7 +772,7 @@ exit 0
         self.env["FAKE_GWS_LOGIN_VALUE"] = "original"
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
         profile = self.accounts_root / "account"
-        original = {name: (profile / name).read_bytes() for name in ("profile.json", "credentials.enc", ".encryption_key", "token-cache.json")}
+        original = {name: (profile / name).read_bytes() for name in ("profile.json", "credentials.enc", ".encryption_key", "token_cache.json")}
         self.env["FAKE_GWS_LOGIN_VALUE"] = "candidate"
         self.env["FAKE_GWS_POST_LOGIN_STATUS"] = self.env["FAKE_GWS_STATUS"]
         self.env["FAKE_GWS_SWAP_BLOCK_ROOT"] = str(self.accounts_root)
@@ -479,7 +789,7 @@ exit 0
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
         profile = self.accounts_root / "account"
-        for path in (profile, profile / ".encryption_key", profile / "credentials.enc", profile / "token-cache.json"):
+        for path in (profile, profile / ".encryption_key", profile / "credentials.enc", profile / "token_cache.json"):
             os.chmod(path, 0o755 if path == profile else 0o644)
             result = self.run("--check-account", "account")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -492,7 +802,7 @@ exit 0
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
         profile = self.accounts_root / "account"
-        nested = profile / "token-cache"
+        nested = profile / "token_cache"
         nested.mkdir()
         os.chmod(nested, 0o700)
         (nested / "linked-state").symlink_to(profile / "credentials.enc")
@@ -555,7 +865,7 @@ exit 0
         self.env["FAKE_GWS_LOGIN_VALUE"] = "original"
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
         profile = self.accounts_root / "account"
-        original = {name: (profile / name).read_text() for name in ("credentials.enc", ".encryption_key", "token-cache.json")}
+        original = {name: (profile / name).read_text() for name in ("credentials.enc", ".encryption_key", "token_cache.json")}
         self.env.update({"FAKE_GWS_LOGIN_VALUE": "failed-replacement", "FAKE_GWS_LOGIN_MODE": "fail"})
         failed = self.run("--reauth-account", "account")
         self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)

@@ -24,6 +24,9 @@ INSTALL_TMP=""
 TX_CANDIDATE=""
 TX_BACKUP=""
 TX_LIVE=""
+TX_RESERVATION=""
+TX_LOCK=""
+PROFILE_ENTRIES=()
 
 cleanup_install_tmp() {
   if [ -n "${INSTALL_TMP:-}" ] && [ -d "$INSTALL_TMP" ]; then
@@ -37,10 +40,16 @@ cleanup_profile_transaction() {
   fi
   if [ -n "${TX_BACKUP:-}" ] && [ -e "$TX_BACKUP" ]; then
     if [ -n "${TX_LIVE:-}" ] && [ ! -e "$TX_LIVE" ]; then
-      /bin/mv -- "$TX_BACKUP" "$TX_LIVE" || printf 'critical: failed to restore preserved live profile\n' >&2
+      rename_path "$TX_BACKUP" "$TX_LIVE" || printf 'critical: failed to restore preserved live profile\n' >&2
     else
       printf 'warning: preserved profile backup requires manual review\n' >&2
     fi
+  fi
+  if [ -n "${TX_RESERVATION:-}" ] && [ -d "$TX_RESERVATION" ] && [ ! -L "$TX_RESERVATION" ]; then
+    /bin/rmdir -- "$TX_RESERVATION" || printf 'warning: failed to clean reserved profile path\n' >&2
+  fi
+  if [ -n "${TX_LOCK:-}" ] && [ -d "$TX_LOCK" ] && [ ! -L "$TX_LOCK" ]; then
+    /bin/rmdir -- "$TX_LOCK" || printf 'warning: failed to release account lock\n' >&2
   fi
 }
 
@@ -118,9 +127,39 @@ file_sha256() {
   printf '%s\n' "${output%% *}"
 }
 
+private_regular_file() {
+  FILE_PATH="$1" /usr/bin/python3 -I - <<'PY'
+import os
+import stat
+import sys
+try:
+    metadata = os.lstat(os.environ["FILE_PATH"])
+    valid = (
+        stat.S_ISREG(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+    )
+except OSError:
+    valid = False
+sys.exit(0 if valid else 1)
+PY
+}
+
+secrets_root_is_private() {
+  local root
+  [ -d "$SECRETS_ROOT" ] && [ ! -L "$SECRETS_ROOT" ] || return 1
+  profile_state_is_private_shallow "$SECRETS_ROOT" || return 1
+  root="$(canonical_dir "$SECRETS_ROOT")" || return 1
+  [ "$root" = "$SECRETS_ROOT" ]
+}
+
 accounts_root_is_private() {
+  local root
+  secrets_root_is_private || return 1
   [ -d "$ACCOUNTS_ROOT" ] && [ ! -L "$ACCOUNTS_ROOT" ] || return 1
-  profile_state_is_private_shallow "$ACCOUNTS_ROOT"
+  profile_state_is_private_shallow "$ACCOUNTS_ROOT" || return 1
+  root="$(canonical_dir "$ACCOUNTS_ROOT")" || return 1
+  [ "$root" = "$SECRETS_ROOT/accounts" ] && [ "$root" = "$ACCOUNTS_ROOT" ]
 }
 
 profile_state_is_private_shallow() {
@@ -138,19 +177,13 @@ PY
 }
 
 registered_client_is_private() {
+  local parent
+  secrets_root_is_private || return 1
   [ -f "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || return 1
   validate_client_json "$CLIENT_PATH" || return 1
-  FILE_PATH="$CLIENT_PATH" /usr/bin/python3 -I - <<'PY'
-import os
-import stat
-import sys
-try:
-    metadata = os.lstat(os.environ["FILE_PATH"])
-    valid = stat.S_ISREG(metadata.st_mode) and stat.S_IMODE(metadata.st_mode) == 0o600
-except OSError:
-    valid = False
-sys.exit(0 if valid else 1)
-PY
+  private_regular_file "$CLIENT_PATH" || return 1
+  parent="$(canonical_dir "${CLIENT_PATH%/*}")" || return 1
+  [ "$parent" = "$SECRETS_ROOT" ]
 }
 
 profile_state_is_private() {
@@ -191,12 +224,83 @@ import sys
 
 try:
     with open(os.environ["CLIENT_FILE"], encoding="utf-8") as source:
-        installed = json.load(source)["installed"]
-    valid = all(isinstance(installed.get(key), str) and installed[key] for key in ("client_id", "client_secret", "project_id"))
+        document = json.load(source)
+    installed = document["installed"]
+    required = ("client_id", "client_secret", "project_id", "auth_uri", "token_uri")
+    valid = (
+        isinstance(document, dict)
+        and isinstance(installed, dict)
+        and all(isinstance(installed.get(key), str) and installed[key] for key in required)
+        and installed["auth_uri"] == "https://accounts.google.com/o/oauth2/auth"
+        and installed["token_uri"] == "https://oauth2.googleapis.com/token"
+    )
 except (OSError, ValueError, KeyError, TypeError):
     valid = False
 sys.exit(0 if valid else 1)
 PY
+}
+
+ensure_secrets_root() {
+  local base
+  if [ -e "$SECRETS_ROOT" ] || [ -L "$SECRETS_ROOT" ]; then
+    secrets_root_is_private || die "secrets root is unsafe"
+    return 0
+  fi
+  [ ! -L "$SECRETS_BASE" ] || die "refusing symlinked secrets base"
+  /bin/mkdir -p "$SECRETS_BASE" || die "unable to create secrets base"
+  base="$(canonical_dir "$SECRETS_BASE")" || die "secrets base is unsafe"
+  [ "$base" = "$SECRETS_BASE" ] || die "secrets base is not canonical"
+  /bin/mkdir "$SECRETS_ROOT" || die "unable to create secrets root"
+  chmod 700 "$SECRETS_ROOT" || die "unable to protect secrets root"
+  secrets_root_is_private || die "secrets root is unsafe"
+}
+
+ensure_accounts_root() {
+  secrets_root_is_private || die "secrets root is unsafe"
+  if [ -e "$ACCOUNTS_ROOT" ] || [ -L "$ACCOUNTS_ROOT" ]; then
+    accounts_root_is_private || die "accounts root is unsafe"
+    return 0
+  fi
+  /bin/mkdir "$ACCOUNTS_ROOT" || die "unable to create accounts root"
+  chmod 700 "$ACCOUNTS_ROOT" || die "unable to protect accounts root"
+  accounts_root_is_private || die "accounts root is unsafe"
+}
+
+acquire_alias_lock() {
+  local alias="$1" lock
+  accounts_root_is_private || die "accounts root is unsafe"
+  lock="$ACCOUNTS_ROOT/.${alias}.lock"
+  /bin/mkdir "$lock" 2>/dev/null || die "account operation is already in progress or has a stale lock"
+  TX_LOCK="$lock"
+  chmod 700 "$lock" || die "unable to protect account lock"
+}
+
+release_alias_lock() {
+  [ -n "${TX_LOCK:-}" ] || return 0
+  /bin/rmdir -- "$TX_LOCK" || die "unable to release account lock"
+  TX_LOCK=""
+}
+
+rename_path() {
+  SOURCE_PATH="$1" DESTINATION_PATH="$2" /usr/bin/python3 -I - <<'PY'
+import os
+import sys
+
+try:
+    os.rename(os.environ["SOURCE_PATH"], os.environ["DESTINATION_PATH"])
+except OSError:
+    sys.exit(1)
+PY
+}
+
+collect_profile_entries() {
+  local had_dotglob=0 had_nullglob=0
+  shopt -q dotglob && had_dotglob=1
+  shopt -q nullglob && had_nullglob=1
+  shopt -s dotglob nullglob
+  PROFILE_ENTRIES=("$ACCOUNTS_ROOT"/*)
+  [ "$had_dotglob" -eq 1 ] || shopt -u dotglob
+  [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
 }
 
 default_alias() {
@@ -292,6 +396,7 @@ try:
         and status.get("keyring_backend") == "file"
         and status.get("encrypted_credentials_exists") is True
         and status.get("encryption_valid") is True
+        and status.get("plain_credentials_exists") is False
         and isinstance(scopes, list)
         and len(scopes) == len(required_scopes)
         and set(scopes) == required_scopes
@@ -302,10 +407,20 @@ sys.exit(0 if healthy else 1)
 PY
 }
 
+credential_state_is_complete() {
+  local profile="$1"
+  private_regular_file "$profile/profile.json" || return 1
+  private_regular_file "$profile/client_secret.json" || return 1
+  private_regular_file "$profile/credentials.enc" || return 1
+  private_regular_file "$profile/.encryption_key" || return 1
+  [ ! -e "$profile/credentials.json" ] && [ ! -L "$profile/credentials.json" ]
+}
+
 check_profile_health() {
   local profile="$1" expected="$2" alias="$3" status
-  validate_client_json "$profile/client_secret.json" || { printf '%s: invalid client\n' "$alias" >&2; return 1; }
   profile_state_is_private "$profile" || { printf '%s: private permissions check failed\n' "$alias" >&2; return 1; }
+  validate_client_json "$profile/client_secret.json" || { printf '%s: invalid client\n' "$alias" >&2; return 1; }
+  credential_state_is_complete "$profile" || { printf '%s: incomplete or plaintext credential state\n' "$alias" >&2; return 1; }
   runtime_ready || { printf '%s: gws runtime unavailable\n' "$alias" >&2; return 1; }
   status="$(run_isolated "$profile" auth status 2>/dev/null)" || { printf '%s: credentials unavailable\n' "$alias" >&2; return 1; }
   status_is_healthy "$expected" "$status" || { printf '%s: identity, token, keyring, encryption, or scope check failed\n' "$alias" >&2; return 1; }
@@ -316,6 +431,7 @@ check_account() {
   local alias="$1"
   local profile expected
   profile="$(profile_for_alias "$alias")" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
+  private_regular_file "$profile/profile.json" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
   expected="$(profile_expected_email "$profile")" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
   check_profile_health "$profile" "$expected" "$alias"
 }
@@ -363,9 +479,11 @@ register_client() {
   [ "$#" -eq 1 ] || usage
   validate_client_json "$1" || die "invalid Desktop OAuth client JSON"
   [ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || die "OAuth client already registered; refusing replacement"
-  ensure_private_dir "$SECRETS_ROOT"
+  ensure_secrets_root
+  [ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || die "OAuth client already registered; refusing replacement"
   cp "$1" "$CLIENT_PATH" || die "unable to store OAuth client"
   chmod 600 "$CLIENT_PATH" || die "unable to protect OAuth client"
+  registered_client_is_private || die "stored OAuth client failed readback"
   printf 'OAuth client registered\n'
 }
 
@@ -382,8 +500,8 @@ add_account() {
   fi
   validate_alias "$alias" || die "invalid account alias"
   registered_client_is_private || die "a valid protected registered OAuth client is required"
-  ensure_private_dir "$SECRETS_ROOT"
-  ensure_private_dir "$ACCOUNTS_ROOT"
+  ensure_accounts_root
+  acquire_alias_lock "$alias"
   profile="$ACCOUNTS_ROOT/$alias"
   if [ -L "$profile" ]; then
     die "refusing symlinked account profile"
@@ -396,6 +514,9 @@ add_account() {
     die "account alias already exists"
   fi
   runtime_ready || die "gws runtime is unavailable or untrusted"
+  /bin/mkdir "$profile" || die "unable to reserve account profile path"
+  TX_RESERVATION="$profile"
+  chmod 700 "$profile" || die "unable to protect reserved account profile path"
   candidate="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.add.XXXXXX")" || die "unable to create candidate account profile"
   chmod 700 "$candidate" || die "unable to protect candidate account profile"
   TX_CANDIDATE="$candidate"
@@ -416,15 +537,27 @@ PY
   if ! check_profile_health "$candidate" "$email" "$alias"; then
     die "OAuth login identity check failed; candidate profile will be removed"
   fi
-  /bin/mv -- "$candidate" "$profile" || die "unable to activate candidate account profile"
+  rename_path "$candidate" "$profile" || die "unable to activate candidate account profile"
+  TX_RESERVATION=""
+  if ! check_account "$alias"; then
+    if rename_path "$profile" "$candidate"; then
+      die "activated account profile failed live readback and will be removed"
+    fi
+    die "activated account profile failed live readback and could not be quarantined"
+  fi
   TX_CANDIDATE=""
+  release_alias_lock
   printf 'Account %s added\n' "$alias"
 }
 
 reauth_account() {
   [ "$#" -eq 1 ] || usage
   local alias="$1" profile expected candidate backup
+  validate_alias "$alias" || die "invalid profile"
+  accounts_root_is_private || die "invalid profile"
+  acquire_alias_lock "$alias"
   profile="$(profile_for_alias "$alias")" || die "invalid profile"
+  private_regular_file "$profile/profile.json" || die "invalid profile"
   expected="$(profile_expected_email "$profile")" || die "invalid profile"
   validate_client_json "$profile/client_secret.json" || die "invalid profile client"
   profile_state_is_private "$profile" || die "existing profile has unsafe permissions"
@@ -443,16 +576,26 @@ reauth_account() {
   /bin/rmdir -- "$backup" || die "unable to reserve profile backup"
   TX_BACKUP="$backup"
   TX_LIVE="$profile"
-  if ! /bin/mv -- "$profile" "$backup"; then
+  if ! rename_path "$profile" "$backup"; then
     TX_BACKUP=""
     die "unable to stage live profile; live profile remains unchanged"
   fi
-  if ! /bin/mv -- "$candidate" "$profile"; then
-    if /bin/mv -- "$backup" "$profile"; then
+  if ! rename_path "$candidate" "$profile"; then
+    if rename_path "$backup" "$profile"; then
       TX_BACKUP=""
       die "unable to activate reauthenticated profile; live profile restored"
     fi
     die "unable to activate reauthenticated profile; preserved backup could not be restored"
+  fi
+  if ! check_account "$alias"; then
+    if ! rename_path "$profile" "$candidate"; then
+      die "reauthenticated profile failed live readback and could not be quarantined"
+    fi
+    if rename_path "$backup" "$profile"; then
+      TX_BACKUP=""
+      die "reauthenticated profile failed live readback; previous profile restored"
+    fi
+    die "reauthenticated profile failed live readback and previous profile could not be restored"
   fi
   TX_CANDIDATE=""
   if ! /bin/rm -rf -- "$backup"; then
@@ -460,38 +603,58 @@ reauth_account() {
   fi
   TX_BACKUP=""
   TX_LIVE=""
+  release_alias_lock
   printf 'Account %s reauthenticated\n' "$alias"
 }
 
 check_all() {
-  local failed=0 alias found=0
+  local failed=0 alias alias_path
   if platform_ready; then printf 'Platform: ready (macOS arm64)\n'; else printf 'Platform: unsupported (requires macOS arm64)\n'; failed=1; fi
   if runtime_ready; then printf 'gws runtime: ready (%s)\n' "$VERSION"; else printf 'gws runtime: missing (expected %s)\n' "$VERSION"; failed=1; fi
-  if [ ! -e "$CLIENT_PATH" ]; then
+  if [ ! -e "$SECRETS_ROOT" ] && [ ! -L "$SECRETS_ROOT" ]; then
     printf 'OAuth client: missing\n'
-    failed=1
-  elif registered_client_is_private; then
-    printf 'OAuth client: ready\n'
-  else
-    printf 'OAuth client: unsafe\n'
-    failed=1
-  fi
-  if [ ! -e "$ACCOUNTS_ROOT" ]; then
     printf 'Profiles: none\n'
     failed=1
-  elif ! accounts_root_is_private; then
-    printf 'Profiles: unsafe\n'
-    failed=1
   else
-    for alias_path in "$ACCOUNTS_ROOT"/*; do
-      [ -e "$alias_path" ] || continue
-      found=1
-      alias="${alias_path##*/}"
-      if check_account "$alias"; then :; else failed=1; fi
-    done
-    if [ "$found" -eq 0 ]; then
-      printf 'Profiles: none\n'
+    if ! secrets_root_is_private; then
+      printf 'OAuth client: unsafe\n'
+      printf 'Profiles: unsafe\n'
       failed=1
+    else
+      if [ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ]; then
+        printf 'OAuth client: missing\n'
+        failed=1
+      elif registered_client_is_private; then
+        printf 'OAuth client: ready\n'
+      else
+        printf 'OAuth client: unsafe\n'
+        failed=1
+      fi
+      if [ ! -e "$ACCOUNTS_ROOT" ] && [ ! -L "$ACCOUNTS_ROOT" ]; then
+        printf 'Profiles: none\n'
+        failed=1
+      elif ! accounts_root_is_private; then
+        printf 'Profiles: unsafe\n'
+        failed=1
+      else
+        collect_profile_entries
+        if [ "${#PROFILE_ENTRIES[@]}" -eq 0 ]; then
+          printf 'Profiles: none\n'
+          failed=1
+        else
+          for alias_path in "${PROFILE_ENTRIES[@]}"; do
+            alias="${alias_path##*/}"
+            if ! validate_alias "$alias"; then
+              printf 'Profiles: unsafe entry\n'
+              failed=1
+            elif check_account "$alias"; then
+              :
+            else
+              failed=1
+            fi
+          done
+        fi
+      fi
     fi
   fi
   [ "$failed" -eq 0 ] && printf 'Overall: ready\n'
@@ -500,7 +663,15 @@ check_all() {
 
 list_accounts() {
   [ "$#" -eq 0 ] || usage
-  if [ ! -e "$ACCOUNTS_ROOT" ]; then
+  if [ ! -e "$SECRETS_ROOT" ] && [ ! -L "$SECRETS_ROOT" ]; then
+    printf 'Profiles: none\n'
+    return 0
+  fi
+  if ! secrets_root_is_private; then
+    printf 'Profiles: unsafe\n'
+    return 1
+  fi
+  if [ ! -e "$ACCOUNTS_ROOT" ] && [ ! -L "$ACCOUNTS_ROOT" ]; then
     printf 'Profiles: none\n'
     return 0
   fi
@@ -508,14 +679,23 @@ list_accounts() {
     printf 'Profiles: unsafe\n'
     return 1
   fi
-  local alias_path alias failed=0 found=0
-  for alias_path in "$ACCOUNTS_ROOT"/*; do
-    [ -e "$alias_path" ] || continue
-    found=1
+  local alias_path alias failed=0
+  collect_profile_entries
+  if [ "${#PROFILE_ENTRIES[@]}" -eq 0 ]; then
+    printf 'Profiles: none\n'
+    return 0
+  fi
+  for alias_path in "${PROFILE_ENTRIES[@]}"; do
     alias="${alias_path##*/}"
-    if check_account "$alias"; then :; else failed=1; fi
+    if ! validate_alias "$alias"; then
+      printf 'Profiles: unsafe entry\n'
+      failed=1
+    elif check_account "$alias"; then
+      :
+    else
+      failed=1
+    fi
   done
-  [ "$found" -eq 1 ] || printf 'Profiles: none\n'
   return "$failed"
 }
 
