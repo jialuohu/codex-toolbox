@@ -108,6 +108,14 @@ def shared_preflight_script(source: Optional[str] = None) -> str:
     return "\n\n".join((*blocks, "printf 'PREFLIGHT_OK\\n'"))
 
 
+def profile_validator_python(source: Optional[str] = None) -> str:
+    first_block = shared_bash_blocks(source)[0]
+    match = re.search(r"<<'PY'\n(.*?)\nPY(?:\n|$)", first_block, re.DOTALL)
+    if match is None:
+        raise AssertionError("profile-validator Python heredoc not found")
+    return match.group(1)
+
+
 class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
     def test_plugin_has_exact_gmail_only_inventory_and_provenance(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
@@ -175,6 +183,9 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             'Fail closed',
         ):
             self.assertIn(required, shared)
+        self.assertEqual(shared_source.count("/usr/bin/python3 -I - <<'PY'"), 2)
+        self.assertIn("/usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN", shared_source)
+        self.assertIn("same scrubbed absolute `/usr/bin/env` prefix", shared)
         self.assertNotIn("auth status --format", shared)
         self.assertNotRegex(shared_source, r"(?m)^\s*gws (?:--version|auth|gmail)\b")
 
@@ -277,6 +288,8 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "same user-supplied path",
             "same canonical target",
             "fail closed on any change",
+            "trusted `/usr/bin/python3 -i`",
+            "never path-resolved `python3`",
         ):
             self.assertIn(required, shared)
 
@@ -343,24 +356,61 @@ class SharedPreflightExecutionTests(unittest.TestCase):
         self.accounts.chmod(0o700)
         self.data = self.root / "data"
         self.log = self.root / "gws.log"
-        self.hooks = self.root / "python-hooks"
-        self.hooks.mkdir()
-        (self.hooks / "sitecustomize.py").write_text(
-            """import os
+        self.shim_log = self.root / "hostile-shims.log"
+        self.hostile_bin = self.root / "hostile-bin"
+        self.hostile_bin.mkdir()
+        self.hostile_pythonpath = self.root / "hostile-pythonpath"
+        self.hostile_pythonpath.mkdir()
+        (self.hostile_bin / "python3").write_text(
+            """#!/bin/sh
+printf 'python3\n' >> "$FAKE_SHIM_LOG"
+printf 'personal@example.com\n'
+exit 0
+""",
+            encoding="utf-8",
+        )
+        (self.hostile_bin / "env").write_text(
+            """#!/bin/sh
+printf 'env\n' >> "$FAKE_SHIM_LOG"
+printf '%s\n' '{"user":"personal@example.com","token_valid":true,"scopes":["https://www.googleapis.com/auth/gmail.modify"],"storage":"encrypted","keyring_backend":"file","encrypted_credentials_exists":true,"encryption_valid":true}'
+exit 0
+""",
+            encoding="utf-8",
+        )
+        (self.hostile_bin / "python3").chmod(0o755)
+        (self.hostile_bin / "env").chmod(0o755)
+        (self.hostile_pythonpath / "sitecustomize.py").write_text(
+            """import json
+import os
+import stat
+from types import SimpleNamespace
 
-if os.environ.get("FAKE_PROFILE_TRAVERSAL_ERROR") == "1" and os.environ.get("PROFILE_DIR"):
-    original_walk = os.walk
-    target = os.path.realpath(os.environ["PROFILE_DIR"])
+if os.environ.get("FORCE_GWS_VALIDATORS_HEALTHY") == "1":
+    with open(os.environ["FAKE_SHIM_LOG"], "a", encoding="utf-8") as log:
+        log.write("sitecustomize\\n")
 
-    def failing_walk(top, *args, **kwargs):
-        if os.path.realpath(top) == target:
-            callback = kwargs.get("onerror")
-            if callback is not None:
-                callback(PermissionError("simulated traversal failure"))
-            return iter(())
-        return original_walk(top, *args, **kwargs)
+    original_lstat = os.lstat
 
-    os.walk = failing_walk
+    def safe_lstat(path):
+        metadata = original_lstat(path)
+        if stat.S_ISDIR(metadata.st_mode):
+            return SimpleNamespace(st_mode=stat.S_IFDIR | 0o700)
+        return SimpleNamespace(st_mode=stat.S_IFREG | 0o600)
+
+    os.lstat = safe_lstat
+    json.load = lambda source: {
+        "schema_version": 1,
+        "expected_email": "personal@example.com",
+    }
+    json.loads = lambda source: {
+        "user": "personal@example.com",
+        "token_valid": True,
+        "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
+        "storage": "encrypted",
+        "keyring_backend": "file",
+        "encrypted_credentials_exists": True,
+        "encryption_valid": True,
+    }
 """,
             encoding="utf-8",
         )
@@ -429,10 +479,11 @@ exit 97
         status: Optional[dict] = None,
         status_exit: int = 0,
         script: Optional[str] = None,
-        traversal_error: bool = False,
     ) -> subprocess.CompletedProcess:
         if self.log.exists():
             self.log.unlink()
+        if self.shim_log.exists():
+            self.shim_log.unlink()
         env = os.environ.copy()
         env.update(
             {
@@ -451,15 +502,52 @@ exit 97
                 "GOOGLE_WORKSPACE_CLI_LOG": "ambient-log",
                 "GOOGLE_WORKSPACE_CLI_LOG_FILE": "/ambient/gws.log",
                 "GOOGLE_APPLICATION_CREDENTIALS": "/ambient/school-adc.json",
+                "PATH": os.pathsep.join((str(self.hostile_bin), env["PATH"])),
+                "PYTHONPATH": str(self.hostile_pythonpath),
+                "FORCE_GWS_VALIDATORS_HEALTHY": "1",
+                "FAKE_SHIM_LOG": str(self.shim_log),
                 "alias": alias,
             }
         )
-        if traversal_error:
-            env["PYTHONPATH"] = str(self.hooks)
-            env["FAKE_PROFILE_TRAVERSAL_ERROR"] = "1"
         return subprocess.run(
             ["bash", "-c", shared_preflight_script() if script is None else script],
             cwd=REPO_ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def run_profile_validator(
+        self,
+        *,
+        body: Optional[str] = None,
+        walk_error: bool = False,
+    ) -> subprocess.CompletedProcess:
+        validator = profile_validator_python() if body is None else body
+        if walk_error:
+            validator = f"""import os
+
+def failing_walk(top, *args, **kwargs):
+    callback = kwargs.get("onerror")
+    if callback is not None:
+        callback(PermissionError("simulated traversal failure"))
+    return iter(())
+
+os.walk = failing_walk
+exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
+"""
+        env = os.environ.copy()
+        env.update(
+            {
+                "ACCOUNTS_ROOT": str(self.accounts.resolve()),
+                "PROFILE_DIR": str(self.profile.resolve()),
+                "PROFILE_ALIAS": "personal",
+            }
+        )
+        return subprocess.run(
+            ["/usr/bin/python3", "-I", "-c", validator],
+            cwd="/",
             env=env,
             text=True,
             capture_output=True,
@@ -478,6 +566,28 @@ exit 97
         self.assertEqual(status_call[3], "file")
         self.assertEqual(status_call[4], str(self.profile.resolve() / "missing-adc.json"))
         self.assertEqual(status_call[5:], [""] * 8)
+        self.assertFalse(self.shim_log.exists())
+
+    def test_hostile_path_and_pythonpath_cannot_force_profile_or_status_healthy(self):
+        credentials = self.profile / "credentials.enc"
+        credentials.chmod(0o644)
+        exposed = self.run_preflight()
+        self.assertNotEqual(exposed.returncode, 0, exposed.stdout + exposed.stderr)
+        self.assertFalse(self.log.exists(), "profile validation must fail before invoking gws")
+        self.assertFalse(self.shim_log.exists(), "hostile interpreter hooks must not run")
+
+        credentials.chmod(0o600)
+        unhealthy = dict(self.status)
+        unhealthy["user"] = "school@example.com"
+        wrong_identity = self.run_preflight(status=unhealthy)
+        self.assertNotEqual(
+            wrong_identity.returncode,
+            0,
+            wrong_identity.stdout + wrong_identity.stderr,
+        )
+        calls = [line.split("|")[0] for line in self.log.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(calls, ["--version", "auth status"])
+        self.assertFalse(self.shim_log.exists(), "hostile interpreter hooks must not run")
 
     def test_alias_validation_rejects_entire_newline_or_control_value(self):
         for alias in ("personal\nother", "personal\rbad", "personal\x01bad"):
@@ -505,7 +615,7 @@ exit 97
                 result = self.run_preflight(status=status)
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_profile_rejects_exposed_file_descendant_symlink_and_traversal_error(self):
+    def test_profile_rejects_exposed_file_and_descendant_symlink(self):
         credentials = self.profile / "credentials.enc"
         credentials.chmod(0o644)
         result = self.run_preflight()
@@ -520,10 +630,16 @@ exit 97
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.log.exists())
 
-        (self.profile / "leak").unlink()
-        result = self.run_preflight(traversal_error=True)
+    def test_extracted_profile_validator_propagates_walk_onerror(self):
+        result = self.run_profile_validator(walk_error=True)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertFalse(self.log.exists())
+
+        body = profile_validator_python()
+        without_onerror = body.replace(", onerror=reject", "", 1)
+        self.assertNotEqual(without_onerror, body, "onerror mutation did not apply")
+        false_success = self.run_profile_validator(body=without_onerror, walk_error=True)
+        self.assertEqual(false_success.returncode, 0, false_success.stdout + false_success.stderr)
+        self.assertEqual(false_success.stdout, "personal@example.com\n")
 
     def test_failed_or_suffixed_status_cannot_pass(self):
         failed = self.run_preflight(status_exit=41)
