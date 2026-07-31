@@ -136,6 +136,14 @@ DAILY_COMMAND_CENTER_SKILL = (
     / "SKILL.md"
 )
 DAILY_COMMAND_CENTER_OPENAI = DAILY_COMMAND_CENTER_SKILL.parent / "agents" / "openai.yaml"
+GWS_SETUP = ROOT / "scripts" / "setup-gws.sh"
+GOOGLE_WORKSPACE_DIR = ROOT / "plugins" / "google-workspace-tools"
+GOOGLE_WORKSPACE_PLUGIN = GOOGLE_WORKSPACE_DIR / ".codex-plugin" / "plugin.json"
+GOOGLE_WORKSPACE_PROVENANCE = GOOGLE_WORKSPACE_DIR / "PROVENANCE.md"
+GOOGLE_WORKSPACE_LICENSE = GOOGLE_WORKSPACE_DIR / "LICENSE"
+GOOGLE_WORKSPACE_SKILLS_DIR = GOOGLE_WORKSPACE_DIR / "skills"
+GWS_SHARED_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-shared" / "SKILL.md"
+GWS_GMAIL_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail" / "SKILL.md"
 
 
 def require(condition: bool, message: str) -> None:
@@ -453,6 +461,394 @@ def validate_design_engineering_tools_contract(
         require(expected in design_readme_text, message)
 
 
+def validate_google_workspace_tools_contract(
+    marketplace: dict,
+    global_agents_text: str,
+    readme_text: str,
+    default_plugins: list[str],
+    managed_mcp_servers: list[str],
+) -> None:
+    """Validate the pinned, skill-only, isolated-profile Gmail integration."""
+    require(
+        GOOGLE_WORKSPACE_PLUGIN.exists(),
+        "google-workspace-tools plugin manifest must exist",
+    )
+    google_workspace_plugin = json.loads(GOOGLE_WORKSPACE_PLUGIN.read_text())
+    require(
+        google_workspace_plugin.get("name") == "google-workspace-tools",
+        "google-workspace-tools manifest name must be exact",
+    )
+    require(
+        google_workspace_plugin.get("version") == "0.1.0",
+        "google-workspace-tools manifest version must be 0.1.0",
+    )
+    require(
+        google_workspace_plugin.get("license") == "Apache-2.0",
+        "google-workspace-tools manifest license must be Apache-2.0",
+    )
+    require(
+        google_workspace_plugin.get("skills") == "./skills/",
+        "google-workspace-tools manifest must expose ./skills/",
+    )
+    require(
+        "mcpServers" not in google_workspace_plugin,
+        "google-workspace-tools manifest must not declare MCP servers",
+    )
+    require(
+        not any(GOOGLE_WORKSPACE_DIR.rglob(".mcp.json")),
+        "google-workspace-tools must not define an MCP config file",
+    )
+
+    expected_skills = {
+        "gws-shared",
+        "gws-gmail",
+        "gws-gmail-read",
+        "gws-gmail-triage",
+        "gws-gmail-send",
+        "gws-gmail-reply",
+        "gws-gmail-reply-all",
+        "gws-gmail-forward",
+    }
+    actual_skills = {
+        path.name
+        for path in GOOGLE_WORKSPACE_SKILLS_DIR.iterdir()
+        if path.is_dir() and (path / "SKILL.md").exists()
+    }
+    require(
+        actual_skills == expected_skills,
+        "google-workspace-tools skills inventory must be exactly the eight Gmail skills",
+    )
+
+    google_workspace_entry = next(
+        (
+            plugin
+            for plugin in marketplace.get("plugins", [])
+            if plugin.get("name") == "google-workspace-tools"
+        ),
+        None,
+    )
+    require(
+        google_workspace_entry is not None,
+        "marketplace must include google-workspace-tools",
+    )
+    source = google_workspace_entry.get("source", {})
+    require(
+        source.get("source") == "local"
+        and source.get("path") == "./plugins/google-workspace-tools",
+        "google-workspace-tools marketplace source must be the local plugin",
+    )
+    policy = google_workspace_entry.get("policy", {})
+    require(
+        policy.get("installation") == "AVAILABLE"
+        and policy.get("authentication") == "ON_INSTALL",
+        "google-workspace-tools marketplace policy must be AVAILABLE and ON_INSTALL",
+    )
+    require(
+        default_plugins.count("google-workspace-tools") == 1,
+        "setup script must install google-workspace-tools as an active default plugin",
+    )
+    require(
+        "gws" not in managed_mcp_servers
+        and "google-workspace-tools" not in managed_mcp_servers,
+        "gws must not be a managed MCP server",
+    )
+
+    require(
+        GOOGLE_WORKSPACE_PROVENANCE.exists(),
+        "google-workspace-tools provenance must exist",
+    )
+    provenance_text = GOOGLE_WORKSPACE_PROVENANCE.read_text()
+    for expected, message in (
+        (
+            "https://github.com/googleworkspace/cli",
+            "google-workspace-tools provenance must cite the upstream URL",
+        ),
+        (
+            "`v0.22.5`",
+            "google-workspace-tools provenance must cite release v0.22.5",
+        ),
+        (
+            "`705fb0ecac6f4249679958f6325b809b63fdde17`",
+            "google-workspace-tools provenance must cite the pinned upstream commit",
+        ),
+    ):
+        require(expected in provenance_text, message)
+    for skill in expected_skills:
+        require(
+            f"`skills/{skill}/SKILL.md`" in provenance_text,
+            "google-workspace-tools provenance must list every imported skill",
+        )
+    require(
+        GOOGLE_WORKSPACE_LICENSE.exists(),
+        "google-workspace-tools Apache-2.0 license must exist",
+    )
+    license_text = GOOGLE_WORKSPACE_LICENSE.read_text()
+    require(
+        "Apache License" in license_text
+        and "Version 2.0, January 2004" in license_text,
+        "google-workspace-tools license must contain Apache License 2.0",
+    )
+
+    require(GWS_SETUP.exists(), "toolbox must include the opt-in setup-gws helper")
+    gws_setup_text = GWS_SETUP.read_text()
+    for pattern, message in (
+        (
+            r'^VERSION="0\.22\.5"$',
+            "setup-gws must pin gws version 0.22.5",
+        ),
+        (
+            r'^ASSET="google-workspace-cli-aarch64-apple-darwin\.tar\.gz"$',
+            "setup-gws must pin the macOS arm64 release asset",
+        ),
+        (
+            r'^SHA256="1d2a9ffd5bc9b2c2c4b48630daf082fad13d9e57d741988a2c248eed562f7dac"$',
+            "setup-gws must pin the expected release checksum",
+        ),
+    ):
+        require(re.search(pattern, gws_setup_text, re.MULTILINE) is not None, message)
+    setup_requirements = (
+        (
+            'GMAIL_SCOPE="https://www.googleapis.com/auth/gmail.modify"',
+            "setup-gws must request only gmail.modify",
+        ),
+        (
+            'SECRETS_BASE="${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}"',
+            "setup-gws must use the toolbox secrets root",
+        ),
+        (
+            'ACCOUNTS_ROOT="${SECRETS_ROOT}/accounts"',
+            "setup-gws must isolate profiles below the accounts root",
+        ),
+        (
+            '[[ "$1" =~ ^[a-z0-9][a-z0-9._-]{0,62}$ ]]',
+            "setup-gws must validate account aliases",
+        ),
+        (
+            "cd / || return 1",
+            "setup-gws must run gws from the filesystem root",
+        ),
+        (
+            'GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile"',
+            "setup-gws must select an isolated profile directory",
+        ),
+        (
+            "GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file",
+            "setup-gws must force the file keyring backend",
+        ),
+        (
+            'GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json"',
+            "setup-gws must block ambient ADC with a missing profile-local sentinel",
+        ),
+        (
+            'status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()',
+            "setup-gws must verify the exact live account identity",
+        ),
+        (
+            'and "https://mail.google.com/" not in scopes',
+            "setup-gws must reject the broad Gmail mail scope",
+        ),
+        (
+            "chmod 700",
+            "setup-gws must protect profile directories with mode 700",
+        ),
+        (
+            "chmod 600",
+            "setup-gws must protect profile files with mode 600",
+        ),
+    )
+    for expected, message in setup_requirements:
+        require(expected in gws_setup_text, message)
+    for variable in (
+        "GOOGLE_WORKSPACE_CLI_TOKEN",
+        "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE",
+        "GOOGLE_WORKSPACE_CLI_CLIENT_ID",
+        "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",
+        "GOOGLE_WORKSPACE_CLI_LOG",
+        "GOOGLE_WORKSPACE_CLI_LOG_FILE",
+        "GOOGLE_WORKSPACE_PROJECT_ID",
+    ):
+        require(
+            f"  {variable}= \\" in gws_setup_text,
+            f"setup-gws must clear ambient {variable}",
+        )
+
+    require(GWS_SHARED_SKILL.exists(), "gws-shared skill must exist")
+    gws_shared_text = GWS_SHARED_SKILL.read_text()
+    require(
+        "Require an **explicit alias**" in gws_shared_text,
+        "gws shared contract must require an explicit alias",
+    )
+    require(
+        "never infer one from a likely" in gws_shared_text
+        and "If it is absent, stop and\nask." in gws_shared_text,
+        "gws shared contract must reject default account inference",
+    )
+    require(
+        "    -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \\" in gws_shared_text,
+        "gws shared contract must clear ambient GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE",
+    )
+    require(
+        GWS_GMAIL_SKILL.exists(),
+        "gws-gmail skill must exist",
+    )
+    gws_gmail_text = GWS_GMAIL_SKILL.read_text()
+    require(
+        "Do not invoke `users.messages.delete`,\n"
+        "`users.messages.batchDelete`" in gws_gmail_text,
+        "gws Gmail contract must keep permanent deletion unavailable",
+    )
+
+    global_agents_requirements = (
+        (
+            "Keep the official Gmail connector available",
+            "global AGENTS must retain the official Gmail connector",
+        ),
+        (
+            "explicitly requests direct `gws` or multi-account Gmail",
+            "global AGENTS must route direct or multi-account Gmail to google-workspace-tools",
+        ),
+        (
+            "supplies an explicit account alias",
+            "global AGENTS direct gws routing must require an explicit account alias",
+        ),
+        (
+            "Use exactly one Gmail surface per request",
+            "global AGENTS Gmail routing must select exactly one surface per request",
+        ),
+        (
+            "do not mix the official Gmail connector and direct `gws` in the same request",
+            "global AGENTS Gmail routing must forbid mixing connector and direct gws",
+        ),
+        (
+            "Never infer or default an alias",
+            "global AGENTS direct gws routing must reject default accounts",
+        ),
+        (
+            "`$gws-shared`",
+            "global AGENTS direct gws routing must require the shared preflight",
+        ),
+    )
+    for expected, message in global_agents_requirements:
+        require(expected in global_agents_text, message)
+
+    readme_section_match = re.search(
+        r"^## Isolated Multi-Account Gmail with gws\n"
+        r"(?P<body>.*?)(?=^## |\Z)",
+        readme_text,
+        re.MULTILINE | re.DOTALL,
+    )
+    require(
+        readme_section_match is not None,
+        "README must document isolated multi-account Gmail with gws",
+    )
+    gws_readme_text = readme_section_match.group("body")
+    gws_readme_normalized = normalized(gws_readme_text)
+    readme_requirements = (
+        (
+            "https://github.com/googleworkspace/cli",
+            "README must cite the Google Workspace CLI project",
+        ),
+        (
+            "not an officially supported Google product",
+            "README must state that gws is not an officially supported Google product",
+        ),
+        (
+            "pre-v1",
+            "README must state the pre-v1 stability status",
+        ),
+        (
+            "no current `gws mcp`",
+            "README must state that gws has no current MCP command",
+        ),
+        (
+            "no native multi-account selector",
+            "README must state that gws has no native multi-account selector",
+        ),
+        (
+            "scripts/setup-gws.sh --check",
+            "README must document the gws setup check",
+        ),
+        (
+            "scripts/setup-gws.sh --install",
+            "README must document the explicit gws installation",
+        ),
+        (
+            "manual",
+            "README must require manual Cloud Console OAuth setup",
+        ),
+        (
+            "enable the Gmail API",
+            "README OAuth setup must enable the Gmail API",
+        ),
+        (
+            "External",
+            "README OAuth setup must use an External audience",
+        ),
+        (
+            "personal-use",
+            "README OAuth setup must identify the personal-use app",
+        ),
+        (
+            "In Production",
+            "README OAuth setup must publish In Production before final logins",
+        ),
+        (
+            "seven days",
+            "README OAuth setup must explain Testing-mode token expiry",
+        ),
+        (
+            "Desktop app",
+            "README OAuth setup must use a Desktop client",
+        ),
+        (
+            "unverified warning",
+            "README OAuth setup must explain the unverified warning",
+        ),
+        (
+            "https://www.googleapis.com/auth/gmail.modify",
+            "README must require only the gmail.modify OAuth scope",
+        ),
+        (
+            "Never request `https://mail.google.com/`",
+            "README must forbid the broad Gmail mail scope",
+        ),
+        (
+            "scripts/setup-gws.sh --register-client /absolute/path/to/client_secret.json",
+            "README must use an executable neutral OAuth client path",
+        ),
+        (
+            "scripts/setup-gws.sh --add-account account-one@example.com --alias account-one",
+            "README must document per-account onboarding with neutral placeholders",
+        ),
+        (
+            "scripts/setup-gws.sh --reauth-account account-one",
+            "README must document account reauthentication",
+        ),
+        (
+            "scripts/setup-gws.sh --check-account account-one",
+            "README must document per-account health checks",
+        ),
+        (
+            "scripts/setup-gws.sh --list-accounts",
+            "README must document redacted account listing",
+        ),
+        (
+            "${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/gws/accounts/<alias>",
+            "README must document the isolated profile root",
+        ),
+        (
+            "plugin only",
+            "README must keep binary installation and OAuth out of normal toolbox setup",
+        ),
+        (
+            "There is no default gws account",
+            "README must not define a default gws account",
+        ),
+    )
+    for expected, message in readme_requirements:
+        require(expected in gws_readme_normalized, message)
+
+
 def main() -> None:
     script = SETUP_SCRIPT.read_text()
     readme_text = README.read_text()
@@ -760,6 +1156,13 @@ def main() -> None:
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
 
     validate_design_engineering_tools_contract(
+        marketplace,
+        global_agents_text,
+        readme_text,
+        default_plugin_entries,
+        managed_mcp_server_entries,
+    )
+    validate_google_workspace_tools_contract(
         marketplace,
         global_agents_text,
         readme_text,
