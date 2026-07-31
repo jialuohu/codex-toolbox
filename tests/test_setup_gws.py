@@ -657,6 +657,28 @@ exec /bin/chmod "$@"
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertNotIn("Overall: ready", result.stdout)
 
+    def test_check_and_list_reject_orphaned_client_candidates_and_gws_root_entries(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        gws_root = self.secrets_home / "gws"
+
+        orphan = gws_root / ".client_secret.json.orphan"
+        os.link(self.client_path, orphan)
+        for command in (("--check",), ("--list-accounts",)):
+            result = self.run(*command)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertNotIn("Overall: ready", result.stdout)
+        orphan.unlink()
+
+        broken = gws_root / ".client_secret.json.broken"
+        broken.symlink_to(gws_root / "missing-client")
+        for command in (("--check",), ("--list-accounts",)):
+            result = self.run(*command)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertNotIn("Overall: ready", result.stdout)
+
     def test_health_checks_never_repair_or_read_incomplete_static_credentials(self) -> None:
         self.install_fake_runtime()
         self.register_client()

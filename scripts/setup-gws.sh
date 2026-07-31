@@ -27,6 +27,7 @@ TX_LIVE=""
 TX_RESERVATION=""
 TX_LOCK=""
 TX_CLIENT_CANDIDATE=""
+SECRETS_ROOT_ENTRIES=()
 PROFILE_ENTRIES=()
 
 cleanup_install_tmp() {
@@ -345,6 +346,23 @@ collect_profile_entries() {
   PROFILE_ENTRIES=("$ACCOUNTS_ROOT"/*)
   [ "$had_dotglob" -eq 1 ] || shopt -u dotglob
   [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
+}
+
+secrets_root_inventory_is_clean() {
+  local had_dotglob=0 had_nullglob=0 entry name
+  shopt -q dotglob && had_dotglob=1
+  shopt -q nullglob && had_nullglob=1
+  shopt -s dotglob nullglob
+  SECRETS_ROOT_ENTRIES=("$SECRETS_ROOT"/*)
+  [ "$had_dotglob" -eq 1 ] || shopt -u dotglob
+  [ "$had_nullglob" -eq 1 ] || shopt -u nullglob
+  for entry in "${SECRETS_ROOT_ENTRIES[@]}"; do
+    name="${entry##*/}"
+    case "$name" in
+      client_secret.json|accounts) ;;
+      *) return 1 ;;
+    esac
+  done
 }
 
 default_alias() {
@@ -683,6 +701,10 @@ check_all() {
       printf 'OAuth client: unsafe\n'
       printf 'Profiles: unsafe\n'
       failed=1
+    elif ! secrets_root_inventory_is_clean; then
+      printf 'OAuth client: unsafe\n'
+      printf 'Profiles: unsafe\n'
+      failed=1
     else
       if [ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ]; then
         printf 'OAuth client: missing\n'
@@ -739,6 +761,10 @@ list_accounts() {
     return 0
   fi
   if ! secrets_root_is_private; then
+    printf 'Profiles: unsafe\n'
+    return 1
+  fi
+  if ! secrets_root_inventory_is_clean; then
     printf 'Profiles: unsafe\n'
     return 1
   fi
