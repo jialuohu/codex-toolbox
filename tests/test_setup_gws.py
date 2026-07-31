@@ -34,6 +34,8 @@ class SetupGwsTest(unittest.TestCase):
         self.download = self.home / "download.tar.gz"
         self.download_log = self.home / "download.log"
         self.gws_log = self.home / "gws.log"
+        self.python_hook_dir = self.home / "python-hooks"
+        self.python_hook_dir.mkdir()
         self.env = os.environ.copy()
         self.env.update({
             "HOME": str(self.home),
@@ -45,6 +47,24 @@ class SetupGwsTest(unittest.TestCase):
             "FAKE_DOWNLOAD": str(self.download),
             "FAKE_DOWNLOAD_LOG": str(self.download_log),
         })
+        inherited_pythonpath = self.env.get("PYTHONPATH")
+        self.env["PYTHONPATH"] = str(self.python_hook_dir) + (os.pathsep + inherited_pythonpath if inherited_pythonpath else "")
+        (self.python_hook_dir / "sitecustomize.py").write_text("""import os
+
+if os.environ.get("FAKE_PROFILE_TRAVERSAL_ERROR") == "1" and os.environ.get("PROFILE_DIR"):
+    original_walk = os.walk
+    target = os.path.realpath(os.environ["PROFILE_DIR"])
+
+    def failing_walk(top, *args, **kwargs):
+        if os.path.realpath(top) == target:
+            callback = kwargs.get("onerror")
+            if callback is not None:
+                callback(PermissionError("simulated profile traversal failure"))
+            return iter(())
+        return original_walk(top, *args, **kwargs)
+
+    os.walk = failing_walk
+""")
         self.write_executable("uname", """#!/bin/sh
 if [ "$1" = "-s" ]; then printf '%s\\n' "${FAKE_UNAME_S:-Darwin}"; exit 0; fi
 if [ "$1" = "-m" ]; then printf '%s\\n' "${FAKE_UNAME_M:-arm64}"; exit 0; fi
@@ -58,13 +78,6 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cp "$FAKE_DOWNLOAD" "$out"
-""")
-        self.write_executable("find", """#!/bin/sh
-if [ "${FAKE_FIND_FAIL:-}" = "1" ]; then
-  printf 'simulated find failure\\n' >&2
-  exit 1
-fi
-exec /usr/bin/find "$@"
 """)
 
     def write_executable(self, name: str, body: str) -> Path:
@@ -330,11 +343,12 @@ exit 3
         self.register_client()
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
-        inaccessible = self.accounts_root / "account" / "inaccessible-state"
-        inaccessible.mkdir()
-        os.chmod(inaccessible, 0o000)
+        profile = self.accounts_root / "account"
+        self.assert_mode(profile, 0o700)
+        for state in ("profile.json", "client_secret.json", ".encryption_key", "credentials.enc", "token-cache.json"):
+            self.assert_mode(profile / state, 0o600)
+        self.env["FAKE_PROFILE_TRAVERSAL_ERROR"] = "1"
         result = self.run("--check-account", "account")
-        os.chmod(inaccessible, 0o700)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("private permissions", result.stderr)
 
