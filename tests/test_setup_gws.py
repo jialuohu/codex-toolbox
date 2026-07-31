@@ -11,6 +11,7 @@ import subprocess
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,21 +50,22 @@ class SetupGwsTest(unittest.TestCase):
         })
         inherited_pythonpath = self.env.get("PYTHONPATH")
         self.env["PYTHONPATH"] = str(self.python_hook_dir) + (os.pathsep + inherited_pythonpath if inherited_pythonpath else "")
-        (self.python_hook_dir / "sitecustomize.py").write_text("""import os
+        (self.python_hook_dir / "sitecustomize.py").write_text("""import json
+import os
 
-if os.environ.get("FAKE_PROFILE_TRAVERSAL_ERROR") == "1" and os.environ.get("PROFILE_DIR"):
-    original_walk = os.walk
-    target = os.path.realpath(os.environ["PROFILE_DIR"])
-
-    def failing_walk(top, *args, **kwargs):
-        if os.path.realpath(top) == target:
-            callback = kwargs.get("onerror")
-            if callback is not None:
-                callback(PermissionError("simulated profile traversal failure"))
-            return iter(())
-        return original_walk(top, *args, **kwargs)
-
-    os.walk = failing_walk
+if os.environ.get("FAKE_PYTHON_VALIDATION_BYPASS") == "1":
+    if os.environ.get("PROFILE_DIR"):
+        os.walk = lambda *args, **kwargs: iter(())
+    if os.environ.get("STATUS_JSON"):
+        json.loads = lambda *args, **kwargs: {
+            "user": os.environ.get("EXPECTED_EMAIL", "wrong@example.test"),
+            "token_valid": True,
+            "scopes": ["https://www.googleapis.com/auth/gmail.modify"],
+            "storage": "encrypted",
+            "keyring_backend": "file",
+            "encrypted_credentials_exists": True,
+            "encryption_valid": True,
+        }
 """)
         self.write_executable("uname", """#!/bin/sh
 if [ "$1" = "-s" ]; then printf '%s\\n' "${FAKE_UNAME_S:-Darwin}"; exit 0; fi
@@ -213,6 +215,19 @@ exit 3
         self.assertEqual(again.returncode, 1)
         self.assertIn("already registered", again.stderr)
 
+    def test_security_validation_never_invokes_path_python_shim(self) -> None:
+        shim_log = self.home / "python-shim.log"
+        self.env["FAKE_PYTHON_SHIM_LOG"] = str(shim_log)
+        self.write_executable("python3", """#!/bin/sh
+printf invoked > "$FAKE_PYTHON_SHIM_LOG"
+exit 0
+""")
+        malformed = self.write_client({"installed": {"client_id": "only"}})
+        result = self.run("--register-client", str(malformed))
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("invalid Desktop OAuth client JSON", result.stderr)
+        self.assertFalse(shim_log.exists(), "PATH python3 shim must never run")
+
     def test_add_account_isolated_normalized_and_private(self) -> None:
         self.install_fake_runtime()
         self.register_client()
@@ -347,19 +362,52 @@ exit 3
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("private permissions", result.stderr)
 
-    def test_check_account_fails_closed_when_profile_traversal_errors(self) -> None:
+    def test_pythonpath_hook_cannot_hide_exposed_state_or_wrong_status(self) -> None:
         self.install_fake_runtime()
         self.register_client()
         self.status("account@example.test")
         self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
         profile = self.accounts_root / "account"
-        self.assert_mode(profile, 0o700)
-        for state in ("profile.json", "client_secret.json", ".encryption_key", "credentials.enc", "token-cache.json"):
-            self.assert_mode(profile / state, 0o600)
-        self.env["FAKE_PROFILE_TRAVERSAL_ERROR"] = "1"
-        result = self.run("--check-account", "account")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("private permissions", result.stderr)
+        exposed = profile / "credentials.enc"
+        os.chmod(exposed, 0o644)
+        self.status("wrong@example.test")
+        self.env["FAKE_PYTHON_VALIDATION_BYPASS"] = "1"
+        exposed_result = self.run("--check-account", "account")
+        self.assertEqual(exposed_result.returncode, 1, exposed_result.stdout + exposed_result.stderr)
+        self.assertIn("private permissions", exposed_result.stderr)
+        os.chmod(exposed, 0o600)
+        wrong_status = self.run("--check-account", "account")
+        self.assertEqual(wrong_status.returncode, 1, wrong_status.stdout + wrong_status.stderr)
+        self.assertIn("identity", wrong_status.stderr)
+
+    def test_extracted_profile_traversal_body_propagates_walk_errors(self) -> None:
+        source = SCRIPT.read_text()
+        command_start = source.index('PROFILE_DIR="$1" ')
+        body_start = source.index("\n", command_start) + 1
+        body_end = source.index("\nPY\n", body_start)
+        traversal_body = source[body_start:body_end]
+        profile = self.home / "source-profile"
+        profile.mkdir()
+        os.chmod(profile, 0o700)
+
+        def execute(body: str) -> int:
+            def failing_walk(*args: object, **kwargs: object) -> object:
+                callback = kwargs.get("onerror")
+                if callback is not None:
+                    callback(PermissionError("simulated traversal failure"))
+                return iter(())
+
+            with mock.patch.dict(os.environ, {"PROFILE_DIR": str(profile)}), mock.patch("os.walk", new=failing_walk):
+                try:
+                    exec(compile(body, "profile-state-validator", "exec"), {})
+                except SystemExit as error:
+                    return int(error.code)
+            return 0
+
+        self.assertEqual(execute(traversal_body), 1)
+        callback_removed = traversal_body.replace(", onerror=rethrow", "")
+        self.assertNotEqual(callback_removed, traversal_body)
+        self.assertEqual(execute(callback_removed), 0, "removing onerror must reproduce false health")
 
     def test_reauth_restores_replaced_credential_state_after_login_failure_or_wrong_account(self) -> None:
         self.install_fake_runtime()

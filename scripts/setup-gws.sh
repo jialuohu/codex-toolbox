@@ -79,7 +79,7 @@ has_private_mode() {
 }
 
 profile_state_is_private() {
-  PROFILE_DIR="$1" python3 - <<'PY'
+  PROFILE_DIR="$1" /usr/bin/python3 -I - <<'PY'
 import os
 import stat
 import sys
@@ -109,7 +109,7 @@ PY
 
 validate_client_json() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 1
-  CLIENT_FILE="$1" python3 - <<'PY'
+  CLIENT_FILE="$1" /usr/bin/python3 -I - <<'PY'
 import json
 import os
 import sys
@@ -153,7 +153,7 @@ profile_for_alias() {
 }
 
 profile_expected_email() {
-  PROFILE_FILE="$1/profile.json" python3 - <<'PY'
+  PROFILE_FILE="$1/profile.json" /usr/bin/python3 -I - <<'PY'
 import json
 import os
 import sys
@@ -190,7 +190,7 @@ run_isolated() {
 status_is_healthy() {
   local expected="$1"
   local status="$2"
-  EXPECTED_EMAIL="$expected" STATUS_JSON="$status" python3 - <<'PY'
+  EXPECTED_EMAIL="$expected" STATUS_JSON="$status" /usr/bin/python3 -I - <<'PY'
 import json
 import os
 import sys
@@ -308,7 +308,7 @@ add_account() {
     rm -rf "$profile"
     die "unable to create account profile"
   fi
-  EMAIL="$email" PROFILE_FILE="$profile/profile.json" python3 - <<'PY' || { rm -rf "$profile"; die "unable to write account profile"; }
+  EMAIL="$email" PROFILE_FILE="$profile/profile.json" /usr/bin/python3 -I - <<'PY' || { rm -rf "$profile"; die "unable to write account profile"; }
 import json
 import os
 with open(os.environ["PROFILE_FILE"], "w", encoding="utf-8") as destination:
