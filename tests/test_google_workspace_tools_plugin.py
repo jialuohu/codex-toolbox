@@ -1,8 +1,11 @@
 import json
 import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+from typing import Optional
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -90,6 +93,19 @@ def active_shell_array_entries(script: str, name: str) -> list[str]:
         if entry:
             entries.append(entry.group(1))
     return entries
+
+
+def shared_bash_blocks(source: Optional[str] = None) -> list[str]:
+    if source is None:
+        source = (PLUGIN / "skills" / "gws-shared" / "SKILL.md").read_text(encoding="utf-8")
+    return re.findall(r"```bash\n(.*?)\n```", source, re.DOTALL)
+
+
+def shared_preflight_script(source: Optional[str] = None) -> str:
+    blocks = shared_bash_blocks(source)
+    if len(blocks) != 3:
+        raise AssertionError(f"expected three ordered shared bash blocks, found {len(blocks)}")
+    return "\n\n".join((*blocks, "printf 'PREFLIGHT_OK\\n'"))
 
 
 class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
@@ -224,6 +240,45 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             self.assertIn("explicit user intent to send", text, name)
             self.assertIn("identity/recipient preview", text, name)
             self.assertIn('"$gws_bin" gmail', text, name)
+            for attachment_requirement in (
+                "before draft or send",
+                "attachment safety contract",
+                "user-supplied path",
+                "absolute",
+                "lstat",
+                "regular final object",
+                "final symlink",
+                "canonical target path",
+                "basename",
+                "immediately revalidate",
+                "same path and canonical target",
+                "fail closed on change",
+            ):
+                self.assertIn(attachment_requirement, text, f"{name}: {attachment_requirement}")
+
+        forward = normalized(PLUGIN / "skills" / "gws-gmail-forward" / "SKILL.md").lower()
+        self.assertIn("server-side original attachments", forward)
+        self.assertIn("separate", forward)
+
+    def test_shared_attachment_contract_rejects_symlinks_and_revalidates_identity(self):
+        shared = normalized(PLUGIN / "skills" / "gws-shared" / "SKILL.md").lower()
+        for required in (
+            "before draft or send",
+            "user-supplied attachment",
+            "absolute path",
+            "lstat",
+            "regular final object",
+            "final symlink",
+            "canonical target path",
+            "basename",
+            "device/inode",
+            "identity/recipient preview",
+            "immediately before invoking",
+            "same user-supplied path",
+            "same canonical target",
+            "fail closed on any change",
+        ):
+            self.assertIn(required, shared)
 
     def test_raw_gmail_surface_is_read_only_and_mutations_require_exact_preview(self):
         gmail = normalized(PLUGIN / "skills" / "gws-gmail" / "SKILL.md").lower()
@@ -273,6 +328,222 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
         managed_block = re.search(r"MANAGED_MCP_SERVERS=\((.*?)\n\)", setup, re.DOTALL)
         self.assertIsNotNone(managed_block)
         self.assertNotIn("gws", managed_block.group(1).lower())
+
+
+class SharedPreflightExecutionTests(unittest.TestCase):
+    SCOPE = "https://www.googleapis.com/auth/gmail.modify"
+
+    def setUp(self):
+        self.tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tempdir.cleanup)
+        self.root = Path(self.tempdir.name)
+        self.secrets = self.root / "secrets"
+        self.accounts = self.secrets / "gws" / "accounts"
+        self.accounts.mkdir(parents=True)
+        self.accounts.chmod(0o700)
+        self.data = self.root / "data"
+        self.log = self.root / "gws.log"
+        self.hooks = self.root / "python-hooks"
+        self.hooks.mkdir()
+        (self.hooks / "sitecustomize.py").write_text(
+            """import os
+
+if os.environ.get("FAKE_PROFILE_TRAVERSAL_ERROR") == "1" and os.environ.get("PROFILE_DIR"):
+    original_walk = os.walk
+    target = os.path.realpath(os.environ["PROFILE_DIR"])
+
+    def failing_walk(top, *args, **kwargs):
+        if os.path.realpath(top) == target:
+            callback = kwargs.get("onerror")
+            if callback is not None:
+                callback(PermissionError("simulated traversal failure"))
+            return iter(())
+        return original_walk(top, *args, **kwargs)
+
+    os.walk = failing_walk
+""",
+            encoding="utf-8",
+        )
+        self.gws_bin = self.data / "codex-toolbox" / "gws" / "0.22.5" / "gws"
+        self.gws_bin.parent.mkdir(parents=True)
+        self.gws_bin.write_text(
+            """#!/bin/sh
+printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+  "$*" "$PWD" \
+  "${GOOGLE_WORKSPACE_CLI_CONFIG_DIR:-}" \
+  "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:-}" \
+  "${GOOGLE_APPLICATION_CREDENTIALS:-}" \
+  "${GOOGLE_WORKSPACE_CLI_TOKEN:-}" \
+  "${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE:-}" \
+  "${GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE:-}" \
+  "${GOOGLE_WORKSPACE_CLI_CLIENT_ID:-}" \
+  "${GOOGLE_WORKSPACE_CLI_CLIENT_SECRET:-}" \
+  "${GOOGLE_WORKSPACE_PROJECT_ID:-}" \
+  "${GOOGLE_WORKSPACE_CLI_LOG:-}" \
+  "${GOOGLE_WORKSPACE_CLI_LOG_FILE:-}" >> "$FAKE_GWS_LOG"
+if [ "$#" -eq 1 ] && [ "$1" = "--version" ]; then
+  printf 'gws 0.22.5\nThis software is not an officially supported Google product.\n'
+  exit 0
+fi
+if [ "$#" -eq 2 ] && [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  printf '%s\n' "$FAKE_GWS_STATUS"
+  exit "${FAKE_STATUS_EXIT:-0}"
+fi
+exit 97
+""",
+            encoding="utf-8",
+        )
+        self.gws_bin.chmod(0o755)
+        self.profile = self.make_profile("personal")
+        self.status = {
+            "user": "personal@example.com",
+            "token_valid": True,
+            "scopes": [self.SCOPE],
+            "storage": "encrypted",
+            "keyring_backend": "file",
+            "encrypted_credentials_exists": True,
+            "encryption_valid": True,
+        }
+
+    def make_profile(self, alias: str, email: str = "personal@example.com") -> Path:
+        profile = self.accounts / alias
+        profile.mkdir()
+        profile.chmod(0o700)
+        files = {
+            "profile.json": json.dumps({"schema_version": 1, "expected_email": email}),
+            "client_secret.json": json.dumps(
+                {"installed": {"client_id": "id", "client_secret": "secret", "project_id": "project"}}
+            ),
+            "credentials.enc": "encrypted",
+        }
+        for name, contents in files.items():
+            path = profile / name
+            path.write_text(contents, encoding="utf-8")
+            path.chmod(0o600)
+        return profile
+
+    def run_preflight(
+        self,
+        *,
+        alias: str = "personal",
+        status: Optional[dict] = None,
+        status_exit: int = 0,
+        script: Optional[str] = None,
+        traversal_error: bool = False,
+    ) -> subprocess.CompletedProcess:
+        if self.log.exists():
+            self.log.unlink()
+        env = os.environ.copy()
+        env.update(
+            {
+                "HOME": str(self.root / "home"),
+                "XDG_DATA_HOME": str(self.data),
+                "CODEX_SECRETS_DIR": str(self.secrets),
+                "FAKE_GWS_LOG": str(self.log),
+                "FAKE_GWS_STATUS": json.dumps(self.status if status is None else status),
+                "FAKE_STATUS_EXIT": str(status_exit),
+                "GOOGLE_WORKSPACE_CLI_TOKEN": "ambient-token",
+                "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/ambient/credentials.json",
+                "GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE": "/ambient/credential.json",
+                "GOOGLE_WORKSPACE_CLI_CLIENT_ID": "ambient-client",
+                "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET": "ambient-secret",
+                "GOOGLE_WORKSPACE_PROJECT_ID": "ambient-project",
+                "GOOGLE_WORKSPACE_CLI_LOG": "ambient-log",
+                "GOOGLE_WORKSPACE_CLI_LOG_FILE": "/ambient/gws.log",
+                "GOOGLE_APPLICATION_CREDENTIALS": "/ambient/school-adc.json",
+                "alias": alias,
+            }
+        )
+        if traversal_error:
+            env["PYTHONPATH"] = str(self.hooks)
+            env["FAKE_PROFILE_TRAVERSAL_ERROR"] = "1"
+        return subprocess.run(
+            ["bash", "-c", shared_preflight_script() if script is None else script],
+            cwd=REPO_ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_valid_profile_runs_exact_isolated_status(self):
+        result = self.run_preflight()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "PREFLIGHT_OK\n")
+        calls = [line.split("|") for line in self.log.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([call[0] for call in calls], ["--version", "auth status"])
+        status_call = calls[1]
+        self.assertEqual(status_call[1], "/")
+        self.assertEqual(status_call[2], str(self.profile.resolve()))
+        self.assertEqual(status_call[3], "file")
+        self.assertEqual(status_call[4], str(self.profile.resolve() / "missing-adc.json"))
+        self.assertEqual(status_call[5:], [""] * 8)
+
+    def test_alias_validation_rejects_entire_newline_or_control_value(self):
+        for alias in ("personal\nother", "personal\rbad", "personal\x01bad"):
+            with self.subTest(alias=repr(alias)):
+                self.make_profile(alias)
+                result = self.run_preflight(alias=alias)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(self.log.exists(), "invalid aliases must fail before invoking gws")
+
+    def test_status_rejects_wrong_identity_scope_token_storage_or_backend(self):
+        cases = (
+            {"user": "school@example.com"},
+            {"scopes": []},
+            {"scopes": [self.SCOPE, "https://mail.google.com/"]},
+            {"token_valid": False},
+            {"storage": "plaintext"},
+            {"keyring_backend": "keychain"},
+            {"encrypted_credentials_exists": False},
+            {"encryption_valid": False},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes):
+                status = dict(self.status)
+                status.update(changes)
+                result = self.run_preflight(status=status)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_profile_rejects_exposed_file_descendant_symlink_and_traversal_error(self):
+        credentials = self.profile / "credentials.enc"
+        credentials.chmod(0o644)
+        result = self.run_preflight()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.log.exists())
+
+        credentials.chmod(0o600)
+        secret = self.root / "secret.txt"
+        secret.write_text("secret", encoding="utf-8")
+        (self.profile / "leak").symlink_to(secret)
+        result = self.run_preflight()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.log.exists())
+
+        (self.profile / "leak").unlink()
+        result = self.run_preflight(traversal_error=True)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.log.exists())
+
+    def test_failed_or_suffixed_status_cannot_pass(self):
+        failed = self.run_preflight(status_exit=41)
+        self.assertNotEqual(failed.returncode, 0, failed.stdout + failed.stderr)
+        self.assertEqual(
+            self.log.read_text(encoding="utf-8").splitlines()[-1].split("|")[0],
+            "auth status",
+        )
+
+        mutated = shared_preflight_script().replace(
+            '"$gws_bin" auth status',
+            '"$gws_bin" auth status --bogus',
+            1,
+        )
+        suffixed = self.run_preflight(script=mutated)
+        self.assertNotEqual(suffixed.returncode, 0, suffixed.stdout + suffixed.stderr)
+        self.assertEqual(
+            self.log.read_text(encoding="utf-8").splitlines()[-1].split("|")[0],
+            "auth status --bogus",
+        )
 
 
 if __name__ == "__main__":
