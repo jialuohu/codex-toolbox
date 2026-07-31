@@ -215,6 +215,11 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "\nUse the official Gmail connector and direct gws together in the same request.\n",
                 "global AGENTS Gmail routing policy must match the canonical reviewed paragraph",
             ),
+            (
+                "config/codex/AGENTS.global.md",
+                "\nFor urgent Gmail work, use the official connector and direct `gws` together.\n",
+                "global AGENTS Gmail routing policy must match the canonical reviewed paragraph",
+            ),
         )
 
         for relative_path, addition, expected_message in mutations:
@@ -264,6 +269,34 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 '  # [ "$actual" = "$SHA256" ] || die "checksum mismatch for pinned gws release"\n',
             )
 
+        def change_curl_operand(root: Path) -> None:
+            self.replace_once(
+                root,
+                setup_script,
+                '  curl -fsSL "$RELEASE_URL" -o "$archive" || die "download failed"\n',
+                '  curl -fsSL "https://example.invalid/gws.tar.gz" -o "$archive" || die "download failed"\n',
+            )
+
+        def replace_digest_with_expected_checksum(root: Path) -> None:
+            self.replace_once(
+                root,
+                setup_script,
+                '  actual="$(shasum -a 256 "$archive" | awk \'{print $1}\')"\n',
+                '  actual="$SHA256"\n',
+            )
+
+        def make_checksum_comparison_unreachable(root: Path) -> None:
+            comparison = (
+                '  [ "$actual" = "$SHA256" ] || '
+                'die "checksum mismatch for pinned gws release"\n'
+            )
+            self.replace_once(
+                root,
+                setup_script,
+                comparison,
+                f"  if false; then\n{comparison}  fi\n",
+            )
+
         def truncate_license(root: Path) -> None:
             path = root / "plugins/google-workspace-tools/LICENSE"
             original = path.read_bytes()
@@ -307,6 +340,18 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             (
                 disable_checksum_comparison,
                 "setup-gws must actively compare the downloaded archive checksum",
+            ),
+            (
+                change_curl_operand,
+                "setup-gws install_gws function must match the canonical reviewed text",
+            ),
+            (
+                replace_digest_with_expected_checksum,
+                "setup-gws install_gws function must match the canonical reviewed text",
+            ),
+            (
+                make_checksum_comparison_unreachable,
+                "setup-gws install_gws function must match the canonical reviewed text",
             ),
             (
                 truncate_license,

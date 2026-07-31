@@ -157,6 +157,9 @@ GWS_GMAIL_SKILL_SHA256 = (
 GOOGLE_WORKSPACE_PROVENANCE_SHA256 = (
     "aff66c1f8bacb72b7a28d74a9718a9dafe54a66d457c7cc54245f4767493970c"
 )
+GWS_INSTALL_FUNCTION_SHA256 = (
+    "6f5da94496fee25d8e1981db1d4d5301fd6260f324e94baf7c229aac1017bc51"
+)
 GLOBAL_GMAIL_ROUTING_PARAGRAPH = (
     "Keep the official Gmail connector available for ordinary connected Gmail requests. "
     "Use `$gws-gmail` from `google-workspace-tools` only when the user explicitly requests "
@@ -206,6 +209,15 @@ def shell_assignment_values(script: str, name: str) -> list[str]:
         rf"^[ \t]*{re.escape(name)}=(?P<value>[^\r\n]*)$",
         script,
         re.MULTILINE,
+    )
+
+
+def shell_function_blocks(script: str, name: str) -> list[str]:
+    """Return every whole top-level shell function definition with this name."""
+    return re.findall(
+        rf"^{re.escape(name)}\(\) \{{\n.*?^\}}\n",
+        script,
+        re.MULTILINE | re.DOTALL,
     )
 
 
@@ -675,6 +687,13 @@ def validate_google_workspace_tools_contract(
         == 1,
         "setup-gws must actively compare the downloaded archive checksum",
     )
+    install_gws_blocks = shell_function_blocks(gws_setup_text, "install_gws")
+    require(
+        len(install_gws_blocks) == 1
+        and hashlib.sha256(install_gws_blocks[0].encode()).hexdigest()
+        == GWS_INSTALL_FUNCTION_SHA256,
+        "setup-gws install_gws function must match the canonical reviewed text",
+    )
     setup_requirements = (
         (
             'GMAIL_SCOPE="https://www.googleapis.com/auth/gmail.modify"',
@@ -912,8 +931,11 @@ def validate_google_workspace_tools_contract(
     gmail_routing_paragraphs = [
         paragraph
         for paragraph in re.split(r"\n[ \t]*\n", global_agents_text.strip())
-        if "official Gmail connector" in paragraph
-        and re.search(r"\bdirect\s+`?gws`?", paragraph)
+        if re.search(r"\bconnectors?\b", paragraph, re.IGNORECASE)
+        and (
+            re.search(r"\bdirect\s+`?gws`?", paragraph, re.IGNORECASE)
+            or re.search(r"`?\$gws-gmail`?", paragraph, re.IGNORECASE)
+        )
     ]
     require(
         gmail_routing_paragraphs == [GLOBAL_GMAIL_ROUTING_PARAGRAPH],
