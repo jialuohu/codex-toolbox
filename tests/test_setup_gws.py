@@ -59,6 +59,13 @@ while [ "$#" -gt 0 ]; do
 done
 cp "$FAKE_DOWNLOAD" "$out"
 """)
+        self.write_executable("find", """#!/bin/sh
+if [ "${FAKE_FIND_FAIL:-}" = "1" ]; then
+  printf 'simulated find failure\\n' >&2
+  exit 1
+fi
+exec /usr/bin/find "$@"
+""")
 
     def write_executable(self, name: str, body: str) -> Path:
         path = self.bin_dir / name
@@ -88,7 +95,7 @@ cp "$FAKE_DOWNLOAD" "$out"
         self.runtime_gws.parent.mkdir(parents=True)
         self.runtime_gws.write_text("""#!/bin/sh
 printf '%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\\n' "$*" "$PWD" "${GOOGLE_WORKSPACE_CLI_TOKEN:-}" "${GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE:-}" "${GOOGLE_WORKSPACE_CLI_CLIENT_ID:-}" "${GOOGLE_WORKSPACE_CLI_CLIENT_SECRET:-}" "${GOOGLE_WORKSPACE_PROJECT_ID:-}" "${GOOGLE_WORKSPACE_CLI_LOG:-}" "${GOOGLE_WORKSPACE_CLI_LOG_FILE:-}" "${GOOGLE_WORKSPACE_CLI_CONFIG_DIR:-}" "${GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND:-}" "${GOOGLE_APPLICATION_CREDENTIALS:-}" >> "$FAKE_GWS_LOG"
-if [ "$1" = "--version" ]; then printf 'gws 0.22.5\\nThis software is not an officially supported Google product.\\n'; exit 0; fi
+if [ "$1" = "--version" ]; then printf '%b' "${FAKE_GWS_VERSION_OUTPUT:-gws 0.22.5\\nThis software is not an officially supported Google product.\\n}"; exit 0; fi
 if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
   mkdir -p "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR"
   printf '%s' "${FAKE_GWS_LOGIN_VALUE:-fresh}" > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/credentials.enc"
@@ -114,7 +121,7 @@ exit 3
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def status(self, address: str, **changes: object) -> None:
-        value: dict[str, object] = {"user": address, "token_valid": True, "scopes": [SCOPE], "storage": "file", "encrypted_credentials_exists": True, "encryption_valid": True}
+        value: dict[str, object] = {"user": address, "token_valid": True, "scopes": [SCOPE], "storage": "encrypted", "keyring_backend": "file", "encrypted_credentials_exists": True, "encryption_valid": True}
         value.update(changes)
         self.env["FAKE_GWS_STATUS"] = json.dumps(value)
 
@@ -173,6 +180,14 @@ exit 3
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("already installed", result.stdout)
         self.assertEqual((self.local_bin / "gws").resolve(), self.runtime_gws.resolve())
+
+    def test_runtime_version_requires_exact_first_output_line(self) -> None:
+        self.install_fake_runtime()
+        for output in ("gws 0x22x5\\n", "notice before version\\ngws 0.22.5\\n"):
+            self.env["FAKE_GWS_VERSION_OUTPUT"] = output
+            result = self.run("--check")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("gws runtime: missing (expected 0.22.5)", result.stdout)
 
     def test_register_client_validates_shape_refuses_replacement_and_protects_copy(self) -> None:
         bad = self.run("--register-client", str(self.write_client({"installed": {"client_id": "only"}})))
@@ -243,7 +258,7 @@ exit 3
             "GOOGLE_WORKSPACE_CLI_LOG": "ambient-log",
             "GOOGLE_WORKSPACE_CLI_LOG_FILE": "/ambient/logs",
         })
-        for changes in ({"user": "wrong@example.test"}, {"scopes": []}, {"token_valid": False}, {"encrypted_credentials_exists": False}, {"encryption_valid": False}, {"storage": "keyring"}, {"scopes": [SCOPE, "https://mail.google.com/"]}):
+        for changes in ({"user": "wrong@example.test"}, {"scopes": []}, {"token_valid": False}, {"encrypted_credentials_exists": False}, {"encryption_valid": False}, {"storage": "file"}, {"keyring_backend": "keyring"}, {"scopes": [SCOPE, "https://mail.google.com/"]}):
             self.status("account@example.test", **changes)
             self.assertEqual(self.run("--check-account", "account").returncode, 1)
         self.status("ACCOUNT@example.test")
@@ -295,6 +310,33 @@ exit 3
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("private permissions", result.stderr)
             os.chmod(path, 0o700 if path == profile else 0o600)
+
+    def test_check_account_rejects_descendant_symlinks(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        profile = self.accounts_root / "account"
+        nested = profile / "token-cache"
+        nested.mkdir()
+        os.chmod(nested, 0o700)
+        (nested / "linked-state").symlink_to(profile / "credentials.enc")
+        result = self.run("--check-account", "account")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("private permissions", result.stderr)
+
+    def test_check_account_fails_closed_when_profile_traversal_errors(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        inaccessible = self.accounts_root / "account" / "inaccessible-state"
+        inaccessible.mkdir()
+        os.chmod(inaccessible, 0o000)
+        result = self.run("--check-account", "account")
+        os.chmod(inaccessible, 0o700)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("private permissions", result.stderr)
 
     def test_reauth_restores_replaced_credential_state_after_login_failure_or_wrong_account(self) -> None:
         self.install_fake_runtime()

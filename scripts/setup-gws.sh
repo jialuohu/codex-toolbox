@@ -52,8 +52,11 @@ platform_ready() {
 }
 
 runtime_ready() {
+  local version_output first_line
   [ -x "$GWS_BIN" ] || return 1
-  "$GWS_BIN" --version 2>/dev/null | grep -Eq "^gws ${VERSION}[[:space:]]*$"
+  version_output="$("$GWS_BIN" --version 2>/dev/null)" || return 1
+  first_line="${version_output%%$'\n'*}"
+  [ "$first_line" = "gws $VERSION" ]
 }
 
 canonical_dir() {
@@ -76,14 +79,32 @@ has_private_mode() {
 }
 
 profile_state_is_private() {
-  local profile="$1" entry
-  find "$profile" -type l -print -quit | grep -q . && return 1
-  while IFS= read -r -d '' entry; do
-    has_private_mode "$entry" 700 || return 1
-  done < <(find "$profile" -type d -print0)
-  while IFS= read -r -d '' entry; do
-    has_private_mode "$entry" 600 || return 1
-  done < <(find "$profile" -type f -print0)
+  PROFILE_DIR="$1" python3 - <<'PY'
+import os
+import stat
+import sys
+
+def fail_if_unsafe(path, expected_mode, expected_kind):
+    metadata = os.lstat(path)
+    if stat.S_ISLNK(metadata.st_mode) or not expected_kind(metadata.st_mode):
+        raise ValueError("unsafe profile state")
+    if stat.S_IMODE(metadata.st_mode) != expected_mode:
+        raise ValueError("unsafe profile permissions")
+
+def rethrow(error):
+    raise error
+
+try:
+    root = os.environ["PROFILE_DIR"]
+    fail_if_unsafe(root, 0o700, stat.S_ISDIR)
+    for current, directories, files in os.walk(root, topdown=True, followlinks=False, onerror=rethrow):
+        for name in directories:
+            fail_if_unsafe(os.path.join(current, name), 0o700, stat.S_ISDIR)
+        for name in files:
+            fail_if_unsafe(os.path.join(current, name), 0o600, stat.S_ISREG)
+except (OSError, ValueError):
+    sys.exit(1)
+PY
 }
 
 validate_client_json() {
@@ -181,8 +202,8 @@ try:
         isinstance(status.get("user"), str)
         and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
         and status.get("token_valid") is True
-        and isinstance(status.get("storage"), str)
-        and status["storage"].casefold() == "file"
+        and status.get("storage") == "encrypted"
+        and status.get("keyring_backend") == "file"
         and status.get("encrypted_credentials_exists") is True
         and status.get("encryption_valid") is True
         and isinstance(scopes, list)
