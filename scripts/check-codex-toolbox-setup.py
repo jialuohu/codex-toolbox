@@ -115,6 +115,9 @@ PRODUCTIVITY_MCP = ROOT / "plugins" / "productivity-tools" / ".mcp.json"
 DOCMOST_DIR = ROOT / "plugins" / "docmost-tools"
 DOCMOST_PLUGIN = DOCMOST_DIR / ".codex-plugin" / "plugin.json"
 DOCMOST_MCP = DOCMOST_DIR / ".mcp.json"
+DOCMOST_APPROVED_LAUNCHER_SHA256 = (
+    "1e3f754036aaa5d33b1aa21e31f6aeaba068bcbd2b8432335621766bb7f50c8c"
+)
 DOCMOST_SETUP = ROOT / "scripts" / "setup-docmost-tools.sh"
 DOCMOST_SMOKE = DOCMOST_DIR / "server" / "src" / "docmost_tools" / "smoke_cli.py"
 DOCMOST_AUTH_WRAPPER = DOCMOST_DIR / "server" / "scripts" / "docmost-auth"
@@ -1907,11 +1910,12 @@ def validate_docmost_tools_contract(
         ),
         "toolbox setup must resolve Docmost from the installed MCP cwd",
     )
-    approved_launcher_sha256 = hashlib.sha256(launcher.encode()).hexdigest()
+    launcher_sha256 = hashlib.sha256(launcher.encode()).hexdigest()
     require(
         len(installed_distribution_blocks) == 1
+        and launcher_sha256 == DOCMOST_APPROVED_LAUNCHER_SHA256
         and (
-            f'approved_launcher_sha256 = "{approved_launcher_sha256}"'
+            f'approved_launcher_sha256 = "{DOCMOST_APPROVED_LAUNCHER_SHA256}"'
             in installed_distribution_blocks[0]
         )
         and all(

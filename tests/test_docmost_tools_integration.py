@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -528,7 +529,26 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
                 )
             )
 
-        for mutate in (alter_launcher, alter_approved_digest):
+        def alter_launcher_and_setup_digest(root: Path) -> None:
+            mcp_path = root / "plugins/docmost-tools/.mcp.json"
+            mcp = json.loads(mcp_path.read_text())
+            mcp["mcpServers"]["docmost"]["args"][1] += "; true"
+            altered_launcher = mcp["mcpServers"]["docmost"]["args"][1]
+            mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+            setup_path = root / "scripts/setup-codex-toolbox.sh"
+            setup = setup_path.read_text()
+            old_digest = (
+                "1e3f754036aaa5d33b1aa21e31f6aeaba068bcbd2b8432335621766bb7f50c8c"
+            )
+            new_digest = hashlib.sha256(altered_launcher.encode()).hexdigest()
+            self.assertIn(old_digest, setup)
+            setup_path.write_text(setup.replace(old_digest, new_digest, 1))
+
+        for mutate in (
+            alter_launcher,
+            alter_approved_digest,
+            alter_launcher_and_setup_digest,
+        ):
             with self.subTest(mutate=mutate.__name__):
                 self.assert_checker_rejects(
                     mutate,
