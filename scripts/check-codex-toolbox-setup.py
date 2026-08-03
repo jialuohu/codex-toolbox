@@ -1902,10 +1902,31 @@ def validate_docmost_tools_contract(
                 '("plugins", "cache", marketplace_name, "docmost-tools")',
                 'plugin_root / ".mcp.json"',
                 'server / "src" / "docmost_tools" / "server.py"',
-                'configured.get("args") != transport.get("args")',
+                "transport_args != configured_args",
             )
         ),
         "toolbox setup must resolve Docmost from the installed MCP cwd",
+    )
+    approved_launcher_sha256 = hashlib.sha256(launcher.encode()).hexdigest()
+    require(
+        len(installed_distribution_blocks) == 1
+        and (
+            f'approved_launcher_sha256 = "{approved_launcher_sha256}"'
+            in installed_distribution_blocks[0]
+        )
+        and all(
+            expected in installed_distribution_blocks[0]
+            for expected in (
+                "not isinstance(configured_args, list)",
+                "len(configured_args) != 2",
+                'configured_args[0] != "-lc"',
+                "not isinstance(configured_args[1], str)",
+                "hashlib.sha256(configured_args[1].encode()).hexdigest()",
+                "not isinstance(transport_args, list)",
+                "transport_args != configured_args",
+            )
+        ),
+        "toolbox setup must pin the exact approved Docmost launcher",
     )
     require(
         script.index('DOCMOST_INSTALLED_SERVER_DIR="$(installed_docmost_server_dir)"')

@@ -1021,6 +1021,75 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Installed Docmost MCP policy is unexpected", result.stderr)
 
+    def test_global_setup_rejects_scalar_installed_launcher_arguments(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["docmost"]["args"] = "malformed-but-matching"
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP launcher is unexpected", result.stderr)
+
+    def test_global_setup_rejects_altered_installed_launcher_script(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["docmost"]["args"][1] += "; true"
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP launcher is unexpected", result.stderr)
+
+    def test_global_setup_rejects_extra_installed_launcher_arguments(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["docmost"]["args"].append("unexpected-extra-argument")
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP launcher is unexpected", result.stderr)
+
     def test_global_setup_stops_on_non_auth_smoke_failure(self) -> None:
         self.install_fake_uv()
         self.install_fake_codex()

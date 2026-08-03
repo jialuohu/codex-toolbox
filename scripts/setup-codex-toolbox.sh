@@ -344,12 +344,14 @@ installed_docmost_server_dir() {
   DOCMOST_MCP_JSON="$mcp_json" \
     DOCMOST_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}" \
     python3 - "$MARKETPLACE_NAME" <<'PY'
+import hashlib
 import json
 import os
 import sys
 from pathlib import Path
 
 marketplace_name = sys.argv[1]
+approved_launcher_sha256 = "1e3f754036aaa5d33b1aa21e31f6aeaba068bcbd2b8432335621766bb7f50c8c"
 
 
 def fail(message: str) -> None:
@@ -437,11 +439,24 @@ if (
     fail("Installed Docmost plugin layout is invalid")
 if (
     configured.get("command") != transport.get("command")
-    or configured.get("args") != transport.get("args")
     or configured.get("cwd") != "."
     or configured.get("env_vars") != transport.get("env_vars")
 ):
     fail("Installed Docmost MCP transport is unexpected")
+configured_args = configured.get("args")
+transport_args = transport.get("args")
+if (
+    not isinstance(configured_args, list)
+    or len(configured_args) != 2
+    or configured_args[0] != "-lc"
+    or not isinstance(configured_args[1], str)
+    or not configured_args[1]
+    or hashlib.sha256(configured_args[1].encode()).hexdigest()
+    != approved_launcher_sha256
+    or not isinstance(transport_args, list)
+    or transport_args != configured_args
+):
+    fail("Installed Docmost MCP launcher is unexpected")
 expected_writes = {"create_page", "update_page_title", "create_comment"}
 write_tools = configured.get("tools")
 if (

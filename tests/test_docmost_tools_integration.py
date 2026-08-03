@@ -503,6 +503,38 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
             "toolbox setup must resolve Docmost from the installed MCP cwd",
         )
 
+    def test_setup_checker_rejects_installed_launcher_contract_regressions(
+        self,
+    ) -> None:
+        def alter_launcher(root: Path) -> None:
+            path = root / "plugins/docmost-tools/.mcp.json"
+            mcp = json.loads(path.read_text())
+            mcp["mcpServers"]["docmost"]["args"][1] += "; true"
+            path.write_text(json.dumps(mcp, indent=2) + "\n")
+
+        def alter_approved_digest(root: Path) -> None:
+            path = root / "scripts/setup-codex-toolbox.sh"
+            setup = path.read_text()
+            old = (
+                'approved_launcher_sha256 = '
+                '"1e3f754036aaa5d33b1aa21e31f6aeaba068bcbd2b8432335621766bb7f50c8c"'
+            )
+            self.assertIn(old, setup)
+            path.write_text(
+                setup.replace(
+                    old,
+                    f'approved_launcher_sha256 = "{"0" * 64}"',
+                    1,
+                )
+            )
+
+        for mutate in (alter_launcher, alter_approved_digest):
+            with self.subTest(mutate=mutate.__name__):
+                self.assert_checker_rejects(
+                    mutate,
+                    "toolbox setup must pin the exact approved Docmost launcher",
+                )
+
     def test_setup_checker_rejects_docmost_distribution_documentation_regressions(
         self,
     ) -> None:
