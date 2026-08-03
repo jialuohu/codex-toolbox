@@ -1,0 +1,28 @@
+{
+  "name": "docmost-tools",
+  "version": "0.1.0",
+  "description": "Browser-authenticated local Docmost MCP integration foundation.",
+  "author": {
+    "name": "Codex Toolbox Contributors"
+  },
+  "interface": {
+    "displayName": "Docmost Tools",
+    "shortDescription": "Use a local Docmost workspace through MCP.",
+    "longDescription": "Foundation for a browser-authenticated local Docmost MCP integration.",
+    "developerName": "Codex Toolbox Contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use Docmost Tools to read, write, and interact with my local Docmost workspace."
+    ]
+  },
+  "keywords": [
+    "docmost",
+    "mcp",
+    "knowledge-base"
+  ]
+}
