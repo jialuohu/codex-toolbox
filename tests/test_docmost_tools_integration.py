@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,200 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         self.assertIn("if SECRET_MODE=", launcher)
         self.assertIn("elif SECRET_MODE=", launcher)
         self.assertNotIn("|| stat -c", launcher)
+
+    def test_exact_installed_launcher_initializes_and_lists_all_tools(self) -> None:
+        uv = shutil.which("uv")
+        self.assertIsNotNone(uv, "uv is required for the installed launcher integration test")
+        assert uv is not None
+        expected_tools = {
+            "get_current_user",
+            "list_spaces",
+            "get_space",
+            "search_pages",
+            "get_page",
+            "list_pages",
+            "list_child_pages",
+            "get_comments",
+            "create_page",
+            "update_page_title",
+            "create_comment",
+        }
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            codex_home = temporary_root / "codex-home"
+            plugin_version = json.loads(
+                (
+                    ROOT
+                    / "plugins"
+                    / "docmost-tools"
+                    / ".codex-plugin"
+                    / "plugin.json"
+                ).read_text()
+            )["version"]
+            installed_plugin = (
+                codex_home
+                / "plugins"
+                / "cache"
+                / "jialuo-codex-toolbox"
+                / "docmost-tools"
+                / plugin_version
+            )
+            shutil.copytree(
+                ROOT / "plugins" / "docmost-tools",
+                installed_plugin,
+                ignore=shutil.ignore_patterns(
+                    ".venv", ".pytest_cache", ".ruff_cache", "__pycache__"
+                ),
+            )
+            server_dir = installed_plugin / "server"
+            secrets_dir = temporary_root / "secrets"
+            secrets_dir.mkdir(mode=0o700)
+            secret_file = secrets_dir / "docmost.env"
+            # Deliberately omit DOCMOST_BASE_URL so startup cannot open a browser
+            # or contact Docmost; the MCP surface must still initialize exactly.
+            secret_file.write_text("DOCMOST_SESSION_COOKIE=authToken\n")
+            secret_file.chmod(0o600)
+            runtime_dir = codex_home / "runtime" / "docmost-tools"
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "CODEX_HOME": str(codex_home),
+                    "CODEX_SECRETS_DIR": str(secrets_dir),
+                    "UV_PROJECT_ENVIRONMENT": str(runtime_dir),
+                }
+            )
+
+            lock_check = subprocess.run(
+                [uv, "lock", "--check", "--directory", str(server_dir)],
+                cwd=installed_plugin,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=60,
+            )
+            self.assertEqual(
+                lock_check.returncode,
+                0,
+                lock_check.stdout + lock_check.stderr,
+            )
+            sync = subprocess.run(
+                [
+                    uv,
+                    "sync",
+                    "--frozen",
+                    "--no-dev",
+                    "--no-editable",
+                    "--reinstall-package",
+                    "docmost-tools",
+                    "--directory",
+                    str(server_dir),
+                ],
+                cwd=installed_plugin,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=120,
+            )
+            self.assertEqual(sync.returncode, 0, sync.stdout + sync.stderr)
+
+            runtime_lock_helper = runtime_dir / "libexec" / "runtime_lock.py"
+            runtime_lock_helper.parent.mkdir()
+            shutil.copy2(
+                server_dir / "src" / "docmost_tools" / "runtime_lock.py",
+                runtime_lock_helper,
+            )
+            fingerprint = subprocess.run(
+                [
+                    str(runtime_dir / "bin" / "docmost-runtime-stamp"),
+                    "fingerprint",
+                    str(server_dir),
+                ],
+                cwd=installed_plugin,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            self.assertEqual(
+                fingerprint.returncode,
+                0,
+                fingerprint.stdout + fingerprint.stderr,
+            )
+            stamp = subprocess.run(
+                [
+                    str(runtime_dir / "bin" / "docmost-runtime-stamp"),
+                    "write",
+                    str(server_dir),
+                    str(runtime_dir / ".docmost-tools-source.sha256"),
+                    "--expected",
+                    fingerprint.stdout.strip(),
+                ],
+                cwd=installed_plugin,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=30,
+            )
+            self.assertEqual(stamp.returncode, 0, stamp.stdout + stamp.stderr)
+
+            installed_config = json.loads((installed_plugin / ".mcp.json").read_text())
+            launcher = installed_config["mcpServers"]["docmost"]
+            messages = (
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {"name": "installed-layout-test", "version": "1"},
+                        },
+                    }
+                )
+                + "\n"
+                + json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "notifications/initialized",
+                        "params": {},
+                    }
+                )
+                + "\n"
+                + json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "tools/list",
+                        "params": {},
+                    }
+                )
+                + "\n"
+            )
+            protocol = subprocess.run(
+                [launcher["command"], *launcher["args"]],
+                cwd=installed_plugin,
+                env=environment,
+                input=messages,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=60,
+            )
+
+        self.assertEqual(protocol.returncode, 0, protocol.stdout + protocol.stderr)
+        responses = [json.loads(line) for line in protocol.stdout.splitlines() if line.strip()]
+        initialize = next(response for response in responses if response.get("id") == 1)
+        tools_list = next(response for response in responses if response.get("id") == 2)
+        self.assertEqual(initialize["result"]["serverInfo"]["name"], "docmost")
+        listed_tools = {tool["name"] for tool in tools_list["result"]["tools"]}
+        self.assertEqual(len(tools_list["result"]["tools"]), 11)
+        self.assertEqual(listed_tools, expected_tools)
 
     def test_setup_checker_rejects_docmost_write_approval_regressions(self) -> None:
         def mutate(root: Path) -> None:
@@ -219,6 +414,14 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
                 "Docmost setup must force reinstall the non-editable package",
             ),
             (
+                lambda root: replace_helper(
+                    root,
+                    'run_uv lock --check --directory "$SERVER_DIR"',
+                    "true",
+                ),
+                "Docmost setup must check lock freshness before synchronization",
+            ),
+            (
                 lambda root: replace_runtime_lock(
                     root,
                     "os.set_inheritable(descriptor, True)",
@@ -273,6 +476,58 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
                     "return True",
                 ),
                 "Docmost runtime lock must validate the inherited shared or exclusive mode",
+            ),
+        )
+        for mutate, expected in cases:
+            with self.subTest(expected=expected):
+                self.assert_checker_rejects(mutate, expected)
+
+    def test_setup_checker_rejects_marketplace_source_as_installed_distribution(
+        self,
+    ) -> None:
+        def mutate(root: Path) -> None:
+            path = root / "scripts/setup-codex-toolbox.sh"
+            setup = path.read_text()
+            old = '"$CODEX_BIN" mcp get docmost --json'
+            self.assertIn(old, setup)
+            path.write_text(
+                setup.replace(
+                    old,
+                    '"$CODEX_BIN" plugin list --marketplace "$MARKETPLACE_NAME" --json',
+                    1,
+                )
+            )
+
+        self.assert_checker_rejects(
+            mutate,
+            "toolbox setup must resolve Docmost from the installed MCP cwd",
+        )
+
+    def test_setup_checker_rejects_docmost_distribution_documentation_regressions(
+        self,
+    ) -> None:
+        def replace_readme(root: Path, old: str, new: str) -> None:
+            path = root / "README.md"
+            readme = path.read_text()
+            self.assertIn(old, readme)
+            path.write_text(readme.replace(old, new, 1))
+
+        cases = (
+            (
+                lambda root: replace_readme(
+                    root,
+                    "plus `uv` and `python3` on `PATH`",
+                    "plus package tooling",
+                ),
+                "README must document Docmost uv and Python prerequisites",
+            ),
+            (
+                lambda root: replace_readme(
+                    root,
+                    "Marketplace `source.path` is not treated as the",
+                    "The marketplace source is treated as the",
+                ),
+                "README must distinguish installed Docmost cwd from marketplace source",
             ),
         )
         for mutate, expected in cases:

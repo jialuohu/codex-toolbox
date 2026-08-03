@@ -4,6 +4,10 @@ This package provides guarded browser-session HTTP access and stable MCP result 
 v0.95 page URL compatibility path derives display slugs from title plus the authoritative `slugId`;
 search uses opaque versioned cursors.
 
+The toolbox setup requires `uv` and `python3` on `PATH`; this locked project requires Python 3.12.
+After plugin refresh, setup builds this package from the absolute installed MCP cwd reported by
+`codex mcp get docmost --json`, not from the marketplace source checkout.
+
 The eight reads tolerate additive response fields. The three prompt-gated writes require an explicit
 `DOCMOST_WRITE_PROFILE=v0_95`: page creation uses Markdown import, optional nesting is a separate
 non-retried move, title changes use a disclosed non-atomic timestamp precondition, and comments use

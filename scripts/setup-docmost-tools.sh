@@ -114,6 +114,12 @@ run_uv() {
   "$uv" "$@"
 }
 
+require_fresh_dependency_lock() {
+  if ! run_uv lock --check --directory "$SERVER_DIR" >/dev/null 2>&1; then
+    fail "Docmost dependency lock is stale; refresh and review server/uv.lock before setup"
+  fi
+}
+
 ensure_runtime_root() {
   [ ! -L "$RUNTIME_PARENT" ] || fail "Docmost runtime parent must not be a symlink"
   if [ -e "$RUNTIME_PARENT" ] && [ ! -d "$RUNTIME_PARENT" ]; then
@@ -297,6 +303,7 @@ check() {
   require_private_browser_profile
   load_docmost_env
   [ -f "$SERVER_DIR/uv.lock" ] || fail "Docmost lock file is missing"
+  require_fresh_dependency_lock
   if ! run_uv sync --frozen --check --no-dev --no-editable \
     --directory "$SERVER_DIR" >/dev/null 2>&1; then
     fail "Docmost runtime is stale or incomplete; rerun the full codex-toolbox setup from its checkout"
@@ -325,6 +332,7 @@ install_locked() {
   [ -f "$SERVER_DIR/uv.lock" ] || fail "Docmost lock file is missing"
   [ -f "$SERVER_DIR/src/docmost_tools/runtime_stamp.py" ] || \
     fail "Docmost runtime fingerprint tool is missing"
+  require_fresh_dependency_lock
   local expected_fingerprint
   expected_fingerprint="$(
     python3 "$SERVER_DIR/src/docmost_tools/runtime_stamp.py" fingerprint "$SERVER_DIR"

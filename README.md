@@ -74,6 +74,10 @@ that file with mode `600`. Its isolated browser profile is stored under the
 same secrets directory with mode `700`. Never commit the environment file,
 browser profile, session cookie, or workspace content.
 
+Setup requires a working Codex CLI plus `uv` and `python3` on `PATH`; the locked
+server project requires Python 3.12, which `uv` must be able to resolve. These
+are runtime prerequisites, not vendored portability fallbacks.
+
 The locked Python environment is installed once at
 `${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools`. The installed MCP launcher
 uses that verified environment with synchronization disabled, so starting the
@@ -106,10 +110,14 @@ write profile is configured.
 
 The regular toolbox setup installs the locked Python runtime and Chromium, then
 runs a headless `current-user` and `list-spaces` smoke check before it refreshes
-the marketplace or plugins. It rebuilds and rechecks the runtime from the exact
-active plugin source after that refresh. When the profile is not authenticated,
-setup opens the interactive browser login and reruns the smoke check; any
-configuration, SSO, or smoke failure stops the relevant setup phase.
+the marketplace or plugins. After refresh, setup reads
+`codex mcp get docmost --json`, validates the absolute installed MCP cwd beneath
+`${CODEX_HOME:-$HOME/.codex}/plugins/cache/jialuo-codex-toolbox/docmost-tools/<version>`,
+checks that copy's `.mcp.json` and server package, and rebuilds the runtime from
+that exact installed server. Marketplace `source.path` is not treated as the
+installed distribution. When the profile is not authenticated, setup opens the
+interactive browser login and reruns the smoke check; any configuration, SSO,
+or smoke failure stops the relevant setup phase.
 
 Use the helper directly when troubleshooting the isolated local auth profile:
 

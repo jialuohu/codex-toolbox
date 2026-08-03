@@ -1762,6 +1762,20 @@ def validate_docmost_tools_contract(
         "--reinstall-package docmost-tools" in helper,
         "Docmost setup must force reinstall the non-editable package",
     )
+    lock_check_blocks = shell_function_blocks(helper, "require_fresh_dependency_lock")
+    check_blocks = shell_function_blocks(helper, "check")
+    install_locked_blocks = shell_function_blocks(helper, "install_locked")
+    require(
+        len(lock_check_blocks) == 1
+        and 'run_uv lock --check --directory "$SERVER_DIR"' in lock_check_blocks[0]
+        and len(check_blocks) == 1
+        and check_blocks[0].index("require_fresh_dependency_lock")
+        < check_blocks[0].index("run_uv sync --frozen --check")
+        and len(install_locked_blocks) == 1
+        and install_locked_blocks[0].index("require_fresh_dependency_lock")
+        < install_locked_blocks[0].index("run_uv sync --frozen --no-dev"),
+        "Docmost setup must check lock freshness before synchronization",
+    )
     require(
         "run_locked shared --check-locked" in helper
         and "run_locked shared --status-locked" in helper
@@ -1863,17 +1877,40 @@ def validate_docmost_tools_contract(
         and 'docmost_setup_command "$server_dir" --status' in script
         and 'docmost_setup_command "$server_dir" --login' in script
         and 'ensure_docmost_ready ""' in script
-        and 'ensure_docmost_ready "$DOCMOST_ACTIVE_SERVER_DIR"' in script,
+        and 'ensure_docmost_ready "$DOCMOST_INSTALLED_SERVER_DIR"' in script,
         "toolbox setup must run the Docmost install/status/login recovery sequence",
     )
     require(
         script.index('ensure_docmost_ready ""') < script.index("\nensure_toolbox_marketplace\n"),
         "Docmost preflight must complete before marketplace or plugin refresh",
     )
+    installed_distribution_blocks = shell_function_blocks(
+        script, "installed_docmost_server_dir"
+    )
     require(
-        script.index('DOCMOST_ACTIVE_SERVER_DIR="$(active_docmost_server_dir)"')
+        len(installed_distribution_blocks) == 1
+        and all(
+            expected in installed_distribution_blocks[0]
+            for expected in (
+                '"$CODEX_BIN" mcp get docmost --json',
+                'transport.get("type") != "stdio"',
+                'transport.get("command") != "/bin/zsh"',
+                'raw_cwd = transport.get("cwd")',
+                "not Path(raw_cwd).is_absolute()",
+                'Path(os.environ["DOCMOST_CODEX_HOME"])',
+                "plugin_root.relative_to(codex_home)",
+                '("plugins", "cache", marketplace_name, "docmost-tools")',
+                'plugin_root / ".mcp.json"',
+                'server / "src" / "docmost_tools" / "server.py"',
+                'configured.get("args") != transport.get("args")',
+            )
+        ),
+        "toolbox setup must resolve Docmost from the installed MCP cwd",
+    )
+    require(
+        script.index('DOCMOST_INSTALLED_SERVER_DIR="$(installed_docmost_server_dir)"')
         > script.index('for plugin in "${DEFAULT_PLUGINS[@]}"')
-        and script.index('ensure_docmost_ready "$DOCMOST_ACTIVE_SERVER_DIR"')
+        and script.index('ensure_docmost_ready "$DOCMOST_INSTALLED_SERVER_DIR"')
         < script.index("\nensure_ui_ux_marketplace\n"),
         "toolbox setup must rebuild Docmost from the active plugin after refresh",
     )
@@ -1884,6 +1921,17 @@ def validate_docmost_tools_contract(
         "marketplace upgrade", "setup-docmost-tools.sh --install",
     ):
         require(expected in readme_text, f"README must document Docmost {expected}")
+    require(
+        "plus `uv` and `python3` on `PATH`" in readme_text
+        and "requires Python 3.12" in readme_text,
+        "README must document Docmost uv and Python prerequisites",
+    )
+    require(
+        "`codex mcp get docmost" in readme_text
+        and "Marketplace `source.path` is not treated as the" in readme_text
+        and "installed distribution" in readme_text,
+        "README must distinguish installed Docmost cwd from marketplace source",
+    )
     require(
         auth_login_command in readme_text,
         "README must preserve the canonical Docmost auth recovery command",

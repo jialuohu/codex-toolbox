@@ -335,33 +335,129 @@ ensure_docmost_ready() {
   return "$docmost_status"
 }
 
-active_docmost_server_dir() {
-  local plugin_json
-  plugin_json="$("$CODEX_BIN" plugin list --marketplace "$MARKETPLACE_NAME" --json)"
-  PLUGIN_JSON="$plugin_json" python3 - "$MARKETPLACE_NAME" <<'PY'
+installed_docmost_server_dir() {
+  local mcp_json
+  if ! mcp_json="$("$CODEX_BIN" mcp get docmost --json)"; then
+    echo "Installed Docmost MCP entry is unavailable" >&2
+    return 1
+  fi
+  DOCMOST_MCP_JSON="$mcp_json" \
+    DOCMOST_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}" \
+    python3 - "$MARKETPLACE_NAME" <<'PY'
 import json
 import os
 import sys
 from pathlib import Path
 
 marketplace_name = sys.argv[1]
-data = json.loads(os.environ["PLUGIN_JSON"])
-matches = [
-    plugin
-    for plugin in data.get("installed", [])
-    if plugin.get("name") == "docmost-tools"
-    and plugin.get("marketplaceName") == marketplace_name
-    and plugin.get("installed") is True
-]
-if len(matches) != 1:
-    raise SystemExit("Installed Docmost plugin source is unavailable")
-source = matches[0].get("source")
-path = source.get("path") if isinstance(source, dict) else None
-if not isinstance(path, str) or not path or "\n" in path:
-    raise SystemExit("Installed Docmost plugin source is unavailable")
-server = Path(path) / "server"
-if not server.is_dir():
-    raise SystemExit("Installed Docmost plugin source is unavailable")
+
+
+def fail(message: str) -> None:
+    raise SystemExit(message)
+
+
+try:
+    data = json.loads(os.environ["DOCMOST_MCP_JSON"])
+except (KeyError, json.JSONDecodeError):
+    fail("Installed Docmost MCP entry is unavailable")
+
+if not isinstance(data, dict) or data.get("name") != "docmost" or data.get("enabled") is not True:
+    fail("Installed Docmost MCP entry is unavailable")
+transport = data.get("transport")
+if not isinstance(transport, dict):
+    fail("Installed Docmost MCP transport is unexpected")
+if transport.get("type") != "stdio" or transport.get("command") != "/bin/zsh":
+    fail("Installed Docmost MCP transport is unexpected")
+
+raw_cwd = transport.get("cwd")
+if (
+    not isinstance(raw_cwd, str)
+    or not raw_cwd
+    or "\n" in raw_cwd
+    or "\x00" in raw_cwd
+    or not Path(raw_cwd).is_absolute()
+):
+    fail("Installed Docmost MCP cwd is invalid")
+
+try:
+    codex_home = Path(os.environ["DOCMOST_CODEX_HOME"]).expanduser().resolve(strict=True)
+    plugin_root = Path(raw_cwd).resolve(strict=True)
+except (KeyError, OSError):
+    fail("Installed Docmost plugin layout is invalid")
+try:
+    relative = plugin_root.relative_to(codex_home)
+except ValueError:
+    fail("Installed Docmost MCP cwd escapes CODEX_HOME")
+
+parts = relative.parts
+if (
+    len(parts) != 5
+    or parts[:4] != ("plugins", "cache", marketplace_name, "docmost-tools")
+    or not parts[4]
+):
+    fail("Installed Docmost plugin layout is invalid")
+
+version = parts[4]
+server = plugin_root / "server"
+required_files = (
+    plugin_root / ".mcp.json",
+    plugin_root / ".codex-plugin" / "plugin.json",
+    server / "pyproject.toml",
+    server / "uv.lock",
+    server / "src" / "docmost_tools" / "server.py",
+    server / "src" / "docmost_tools" / "runtime_lock.py",
+    server / "src" / "docmost_tools" / "runtime_stamp.py",
+)
+required_directories = (
+    plugin_root,
+    plugin_root / ".codex-plugin",
+    server,
+    server / "src",
+    server / "src" / "docmost_tools",
+)
+if any(not path.is_dir() or path.is_symlink() for path in required_directories):
+    fail("Installed Docmost plugin layout is invalid")
+if any(not path.is_file() or path.is_symlink() for path in required_files):
+    fail("Installed Docmost plugin layout is invalid")
+
+try:
+    plugin = json.loads((plugin_root / ".codex-plugin" / "plugin.json").read_text())
+    mcp = json.loads((plugin_root / ".mcp.json").read_text())
+except (OSError, json.JSONDecodeError):
+    fail("Installed Docmost plugin layout is invalid")
+servers = mcp.get("mcpServers") if isinstance(mcp, dict) else None
+configured = servers.get("docmost") if isinstance(servers, dict) else None
+if (
+    not isinstance(plugin, dict)
+    or plugin.get("name") != "docmost-tools"
+    or plugin.get("version") != version
+    or plugin.get("mcpServers") != "./.mcp.json"
+    or not isinstance(configured, dict)
+):
+    fail("Installed Docmost plugin layout is invalid")
+if (
+    configured.get("command") != transport.get("command")
+    or configured.get("args") != transport.get("args")
+    or configured.get("cwd") != "."
+    or configured.get("env_vars") != transport.get("env_vars")
+):
+    fail("Installed Docmost MCP transport is unexpected")
+expected_writes = {"create_page", "update_page_title", "create_comment"}
+write_tools = configured.get("tools")
+if (
+    configured.get("default_tools_approval_mode") != "auto"
+    or configured.get("env_vars")
+    != ["CODEX_SECRETS_DIR", "CODEX_HOME", "CODEX_LOCAL_BIN_DIR"]
+    or not isinstance(write_tools, dict)
+    or set(write_tools) != expected_writes
+    or any(
+        not isinstance(write_tools[name], dict)
+        or write_tools[name].get("approval_mode") != "prompt"
+        for name in expected_writes
+    )
+):
+    fail("Installed Docmost MCP policy is unexpected")
+
 print(server.resolve(strict=True))
 PY
 }
@@ -505,9 +601,9 @@ for plugin in "${DEFAULT_PLUGINS[@]}"; do
   install_or_refresh_plugin "$plugin" "$MARKETPLACE_NAME"
 done
 
-DOCMOST_ACTIVE_SERVER_DIR="$(active_docmost_server_dir)"
-readonly DOCMOST_ACTIVE_SERVER_DIR
-ensure_docmost_ready "$DOCMOST_ACTIVE_SERVER_DIR"
+DOCMOST_INSTALLED_SERVER_DIR="$(installed_docmost_server_dir)"
+readonly DOCMOST_INSTALLED_SERVER_DIR
+ensure_docmost_ready "$DOCMOST_INSTALLED_SERVER_DIR"
 
 ensure_ui_ux_marketplace
 for plugin in "${THIRD_PARTY_DEFAULT_PLUGINS[@]}"; do
