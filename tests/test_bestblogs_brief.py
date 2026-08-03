@@ -81,6 +81,27 @@ class FakeClient:
         return self.batches.pop(0)
 
 
+class PublicOnlyClient:
+    """A public endpoint double that fails if a personal route is touched."""
+
+    def __init__(self, public, batches):
+        self.public = public
+        self.batches = list(batches)
+        self.public_calls = []
+        self.batch_calls = []
+
+    def me(self):
+        raise AssertionError("public reads must not call /me")
+
+    def public_brief(self, date, language):
+        self.public_calls.append((date, language))
+        return self.public
+
+    def batch_meta(self, resource_ids):
+        self.batch_calls.append(list(resource_ids))
+        return self.batches.pop(0)
+
+
 class FakeResponse:
     def __init__(self, payload, url, status=200):
         self.payload = payload
@@ -129,6 +150,9 @@ class BestBlogsBriefTests(unittest.TestCase):
 
     def pro_client(self, today, batches):
         return FakeClient({"userTier": "PRO"}, today, batches)
+
+    def public_client(self, public, batches):
+        return PublicOnlyClient(public, batches)
 
     def assert_unsafe_item_url_and_omitted_cover(self, unsafe):
         item_client = self.pro_client(self.stable_brief(items=[item("one")]), [[
@@ -298,6 +322,92 @@ class BestBlogsBriefTests(unittest.TestCase):
         client._opener = FakeOpener([FakeResponse(b'{"success":true}', url)])
         with self.assertRaisesRegex(brief.BriefError, "envelope"):
             client.brief_history()
+
+    def test_public_client_uses_exact_fixed_date_and_language_endpoint(self):
+        client = brief.BestBlogsClient(VALID_API_KEY)
+        url = brief.API_ORIGIN + "/brief?date=2026-07-24&language=zh"
+        valid = json.dumps({
+            "success": True, "code": None, "message": None, "requestId": "request", "data": {},
+        }).encode()
+        client._opener = FakeOpener([FakeResponse(valid, url)])
+
+        self.assertEqual(client.public_brief("2026-07-24", "zh"), {})
+        request, _ = client._opener.requests[0]
+        self.assertEqual(request.full_url, url)
+        self.assertEqual(request.get_method(), "GET")
+        self.assertIsNone(request.data)
+        self.assertEqual(request.get_header("X-api-key"), VALID_API_KEY)
+
+    def test_public_normalizes_every_item_in_order_without_personal_routes(self):
+        newsletter = item("newsletter", contentType="NEWSLETTER")
+        for field in ("deepRead", "featured", "personalized"):
+            del newsletter[field]
+        source = self.stable_brief(items=[newsletter, item(
+            "article", contentType="ARTICLE", deepRead=True, featured=False, personalized=False,
+        )])
+        client = self.public_client(source, [[
+            metadata("article", "ARTICLE"),
+            metadata("newsletter", "NEWSLETTER"),
+        ]])
+
+        result = brief.read_public(client, "2026-07-24", "zh", clock=lambda: "2026-07-24T09:10:11Z")
+
+        self.assertEqual(client.public_calls, [("2026-07-24", "zh")])
+        self.assertEqual(client.batch_calls, [["newsletter", "article"]])
+        self.assertEqual([entry["resourceId"] for entry in result["items"]], ["newsletter", "article"])
+        self.assertEqual([entry["contentType"] for entry in result["items"]], ["NEWSLETTER", "ARTICLE"])
+        self.assertEqual(
+            [(entry["deepRead"], entry["featured"], entry["personalized"]) for entry in result["items"]],
+            [(False, True, False), (True, False, False)],
+        )
+
+    def test_public_rejects_invalid_request_and_incomplete_or_mismatched_editions_before_metadata(self):
+        for name, requested_date, language, source, expected_error in (
+            ("malformed date", "2026-7-24", "zh", self.stable_brief(), "public date"),
+            ("unsupported language", "2026-07-24", "fr", self.stable_brief(), "public language"),
+            ("wrong date", "2026-07-24", "zh", self.stable_brief(brief_date="2026-07-23"), "date"),
+            ("unstable", "2026-07-24", "zh", self.stable_brief(status="GENERATING"), "status"),
+            ("empty", "2026-07-24", "zh", self.stable_brief(items=[]), "items are empty"),
+        ):
+            with self.subTest(name=name):
+                client = self.public_client(source, [])
+                with self.assertRaisesRegex(brief.BriefError, expected_error):
+                    brief.read_public(client, requested_date, language)
+                self.assertEqual(client.batch_calls, [])
+
+    def test_public_rejects_invalid_explicit_selection_flags(self):
+        for field, value in (("deepRead", "false"), ("featured", 1), ("personalized", 0.0), ("personalized", True)):
+            with self.subTest(field=field):
+                public_item = item("one")
+                public_item[field] = value
+                client = self.public_client(self.stable_brief(items=[public_item]), [[metadata("one")]])
+                with self.assertRaisesRegex(brief.BriefError, field):
+                    brief.read_public(client, "2026-07-24", "en")
+
+    def test_public_cli_emits_one_normalized_object_without_personal_access(self):
+        public_client = self.public_client(
+            self.stable_brief(items=[item("newsletter", contentType="NEWSLETTER", personalized=False)]),
+            [[metadata("newsletter", "NEWSLETTER")]],
+        )
+        original_factory = brief.BestBlogsClient
+        original_key = os.environ.get("BESTBLOGS_API_KEY")
+        output, errors = io.StringIO(), io.StringIO()
+        brief.BestBlogsClient = lambda unused_key: public_client
+        os.environ["BESTBLOGS_API_KEY"] = VALID_API_KEY
+        try:
+            with redirect_stdout(output), redirect_stderr(errors):
+                result = brief.main(["public", "--date", "2026-07-24", "--language", "en"])
+        finally:
+            brief.BestBlogsClient = original_factory
+            if original_key is None:
+                os.environ.pop("BESTBLOGS_API_KEY", None)
+            else:
+                os.environ["BESTBLOGS_API_KEY"] = original_key
+
+        self.assertEqual(result, 0)
+        self.assertEqual(errors.getvalue(), "")
+        self.assertEqual(public_client.public_calls, [("2026-07-24", "en")])
+        self.assertEqual(json.loads(output.getvalue())["items"][0]["personalized"], False)
 
     def test_history_selects_one_complete_mixed_type_edition_before_normalizing(self):
         requested = self.stable_brief(

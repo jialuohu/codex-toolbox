@@ -27,7 +27,8 @@ MAX_HISTORY_EDITIONS = 30
 API_KEY = re.compile(r"^bb_[0-9A-Fa-f]{32}$")
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 STABLE_STATUSES = frozenset(("COMPLETED", "PUBLISHED"))
-CONTENT_TYPES = frozenset(("ARTICLE", "PODCAST", "VIDEO", "TWITTER"))
+CONTENT_TYPES = frozenset(("ARTICLE", "NEWSLETTER", "PODCAST", "VIDEO", "TWITTER"))
+PUBLIC_LANGUAGES = frozenset(("zh", "en"))
 MAX_READ_TIME_MINUTES = 1_440
 MIN_SCORE = -1_000_000
 MAX_SCORE = 1_000_000
@@ -254,7 +255,10 @@ def _first_present(*values):
 def _normalized_content_type(value):
     if not isinstance(value, str):
         raise BriefError("unknown content type")
-    mapping = {"ARTICLE": "ARTICLE", "PODCAST": "PODCAST", "VIDEO": "VIDEO", "TWITTER": "TWITTER", "TWEET": "TWITTER"}
+    mapping = {
+        "ARTICLE": "ARTICLE", "NEWSLETTER": "NEWSLETTER", "PODCAST": "PODCAST", "VIDEO": "VIDEO",
+        "TWITTER": "TWITTER", "TWEET": "TWITTER",
+    }
     try:
         return mapping[value.upper()]
     except KeyError as error:
@@ -324,6 +328,11 @@ class BestBlogsClient:
                 isinstance(page_size, bool) or not isinstance(page_size, int) or not 1 <= page_size <= MAX_HISTORY_EDITIONS:
             raise ValueError("brief history requires page 1 and one to %d editions" % MAX_HISTORY_EDITIONS)
         return _list(self._request("GET", "/me/briefs/history?page=%d&pageSize=%d" % (page, page_size)), "brief history")
+
+    def public_brief(self, date, language):
+        date = _validated_date(date, "public date")
+        language = _validated_public_language(language)
+        return self._request("GET", "/brief?date=%s&language=%s" % (date, language))
 
     def batch_meta(self, resource_ids):
         if not isinstance(resource_ids, list) or not resource_ids or len(resource_ids) > MAX_BATCH_SIZE or \
@@ -395,7 +404,26 @@ def _metadata_records(value):
     raise BriefError("invalid metadata records")
 
 
-def _normalize_item(brief_item, metadata):
+def _selection_flags(brief_item, public):
+    if public:
+        for field in ("deepRead", "featured", "personalized"):
+            if field in brief_item:
+                _boolean(brief_item[field], field)
+        if brief_item.get("personalized") is True:
+            raise BriefError("invalid personalized")
+        return {
+            "deepRead": brief_item.get("deepRead", False),
+            "featured": brief_item.get("featured", True),
+            "personalized": False,
+        }
+    return {
+        "deepRead": _boolean(brief_item.get("deepRead") if "deepRead" in brief_item else None, "deepRead"),
+        "featured": _boolean(brief_item.get("featured") if "featured" in brief_item else None, "featured"),
+        "personalized": _boolean(brief_item.get("personalized") if "personalized" in brief_item else None, "personalized"),
+    }
+
+
+def _normalize_item(brief_item, metadata, public=False):
     brief_item = _object(brief_item, "brief item")
     metadata = _object(metadata, "metadata record")
     resource_id = brief_item.get("resourceId")
@@ -424,10 +452,8 @@ def _normalize_item(brief_item, metadata):
         ),
         "tags": _string_list(_first_present(metadata.get("tags"), brief_item.get("tags"), []), "tags"),
         "mainPoints": _main_points(_first_present(metadata.get("mainPoints"), brief_item.get("mainPoints"), [])),
-        "deepRead": _boolean(brief_item.get("deepRead") if "deepRead" in brief_item else None, "deepRead"),
-        "featured": _boolean(brief_item.get("featured") if "featured" in brief_item else None, "featured"),
-        "personalized": _boolean(brief_item.get("personalized") if "personalized" in brief_item else None, "personalized"),
     }
+    normalized.update(_selection_flags(brief_item, public))
     if normalized["url"] is None:
         raise BriefError("invalid resource HTTPS URL")
     cover = _first_present(metadata.get("cover"), metadata.get("coverUrl"))
@@ -451,7 +477,7 @@ def _normalize_item(brief_item, metadata):
     return normalized
 
 
-def _normalize_brief(client, source, expected_date, clock=None):
+def _normalize_brief(client, source, expected_date, clock=None, public=False):
     source = _object(source, "brief")
     brief_date = _validated_date(source.get("briefDate"), "brief date")
     if brief_date != expected_date:
@@ -502,7 +528,7 @@ def _normalize_brief(client, source, expected_date, clock=None):
         "generatedAt": generated_at,
         "editorIntro": editor_intro,
         "keywords": keywords,
-        "items": [_normalize_item(entry, metadata_by_id[entry["resourceId"]]) for entry in items],
+        "items": [_normalize_item(entry, metadata_by_id[entry["resourceId"]], public=public) for entry in items],
     }
 
 
@@ -511,6 +537,20 @@ def read_today(client, expected_date=None, clock=None):
     expected_date = _validated_date(expected_date, "Beijing date")
     require_pro(client.me())
     return _normalize_brief(client, client.today_brief(), expected_date, clock)
+
+
+def _validated_public_language(value):
+    if not isinstance(value, str) or value not in PUBLIC_LANGUAGES:
+        raise BriefError("invalid public language")
+    return value
+
+
+def read_public(client, requested_date, language, clock=None):
+    requested_date = _validated_date(requested_date, "public date")
+    language = _validated_public_language(language)
+    return _normalize_brief(
+        client, client.public_brief(requested_date, language), requested_date, clock, public=True,
+    )
 
 
 def _select_history_brief(history, requested_date):
@@ -549,6 +589,9 @@ def _parser():
     today.add_argument("--beijing-date")
     history = commands.add_parser("history")
     history.add_argument("--date", required=True)
+    public = commands.add_parser("public")
+    public.add_argument("--date", required=True)
+    public.add_argument("--language", required=True, choices=sorted(PUBLIC_LANGUAGES))
     return parser
 
 
@@ -561,6 +604,8 @@ def main(argv=None):
             result = {"configured": True, "tier": tier, "proAccess": True}
         elif args.command == "today":
             result = read_today(client, args.beijing_date)
+        elif args.command == "public":
+            result = read_public(client, args.date, args.language)
         else:
             result = read_history(client, args.date)
         print(json.dumps(result, ensure_ascii=False, separators=(",", ":"), allow_nan=False))
