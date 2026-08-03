@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from collections.abc import Sequence
+from pathlib import Path
 from typing import TextIO
 
 from pydantic import ValidationError
@@ -14,6 +16,28 @@ from docmost_tools.config import DocmostSettings
 from docmost_tools.models import ErrorCode, OperationError, OperationResult
 from docmost_tools.profile import ProfilePathError, profile_paths
 from docmost_tools.runtime import CONFIGURATION_INVALID_MESSAGE
+from docmost_tools.runtime_lock import (
+    LOCK_FD_ENV,
+    LOCK_MODE_ENV,
+    LockMode,
+    validate_inherited_lock,
+)
+
+AUTH_LOCK_INVALID_MESSAGE = "Docmost authentication runtime lock is invalid"
+
+
+def _has_required_runtime_lock(command: str) -> bool:
+    mode: LockMode = "shared" if command == "status" else "exclusive"
+    if os.environ.get(LOCK_MODE_ENV) != mode:
+        return False
+    raw_descriptor = os.environ.get(LOCK_FD_ENV)
+    if raw_descriptor is None or not raw_descriptor.isdecimal():
+        return False
+    descriptor = int(raw_descriptor)
+    if descriptor <= 2:
+        return False
+    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
+    return validate_inherited_lock(codex_home / "runtime", mode, descriptor)
 
 
 def main(argv: Sequence[str] | None = None, *, output: TextIO | None = None) -> int:
@@ -27,32 +51,41 @@ def main(argv: Sequence[str] | None = None, *, output: TextIO | None = None) -> 
         import sys
 
         destination = sys.stdout
-    try:
-        paths = profile_paths()
-    except ProfilePathError:
+    if not _has_required_runtime_lock(args.command):
         result: OperationResult[dict[str, object]] = OperationResult[dict[str, object]](
             ok=False,
             error=OperationError(
                 code=ErrorCode.CONFIGURATION_INVALID,
-                message=CONFIGURATION_INVALID_MESSAGE,
+                message=AUTH_LOCK_INVALID_MESSAGE,
             ),
         )
     else:
-        if args.command == "logout":
-            result = AuthService.logout_paths(paths)
+        try:
+            paths = profile_paths()
+        except ProfilePathError:
+            result = OperationResult[dict[str, object]](
+                ok=False,
+                error=OperationError(
+                    code=ErrorCode.CONFIGURATION_INVALID,
+                    message=CONFIGURATION_INVALID_MESSAGE,
+                ),
+            )
         else:
-            try:
-                service = AuthService(DocmostSettings.model_validate({}), paths)
-            except ValidationError:
-                result = OperationResult[dict[str, object]](
-                    ok=False,
-                    error=OperationError(
-                        code=ErrorCode.CONFIGURATION_INVALID,
-                        message=CONFIGURATION_INVALID_MESSAGE,
-                    ),
-                )
+            if args.command == "logout":
+                result = AuthService.logout_paths(paths)
             else:
-                result = service.login() if args.command == "login" else service.status()
+                try:
+                    service = AuthService(DocmostSettings.model_validate({}), paths)
+                except ValidationError:
+                    result = OperationResult[dict[str, object]](
+                        ok=False,
+                        error=OperationError(
+                            code=ErrorCode.CONFIGURATION_INVALID,
+                            message=CONFIGURATION_INVALID_MESSAGE,
+                        ),
+                    )
+                else:
+                    result = service.login() if args.command == "login" else service.status()
     json.dump(result.model_dump(mode="json"), destination)
     destination.write("\n")
     return 0 if result.ok else 1

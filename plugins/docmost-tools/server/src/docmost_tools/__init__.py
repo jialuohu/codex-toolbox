@@ -1,4 +1,4 @@
-"""Foundation types for the Docmost MCP plugin."""
+"""Private adapter package for the local Docmost MCP integration."""
 
 __version__ = "0.1.1"
 

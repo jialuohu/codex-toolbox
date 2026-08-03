@@ -1629,8 +1629,12 @@ def validate_docmost_tools_contract(
     require(DOCMOST_SMOKE.exists(), "docmost-tools must include the bounded smoke CLI")
     plugin = json.loads(DOCMOST_PLUGIN.read_text())
     mcp = json.loads(DOCMOST_MCP.read_text())
-    server = mcp.get("mcpServers", {}).get("docmost")
-    require(server is not None, "docmost-tools must define the docmost MCP server")
+    servers = mcp.get("mcpServers") if isinstance(mcp, dict) else None
+    require(
+        isinstance(servers, dict) and set(servers) == {"docmost"},
+        "docmost-tools must define exactly one MCP server named docmost",
+    )
+    server = servers["docmost"]
     require(plugin.get("mcpServers") == "./.mcp.json", "docmost manifest must register its MCP config")
     require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",

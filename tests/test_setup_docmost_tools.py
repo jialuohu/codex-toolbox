@@ -996,6 +996,56 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
 
+    def test_global_setup_rejects_a_symlinked_installed_version_root(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        linked_root = self.installed_plugin_root
+        target_root = linked_root.with_name(f"{self.plugin_version}-real")
+        linked_root.rename(target_root)
+        manifest_path = target_root / ".codex-plugin" / "plugin.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["version"] = target_root.name
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        linked_root.symlink_to(target_root, target_is_directory=True)
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
+
+    def test_global_setup_rejects_an_extra_server_in_the_installed_copy(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["unexpected"] = {"command": "/bin/false"}
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
+
     def test_global_setup_rejects_unprompted_writes_in_the_installed_copy(self) -> None:
         self.install_fake_uv()
         self.install_fake_codex()

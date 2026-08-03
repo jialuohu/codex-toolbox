@@ -276,6 +276,18 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
             "docmost create_page must require approval",
         )
 
+    def test_setup_checker_rejects_an_extra_docmost_mcp_server(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / "plugins/docmost-tools/.mcp.json"
+            value = json.loads(path.read_text())
+            value["mcpServers"]["unexpected"] = {"command": "/bin/false"}
+            path.write_text(json.dumps(value, indent=2) + "\n")
+
+        self.assert_checker_rejects(
+            mutate,
+            "docmost-tools must define exactly one MCP server named docmost",
+        )
+
     def test_setup_checker_rejects_docmost_registration_regressions(self) -> None:
         def remove_marketplace(root: Path) -> None:
             path = root / ".agents/plugins/marketplace.json"

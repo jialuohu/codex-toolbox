@@ -347,6 +347,7 @@ installed_docmost_server_dir() {
 import hashlib
 import json
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -382,8 +383,16 @@ if (
     fail("Installed Docmost MCP cwd is invalid")
 
 try:
+    raw_plugin_root = Path(raw_cwd)
+    raw_plugin_metadata = raw_plugin_root.lstat()
+except OSError:
+    fail("Installed Docmost plugin layout is invalid")
+if stat.S_ISLNK(raw_plugin_metadata.st_mode) or not stat.S_ISDIR(raw_plugin_metadata.st_mode):
+    fail("Installed Docmost plugin layout is invalid")
+
+try:
     codex_home = Path(os.environ["DOCMOST_CODEX_HOME"]).expanduser().resolve(strict=True)
-    plugin_root = Path(raw_cwd).resolve(strict=True)
+    plugin_root = raw_plugin_root.resolve(strict=True)
 except (KeyError, OSError):
     fail("Installed Docmost plugin layout is invalid")
 try:
@@ -434,6 +443,8 @@ if (
     or plugin.get("name") != "docmost-tools"
     or plugin.get("version") != version
     or plugin.get("mcpServers") != "./.mcp.json"
+    or not isinstance(servers, dict)
+    or set(servers) != {"docmost"}
     or not isinstance(configured, dict)
 ):
     fail("Installed Docmost plugin layout is invalid")
