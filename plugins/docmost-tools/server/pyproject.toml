@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
+docmost-auth = "docmost_tools.auth_cli:main"
 docmost-mcp = "docmost_tools.server:main"
 
 [dependency-groups]
@@ -27,6 +28,7 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = ["-ra", "--strict-config"]
+markers = ["real_browser: exercises installed Playwright Chromium against a loopback fake SSO server"]
 testpaths = ["tests"]
 
 [tool.ruff]

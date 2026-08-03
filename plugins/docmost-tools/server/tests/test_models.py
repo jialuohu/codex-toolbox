@@ -32,10 +32,13 @@ def test_failure_result_contains_stable_error_payload() -> None:
 
 def test_result_rejects_mismatched_success_state() -> None:
     with pytest.raises(ValidationError, match="successful result"):
-        OperationResult[dict[str, str]](ok=True, error=OperationError(
-            code=ErrorCode.INTERNAL_ERROR,
-            message="unexpected",
-        ))
+        OperationResult[dict[str, str]](
+            ok=True,
+            error=OperationError(
+                code=ErrorCode.INTERNAL_ERROR,
+                message="unexpected",
+            ),
+        )
 
 
 def test_error_codes_are_stable_wire_values() -> None:
