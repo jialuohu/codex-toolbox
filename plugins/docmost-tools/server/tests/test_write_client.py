@@ -81,9 +81,7 @@ def test_create_page_imports_markdown_once_and_returns_the_created_root() -> Non
             ),
         )
 
-    result = client_for(handler).create_page(
-        "space-1", "A *literal* title", "Paragraph body"
-    )
+    result = client_for(handler).create_page("space-1", "A *literal* title", "Paragraph body")
 
     assert result.ok is True and result.data is not None
     assert result.data.page.id == "page-1"
@@ -102,6 +100,17 @@ def test_create_page_imports_markdown_once_and_returns_the_created_root() -> Non
     assert b"space-1" in request.content
     assert b'name="file"; filename="docmost-page.md"' in request.content
     assert b"# A \\*literal\\* title\n\nParagraph body" in request.content
+
+
+def test_non_page_write_forbidden_is_stably_forbidden() -> None:
+    result = client_for(lambda _: httpx.Response(403, json={"message": "forbidden"})).create_page(
+        "space-1", "Title", "Body"
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.FORBIDDEN
+    assert result.error.message == "FORBIDDEN"
+    assert result.error.retryable is False
 
 
 def test_create_page_validates_parent_then_moves_with_the_imported_position() -> None:
@@ -148,7 +157,7 @@ def test_create_page_validates_parent_then_moves_with_the_imported_position() ->
         "/api/pages/import",
         "/api/pages/move",
     ]
-    assert request_json(seen[0]) == {"pageId": "parent-input", "format": "markdown"}
+    assert request_json(seen[0]) == {"pageId": "parent-input"}
     assert request_json(seen[2]) == {
         "pageId": "page-1",
         "position": "a0V1b",
@@ -167,9 +176,7 @@ def test_create_page_rejects_a_parent_from_another_space_before_import() -> None
             json=envelope({"id": "parent", "slugId": "parent-slug", "spaceId": "other"}),
         )
 
-    result = client_for(handler).create_page(
-        "space-1", "Child", "Body", parent_page_id="parent"
-    )
+    result = client_for(handler).create_page("space-1", "Child", "Body", parent_page_id="parent")
 
     assert result.ok is False and result.error is not None
     assert result.error.code is ErrorCode.PAGE_UNAVAILABLE
@@ -200,9 +207,7 @@ def test_create_page_preserves_root_and_warns_when_parent_move_fails_without_ret
             )
         return httpx.Response(503, json={"message": "move failed"})
 
-    result = client_for(handler).create_page(
-        "space-1", "Child", "Body", parent_page_id="parent"
-    )
+    result = client_for(handler).create_page("space-1", "Child", "Body", parent_page_id="parent")
 
     assert result.ok is True and result.data is not None
     assert result.data.page.id == "created-root"
@@ -291,7 +296,6 @@ def test_update_page_title_checks_expected_timestamp_then_posts_once() -> None:
                         "slugId": "old-slug",
                         "title": "Old",
                         "spaceId": "space-1",
-                        "content": "Body",
                         "updatedAt": "2026-01-02T03:04:05Z",
                     }
                 ),
@@ -309,14 +313,13 @@ def test_update_page_title_checks_expected_timestamp_then_posts_once() -> None:
             ),
         )
 
-    result = client_for(handler).update_page_title(
-        "page-input", "New", "2026-01-02T03:04:05Z"
-    )
+    result = client_for(handler).update_page_title("page-input", "New", "2026-01-02T03:04:05Z")
 
     assert result.ok is True and result.data is not None
     assert result.data.id == "page-canonical"
     assert result.data.title == "New"
     assert [request.url.path for request in seen] == ["/api/pages/info", "/api/pages/update"]
+    assert request_json(seen[0]) == {"pageId": "page-input"}
     assert request_json(seen[1]) == {"pageId": "page-canonical", "title": "New"}
 
 
@@ -331,7 +334,6 @@ def test_update_page_title_conflict_stops_before_the_write() -> None:
                 {
                     "id": "page-1",
                     "slugId": "page-slug",
-                    "content": "Body",
                     "updatedAt": "newer",
                 }
             ),
@@ -357,7 +359,6 @@ def test_update_page_title_timeout_is_outcome_unknown_without_retry() -> None:
                     {
                         "id": "page-1",
                         "slugId": "page-slug",
-                        "content": "Body",
                         "updatedAt": "same",
                     }
                 ),
@@ -383,7 +384,6 @@ def test_update_page_title_success_envelope_with_invalid_page_is_outcome_unknown
                     {
                         "id": "page-1",
                         "slugId": "page-slug",
-                        "content": "Body",
                         "updatedAt": "same",
                     }
                 ),
@@ -411,7 +411,6 @@ def test_create_comment_canonicalizes_page_and_sends_json_encoded_tiptap_once() 
                     {
                         "id": "page-canonical",
                         "slugId": "page-slug",
-                        "content": "Body",
                     }
                 ),
             )
@@ -443,6 +442,7 @@ def test_create_comment_canonicalizes_page_and_sends_json_encoded_tiptap_once() 
         "/api/pages/info",
         "/api/comments/create",
     ]
+    assert request_json(seen[0]) == {"pageId": "page-input"}
     payload = request_json(seen[1])
     assert payload["pageId"] == "page-canonical"
     assert payload["type"] == "page"
@@ -481,9 +481,7 @@ def test_create_comment_timeout_is_outcome_unknown_and_not_retried() -> None:
         if request.url.path == "/api/pages/info":
             return httpx.Response(
                 200,
-                json=envelope(
-                    {"id": "page-1", "slugId": "page-slug", "content": "Body"}
-                ),
+                json=envelope({"id": "page-1", "slugId": "page-slug", "content": "Body"}),
             )
         raise httpx.ReadTimeout("ambiguous")
 
@@ -502,9 +500,7 @@ def test_create_comment_success_envelope_with_invalid_comment_is_outcome_unknown
         if request.url.path == "/api/pages/info":
             return httpx.Response(
                 200,
-                json=envelope(
-                    {"id": "page-1", "slugId": "page-slug", "content": "Body"}
-                ),
+                json=envelope({"id": "page-1", "slugId": "page-slug", "content": "Body"}),
             )
         return httpx.Response(200, json=envelope({}))
 

@@ -46,6 +46,7 @@ def test_error_codes_are_stable_wire_values() -> None:
     assert ErrorCode.AUTH_REQUIRED.value == "auth_required"
     assert ErrorCode.PROFILE_BUSY.value == "profile_busy"
     assert ErrorCode.WRITE_COMPATIBILITY_BLOCKED.value == "write_compatibility_blocked"
+    assert ErrorCode.FORBIDDEN.value == "forbidden"
     assert ErrorCode.PAGE_UNAVAILABLE.value == "page_unavailable"
     assert ErrorCode.CONFLICT.value == "conflict"
     assert ErrorCode.OUTCOME_UNKNOWN.value == "outcome_unknown"

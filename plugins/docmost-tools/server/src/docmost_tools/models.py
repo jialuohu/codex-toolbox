@@ -15,6 +15,7 @@ class ErrorCode(StrEnum):
     AUTH_REQUIRED = "auth_required"
     PROFILE_BUSY = "profile_busy"
     WRITE_COMPATIBILITY_BLOCKED = "write_compatibility_blocked"
+    FORBIDDEN = "forbidden"
     PAGE_UNAVAILABLE = "page_unavailable"
     CONFLICT = "conflict"
     OUTCOME_UNKNOWN = "outcome_unknown"
