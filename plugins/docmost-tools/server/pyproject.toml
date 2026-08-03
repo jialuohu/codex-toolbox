@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docmost-tools"
-version = "0.1.0"
-description = "Foundation package for a local Docmost MCP integration."
+version = "0.1.1"
+description = "Local package for a private Docmost MCP integration."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -25,7 +25,7 @@ docmost-smoke = "docmost_tools.smoke_cli:main"
 [dependency-groups]
 dev = [
   "pyright==1.1.408",
-  "pytest==8.4.2",
+  "pytest==9.1.1",
   "ruff==0.14.10",
 ]
 

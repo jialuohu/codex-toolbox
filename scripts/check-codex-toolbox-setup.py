@@ -115,6 +115,9 @@ PRODUCTIVITY_MCP = ROOT / "plugins" / "productivity-tools" / ".mcp.json"
 DOCMOST_DIR = ROOT / "plugins" / "docmost-tools"
 DOCMOST_PLUGIN = DOCMOST_DIR / ".codex-plugin" / "plugin.json"
 DOCMOST_MCP = DOCMOST_DIR / ".mcp.json"
+DOCMOST_APPROVED_LAUNCHER_SHA256 = (
+    "1e3f754036aaa5d33b1aa21e31f6aeaba068bcbd2b8432335621766bb7f50c8c"
+)
 DOCMOST_SETUP = ROOT / "scripts" / "setup-docmost-tools.sh"
 DOCMOST_SMOKE = DOCMOST_DIR / "server" / "src" / "docmost_tools" / "smoke_cli.py"
 DOCMOST_AUTH_WRAPPER = DOCMOST_DIR / "server" / "scripts" / "docmost-auth"
@@ -1626,8 +1629,16 @@ def validate_docmost_tools_contract(
     require(DOCMOST_SMOKE.exists(), "docmost-tools must include the bounded smoke CLI")
     plugin = json.loads(DOCMOST_PLUGIN.read_text())
     mcp = json.loads(DOCMOST_MCP.read_text())
-    server = mcp.get("mcpServers", {}).get("docmost")
-    require(server is not None, "docmost-tools must define the docmost MCP server")
+    servers = mcp.get("mcpServers") if isinstance(mcp, dict) else None
+    require(
+        isinstance(servers, dict) and set(servers) == {"docmost"},
+        "docmost-tools must define exactly one MCP server named docmost",
+    )
+    server = servers["docmost"]
+    require(
+        isinstance(server, dict),
+        "docmost MCP server definition must be an object",
+    )
     require(plugin.get("mcpServers") == "./.mcp.json", "docmost manifest must register its MCP config")
     require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
@@ -1671,7 +1682,15 @@ def validate_docmost_tools_contract(
         )
     launcher = arguments[1]
     require("docmost-auth" not in launcher and "playwright" not in launcher, "docmost MCP launcher must not launch browser authentication")
-    recovery_text = "rerun the full codex-toolbox setup from its checkout"
+    runtime_recovery_text = "rerun the full codex-toolbox setup from its checkout"
+    auth_login_command = (
+        'CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" '
+        '"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login'
+    )
+    auth_required_sentence = (
+        "Authentication required. Close the active task, run "
+        f"`{auth_login_command}`, then start a fresh task or reconnect Docmost."
+    )
     for expected in (
         "CODEX_SECRETS_DIR=",
         "UV_PROJECT_ENVIRONMENT=",
@@ -1692,7 +1711,7 @@ def validate_docmost_tools_contract(
         "$DOCMOST_RUNTIME_DIR/bin/docmost-mcp",
         "$DOCMOST_RUNTIME_DIR/bin/docmost-runtime-stamp",
         "docmost-runtime-stamp\" check",
-        recovery_text,
+        runtime_recovery_text,
         "readonly DOCMOST_CODEX_ROOT DOCMOST_SECRETS_ROOT DOCMOST_RUNTIME_PARENT",
         "exec \"$DOCMOST_UV\" run --frozen --no-sync --directory \"$DOCMOST_PLUGIN_SERVER_DIR\" docmost-mcp",
     ):
@@ -1709,7 +1728,7 @@ def validate_docmost_tools_contract(
         "docmost MCP launcher lock must live outside the mutable environment",
     )
     require(
-        launcher.count(recovery_text) >= 3
+        launcher.count(runtime_recovery_text) >= 3
         and "scripts/setup-docmost-tools.sh --install" not in launcher,
         "docmost MCP launcher must provide honest checkout-independent recovery",
     )
@@ -1735,6 +1754,14 @@ def validate_docmost_tools_contract(
     require("docmost" in managed_mcp_servers, "setup script must manage the docmost MCP migration")
     helper = DOCMOST_SETUP.read_text()
     require(
+        f"LOGIN_COMMAND='{auth_login_command}'" in helper,
+        "Docmost setup must preserve the canonical auth recovery command",
+    )
+    require(
+        f"AUTH_REQUIRED_SENTENCE='{auth_required_sentence}'" in helper,
+        "Docmost setup must preserve the canonical AUTH_REQUIRED sentence",
+    )
+    require(
         helper.count('[ ! -L "$RUNTIME_PARENT" ]') >= 2,
         "Docmost setup must reject a symlinked runtime parent",
     )
@@ -1746,15 +1773,32 @@ def validate_docmost_tools_contract(
         "--reinstall-package docmost-tools" in helper,
         "Docmost setup must force reinstall the non-editable package",
     )
+    lock_check_blocks = shell_function_blocks(helper, "require_fresh_dependency_lock")
+    check_blocks = shell_function_blocks(helper, "check")
+    install_locked_blocks = shell_function_blocks(helper, "install_locked")
     require(
-        helper.count("run_locked shared") >= 4
-        and helper.count("validate_runtime_lock shared") >= 4,
-        "Docmost setup must keep check, login, status, and logout under shared locks",
+        len(lock_check_blocks) == 1
+        and 'run_uv lock --check --directory "$SERVER_DIR"' in lock_check_blocks[0]
+        and len(check_blocks) == 1
+        and check_blocks[0].index("require_fresh_dependency_lock")
+        < check_blocks[0].index("run_uv sync --frozen --check")
+        and len(install_locked_blocks) == 1
+        and install_locked_blocks[0].index("require_fresh_dependency_lock")
+        < install_locked_blocks[0].index("run_uv sync --frozen --no-dev"),
+        "Docmost setup must check lock freshness before synchronization",
+    )
+    require(
+        "run_locked shared --check-locked" in helper
+        and "run_locked shared --status-locked" in helper
+        and helper.count("validate_runtime_lock shared") >= 2,
+        "Docmost setup must keep check and status under shared locks",
     )
     require(
         "run_locked exclusive --install-locked" in helper
-        and "validate_runtime_lock exclusive" in helper,
-        "Docmost setup must keep installation under an exclusive lock",
+        and "run_locked exclusive --login-locked" in helper
+        and "run_locked exclusive --logout-locked" in helper
+        and helper.count("validate_runtime_lock exclusive") >= 3,
+        "Docmost setup must keep install, login, and logout under exclusive locks",
     )
     require(
         helper.count('--root "$RUNTIME_PARENT"') == 2
@@ -1808,7 +1852,7 @@ def validate_docmost_tools_contract(
         "sync --frozen --check --no-dev --no-editable",
         "sync --frozen --no-dev --no-editable",
         "run --frozen --no-sync", 'bin/docmost-runtime-stamp" write',
-        "docmost-runtime-stamp", recovery_text,
+        "docmost-runtime-stamp", runtime_recovery_text,
     ):
         require(expected in helper, f"Docmost setup helper must include {expected}")
     auth_wrapper = DOCMOST_AUTH_WRAPPER.read_text()
@@ -1823,16 +1867,18 @@ def validate_docmost_tools_contract(
         '[ -d "$DOCMOST_RUNTIME_PARENT" ] && [ ! -L "$DOCMOST_RUNTIME_PARENT" ]',
         '[ -d "$DOCMOST_RUNTIME_ROOT" ] && [ ! -L "$DOCMOST_RUNTIME_ROOT" ]',
         '[ -f "$DOCMOST_RUNTIME_LOCK_HELPER" ] && [ ! -L "$DOCMOST_RUNTIME_LOCK_HELPER" ]',
-        '${DOCMOST_RUNTIME_LOCK_MODE:-}" != shared',
+        'DOCMOST_REQUIRED_LOCK_MODE=shared',
+        'DOCMOST_REQUIRED_LOCK_MODE=exclusive',
+        '[ -n "${DOCMOST_RUNTIME_LOCK_MODE:-}" ] || [ -n "${DOCMOST_RUNTIME_LOCK_FD:-}" ]',
+        '"${DOCMOST_RUNTIME_LOCK_MODE:-}" = "$DOCMOST_REQUIRED_LOCK_MODE"',
         '"$DOCMOST_RUNTIME_LOCK_HELPER" --validate-fd',
-        '--mode shared --root "$DOCMOST_RUNTIME_PARENT"; then',
+        '--mode "$DOCMOST_REQUIRED_LOCK_MODE" --root "$DOCMOST_RUNTIME_PARENT"',
         'exec "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER"',
-        '--mode shared --root "$DOCMOST_RUNTIME_PARENT" -- "$DOCMOST_AUTH_WRAPPER" "$@"',
-        recovery_text,
+        runtime_recovery_text,
     ):
         require(expected in auth_wrapper, f"Docmost auth wrapper must include {expected}")
     require(
-        auth_wrapper.count(recovery_text) >= 3
+        auth_wrapper.count(runtime_recovery_text) >= 3
         and "scripts/setup-docmost-tools.sh --install" not in auth_wrapper
         and "run --install" not in auth_wrapper,
         "Docmost auth wrapper must provide honest checkout-independent recovery",
@@ -1842,17 +1888,62 @@ def validate_docmost_tools_contract(
         and 'docmost_setup_command "$server_dir" --status' in script
         and 'docmost_setup_command "$server_dir" --login' in script
         and 'ensure_docmost_ready ""' in script
-        and 'ensure_docmost_ready "$DOCMOST_ACTIVE_SERVER_DIR"' in script,
+        and 'ensure_docmost_ready "$DOCMOST_INSTALLED_SERVER_DIR"' in script,
         "toolbox setup must run the Docmost install/status/login recovery sequence",
     )
     require(
         script.index('ensure_docmost_ready ""') < script.index("\nensure_toolbox_marketplace\n"),
         "Docmost preflight must complete before marketplace or plugin refresh",
     )
+    installed_distribution_blocks = shell_function_blocks(
+        script, "installed_docmost_server_dir"
+    )
     require(
-        script.index('DOCMOST_ACTIVE_SERVER_DIR="$(active_docmost_server_dir)"')
+        len(installed_distribution_blocks) == 1
+        and all(
+            expected in installed_distribution_blocks[0]
+            for expected in (
+                '"$CODEX_BIN" mcp get docmost --json',
+                'transport.get("type") != "stdio"',
+                'transport.get("command") != "/bin/zsh"',
+                'raw_cwd = transport.get("cwd")',
+                "not Path(raw_cwd).is_absolute()",
+                'Path(os.environ["DOCMOST_CODEX_HOME"])',
+                "plugin_root.relative_to(codex_home)",
+                '("plugins", "cache", marketplace_name, "docmost-tools")',
+                'plugin_root / ".mcp.json"',
+                'server / "src" / "docmost_tools" / "server.py"',
+                "transport_args != configured_args",
+            )
+        ),
+        "toolbox setup must resolve Docmost from the installed MCP cwd",
+    )
+    launcher_sha256 = hashlib.sha256(launcher.encode()).hexdigest()
+    require(
+        len(installed_distribution_blocks) == 1
+        and launcher_sha256 == DOCMOST_APPROVED_LAUNCHER_SHA256
+        and (
+            f'approved_launcher_sha256 = "{DOCMOST_APPROVED_LAUNCHER_SHA256}"'
+            in installed_distribution_blocks[0]
+        )
+        and all(
+            expected in installed_distribution_blocks[0]
+            for expected in (
+                "not isinstance(configured_args, list)",
+                "len(configured_args) != 2",
+                'configured_args[0] != "-lc"',
+                "not isinstance(configured_args[1], str)",
+                "hashlib.sha256(configured_args[1].encode()).hexdigest()",
+                "not isinstance(transport_args, list)",
+                "transport_args != configured_args",
+            )
+        ),
+        "toolbox setup must pin the exact approved Docmost launcher",
+    )
+    require(
+        script.index('DOCMOST_INSTALLED_SERVER_DIR="$(installed_docmost_server_dir)"')
         > script.index('for plugin in "${DEFAULT_PLUGINS[@]}"')
-        and script.index('ensure_docmost_ready "$DOCMOST_ACTIVE_SERVER_DIR"')
+        and script.index('ensure_docmost_ready "$DOCMOST_INSTALLED_SERVER_DIR"')
         < script.index("\nensure_ui_ux_marketplace\n"),
         "toolbox setup must rebuild Docmost from the active plugin after refresh",
     )
@@ -1863,6 +1954,29 @@ def validate_docmost_tools_contract(
         "marketplace upgrade", "setup-docmost-tools.sh --install",
     ):
         require(expected in readme_text, f"README must document Docmost {expected}")
+    require(
+        "plus `uv` and `python3` on `PATH`" in readme_text
+        and "requires Python 3.12" in readme_text,
+        "README must document Docmost uv and Python prerequisites",
+    )
+    require(
+        "`codex mcp get docmost" in readme_text
+        and "Marketplace `source.path` is not treated as the" in readme_text
+        and "installed distribution" in readme_text,
+        "README must distinguish installed Docmost cwd from marketplace source",
+    )
+    require(
+        auth_login_command in readme_text,
+        "README must preserve the canonical Docmost auth recovery command",
+    )
+    require(
+        "Before login or logout, close the active Codex task" in readme_text,
+        "README must tell users to close the active task before Docmost auth changes",
+    )
+    require(
+        "After login or logout, start a fresh task or reconnect Docmost" in readme_text,
+        "README must tell users to start a fresh task after Docmost auth changes",
+    )
     for expected in (
         "Use the `docmost` MCP", "untrusted data", "create_page", "update_page_title", "create_comment",
     ):

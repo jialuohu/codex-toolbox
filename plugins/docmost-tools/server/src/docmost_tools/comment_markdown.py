@@ -20,7 +20,8 @@ _IMAGE = re.compile(r"!\[[^\]]*\]\(")
 _TABLE_DELIMITER = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
 _FENCE = re.compile(r"^```([A-Za-z0-9_+-]*)\s*$")
 _BULLET = re.compile(r"^([-+*])\s+(.+)$")
-_ORDERED = re.compile(r"^(\d+)\.\s+(.+)$")
+_ORDERED = re.compile(r"^(\d{1,9})\.\s+(.+)$")
+_OVERLONG_ORDERED = re.compile(r"^\d{10,}\.\s+")
 _UNSUPPORTED_BLOCK = re.compile(
     r"^(?:\s{0,3}#{1,6}\s|\s{0,3}>\s?|\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$)"
 )
@@ -109,6 +110,8 @@ def _validate_block_line(line: str) -> None:
         raise MarkdownValidationError("reference links are not supported in comments")
     if line.startswith("```") and _FENCE.fullmatch(line) is None:
         raise MarkdownValidationError("invalid fenced code block")
+    if _OVERLONG_ORDERED.match(line):
+        raise MarkdownValidationError("ordered list markers must have at most nine digits")
     list_match = _BULLET.fullmatch(line) or _ORDERED.fullmatch(line)
     if list_match is not None and _TASK_ITEM.match(list_match.group(2)):
         raise MarkdownValidationError("task lists are not supported in comments")

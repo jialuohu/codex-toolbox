@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import shutil
@@ -15,7 +16,14 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "setup-docmost-tools.sh"
-RECOVERY_COMMAND = '"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login'
+RECOVERY_COMMAND = (
+    'CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" '
+    '"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login'
+)
+RECOVERY_SENTENCE = (
+    "Authentication required. Close the active task, run "
+    f"`{RECOVERY_COMMAND}`, then start a fresh task or reconnect Docmost."
+)
 
 
 class SetupDocmostToolsTest(unittest.TestCase):
@@ -28,6 +36,27 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.secrets_dir = self.home / "secrets"
         self.secrets_dir.mkdir(mode=0o700)
         self.codex_home = self.home / "codex-home"
+        self.plugin_version = json.loads(
+            (
+                ROOT
+                / "plugins"
+                / "docmost-tools"
+                / ".codex-plugin"
+                / "plugin.json"
+            ).read_text()
+        )["version"]
+        self.marketplace_plugin_root = (
+            self.home / "marketplace-source" / "docmost-tools"
+        )
+        self.installed_plugin_root = (
+            self.codex_home
+            / "plugins"
+            / "cache"
+            / "jialuo-codex-toolbox"
+            / "docmost-tools"
+            / self.plugin_version
+        )
+        self.mcp_fixture = self.home / "docmost-mcp.json"
         self.log_file = self.home / "commands.log"
         self.env = os.environ.copy()
         self.env.update(
@@ -37,9 +66,8 @@ class SetupDocmostToolsTest(unittest.TestCase):
                 "CODEX_SECRETS_DIR": str(self.secrets_dir),
                 "CODEX_HOME": str(self.codex_home),
                 "FAKE_DOCMOST_LOG": str(self.log_file),
-                "FAKE_DOCMOST_PLUGIN_ROOT": str(
-                    ROOT / "plugins" / "docmost-tools"
-                ),
+                "FAKE_DOCMOST_PLUGIN_ROOT": str(self.marketplace_plugin_root),
+                "FAKE_DOCMOST_MCP_JSON": str(self.mcp_fixture),
             }
         )
 
@@ -54,6 +82,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
             "uv",
             "#!/bin/sh\n"
             "printf 'UV_PROJECT_ENVIRONMENT=%s %s\\n' \"${UV_PROJECT_ENVIRONMENT:-}\" \"$*\" >> \"$FAKE_DOCMOST_LOG\"\n"
+            "if [ \"${FAKE_DOCMOST_LOCK:-fresh}\" = stale ] && [ \"$1\" = lock ] && [ \"$2\" = --check ]; then exit 1; fi\n"
             "if [ \"${FAKE_DOCMOST_SYNC:-ready}\" = fail ] && echo \"$*\" | grep -q 'sync --frozen'; then exit 1; fi\n"
             "if [ -n \"${FAKE_DOCMOST_SYNC_STARTED:-}\" ] && echo \"$*\" | grep -q 'sync --frozen --no-dev --no-editable'; then\n"
             "  : > \"$FAKE_DOCMOST_SYNC_STARTED\"\n"
@@ -137,12 +166,58 @@ class SetupDocmostToolsTest(unittest.TestCase):
         )
         auth_tool.chmod(0o755)
 
+    def write_fake_mcp(self, **transport_overrides: object) -> None:
+        configured = json.loads(
+            (self.installed_plugin_root / ".mcp.json").read_text()
+        )["mcpServers"]["docmost"]
+        transport = {
+            "type": "stdio",
+            "command": configured["command"],
+            "args": configured["args"],
+            "env_vars": configured["env_vars"],
+            "cwd": f"{self.installed_plugin_root}/.",
+            **transport_overrides,
+        }
+        self.mcp_fixture.write_text(
+            json.dumps(
+                {
+                    "name": "docmost",
+                    "enabled": True,
+                    "disabled_reason": None,
+                    "transport": transport,
+                }
+            )
+            + "\n"
+        )
+
     def install_fake_codex(self) -> None:
+        if not self.marketplace_plugin_root.exists():
+            shutil.copytree(
+                ROOT / "plugins" / "docmost-tools",
+                self.marketplace_plugin_root,
+                ignore=shutil.ignore_patterns(
+                    ".venv", ".pytest_cache", ".ruff_cache", "__pycache__"
+                ),
+            )
+        if not self.installed_plugin_root.exists():
+            shutil.copytree(
+                self.marketplace_plugin_root,
+                self.installed_plugin_root,
+                ignore=shutil.ignore_patterns(
+                    ".venv", ".pytest_cache", ".ruff_cache", "__pycache__"
+                ),
+            )
+        self.write_fake_mcp()
         self.write_executable(
             "codex",
             "#!/bin/sh\n"
             "printf 'codex %s\\n' \"$*\" >> \"$FAKE_DOCMOST_LOG\"\n"
             "if [ \"$1\" = --version ]; then printf 'codex test\\n'; exit 0; fi\n"
+            "if [ \"$1\" = mcp ] && [ \"$2\" = get ] && [ \"$3\" = docmost ] && [ \"$4\" = --json ]; then\n"
+            "  [ \"${FAKE_DOCMOST_MCP_GET:-present}\" = present ] || exit 1\n"
+            "  /bin/cat \"$FAKE_DOCMOST_MCP_JSON\"\n"
+            "  exit 0\n"
+            "fi\n"
             "case \"$*\" in\n"
             "  *' --json'*) printf '%s\\n' \"{\\\"marketplaces\\\":[],\\\"installed\\\":[{\\\"name\\\":\\\"docmost-tools\\\",\\\"marketplaceName\\\":\\\"jialuo-codex-toolbox\\\",\\\"installed\\\":true,\\\"source\\\":{\\\"source\\\":\\\"local\\\",\\\"path\\\":\\\"$FAKE_DOCMOST_PLUGIN_ROOT\\\"}}]}\" ;;\n"
             "esac\n",
@@ -173,6 +248,61 @@ class SetupDocmostToolsTest(unittest.TestCase):
         profile.chmod(0o700)
         return profile
 
+    def start_shared_runtime_holder(
+        self,
+    ) -> tuple[subprocess.Popen[str], Path]:
+        runtime_parent = self.codex_home / "runtime"
+        lock_helper = (
+            runtime_parent / "docmost-tools" / "libexec" / "runtime_lock.py"
+        )
+        started = self.home / "shared-lock-started"
+        release = self.home / "shared-lock-release"
+        started.unlink(missing_ok=True)
+        release.unlink(missing_ok=True)
+        holder = subprocess.Popen(
+            [
+                "/usr/bin/python3",
+                str(lock_helper),
+                "--mode",
+                "shared",
+                "--root",
+                str(runtime_parent),
+                "--",
+                "/bin/sh",
+                "-c",
+                ': > "$1"; while [ ! -e "$2" ]; do /bin/sleep 0.01; done',
+                "holder",
+                str(started),
+                str(release),
+            ],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        deadline = time.monotonic() + 5
+        while not started.exists():
+            if holder.poll() is not None:
+                stdout, stderr = holder.communicate()
+                self.fail("shared lock holder exited early: " + stdout + stderr)
+            if time.monotonic() >= deadline:
+                holder.terminate()
+                stdout, stderr = holder.communicate()
+                self.fail("shared lock holder did not start: " + stdout + stderr)
+            time.sleep(0.01)
+
+        def stop_holder() -> None:
+            release.touch()
+            try:
+                holder.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                holder.terminate()
+                holder.communicate(timeout=5)
+
+        self.addCleanup(stop_holder)
+        return holder, release
+
     def test_check_validates_the_locked_runtime_and_chromium_executable(self) -> None:
         self.install_fake_uv()
         self.write_env()
@@ -186,6 +316,20 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.assertIn("chromium.executable_path", commands)
         self.assertIn("run --frozen --no-sync", commands)
         self.assertLess(commands.index("sync --frozen --check"), commands.index("DocmostSettings.model_validate"))
+
+    def test_check_rejects_a_stale_dependency_lock_before_sync(self) -> None:
+        self.install_fake_uv()
+        self.write_env()
+        self.create_private_browser_profile()
+        self.env["FAKE_DOCMOST_LOCK"] = "stale"
+
+        result = self.run_script("--check")
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Docmost dependency lock is stale", result.stderr)
+        commands = self.log_file.read_text()
+        self.assertIn("lock --check", commands)
+        self.assertNotIn("sync --frozen", commands)
 
     def test_check_fails_when_chromium_executable_is_missing(self) -> None:
         self.install_fake_uv()
@@ -252,6 +396,19 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.assertIn("playwright install chromium", commands)
         profile = self.secrets_dir / "docmost"
         self.assertEqual(stat.S_IMODE(profile.stat().st_mode), 0o700)
+
+    def test_install_rejects_a_stale_dependency_lock_before_sync(self) -> None:
+        self.install_fake_uv()
+        self.write_env()
+        self.env["FAKE_DOCMOST_LOCK"] = "stale"
+
+        result = self.run_script("--install")
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Docmost dependency lock is stale", result.stderr)
+        commands = self.log_file.read_text()
+        self.assertIn("lock --check", commands)
+        self.assertNotIn("sync --frozen", commands)
 
     def test_install_rejects_a_symlinked_runtime_lock_without_invoking_uv(self) -> None:
         self.install_fake_uv()
@@ -459,8 +616,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
         result = self.run_script("--status")
 
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertIn("AUTH_REQUIRED", result.stdout)
-        self.assertIn(RECOVERY_COMMAND, result.stdout)
+        self.assertEqual(result.stdout.strip(), f"Docmost status: {RECOVERY_SENTENCE}")
         commands = self.log_file.read_text()
         self.assertIn("docmost-runtime-stamp check", commands)
         self.assertIn("docmost-smoke", commands)
@@ -475,8 +631,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
         result = self.run_script("--status")
 
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertIn("AUTH_REQUIRED", result.stdout)
-        self.assertIn(RECOVERY_COMMAND, result.stdout)
+        self.assertEqual(result.stdout.strip(), f"Docmost status: {RECOVERY_SENTENCE}")
         self.assertIn("harmless runtime warning", result.stderr)
 
     def test_status_fails_closed_when_the_shared_runtime_is_stale(self) -> None:
@@ -500,9 +655,68 @@ class SetupDocmostToolsTest(unittest.TestCase):
         result = self.run_script("--status")
 
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertIn("AUTH_REQUIRED", result.stdout)
-        self.assertIn(RECOVERY_COMMAND, result.stdout)
+        self.assertEqual(result.stdout.strip(), f"Docmost status: {RECOVERY_SENTENCE}")
         self.assertNotIn("docmost-smoke", self.log_file.read_text())
+
+    def test_status_can_overlap_a_shared_lifetime_runtime_lock(self) -> None:
+        self.install_fake_uv()
+        self.write_env()
+        self.create_private_browser_profile()
+        holder, release = self.start_shared_runtime_holder()
+
+        result = self.run_script("--status")
+        release.touch()
+        holder.communicate(timeout=5)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Docmost status: ready", result.stdout)
+
+    def test_login_and_logout_cannot_overlap_a_shared_lifetime_runtime_lock(self) -> None:
+        self.install_fake_uv()
+        self.write_env()
+        self.create_private_browser_profile()
+        for command in ("--login", "--logout"):
+            with self.subTest(command=command):
+                holder, release = self.start_shared_runtime_holder()
+
+                result = self.run_script(command)
+                release.touch()
+                holder.communicate(timeout=5)
+
+                self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+                self.assertIn("close any active Codex task using Docmost", result.stderr)
+                if self.log_file.exists():
+                    self.assertNotIn("docmost-auth-internal", self.log_file.read_text())
+
+    def test_auth_wrapper_rejects_a_declared_shared_lock_for_login(self) -> None:
+        self.install_fake_uv()
+        self.write_env()
+        runtime_parent = self.codex_home / "runtime"
+        runtime = runtime_parent / "docmost-tools"
+
+        result = subprocess.run(
+            [
+                "/usr/bin/python3",
+                str(runtime / "libexec" / "runtime_lock.py"),
+                "--mode",
+                "shared",
+                "--root",
+                str(runtime_parent),
+                "--",
+                str(runtime / "bin" / "docmost-auth"),
+                "login",
+            ],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("login requires the exclusive runtime lock", result.stderr)
+        if self.log_file.exists():
+            self.assertNotIn("docmost-auth-internal", self.log_file.read_text())
 
     def test_status_rejects_a_nonprivate_browser_profile(self) -> None:
         self.install_fake_uv()
@@ -540,7 +754,16 @@ class SetupDocmostToolsTest(unittest.TestCase):
         environment.pop("CODEX_TOOLBOX_ROOT", None)
 
         result = subprocess.run(
-            ["bash", "-lc", RECOVERY_COMMAND],
+            [
+                str(
+                    self.codex_home
+                    / "runtime"
+                    / "docmost-tools"
+                    / "bin"
+                    / "docmost-auth"
+                ),
+                "login",
+            ],
             cwd=self.home,
             env=environment,
             text=True,
@@ -616,14 +839,11 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.assertLess(login, second_smoke)
         self.assertLess(second_smoke, first_plugin)
 
-    def test_global_setup_reinstalls_from_the_active_plugin_after_refresh(self) -> None:
+    def test_global_setup_reinstalls_from_the_installed_mcp_copy_after_refresh(self) -> None:
         self.install_fake_uv()
         self.install_fake_codex()
         self.write_env()
         self.create_private_browser_profile()
-        active_plugin = self.home / "active-docmost-tools"
-        shutil.copytree(ROOT / "plugins" / "docmost-tools", active_plugin)
-        self.env["FAKE_DOCMOST_PLUGIN_ROOT"] = str(active_plugin)
 
         result = subprocess.run(
             ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
@@ -637,9 +857,288 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         log = self.log_file.read_text()
         plugin_refresh = log.index("codex plugin add docmost-tools@jialuo-codex-toolbox")
-        active_sync = log.index(f"--directory {(active_plugin / 'server').resolve()}")
-        self.assertLess(plugin_refresh, active_sync)
+        installed_sync = log.index(
+            f"--directory {(self.installed_plugin_root / 'server').resolve()}"
+        )
+        self.assertLess(plugin_refresh, installed_sync)
+        self.assertNotIn(
+            f"--directory {(self.marketplace_plugin_root / 'server').resolve()}",
+            log,
+        )
+        self.assertIn("codex mcp get docmost --json", log)
         self.assertEqual(log.count("sync --frozen --no-dev --no-editable"), 2)
+
+    def test_global_setup_rejects_an_absent_installed_docmost_mcp(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        self.env["FAKE_DOCMOST_MCP_GET"] = "absent"
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP entry is unavailable", result.stderr)
+
+    def test_global_setup_rejects_unexpected_installed_docmost_transport(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+
+        for overrides in ({"type": "http"}, {"command": "/usr/bin/python3"}):
+            with self.subTest(overrides=overrides):
+                self.write_fake_mcp(**overrides)
+                result = subprocess.run(
+                    ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+                    cwd=ROOT,
+                    env=self.env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertNotEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                self.assertIn(
+                    "Installed Docmost MCP transport is unexpected", result.stderr
+                )
+
+    def test_global_setup_rejects_an_installed_docmost_cwd_outside_codex_home(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        outside = self.home / "outside" / "docmost-tools" / self.plugin_version
+        shutil.copytree(self.installed_plugin_root, outside)
+        self.write_fake_mcp(cwd=str(outside))
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP cwd escapes CODEX_HOME", result.stderr)
+
+    def test_global_setup_rejects_a_malformed_installed_docmost_cwd(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+
+        for cwd in ("relative/docmost-tools/0.1.1", "", None, 42):
+            with self.subTest(cwd=cwd):
+                self.write_fake_mcp(cwd=cwd)
+                result = subprocess.run(
+                    ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+                    cwd=ROOT,
+                    env=self.env,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertNotEqual(
+                    result.returncode, 0, result.stdout + result.stderr
+                )
+                self.assertIn("Installed Docmost MCP cwd is invalid", result.stderr)
+
+    def test_global_setup_rejects_an_unexpected_installed_docmost_layout(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        (self.installed_plugin_root / ".mcp.json").unlink()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
+
+    def test_global_setup_rejects_a_symlink_within_the_installed_layout(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        manifest_directory = self.installed_plugin_root / ".codex-plugin"
+        outside = self.home / "outside-manifest"
+        shutil.copytree(manifest_directory, outside)
+        shutil.rmtree(manifest_directory)
+        manifest_directory.symlink_to(outside, target_is_directory=True)
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
+
+    def test_global_setup_rejects_a_symlinked_installed_version_root(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        linked_root = self.installed_plugin_root
+        target_root = linked_root.with_name(f"{self.plugin_version}-real")
+        linked_root.rename(target_root)
+        manifest_path = target_root / ".codex-plugin" / "plugin.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["version"] = target_root.name
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+        linked_root.symlink_to(target_root, target_is_directory=True)
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
+
+    def test_global_setup_rejects_an_extra_server_in_the_installed_copy(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["unexpected"] = {"command": "/bin/false"}
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
+
+    def test_global_setup_rejects_unprompted_writes_in_the_installed_copy(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["docmost"]["tools"]["create_page"][
+            "approval_mode"
+        ] = "auto"
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP policy is unexpected", result.stderr)
+
+    def test_global_setup_rejects_scalar_installed_launcher_arguments(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["docmost"]["args"] = "malformed-but-matching"
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP launcher is unexpected", result.stderr)
+
+    def test_global_setup_rejects_altered_installed_launcher_script(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["docmost"]["args"][1] += "; true"
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP launcher is unexpected", result.stderr)
+
+    def test_global_setup_rejects_extra_installed_launcher_arguments(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        mcp_path = self.installed_plugin_root / ".mcp.json"
+        mcp = json.loads(mcp_path.read_text())
+        mcp["mcpServers"]["docmost"]["args"].append("unexpected-extra-argument")
+        mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")
+        self.write_fake_mcp()
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost MCP launcher is unexpected", result.stderr)
 
     def test_global_setup_stops_on_non_auth_smoke_failure(self) -> None:
         self.install_fake_uv()

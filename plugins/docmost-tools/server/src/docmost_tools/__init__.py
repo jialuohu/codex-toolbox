@@ -1,6 +1,6 @@
-"""Foundation types for the Docmost MCP plugin."""
+"""Private adapter package for the local Docmost MCP integration."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .client import DocmostReadClient
 from .config import ApiProfile, DocmostSettings, WriteProfile

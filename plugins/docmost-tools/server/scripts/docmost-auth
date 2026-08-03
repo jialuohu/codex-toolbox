@@ -37,11 +37,22 @@ file_mode() {
   fail "Docmost runtime is missing or unsafe; rerun the full codex-toolbox setup from its checkout"
 [ -f "$DOCMOST_RUNTIME_LOCK_HELPER" ] && [ ! -L "$DOCMOST_RUNTIME_LOCK_HELPER" ] || \
   fail "Docmost runtime lock is missing or unsafe; rerun the full codex-toolbox setup from its checkout"
-if [ "${DOCMOST_RUNTIME_LOCK_MODE:-}" != shared ] || \
-  ! "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER" --validate-fd \
-    --mode shared --root "$DOCMOST_RUNTIME_PARENT"; then
+case "$1" in
+  status) DOCMOST_REQUIRED_LOCK_MODE=shared ;;
+  login|logout) DOCMOST_REQUIRED_LOCK_MODE=exclusive ;;
+  *) fail "Usage: docmost-auth login|status|logout" ;;
+esac
+readonly DOCMOST_REQUIRED_LOCK_MODE
+if [ -n "${DOCMOST_RUNTIME_LOCK_MODE:-}" ] || [ -n "${DOCMOST_RUNTIME_LOCK_FD:-}" ]; then
+  [ "${DOCMOST_RUNTIME_LOCK_MODE:-}" = "$DOCMOST_REQUIRED_LOCK_MODE" ] || \
+    fail "Docmost $1 requires the $DOCMOST_REQUIRED_LOCK_MODE runtime lock"
+  "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER" --validate-fd \
+    --mode "$DOCMOST_REQUIRED_LOCK_MODE" --root "$DOCMOST_RUNTIME_PARENT" || \
+    fail "Docmost $1 requires a valid held $DOCMOST_REQUIRED_LOCK_MODE runtime lock"
+else
   exec "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER" \
-    --mode shared --root "$DOCMOST_RUNTIME_PARENT" -- "$DOCMOST_AUTH_WRAPPER" "$@"
+    --mode "$DOCMOST_REQUIRED_LOCK_MODE" --root "$DOCMOST_RUNTIME_PARENT" -- \
+    "$DOCMOST_AUTH_WRAPPER" "$@"
 fi
 
 case "$1" in

@@ -12,6 +12,13 @@ from docmost_tools.profile import ProfileBusyError, profile_paths
 from docmost_tools.runtime import bootstrap_runtime
 from docmost_tools.server import create_server
 
+AUTH_REQUIRED_SENTENCE = (
+    "Authentication required. Close the active task, run "
+    "`CODEX_TOOLBOX_ROOT=\"${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}\" "
+    "\"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh\" --login`, then start a "
+    "fresh task or reconnect Docmost."
+)
+
 
 class FakeContext:
     def __init__(self) -> None:
@@ -122,9 +129,7 @@ def test_bootstrap_converts_missing_cookie_to_exact_auth_required_without_client
     assert runtime.client is None
     assert runtime.startup_error is not None
     assert runtime.startup_error.code is ErrorCode.AUTH_REQUIRED
-    assert runtime.startup_error.message == (
-        '"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login'
-    )
+    assert runtime.startup_error.message == AUTH_REQUIRED_SENTENCE
     assert context.closed is True
 
 

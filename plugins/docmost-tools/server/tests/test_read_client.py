@@ -15,6 +15,13 @@ from docmost_tools.client import AUTH_REQUIRED_MESSAGE, DocmostReadClient
 from docmost_tools.config import DocmostSettings
 from docmost_tools.models import ErrorCode
 
+EXPECTED_AUTH_REQUIRED_MESSAGE = (
+    "Authentication required. Close the active task, run "
+    '`CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" '
+    '"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login`, then start a '
+    "fresh task or reconnect Docmost."
+)
+
 
 def settings(**values: object) -> DocmostSettings:
     return DocmostSettings.model_validate({"base_url": "https://docs.example.test", **values})
@@ -140,7 +147,7 @@ def test_space_and_search_requests_apply_contract_caps_and_pagination() -> None:
                 {
                     "items": [
                         {"id": f"p{index}", "title": "Result", "slugId": f"result-{index}"}
-                        for index in range(50)
+                        for index in range(51)
                     ]
                 }
             ),
@@ -157,24 +164,25 @@ def test_space_and_search_requests_apply_contract_caps_and_pagination() -> None:
     assert search.data.next_cursor != "50"
     assert [(item.url.path, request_json(item)) for item in seen] == [
         ("/api/spaces", {"limit": 100, "cursor": "cursor-safe_1"}),
-        ("/api/search", {"query": "flow matching", "spaceId": "s1", "limit": 50, "offset": 0}),
+        ("/api/search", {"query": "flow matching", "spaceId": "s1", "limit": 51, "offset": 0}),
     ]
 
 
 @pytest.mark.parametrize("operation", ["spaces", "search", "pages", "comments"])
-def test_paginated_reads_reject_an_upstream_response_over_the_requested_limit(
+def test_paginated_reads_reject_an_upstream_response_over_the_fetch_limit(
     operation: str,
 ) -> None:
-    item = (
-        {"id": "space-1"}
-        if operation == "spaces"
-        else {"id": "item-1", "slugId": "item-slug"}
-    )
+    item = {"id": "space-1"} if operation == "spaces" else {"id": "item-1", "slugId": "item-slug"}
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json=envelope({"items": [item, item], "meta": {"nextCursor": "next"}}),
+            json=envelope(
+                {
+                    "items": [item, item, item] if operation == "search" else [item, item],
+                    "meta": {"nextCursor": "next"},
+                }
+            ),
         )
 
     client = client_for(handler)
@@ -205,7 +213,7 @@ def test_search_uses_an_opaque_round_trippable_cursor_and_default_limit() -> Non
                     {
                         "items": [
                             {"id": f"p{index}", "title": "Result", "slugId": f"result-{index}"}
-                            for index in range(20)
+                            for index in range(21)
                         ]
                     }
                 ),
@@ -221,8 +229,8 @@ def test_search_uses_an_opaque_round_trippable_cursor_and_default_limit() -> Non
 
     assert second.ok is True
     assert seen == [
-        {"query": "query", "limit": 20, "offset": 0},
-        {"query": "query", "limit": 20, "offset": 20},
+        {"query": "query", "limit": 21, "offset": 0},
+        {"query": "query", "limit": 21, "offset": 20},
     ]
 
 
@@ -255,7 +263,7 @@ def test_read_pagination_defaults_to_fifty_except_search() -> None:
     assert seen == [
         ("/api/spaces", {"limit": 50}),
         ("/api/pages/sidebar-pages", {"spaceId": "s1", "limit": 50}),
-        ("/api/pages/info", {"pageId": "parent", "format": "markdown"}),
+        ("/api/pages/info", {"pageId": "parent"}),
         ("/api/pages/sidebar-pages", {"pageId": "canonical", "limit": 50}),
         ("/api/comments", {"pageId": "page-uuid", "limit": 50}),
     ]
@@ -395,7 +403,7 @@ def test_list_pages_is_root_only_and_children_canonicalize_through_page_info() -
     assert children.ok is True and children.data is not None
     assert [(item.url.path, request_json(item)) for item in seen] == [
         ("/api/pages/sidebar-pages", {"spaceId": "s1", "limit": 20}),
-        ("/api/pages/info", {"pageId": "intro", "format": "markdown"}),
+        ("/api/pages/info", {"pageId": "intro"}),
         ("/api/pages/sidebar-pages", {"pageId": "canonical-page", "cursor": "next", "limit": 50}),
     ]
 
@@ -458,20 +466,19 @@ def test_transient_read_is_retried_without_exposing_request_secret() -> None:
     assert "session-secret" not in repr(client)
 
 
-@pytest.mark.parametrize("status", [401, 403])
-def test_auth_failures_are_not_retried_and_use_exact_recovery_message(status: int) -> None:
+def test_unauthorized_response_is_not_retried_and_uses_exact_recovery_message() -> None:
     attempts = 0
 
     def handler(_: httpx.Request) -> httpx.Response:
         nonlocal attempts
         attempts += 1
-        return httpx.Response(status, json={"message": "no"})
+        return httpx.Response(401, json={"message": "no"})
 
     result = client_for(handler).current_user()
 
     assert result.ok is False and result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
-    assert result.error.message == AUTH_REQUIRED_MESSAGE
+    assert result.error.message == EXPECTED_AUTH_REQUIRED_MESSAGE
     assert attempts == 1
 
 
@@ -501,6 +508,7 @@ def test_page_scoped_forbidden_responses_are_uniformly_unavailable() -> None:
     client = client_for(handler)
     results = (
         client.get_page("page"),
+        client.list_pages("space"),
         client.list_child_pages("page"),
         client.list_comments("page"),
     )
@@ -510,14 +518,20 @@ def test_page_scoped_forbidden_responses_are_uniformly_unavailable() -> None:
         assert result.error is not None
         assert result.error.code is ErrorCode.PAGE_UNAVAILABLE
         assert result.error.message == "PAGE_UNAVAILABLE"
-    assert seen == ["/api/pages/info", "/api/pages/info", "/api/comments"]
+    assert seen == [
+        "/api/pages/info",
+        "/api/pages/sidebar-pages",
+        "/api/pages/info",
+        "/api/comments",
+    ]
 
 
-def test_non_page_forbidden_response_remains_auth_required() -> None:
+def test_non_page_forbidden_response_is_stably_forbidden() -> None:
     result = client_for(lambda _: httpx.Response(403, json={"message": "forbidden"})).current_user()
 
     assert result.ok is False and result.error is not None
-    assert result.error.code is ErrorCode.AUTH_REQUIRED
+    assert result.error.code is ErrorCode.FORBIDDEN
+    assert result.error.message == "FORBIDDEN"
 
 
 def test_page_scoped_unauthorized_response_remains_auth_required() -> None:
@@ -526,6 +540,53 @@ def test_page_scoped_unauthorized_response_remains_auth_required() -> None:
     assert result.ok is False and result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
     assert result.error.message == AUTH_REQUIRED_MESSAGE
+
+
+def test_exhausted_transient_page_read_remains_retryable() -> None:
+    attempts = 0
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503, json={"message": "temporary"})
+
+    result = client_for(handler, retries=2).get_page("page")
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.PAGE_UNAVAILABLE
+    assert result.error.retryable is True
+    assert attempts == 3
+
+
+@pytest.mark.parametrize(
+    ("returned_count", "expected_count", "has_cursor"),
+    [(2, 2, False), (3, 2, True)],
+)
+def test_search_uses_one_row_lookahead_without_false_terminal_cursor(
+    returned_count: int, expected_count: int, has_cursor: bool
+) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "items": [
+                        {"id": f"p{index}", "title": "Result", "slugId": f"result-{index}"}
+                        for index in range(returned_count)
+                    ]
+                }
+            ),
+        )
+
+    result = client_for(handler).search("query", limit=2)
+
+    assert result.ok is True and result.data is not None
+    assert len(result.data.items) == expected_count
+    assert (result.data.next_cursor is not None) is has_cursor
+    assert request_json(seen[0]) == {"query": "query", "limit": 3, "offset": 0}
 
 
 def test_page_lists_normalize_camel_case_fields_and_ignore_upstream_url() -> None:

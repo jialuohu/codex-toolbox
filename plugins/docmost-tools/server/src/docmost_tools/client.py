@@ -30,10 +30,11 @@ from docmost_tools.models import (
     Space,
     VersionInfo,
 )
-from docmost_tools.recovery import AUTH_LOGIN_COMMAND
+from docmost_tools.recovery import AUTH_REQUIRED_SENTENCE
 
-AUTH_REQUIRED_MESSAGE = AUTH_LOGIN_COMMAND
+AUTH_REQUIRED_MESSAGE = AUTH_REQUIRED_SENTENCE
 PAGE_UNAVAILABLE_MESSAGE = "PAGE_UNAVAILABLE"
+FORBIDDEN_MESSAGE = "FORBIDDEN"
 WRITE_COMPATIBILITY_BLOCKED_MESSAGE = "WRITE_COMPATIBILITY_BLOCKED"
 _MAX_PAGE_SIZE = 100
 _MAX_SEARCH_SIZE = 50
@@ -50,9 +51,7 @@ _MARKDOWN_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _MAX_TITLE_CHARS = 250
 _MAX_PAGE_MARKDOWN_CHARS = 1_000_000
 _MAX_COMMENT_MARKDOWN_CHARS = 20_000
-_OUTCOME_UNKNOWN_MESSAGE = (
-    "OUTCOME_UNKNOWN: search or read Docmost before retrying this write."
-)
+_OUTCOME_UNKNOWN_MESSAGE = "OUTCOME_UNKNOWN: search or read Docmost before retrying this write."
 _PARTIAL_CREATE_MESSAGE = (
     "Page was created at the space root, but nesting failed. "
     "Do not retry create_page; read the returned page before any manual move."
@@ -176,9 +175,7 @@ class DocmostReadClient:
         except ValueError as error:
             return self._invalid(error)
         return self._run(
-            lambda: self._cursor_page(
-                self._post("/api/spaces", body), Space, limit=validated_limit
-            )
+            lambda: self._cursor_page(self._post("/api/spaces", body), Space, limit=validated_limit)
         )
 
     def get_space(self, space_id: str) -> OperationResult[Space]:
@@ -208,7 +205,8 @@ class DocmostReadClient:
             offset = self._search_offset(cursor)
         except ValueError as error:
             return self._invalid(error)
-        body: dict[str, object] = {"query": query, "limit": limit, "offset": offset}
+        fetch_limit = limit + 1
+        body: dict[str, object] = {"query": query, "limit": fetch_limit, "offset": offset}
         if space_id is not None:
             try:
                 body["spaceId"] = self._identifier(space_id)
@@ -216,11 +214,13 @@ class DocmostReadClient:
                 return self._invalid(error)
 
         def operation() -> SearchResults:
-            result = self._cursor_page(self._post("/api/search", body), Page, limit=limit)
+            result = self._cursor_page(self._post("/api/search", body), Page, limit=fetch_limit)
             next_cursor = (
-                self._encode_search_cursor(offset + limit) if len(result.items) == limit else None
+                self._encode_search_cursor(offset + limit)
+                if len(result.items) == fetch_limit
+                else None
             )
-            return SearchResults(items=result.items, next_cursor=next_cursor)
+            return SearchResults(items=result.items[:limit], next_cursor=next_cursor)
 
         return self._run(operation)
 
@@ -266,12 +266,13 @@ class DocmostReadClient:
         return self._run(
             lambda: PageList(
                 **self._cursor_page(
-                    self._post("/api/pages/sidebar-pages", body),
+                    self._post("/api/pages/sidebar-pages", body, page_scope=True),
                     Page,
                     limit=validated_limit,
                 ).model_dump(),
                 root_only=True,
-            )
+            ),
+            page_scope=True,
         )
 
     def list_child_pages(
@@ -288,9 +289,7 @@ class DocmostReadClient:
 
         def operation() -> PageList:
             canonical_id = self._page_id_from_data(
-                self._post(
-                    "/api/pages/info", {"pageId": identifier, "format": "markdown"}, page_scope=True
-                )
+                self._post("/api/pages/info", {"pageId": identifier}, page_scope=True)
             )
             body: dict[str, object] = {"pageId": canonical_id, "limit": validated_limit}
             if validated_cursor is not None:
@@ -356,7 +355,7 @@ class DocmostReadClient:
             if validated_parent is not None:
                 parent_data = self._post(
                     "/api/pages/info",
-                    {"pageId": validated_parent, "format": "markdown"},
+                    {"pageId": validated_parent},
                     page_scope=True,
                 )
                 canonical_parent = self._page_id_from_data(parent_data)
@@ -377,9 +376,7 @@ class DocmostReadClient:
                     )
                 },
             )
-            created = self._parse_write_result(
-                lambda: self._page_summary_from_data(imported)
-            )
+            created = self._parse_write_result(lambda: self._page_summary_from_data(imported))
             if canonical_parent is None:
                 return CreatePageResult(page=created)
 
@@ -422,10 +419,10 @@ class DocmostReadClient:
             return cast(OperationResult[Page], self._page_invalid(error))
 
         def operation() -> Page:
-            current = self._page_from_data(
+            current = self._page_summary_from_data(
                 self._post(
                     "/api/pages/info",
-                    {"pageId": validated_page_id, "format": "markdown"},
+                    {"pageId": validated_page_id},
                     page_scope=True,
                 )
             )
@@ -436,9 +433,7 @@ class DocmostReadClient:
                 {"pageId": current.id, "title": validated_title},
                 page_scope=True,
             )
-            return self._parse_write_result(
-                lambda: self._page_summary_from_data(updated)
-            )
+            return self._parse_write_result(lambda: self._page_summary_from_data(updated))
 
         return self._run_write(operation)
 
@@ -464,7 +459,7 @@ class DocmostReadClient:
             canonical_page_id = self._page_id_from_data(
                 self._post(
                     "/api/pages/info",
-                    {"pageId": validated_page_id, "format": "markdown"},
+                    {"pageId": validated_page_id},
                     page_scope=True,
                 )
             )
@@ -571,7 +566,7 @@ class DocmostReadClient:
         if response.status_code == 403:
             if page_scope:
                 raise _ClientFailure(ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE)
-            raise _ClientFailure(ErrorCode.AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE)
+            raise _ClientFailure(ErrorCode.FORBIDDEN, FORBIDDEN_MESSAGE)
         if 300 <= response.status_code < 400:
             raise self._unavailable(page_scope, "Docmost read request was redirected")
         if response.status_code != 200:
@@ -610,7 +605,7 @@ class DocmostReadClient:
         if response.status_code in {403, 404} and page_scope:
             raise _ClientFailure(ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE)
         if response.status_code == 403:
-            raise _ClientFailure(ErrorCode.UPSTREAM_ERROR, "Docmost write was forbidden")
+            raise _ClientFailure(ErrorCode.FORBIDDEN, FORBIDDEN_MESSAGE)
         if response.status_code == 409:
             raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
         if response.status_code in _TRANSIENT_STATUS_CODES:
@@ -622,9 +617,7 @@ class DocmostReadClient:
         try:
             payload = cast(object, response.json())
         except ValueError as error:
-            raise _ClientFailure(
-                ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE
-            ) from error
+            raise _ClientFailure(ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE) from error
         if not isinstance(payload, dict):
             raise _ClientFailure(ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE)
         envelope = cast(dict[str, object], payload)
@@ -875,10 +868,7 @@ class DocmostReadClient:
 
     def _cookie_headers(self) -> dict[str, str]:
         return {
-            "Cookie": (
-                f"{self._settings.session_cookie}="
-                f"{self._session_cookie.get_secret_value()}"
-            )
+            "Cookie": (f"{self._settings.session_cookie}={self._session_cookie.get_secret_value()}")
         }
 
     @staticmethod
@@ -899,9 +889,7 @@ class DocmostReadClient:
     @staticmethod
     def _page_markdown(value: str) -> str:
         if len(value) > _MAX_PAGE_MARKDOWN_CHARS:
-            raise ValueError(
-                f"page Markdown must be at most {_MAX_PAGE_MARKDOWN_CHARS} characters"
-            )
+            raise ValueError(f"page Markdown must be at most {_MAX_PAGE_MARKDOWN_CHARS} characters")
         if _MARKDOWN_CONTROL_PATTERN.search(value):
             raise ValueError("page Markdown contains unsupported control characters")
         return value.replace("\r\n", "\n").replace("\r", "\n")
@@ -954,7 +942,9 @@ class DocmostReadClient:
     @staticmethod
     def _unavailable(page_scope: bool, message: str, *, retryable: bool = False) -> _ClientFailure:
         if page_scope:
-            return _ClientFailure(ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE)
+            return _ClientFailure(
+                ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE, retryable=retryable
+            )
         return _ClientFailure(ErrorCode.UPSTREAM_ERROR, message, retryable=retryable)
 
     @staticmethod

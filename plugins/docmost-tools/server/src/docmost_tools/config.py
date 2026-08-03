@@ -79,6 +79,14 @@ class DocmostSettings(BaseSettings):
             raise ValueError(msg)
         return value
 
+    @field_validator("ca_bundle")
+    @classmethod
+    def validate_ca_bundle(cls, value: Path | None) -> Path | None:
+        if value is not None and not value.is_absolute():
+            msg = "DOCMOST_CA_BUNDLE must be an absolute path"
+            raise ValueError(msg)
+        return value
+
     @staticmethod
     def _validate_docmost_url(value: AnyHttpUrl, *, allow_path: bool) -> None:
         host = (value.host or "").strip("[]").lower()
