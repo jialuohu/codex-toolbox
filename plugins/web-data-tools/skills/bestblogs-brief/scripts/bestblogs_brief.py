@@ -56,6 +56,14 @@ class BriefError(RuntimeError):
     """A bounded user-facing failure that never includes remote payloads."""
 
 
+class _BriefHTTPError(BriefError):
+    """A generic HTTP failure retaining only the status needed for routing."""
+
+    def __init__(self, status):
+        super().__init__("BestBlogs HTTP request failed")
+        self.status = status
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -303,11 +311,14 @@ class BestBlogsClient:
         request = Request(url, data=body, headers=headers, method=method)
         try:
             with self._opener.open(request, timeout=self.timeout) as response:
-                if response.geturl() != url or not 200 <= response.getcode() < 300:
+                if response.geturl() != url:
                     raise BriefError("BestBlogs HTTP request failed")
+                status = response.getcode()
+                if not isinstance(status, int) or isinstance(status, bool) or not 200 <= status < 300:
+                    raise _BriefHTTPError(status)
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as error:
-            raise BriefError("BestBlogs HTTP request failed") from error
+            raise _BriefHTTPError(error.code) from error
         except (URLError, http.client.HTTPException, OSError) as error:
             raise BriefError("BestBlogs network request failed") from error
         if len(raw) > MAX_RESPONSE_BYTES:
@@ -332,7 +343,12 @@ class BestBlogsClient:
     def public_brief(self, date, language):
         date = _validated_date(date, "public date")
         language = _validated_public_language(language)
-        return self._request("GET", "/brief?date=%s&language=%s" % (date, language))
+        try:
+            return self._request("GET", "/brief?date=%s&language=%s" % (date, language))
+        except _BriefHTTPError as error:
+            if error.status not in (401, 404):
+                raise
+        return self._request("GET", "/briefs/public/today?locale=%s" % language)
 
     def batch_meta(self, resource_ids):
         if not isinstance(resource_ids, list) or not resource_ids or len(resource_ids) > MAX_BATCH_SIZE or \

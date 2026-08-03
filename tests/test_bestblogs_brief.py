@@ -338,6 +338,71 @@ class BestBlogsBriefTests(unittest.TestCase):
         self.assertIsNone(request.data)
         self.assertEqual(request.get_header("X-api-key"), VALID_API_KEY)
 
+    def test_public_client_falls_back_in_order_only_for_unauthorized_or_missing_primary(self):
+        primary_url = brief.API_ORIGIN + "/brief?date=2026-07-24&language=zh"
+        fallback_url = brief.API_ORIGIN + "/briefs/public/today?locale=zh"
+        valid = json.dumps({
+            "success": True, "code": None, "message": None, "requestId": "request", "data": {"route": "fallback"},
+        }).encode()
+        for status in (401, 404):
+            with self.subTest(status=status):
+                client = brief.BestBlogsClient(VALID_API_KEY)
+                client._opener = FakeOpener([
+                    HTTPError(primary_url, status, "sensitive upstream detail", {}, io.BytesIO(b"sensitive payload")),
+                    FakeResponse(valid, fallback_url),
+                ])
+
+                self.assertEqual(client.public_brief("2026-07-24", "zh"), {"route": "fallback"})
+                requests = [request for request, _ in client._opener.requests]
+                self.assertEqual([request.full_url for request in requests], [primary_url, fallback_url])
+                self.assertEqual([request.get_method() for request in requests], ["GET", "GET"])
+                self.assertTrue(all(request.data is None for request in requests))
+                self.assertTrue(all("/me" not in request.full_url for request in requests))
+
+    def test_public_client_preserves_other_http_status_without_fallback_or_sensitive_details(self):
+        primary_url = brief.API_ORIGIN + "/brief?date=2026-07-24&language=en"
+        for status in (400, 403, 429, 500):
+            with self.subTest(status=status):
+                client = brief.BestBlogsClient(VALID_API_KEY)
+                client._opener = FakeOpener([
+                    HTTPError(
+                        primary_url, status, "sensitive upstream detail", {},
+                        io.BytesIO(("sensitive payload " + VALID_API_KEY).encode()),
+                    ),
+                ])
+
+                with self.assertRaisesRegex(brief.BriefError, r"^BestBlogs HTTP request failed$") as raised:
+                    client.public_brief("2026-07-24", "en")
+
+                self.assertEqual(raised.exception.status, status)
+                self.assertEqual([request.full_url for request, _ in client._opener.requests], [primary_url])
+                self.assertNotIn("sensitive", str(raised.exception))
+                self.assertNotIn(VALID_API_KEY, str(raised.exception))
+
+    def test_public_today_fallback_still_rejects_a_returned_date_mismatch_before_metadata(self):
+        primary_url = brief.API_ORIGIN + "/brief?date=2026-07-23&language=zh"
+        fallback_url = brief.API_ORIGIN + "/briefs/public/today?locale=zh"
+        fallback = json.dumps({
+            "success": True,
+            "code": None,
+            "message": None,
+            "requestId": "request",
+            "data": self.stable_brief(brief_date="2026-07-24"),
+        }).encode()
+        client = brief.BestBlogsClient(VALID_API_KEY)
+        client._opener = FakeOpener([
+            HTTPError(primary_url, 404, "not found", {}, io.BytesIO(b"sensitive payload")),
+            FakeResponse(fallback, fallback_url),
+        ])
+
+        with self.assertRaisesRegex(brief.BriefError, "brief date"):
+            brief.read_public(client, "2026-07-23", "zh")
+
+        self.assertEqual(
+            [request.full_url for request, _ in client._opener.requests],
+            [primary_url, fallback_url],
+        )
+
     def test_public_normalizes_every_item_in_order_without_personal_routes(self):
         newsletter = item("newsletter", contentType="NEWSLETTER")
         for field in ("deepRead", "featured", "personalized"):
