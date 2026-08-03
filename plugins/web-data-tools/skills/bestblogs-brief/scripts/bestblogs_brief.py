@@ -146,10 +146,10 @@ def _is_public_ip(address):
     return True
 
 
-def _optional_https_url(value, description):
+def _optional_https_url(value, description, allow_fragment=False):
     if value is None:
         return None
-    if not isinstance(value, str) or not value or len(value) > 4096 or "#" in value or any(
+    if not isinstance(value, str) or not value or len(value) > 4096 or ("#" in value and not allow_fragment) or any(
             char.isspace() or ord(char) <= 0x1f or ord(char) == 0x7f or char == "\\" for char in value):
         raise BriefError("invalid %s HTTPS URL" % description)
     try:
@@ -157,7 +157,8 @@ def _optional_https_url(value, description):
         hostname = parsed.hostname
         bracketed = parsed.netloc.startswith("[")
         if parsed.scheme != "https" or not hostname or parsed.username is not None or parsed.password is not None \
-                or parsed.port is not None or parsed.fragment:
+                or parsed.port is not None or (parsed.fragment and not allow_fragment) \
+                or (allow_fragment and "#" in value and not parsed.fragment):
             raise BriefError("invalid %s HTTPS URL" % description)
         if (bracketed and not re.fullmatch(r"\[[^\]]+\]", parsed.netloc)) or \
                 (not bracketed and ":" in parsed.netloc):
@@ -196,6 +197,9 @@ def _authoritative_publisher_url(value):
         raise BriefError("invalid resource HTTPS URL") from error
     if scheme == "http":
         value = "https" + value[len(scheme):]
+    value = _optional_https_url(value, "resource", allow_fragment=True)
+    if "#" in value:
+        value = value.split("#", 1)[0]
     return _optional_https_url(value, "resource")
 
 

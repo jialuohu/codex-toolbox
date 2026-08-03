@@ -709,7 +709,6 @@ class BestBlogsBriefTests(unittest.TestCase):
             ("url", "https://bad host.example/item"),
             ("url", "https://example.com:443/item"),
             ("url", "https://example.com:/item"),
-            ("url", "https://example.com/item#fragment"),
         ):
             with self.subTest(field=field, unsafe=unsafe):
                 values = {field: unsafe}
@@ -1122,6 +1121,53 @@ class BestBlogsBriefTests(unittest.TestCase):
             result["items"][0]["url"],
             "https://www.ruanyifeng.com/blog/2026/07/weekly-issue-405.html",
         )
+
+    def test_public_strips_a_safe_authoritative_publisher_fragment(self):
+        client = self.public_client(
+            self.stable_brief(items=[item("one", personalized=False)]),
+            [[metadata(
+                "one",
+                originalUrl="https://publisher.example.com/research?id=7#results",
+                url="https://bestblogs.dev/reader/one",
+                readUrl="https://reader.example.com/one#results",
+                cover=None,
+            )]],
+        )
+
+        result = brief.read_public(client, "2026-07-24", "zh")
+
+        self.assertEqual(result["items"][0]["url"], "https://publisher.example.com/research?id=7")
+
+    def test_authoritative_fragment_normalization_does_not_hide_unsafe_raw_url_content(self):
+        for unsafe in (
+            "https://publisher.example.com/item#bad fragment",
+            "https://publisher.example.com/item#bad\\fragment",
+            "https://publisher.example.com/item#bad\x00fragment",
+            "https://publisher.example.com/item#" + "x" * 4096,
+            "https://user@publisher.example.com/item#section",
+            "https://publisher.example.com:443/item#section",
+        ):
+            with self.subTest(unsafe=repr(unsafe)):
+                client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+                    metadata("one", url=unsafe, cover=None),
+                ]])
+
+                with self.assertRaisesRegex(brief.BriefError, "resource HTTPS URL"):
+                    brief.read_today(client, "2026-07-24")
+
+    def test_authoritative_fragment_normalization_does_not_relax_cover_fragments(self):
+        client = self.pro_client(self.stable_brief(items=[item("one")]), [[
+            metadata(
+                "one",
+                url="https://publisher.example.com/item#section",
+                cover="https://image.jido.dev/image.jpg#section",
+            ),
+        ]])
+
+        result = brief.read_today(client, "2026-07-24")
+
+        self.assertEqual(result["items"][0]["url"], "https://publisher.example.com/item")
+        self.assertNotIn("coverUrl", result["items"][0])
 
     def test_rejects_unsafe_authoritative_http_urls_and_never_upgrades_covers(self):
         for unsafe in (
