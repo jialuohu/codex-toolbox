@@ -221,6 +221,34 @@ Register the downloaded Desktop client once, using a neutral absolute path:
 scripts/setup-gws.sh --register-client /absolute/path/to/client_secret.json
 ```
 
+### Quota-project 403 recovery
+
+A gws request that sends `x-goog-user-project` can receive a quota-project 403.
+The observed Google error class says that the caller lacks
+`serviceusage.services.use` on the OAuth project named by the request. Pinned
+`gws` v0.22.5 derives that header from a nonempty
+`client_secret.json.installed.project_id`.
+
+The registered client at the secrets-root `gws/client_secret.json` remains
+protected and unchanged, including its nonempty project ID. New encrypted and
+imported profiles automatically receive a separate runtime client with the
+same client fields and an explicitly empty project ID, so gws omits that
+header. Do not hand-edit either client, grant Cloud IAM as the default remedy,
+or replace the registered client to work around this error.
+
+For an older profile whose runtime client still has a project ID, run the
+explicit alias-scoped transactional migration:
+
+```bash
+scripts/setup-gws.sh --migrate-account account-one
+```
+
+The migration stages and validates a candidate, performs a final readback, and
+rolls back on failure. It verifies only with the account's isolated, read-only
+`gmail users getProfile --params '{"userId":"me"}' --format json` identity
+check. If any preflight, migration, or readback gate fails, it stops without a
+manual-edit or IAM fallback.
+
 Add each account separately with a non-secret alias. During each browser login,
 select the matching account and approve the displayed `gmail.modify` permission
 plus the three identity scopes; abort if any other scope is shown:
@@ -228,6 +256,39 @@ plus the three identity scopes; abort if any other scope is shown:
 ```bash
 scripts/setup-gws.sh --add-account account-one@example.com --alias account-one
 scripts/setup-gws.sh --add-account account-two@example.net --alias account-two
+```
+
+Encrypted OAuth is the recommended credential mode. The interactive
+`--add-account` flow stores encrypted credentials with the file keyring, and
+`--reauth-account` is available only for these encrypted profiles.
+
+Imported `authorized_user` JSON is a supported opt-in plaintext-at-rest alternative.
+Use it only when an existing grant cannot be recreated through the recommended
+encrypted OAuth flow. Set a neutral secrets root, create its private import
+directory, and place the credential source there before import:
+
+```bash
+export CODEX_SECRETS_DIR=/absolute/path/to
+mkdir -m 700 "$CODEX_SECRETS_DIR/gws-import"
+chmod 600 "$CODEX_SECRETS_DIR/gws-import/account-one.json"
+scripts/setup-gws.sh --import-account /absolute/path/to/gws-import/account-one.json --email account-one@example.com --alias account-one
+```
+
+The import root must be a canonical, current-user-owned mode-`700`
+`${CODEX_SECRETS_DIR}/gws-import` directory. The source must be a canonical,
+current-user-owned mode-`600` regular single-link direct child of that directory.
+The staging source is retained, and import creates another plaintext copy.
+Protect and remove the retained source yourself when it is no longer needed.
+Imported grants may contain extra scopes, but always reject `https://mail.google.com/`.
+
+Rotate an imported credential only with `--replace`, using the same alias and
+same expected identity as the existing imported profile. The candidate must
+pass its live identity and scope checks before the transactional replacement;
+the previous live profile is restored if activation or final live readback fails.
+
+```bash
+chmod 600 "$CODEX_SECRETS_DIR/gws-import/account-one-rotated.json"
+scripts/setup-gws.sh --import-account /absolute/path/to/gws-import/account-one-rotated.json --email account-one@example.com --alias account-one --replace
 ```
 
 Profiles live outside Git under
@@ -246,8 +307,10 @@ scripts/setup-gws.sh --list-accounts
 scripts/setup-gws.sh --check
 ```
 
-Reauthenticate an existing profile, including one with an expired or revoked
-token, without changing its expected identity, then check it again:
+Reauthenticate an existing encrypted OAuth profile, including one with an
+expired or revoked token, without changing its expected identity, then check it
+again. Imported profiles cannot use `--reauth-account`; rotate their original
+grant with the same-alias, same-identity `--import-account ... --replace` flow:
 
 ```bash
 scripts/setup-gws.sh --reauth-account account-one

@@ -19,3 +19,15 @@ surface to Gmail, require the toolbox's isolated alias/profile contract and
 live identity verification, scrub ambient credentials, forbid connector
 fallback, constrain attachments to absolute paths, make composition draft-first,
 and omit unsafe raw Gmail API areas. No upstream runtime code is vendored.
+
+Imported authorized-user support is a local plaintext-at-rest extension to the
+upstream skill guidance. The toolbox implementation adds isolated imported
+profile markers, client and source-hash binding, trusted staging-copy rules,
+scope and live-identity checks, encrypted-only reauthentication, and
+transactional same-identity replacement.
+
+The quota-project runtime-client split is a local safety and compatibility patch.
+It preserves the protected registered Desktop client while writing projectless
+per-profile runtime clients, preventing pinned `gws` from sending the registered
+project as `x-goog-user-project`; it also adds explicit transactional migration
+and isolated live Gmail identity readback for legacy profiles.

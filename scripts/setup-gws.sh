@@ -27,6 +27,8 @@ TX_LIVE=""
 TX_RESERVATION=""
 TX_LOCK=""
 TX_CLIENT_CANDIDATE=""
+TX_ACTIVATED=0
+TX_COMMITTED=0
 SECRETS_ROOT_ENTRIES=()
 PROFILE_ENTRIES=()
 
@@ -37,32 +39,85 @@ cleanup_install_tmp() {
 }
 
 cleanup_profile_transaction() {
+  local failed=0 rollback_failed=0
   if [ -n "${TX_CLIENT_CANDIDATE:-}" ] && { [ -e "$TX_CLIENT_CANDIDATE" ] || [ -L "$TX_CLIENT_CANDIDATE" ]; }; then
-    /bin/rm -- "$TX_CLIENT_CANDIDATE" || printf 'warning: failed to clean OAuth client candidate\n' >&2
+    if ! /bin/rm -- "$TX_CLIENT_CANDIDATE"; then
+      printf 'warning: failed to clean OAuth client candidate\n' >&2
+      failed=1
+    fi
   fi
-  if [ -n "${TX_CANDIDATE:-}" ] && [ -e "$TX_CANDIDATE" ]; then
-    /bin/rm -rf -- "$TX_CANDIDATE" || printf 'warning: failed to clean candidate profile\n' >&2
+  if [ "${TX_ACTIVATED:-0}" -eq 1 ] && [ "${TX_COMMITTED:-0}" -eq 0 ]; then
+    if [ -n "${TX_LIVE:-}" ] && { [ -e "$TX_LIVE" ] || [ -L "$TX_LIVE" ]; } \
+      && [ -n "${TX_CANDIDATE:-}" ] && [ ! -e "$TX_CANDIDATE" ] && [ ! -L "$TX_CANDIDATE" ]; then
+      if ! rename_path "$TX_LIVE" "$TX_CANDIDATE"; then
+        printf 'critical: failed to quarantine uncommitted live profile\n' >&2
+        failed=1
+        rollback_failed=1
+      fi
+    fi
   fi
-  if [ -n "${TX_BACKUP:-}" ] && [ -e "$TX_BACKUP" ]; then
-    if [ -n "${TX_LIVE:-}" ] && [ ! -e "$TX_LIVE" ]; then
-      rename_path "$TX_BACKUP" "$TX_LIVE" || printf 'critical: failed to restore preserved live profile\n' >&2
+  if [ -n "${TX_BACKUP:-}" ] && { [ -e "$TX_BACKUP" ] || [ -L "$TX_BACKUP" ]; }; then
+    if [ "${TX_COMMITTED:-0}" -eq 0 ] && [ -n "${TX_LIVE:-}" ] \
+      && [ ! -e "$TX_LIVE" ] && [ ! -L "$TX_LIVE" ]; then
+      if rename_path "$TX_BACKUP" "$TX_LIVE"; then
+        TX_BACKUP=""
+      else
+        printf 'critical: failed to restore preserved live profile\n' >&2
+        failed=1
+        rollback_failed=1
+      fi
     else
       printf 'warning: preserved profile backup requires manual review\n' >&2
+      if [ "${TX_COMMITTED:-0}" -eq 0 ]; then
+        failed=1
+        rollback_failed=1
+      fi
+    fi
+  fi
+  if [ -n "${TX_CANDIDATE:-}" ] && { [ -e "$TX_CANDIDATE" ] || [ -L "$TX_CANDIDATE" ]; }; then
+    if [ "$rollback_failed" -eq 0 ]; then
+      if ! /bin/rm -rf -- "$TX_CANDIDATE"; then
+        printf 'warning: failed to clean candidate profile\n' >&2
+        failed=1
+      fi
+    else
+      printf 'critical: preserved candidate profile requires manual review\n' >&2
     fi
   fi
   if [ -n "${TX_RESERVATION:-}" ] && [ -d "$TX_RESERVATION" ] && [ ! -L "$TX_RESERVATION" ]; then
-    /bin/rmdir -- "$TX_RESERVATION" || printf 'warning: failed to clean reserved profile path\n' >&2
+    if ! /bin/rmdir -- "$TX_RESERVATION"; then
+      printf 'warning: failed to clean reserved profile path\n' >&2
+      failed=1
+    fi
   fi
   if [ -n "${TX_LOCK:-}" ] && [ -d "$TX_LOCK" ] && [ ! -L "$TX_LOCK" ]; then
-    /bin/rmdir -- "$TX_LOCK" || printf 'warning: failed to release account lock\n' >&2
+    if [ "$rollback_failed" -ne 0 ]; then
+      printf 'critical: preserved alias lock requires manual review\n' >&2
+      failed=1
+    elif ! /bin/rmdir -- "$TX_LOCK"; then
+      printf 'warning: failed to release account lock\n' >&2
+      failed=1
+    fi
   fi
+  return "$failed"
 }
 
 cleanup_all() {
-  cleanup_profile_transaction
-  cleanup_install_tmp
+  local failed=0
+  cleanup_profile_transaction || failed=1
+  cleanup_install_tmp || failed=1
+  return "$failed"
 }
-trap cleanup_all EXIT
+
+cleanup_on_exit() {
+  local status="$?"
+  trap - EXIT HUP INT TERM
+  if ! cleanup_all; then
+    status=1
+  fi
+  exit "$status"
+}
+trap cleanup_on_exit EXIT
 trap 'exit 130' HUP INT TERM
 
 die() {
@@ -77,6 +132,8 @@ Usage:
   setup-gws.sh --install
   setup-gws.sh --register-client FILE
   setup-gws.sh --add-account EMAIL [--alias ALIAS]
+  setup-gws.sh --import-account FILE --email EMAIL --alias ALIAS [--replace]
+  setup-gws.sh --migrate-account ALIAS
   setup-gws.sh --reauth-account ALIAS
   setup-gws.sh --check-account ALIAS
   setup-gws.sh --list-accounts
@@ -209,6 +266,7 @@ try:
     valid = (
         stat.S_ISREG(metadata.st_mode)
         and not stat.S_ISLNK(metadata.st_mode)
+        and metadata.st_uid == os.getuid()
         and stat.S_IMODE(metadata.st_mode) == 0o600
     )
 except OSError:
@@ -250,7 +308,12 @@ import stat
 import sys
 try:
     metadata = os.lstat(os.environ["PROFILE_DIR"])
-    valid = stat.S_ISDIR(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode) and stat.S_IMODE(metadata.st_mode) == 0o700
+    valid = (
+        stat.S_ISDIR(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and metadata.st_uid == os.getuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o700
+    )
 except OSError:
     valid = False
 sys.exit(0 if valid else 1)
@@ -261,7 +324,7 @@ registered_client_is_private() {
   local parent
   secrets_root_is_private || return 1
   [ -f "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || return 1
-  validate_client_json "$CLIENT_PATH" || return 1
+  validate_registered_client_json "$CLIENT_PATH" || return 1
   private_regular_file "$CLIENT_PATH" || return 1
   parent="$(canonical_dir "${CLIENT_PATH%/*}")" || return 1
   [ "$parent" = "$SECRETS_ROOT" ]
@@ -277,7 +340,7 @@ def fail_if_unsafe(path, expected_mode, expected_kind):
     metadata = os.lstat(path)
     if stat.S_ISLNK(metadata.st_mode) or not expected_kind(metadata.st_mode):
         raise ValueError("unsafe profile state")
-    if stat.S_IMODE(metadata.st_mode) != expected_mode:
+    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != expected_mode:
         raise ValueError("unsafe profile permissions")
 
 def rethrow(error):
@@ -296,7 +359,7 @@ except (OSError, ValueError):
 PY
 }
 
-validate_client_json() {
+validate_registered_client_json() {
   [ -f "$1" ] && [ ! -L "$1" ] || return 1
   CLIENT_FILE="$1" /usr/bin/python3 -I - <<'PY'
 import json
@@ -318,6 +381,336 @@ try:
 except (OSError, ValueError, KeyError, TypeError):
     valid = False
 sys.exit(0 if valid else 1)
+PY
+}
+
+validate_runtime_client_json() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  CLIENT_FILE="$1" /usr/bin/python3 -I - <<'PY'
+import json
+import os
+import sys
+
+try:
+    with open(os.environ["CLIENT_FILE"], encoding="utf-8") as source:
+        document = json.load(source)
+    installed = document["installed"]
+    required = ("client_id", "client_secret", "project_id", "auth_uri", "token_uri")
+    valid = (
+        isinstance(document, dict)
+        and isinstance(installed, dict)
+        and all(isinstance(installed.get(key), str) for key in required)
+        and all(installed[key] for key in required if key != "project_id")
+        and installed["project_id"] == ""
+        and installed["auth_uri"] == "https://accounts.google.com/o/oauth2/auth"
+        and installed["token_uri"] == "https://oauth2.googleapis.com/token"
+    )
+except (OSError, ValueError, KeyError, TypeError):
+    valid = False
+sys.exit(0 if valid else 1)
+PY
+}
+
+runtime_client_matches_registered() {
+  RUNTIME_FILE="$1" REGISTERED_FILE="$CLIENT_PATH" /usr/bin/python3 -I - <<'PY'
+import json
+import os
+import sys
+
+def reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+try:
+    with open(os.environ["REGISTERED_FILE"], encoding="utf-8") as source:
+        registered = json.load(source, object_pairs_hook=reject_duplicates)
+    with open(os.environ["RUNTIME_FILE"], encoding="utf-8") as source:
+        runtime = json.load(source, object_pairs_hook=reject_duplicates)
+    expected = json.loads(json.dumps(registered))
+    expected["installed"]["project_id"] = ""
+    valid = runtime == expected
+except (OSError, ValueError, KeyError, TypeError):
+    valid = False
+sys.exit(0 if valid else 1)
+PY
+}
+
+legacy_runtime_client_matches_registered() {
+  RUNTIME_FILE="$1" REGISTERED_FILE="$CLIENT_PATH" /usr/bin/python3 -I - <<'PY'
+import json
+import os
+import sys
+
+def reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+try:
+    with open(os.environ["REGISTERED_FILE"], encoding="utf-8") as source:
+        registered = json.load(source, object_pairs_hook=reject_duplicates)
+    with open(os.environ["RUNTIME_FILE"], encoding="utf-8") as source:
+        runtime = json.load(source, object_pairs_hook=reject_duplicates)
+    valid = runtime == registered
+except (OSError, ValueError, KeyError, TypeError):
+    valid = False
+sys.exit(0 if valid else 1)
+PY
+}
+
+write_runtime_client() {
+  REGISTERED_FILE="$CLIENT_PATH" RUNTIME_FILE="$1" /usr/bin/python3 -I - <<'PY'
+import json
+import os
+import sys
+
+try:
+    with open(os.environ["REGISTERED_FILE"], encoding="utf-8") as source:
+        client = json.load(source)
+    client["installed"]["project_id"] = ""
+    encoded = (json.dumps(client, separators=(",", ":")) + "\n").encode("utf-8")
+    descriptor = os.open(os.environ["RUNTIME_FILE"], os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        view = memoryview(encoded)
+        while view:
+            written = os.write(descriptor, view)
+            view = view[written:]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+except (OSError, ValueError, KeyError, TypeError):
+    try:
+        os.unlink(os.environ["RUNTIME_FILE"])
+    except OSError:
+        pass
+    sys.exit(1)
+PY
+}
+
+validate_imported_profile_state() {
+  PROFILE_DIR="$1" /usr/bin/python3 -I - <<'PY'
+import hashlib
+import json
+import os
+import stat
+import sys
+
+def reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+def safe_imported_credentials(metadata):
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and metadata.st_uid == os.getuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+        and metadata.st_nlink == 1
+    )
+
+def identity(metadata):
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_uid,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_size,
+        getattr(metadata, "st_mtime_ns", int(metadata.st_mtime * 1000000000)),
+        getattr(metadata, "st_ctime_ns", int(metadata.st_ctime * 1000000000)),
+    )
+
+credential_fd = None
+try:
+    root = os.environ["PROFILE_DIR"]
+    with open(os.path.join(root, "profile.json"), encoding="utf-8") as source:
+        metadata = json.load(source)
+    credential_path = os.path.join(root, "credentials.json")
+    before = os.lstat(credential_path)
+    if not safe_imported_credentials(before):
+        raise ValueError("unsafe imported credentials")
+    credential_fd = os.open(
+        credential_path,
+        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+    )
+    opened = os.fstat(credential_fd)
+    if not safe_imported_credentials(opened) or identity(opened) != identity(before):
+        raise ValueError("imported credentials changed before read")
+    with os.fdopen(credential_fd, "rb") as source:
+        credential_fd = None
+        credential_bytes = source.read()
+        after_fd = os.fstat(source.fileno())
+    after_path = os.lstat(credential_path)
+    if identity(after_fd) != identity(opened) or identity(after_path) != identity(before):
+        raise ValueError("imported credentials changed during read")
+    credentials = json.loads(credential_bytes.decode("utf-8"), object_pairs_hook=reject_duplicates)
+    with open(os.path.join(root, "client_secret.json"), encoding="utf-8") as source:
+        client = json.load(source)["installed"]
+    expected_keys = {"type", "client_id", "client_secret", "refresh_token"}
+    valid = (
+        isinstance(credentials, dict)
+        and set(credentials) == expected_keys
+        and credentials.get("type") == "authorized_user"
+        and all(isinstance(credentials.get(key), str) and credentials[key] for key in ("client_id", "client_secret", "refresh_token"))
+        and credentials["client_id"] == client.get("client_id")
+        and credentials["client_secret"] == client.get("client_secret")
+        and metadata.get("source_sha256") == hashlib.sha256(credential_bytes).hexdigest()
+    )
+except (OSError, UnicodeError, ValueError, KeyError, TypeError):
+    valid = False
+finally:
+    if credential_fd is not None:
+        os.close(credential_fd)
+sys.exit(0 if valid else 1)
+PY
+}
+
+copy_imported_credentials() {
+  local source="$1" destination="$2"
+  SOURCE_PATH="$source" DESTINATION_PATH="$destination" IMPORT_ROOT="$SECRETS_BASE/gws-import" CLIENT_FILE="$CLIENT_PATH" /usr/bin/python3 -I - <<'PY'
+import hashlib
+import json
+import os
+import stat
+import sys
+
+def reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+def safe_import_root(path):
+    metadata = os.lstat(path)
+    return (
+        os.path.isabs(path)
+        and os.path.normpath(path) == path
+        and os.path.realpath(path) == path
+        and stat.S_ISDIR(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and metadata.st_uid == os.getuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o700
+    )
+
+def safe_source(metadata):
+    return (
+        stat.S_ISREG(metadata.st_mode)
+        and not stat.S_ISLNK(metadata.st_mode)
+        and metadata.st_uid == os.getuid()
+        and stat.S_IMODE(metadata.st_mode) == 0o600
+        and metadata.st_nlink == 1
+    )
+
+def identity(metadata):
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_uid,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_size,
+        getattr(metadata, "st_mtime_ns", int(metadata.st_mtime * 1000000000)),
+        getattr(metadata, "st_ctime_ns", int(metadata.st_ctime * 1000000000)),
+    )
+
+source_path = os.environ["SOURCE_PATH"]
+destination_path = os.environ["DESTINATION_PATH"]
+root = os.environ["IMPORT_ROOT"]
+source_fd = None
+destination_fd = None
+try:
+    if not safe_import_root(root):
+        raise ValueError("unsafe import root")
+    root = os.path.realpath(root)
+    if (
+        not os.path.isabs(source_path)
+        or os.path.normpath(source_path) != source_path
+        or os.path.dirname(source_path) != root
+        or os.path.realpath(source_path) != source_path
+    ):
+        raise ValueError("source must be a canonical direct child")
+    before = os.lstat(source_path)
+    if not safe_source(before):
+        raise ValueError("unsafe source")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    source_fd = os.open(source_path, flags)
+    opened = os.fstat(source_fd)
+    if not safe_source(opened) or identity(opened) != identity(before):
+        raise ValueError("source changed before read")
+    credential_bytes = b""
+    while True:
+        chunk = os.read(source_fd, 65536)
+        if not chunk:
+            break
+        credential_bytes += chunk
+    credentials = json.loads(credential_bytes.decode("utf-8"), object_pairs_hook=reject_duplicates)
+    with open(os.environ["CLIENT_FILE"], encoding="utf-8") as source:
+        client = json.load(source)["installed"]
+    expected_keys = {"type", "client_id", "client_secret", "refresh_token"}
+    if not (
+        isinstance(credentials, dict)
+        and set(credentials) == expected_keys
+        and credentials.get("type") == "authorized_user"
+        and all(isinstance(credentials.get(key), str) and credentials[key] for key in ("client_id", "client_secret", "refresh_token"))
+        and credentials["client_id"] == client.get("client_id")
+        and credentials["client_secret"] == client.get("client_secret")
+    ):
+        raise ValueError("invalid authorized user")
+    digest = hashlib.sha256(credential_bytes).hexdigest()
+    destination_fd = os.open(destination_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    view = memoryview(credential_bytes)
+    while view:
+        written = os.write(destination_fd, view)
+        view = view[written:]
+    os.fsync(destination_fd)
+    destination_metadata = os.fstat(destination_fd)
+    if not safe_source(destination_metadata):
+        raise ValueError("unsafe destination")
+    os.close(destination_fd)
+    destination_fd = None
+    with open(destination_path, "rb") as copied:
+        if hashlib.sha256(copied.read()).hexdigest() != digest:
+            raise ValueError("candidate digest mismatch")
+    os.lseek(source_fd, 0, os.SEEK_SET)
+    reread = b""
+    while True:
+        chunk = os.read(source_fd, 65536)
+        if not chunk:
+            break
+        reread += chunk
+    after_fd = os.fstat(source_fd)
+    after_path = os.lstat(source_path)
+    if (
+        identity(after_fd) != identity(opened)
+        or identity(after_path) != identity(before)
+        or hashlib.sha256(reread).hexdigest() != digest
+    ):
+        raise ValueError("source changed during copy")
+    print(digest)
+except (OSError, UnicodeError, ValueError, KeyError, TypeError):
+    try:
+        os.unlink(destination_path)
+    except OSError:
+        pass
+    sys.exit(1)
+finally:
+    if source_fd is not None:
+        os.close(source_fd)
+    if destination_fd is not None:
+        os.close(destination_fd)
 PY
 }
 
@@ -368,6 +761,24 @@ release_alias_lock() {
   [ -n "${TX_LOCK:-}" ] || return 0
   /bin/rmdir -- "$TX_LOCK" || die "unable to release account lock"
   TX_LOCK=""
+}
+
+begin_profile_activation() {
+  TX_LIVE="$1"
+  TX_ACTIVATED=1
+  TX_COMMITTED=0
+}
+
+commit_profile_activation() {
+  TX_COMMITTED=1
+}
+
+clear_profile_activation() {
+  TX_CANDIDATE=""
+  TX_BACKUP=""
+  TX_LIVE=""
+  TX_ACTIVATED=0
+  TX_COMMITTED=0
 }
 
 rename_path() {
@@ -460,28 +871,96 @@ profile_for_alias() {
   esac
 }
 
-profile_expected_email() {
-  PROFILE_FILE="$1/profile.json" /usr/bin/python3 -I - <<'PY'
+profile_metadata_field() {
+  PROFILE_FILE="$1/profile.json" PROFILE_FIELD="$2" /usr/bin/python3 -I - <<'PY'
 import json
 import os
+import re
 import sys
 
 try:
+    def reject_duplicates(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate key")
+            result[key] = value
+        return result
     with open(os.environ["PROFILE_FILE"], encoding="utf-8") as source:
-        profile = json.load(source)
-    email = profile["expected_email"]
-    if profile["schema_version"] != 1 or not isinstance(email, str) or not email:
+        profile = json.load(source, object_pairs_hook=reject_duplicates)
+    if (
+        not isinstance(profile, dict)
+        or type(profile.get("schema_version")) is not int
+        or profile["schema_version"] != 1
+    ):
         raise ValueError("invalid profile")
+    email = profile.get("expected_email")
+    if not isinstance(email, str) or not email:
+        raise ValueError("invalid profile")
+    legacy_keys = {"schema_version", "expected_email"}
+    mode_keys = {"credential_mode", "scope_policy", "source_sha256"}
+    imported_keys = legacy_keys | mode_keys
+    if not mode_keys.intersection(profile):
+        values = {
+            "expected_email": email,
+            "credential_mode": "encrypted_oauth",
+            "scope_policy": "exact_required",
+            "source_sha256": "",
+        }
+    elif (
+        set(profile) == imported_keys
+        and profile.get("credential_mode") == "imported_authorized_user"
+        and profile.get("scope_policy") == "existing_grant"
+        and isinstance(profile.get("source_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", profile["source_sha256"])
+    ):
+        values = {
+            "expected_email": email,
+            "credential_mode": profile["credential_mode"],
+            "scope_policy": profile["scope_policy"],
+            "source_sha256": profile["source_sha256"],
+        }
+    else:
+        raise ValueError("invalid profile")
+    value = values[os.environ["PROFILE_FIELD"]]
 except (OSError, ValueError, KeyError, TypeError):
     sys.exit(1)
-print(email)
+print(value)
 PY
 }
 
+profile_expected_email() {
+  profile_metadata_field "$1" expected_email
+}
+
+profile_credential_mode() {
+  profile_metadata_field "$1" credential_mode
+}
+
 run_isolated() {
-  local profile="$1"
-  shift
+  local profile="$1" mode="$2"
+  shift 2
   cd / || return 1
+  if [ "$mode" = "imported_authorized_user" ]; then
+    /usr/bin/env \
+      -u GOOGLE_WORKSPACE_CLI_TOKEN \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \
+      -u GOOGLE_WORKSPACE_CLI_LOG \
+      -u GOOGLE_WORKSPACE_CLI_LOG_FILE \
+      -u GOOGLE_WORKSPACE_PROJECT_ID \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \
+      -u GOOGLE_APPLICATION_CREDENTIALS \
+      GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \
+      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
+      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="$profile/credentials.json" \
+      GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \
+      "$GWS_BIN" "$@"
+    return
+  fi
   /usr/bin/env \
     -u GOOGLE_WORKSPACE_CLI_TOKEN \
     -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \
@@ -501,9 +980,8 @@ run_isolated() {
 }
 
 status_is_healthy() {
-  local expected="$1"
-  local status="$2"
-  EXPECTED_EMAIL="$expected" STATUS_JSON="$status" /usr/bin/python3 -I - <<'PY'
+  local expected="$1" status="$2" mode="$3" profile="$4"
+  EXPECTED_EMAIL="$expected" STATUS_JSON="$status" CREDENTIAL_MODE="$mode" PROFILE_PATH="$profile" /usr/bin/python3 -I - <<'PY'
 import json
 import os
 import sys
@@ -517,52 +995,101 @@ try:
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile",
     }
-    healthy = (
+    common = (
         isinstance(status.get("user"), str)
         and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
         and status.get("token_valid") is True
-        and status.get("storage") == "encrypted"
         and status.get("keyring_backend") == "file"
-        and status.get("encrypted_credentials_exists") is True
-        and status.get("encryption_valid") is True
-        and status.get("plain_credentials_exists") is False
         and isinstance(scopes, list)
-        and len(scopes) == len(required_scopes)
-        and set(scopes) == required_scopes
     )
+    if os.environ["CREDENTIAL_MODE"] == "encrypted_oauth":
+        healthy = (
+            common
+            and status.get("storage") == "encrypted"
+            and status.get("encrypted_credentials_exists") is True
+            and status.get("encryption_valid") is True
+            and status.get("plain_credentials_exists") is False
+            and len(scopes) == len(required_scopes)
+            and set(scopes) == required_scopes
+        )
+    elif os.environ["CREDENTIAL_MODE"] == "imported_authorized_user":
+        profile = os.environ["PROFILE_PATH"]
+        healthy = (
+            common
+            and status.get("storage") == "plaintext"
+            and status.get("plain_credentials_exists") is True
+            and status.get("encrypted_credentials_exists") is False
+            and status.get("has_refresh_token") is True
+            and status.get("plain_credentials") == os.path.join(profile, "credentials.json")
+            and status.get("client_config") == os.path.join(profile, "client_secret.json")
+            and len(scopes) == len(set(scopes))
+            and all(isinstance(scope, str) for scope in scopes)
+            and required_scopes.issubset(set(scopes))
+            and "https://mail.google.com/" not in scopes
+        )
+    else:
+        healthy = False
 except (ValueError, TypeError, KeyError):
     healthy = False
 sys.exit(0 if healthy else 1)
 PY
 }
 
+live_identity_matches_expected() {
+  local expected="$1" profile_json="$2"
+  EXPECTED_EMAIL="$expected" PROFILE_JSON="$profile_json" /usr/bin/python3 -I - <<'PY'
+import json
+import os
+import sys
+
+try:
+    profile = json.loads(os.environ["PROFILE_JSON"])
+    email = profile["emailAddress"]
+    valid = isinstance(email, str) and email.casefold() == os.environ["EXPECTED_EMAIL"].casefold()
+except (ValueError, KeyError, TypeError):
+    valid = False
+sys.exit(0 if valid else 1)
+PY
+}
+
 credential_state_is_complete() {
-  local profile="$1"
+  local profile="$1" mode="$2"
   private_regular_file "$profile/profile.json" || return 1
   private_regular_file "$profile/client_secret.json" || return 1
-  private_regular_file "$profile/credentials.enc" || return 1
-  private_regular_file "$profile/.encryption_key" || return 1
-  [ ! -e "$profile/credentials.json" ] && [ ! -L "$profile/credentials.json" ]
+  if [ "$mode" = "encrypted_oauth" ]; then
+    private_regular_file "$profile/credentials.enc" || return 1
+    private_regular_file "$profile/.encryption_key" || return 1
+    [ ! -e "$profile/credentials.json" ] && [ ! -L "$profile/credentials.json" ]
+    return
+  fi
+  [ "$mode" = "imported_authorized_user" ] || return 1
+  private_regular_file "$profile/credentials.json" || return 1
+  [ ! -e "$profile/credentials.enc" ] && [ ! -L "$profile/credentials.enc" ] || return 1
+  validate_imported_profile_state "$profile"
 }
 
 check_profile_health() {
-  local profile="$1" expected="$2" alias="$3" status
+  local profile="$1" expected="$2" alias="$3" mode="$4" status identity
   profile_state_is_private "$profile" || { printf '%s: private permissions check failed\n' "$alias" >&2; return 1; }
-  validate_client_json "$profile/client_secret.json" || { printf '%s: invalid client\n' "$alias" >&2; return 1; }
-  credential_state_is_complete "$profile" || { printf '%s: incomplete or plaintext credential state\n' "$alias" >&2; return 1; }
+  validate_runtime_client_json "$profile/client_secret.json" || { printf '%s: invalid runtime client\n' "$alias" >&2; return 1; }
+  runtime_client_matches_registered "$profile/client_secret.json" || { printf '%s: runtime client does not match registration\n' "$alias" >&2; return 1; }
+  credential_state_is_complete "$profile" "$mode" || { printf '%s: incomplete or invalid credential state\n' "$alias" >&2; return 1; }
   runtime_ready || { printf '%s: gws runtime unavailable\n' "$alias" >&2; return 1; }
-  status="$(run_isolated "$profile" auth status 2>/dev/null)" || { printf '%s: credentials unavailable\n' "$alias" >&2; return 1; }
-  status_is_healthy "$expected" "$status" || { printf '%s: identity, token, keyring, encryption, or scope check failed\n' "$alias" >&2; return 1; }
+  status="$(run_isolated "$profile" "$mode" auth status 2>/dev/null)" || { printf '%s: credentials unavailable\n' "$alias" >&2; return 1; }
+  status_is_healthy "$expected" "$status" "$mode" "$profile" || { printf '%s: identity, token, credential mode, or scope check failed\n' "$alias" >&2; return 1; }
+  identity="$(run_isolated "$profile" "$mode" gmail users getProfile --params '{"userId":"me"}' --format json 2>/dev/null)" || { printf '%s: live identity check failed\n' "$alias" >&2; return 1; }
+  live_identity_matches_expected "$expected" "$identity" || { printf '%s: live identity check failed\n' "$alias" >&2; return 1; }
   printf '%s: ready\n' "$alias"
 }
 
 check_account() {
   local alias="$1"
-  local profile expected
+  local profile expected mode
   profile="$(profile_for_alias "$alias")" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
   private_regular_file "$profile/profile.json" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
   expected="$(profile_expected_email "$profile")" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
-  check_profile_health "$profile" "$expected" "$alias"
+  mode="$(profile_credential_mode "$profile")" || { printf '%s: invalid profile\n' "$alias" >&2; return 1; }
+  check_profile_health "$profile" "$expected" "$alias" "$mode"
 }
 
 install_gws() {
@@ -607,7 +1134,7 @@ install_gws() {
 register_client() {
   [ "$#" -eq 1 ] || usage
   local candidate
-  validate_client_json "$1" || die "invalid Desktop OAuth client JSON"
+  validate_registered_client_json "$1" || die "invalid Desktop OAuth client JSON"
   [ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || die "OAuth client already registered; refusing replacement"
   ensure_secrets_root
   [ ! -e "$CLIENT_PATH" ] && [ ! -L "$CLIENT_PATH" ] || die "OAuth client already registered; refusing replacement"
@@ -615,7 +1142,7 @@ register_client() {
   TX_CLIENT_CANDIDATE="$candidate"
   /bin/cp "$1" "$candidate" || die "unable to copy OAuth client candidate"
   chmod 600 "$candidate" || die "unable to protect OAuth client candidate"
-  validate_client_json "$candidate" || die "copied OAuth client candidate is invalid"
+  validate_registered_client_json "$candidate" || die "copied OAuth client candidate is invalid"
   private_regular_file "$candidate" || die "copied OAuth client candidate is unsafe"
   /bin/ln "$candidate" "$CLIENT_PATH" || die "OAuth client already registered; refusing replacement"
   if ! registered_client_is_private; then
@@ -660,7 +1187,7 @@ add_account() {
   candidate="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.add.XXXXXX")" || die "unable to create candidate account profile"
   chmod 700 "$candidate" || die "unable to protect candidate account profile"
   TX_CANDIDATE="$candidate"
-  if ! cp "$CLIENT_PATH" "$candidate/client_secret.json" || ! chmod 600 "$candidate/client_secret.json"; then
+  if ! write_runtime_client "$candidate/client_secret.json"; then
     die "unable to create candidate account profile"
   fi
   EMAIL="$email" PROFILE_FILE="$candidate/profile.json" /usr/bin/python3 -I - <<'PY' || die "unable to write candidate account profile"
@@ -671,45 +1198,214 @@ with open(os.environ["PROFILE_FILE"], "w", encoding="utf-8") as destination:
     destination.write("\n")
 PY
   chmod 600 "$candidate/profile.json" || die "unable to protect candidate account metadata"
-  if ! run_isolated "$candidate" auth login --scopes "$GMAIL_SCOPE"; then
+  if ! run_isolated "$candidate" encrypted_oauth auth login --scopes "$GMAIL_SCOPE"; then
     die "OAuth login failed; candidate profile will be removed"
   fi
-  if ! check_profile_health "$candidate" "$email" "$alias"; then
+  if ! check_profile_health "$candidate" "$email" "$alias" encrypted_oauth; then
     die "OAuth login identity check failed; candidate profile will be removed"
   fi
+  begin_profile_activation "$profile"
   rename_path "$candidate" "$profile" || die "unable to activate candidate account profile"
   TX_RESERVATION=""
   if ! check_account "$alias"; then
-    if rename_path "$profile" "$candidate"; then
-      die "activated account profile failed live readback and will be removed"
-    fi
-    die "activated account profile failed live readback and could not be quarantined"
+    die "activated account profile failed live readback; transaction will roll back"
   fi
-  TX_CANDIDATE=""
+  commit_profile_activation
+  clear_profile_activation
   release_alias_lock
   printf 'Account %s added\n' "$alias"
 }
 
+emails_match() {
+  LEFT_EMAIL="$1" RIGHT_EMAIL="$2" /usr/bin/python3 -I - <<'PY'
+import os
+import sys
+sys.exit(0 if os.environ["LEFT_EMAIL"].casefold() == os.environ["RIGHT_EMAIL"].casefold() else 1)
+PY
+}
+
+import_account() {
+  local source="" email="" alias="" replace=0 seen_source=0 seen_email=0 seen_alias=0 seen_replace=0
+  local profile existing expected existing_mode candidate digest backup
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --email)
+        [ "$seen_email" -eq 0 ] && [ "$#" -ge 2 ] || usage
+        email="$2"; seen_email=1; shift 2
+        ;;
+      --alias)
+        [ "$seen_alias" -eq 0 ] && [ "$#" -ge 2 ] || usage
+        alias="$2"; seen_alias=1; shift 2
+        ;;
+      --replace)
+        [ "$seen_replace" -eq 0 ] || usage
+        replace=1; seen_replace=1; shift
+        ;;
+      --*) usage ;;
+      *)
+        [ "$seen_source" -eq 0 ] || usage
+        source="$1"; seen_source=1; shift
+        ;;
+    esac
+  done
+  [ "$seen_source" -eq 1 ] && [ -n "$source" ] && [ "$seen_email" -eq 1 ] && [ -n "$email" ] && [ "$seen_alias" -eq 1 ] && [ -n "$alias" ] || usage
+  validate_alias "$alias" || die "invalid account alias"
+  registered_client_is_private || die "a valid protected registered OAuth client is required"
+  runtime_ready || die "gws runtime is unavailable or untrusted"
+  ensure_accounts_root
+  acquire_alias_lock "$alias"
+  profile="$ACCOUNTS_ROOT/$alias"
+  [ ! -L "$profile" ] || die "refusing symlinked account profile"
+  if [ -e "$profile" ]; then
+    [ "$replace" -eq 1 ] || die "account alias already exists"
+    existing="$(profile_for_alias "$alias")" || die "invalid existing account profile"
+    private_regular_file "$existing/profile.json" || die "invalid existing account profile"
+    expected="$(profile_expected_email "$existing")" || die "invalid existing account profile"
+    existing_mode="$(profile_credential_mode "$existing")" || die "invalid existing account profile"
+    [ "$existing_mode" = "imported_authorized_user" ] || die "--replace is only supported for imported account profiles"
+    emails_match "$expected" "$email" || die "account alias belongs to another expected email"
+  else
+    [ "$replace" -eq 0 ] || die "--replace requires an existing imported account profile"
+    /bin/mkdir "$profile" || die "unable to reserve account profile path"
+    TX_RESERVATION="$profile"
+    chmod 700 "$profile" || die "unable to protect reserved account profile path"
+  fi
+  candidate="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.import.XXXXXX")" || die "unable to create imported account candidate"
+  chmod 700 "$candidate" || die "unable to protect imported account candidate"
+  TX_CANDIDATE="$candidate"
+  if ! write_runtime_client "$candidate/client_secret.json"; then
+    die "unable to copy registered OAuth client"
+  fi
+  validate_runtime_client_json "$candidate/client_secret.json" || die "copied OAuth client is invalid"
+  private_regular_file "$candidate/client_secret.json" || die "copied OAuth client is unsafe"
+  runtime_client_matches_registered "$candidate/client_secret.json" || die "copied OAuth client mismatch"
+  digest="$(copy_imported_credentials "$source" "$candidate/credentials.json")" || die "invalid or unsafe imported authorized-user credentials"
+  EMAIL="$email" DIGEST="$digest" PROFILE_FILE="$candidate/profile.json" /usr/bin/python3 -I - <<'PY' || die "unable to write imported account metadata"
+import json
+import os
+with open(os.environ["PROFILE_FILE"], "w", encoding="utf-8") as destination:
+    json.dump({
+        "schema_version": 1,
+        "expected_email": os.environ["EMAIL"],
+        "credential_mode": "imported_authorized_user",
+        "scope_policy": "existing_grant",
+        "source_sha256": os.environ["DIGEST"],
+    }, destination)
+    destination.write("\n")
+PY
+  chmod 600 "$candidate/profile.json" || die "unable to protect imported account metadata"
+  if ! check_profile_health "$candidate" "$email" "$alias" imported_authorized_user >/dev/null; then
+    die "imported credential identity or health check failed; live profile remains unchanged"
+  fi
+  if [ "$replace" -eq 0 ]; then
+    begin_profile_activation "$profile"
+    rename_path "$candidate" "$profile" || die "unable to activate imported account profile"
+    TX_RESERVATION=""
+    if ! check_account "$alias" >/dev/null; then
+      die "activated imported account profile failed live readback; transaction will roll back"
+    fi
+    commit_profile_activation
+  else
+    backup="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.backup.XXXXXX")" || die "unable to reserve profile backup"
+    /bin/rmdir -- "$backup" || die "unable to reserve profile backup"
+    TX_BACKUP="$backup"
+    TX_LIVE="$profile"
+    if ! rename_path "$profile" "$backup"; then
+      TX_BACKUP=""
+      die "unable to stage live profile; live profile remains unchanged"
+    fi
+    begin_profile_activation "$profile"
+    rename_path "$candidate" "$profile" || die "unable to activate imported replacement; transaction will roll back"
+    if ! check_account "$alias" >/dev/null; then
+      die "imported replacement failed live readback; transaction will roll back"
+    fi
+    commit_profile_activation
+    if ! /bin/rm -rf -- "$backup"; then
+      die "imported replacement activated but backup cleanup failed"
+    fi
+  fi
+  clear_profile_activation
+  release_alias_lock
+  printf 'Account %s imported\n' "$alias"
+}
+
+migrate_account() {
+  [ "$#" -eq 1 ] || usage
+  local alias="$1" profile expected mode candidate backup
+  validate_alias "$alias" || die "invalid profile"
+  registered_client_is_private || die "a valid protected registered OAuth client is required"
+  accounts_root_is_private || die "invalid profile"
+  acquire_alias_lock "$alias"
+  profile="$(profile_for_alias "$alias")" || die "invalid profile"
+  private_regular_file "$profile/profile.json" || die "invalid profile"
+  expected="$(profile_expected_email "$profile")" || die "invalid profile"
+  mode="$(profile_credential_mode "$profile")" || die "invalid profile"
+  profile_state_is_private "$profile" || die "existing profile has unsafe permissions"
+  credential_state_is_complete "$profile" "$mode" || die "existing profile has incomplete or invalid credential state"
+  if runtime_client_matches_registered "$profile/client_secret.json"; then
+    check_account "$alias" >/dev/null || die "already-migrated profile failed health check"
+    release_alias_lock
+    printf 'Account %s already migrated\n' "$alias"
+    return 0
+  fi
+  legacy_runtime_client_matches_registered "$profile/client_secret.json" || die "legacy profile client does not match registration"
+  runtime_ready || die "gws runtime is unavailable or untrusted"
+  candidate="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.migrate.XXXXXX")" || die "unable to create migration candidate"
+  chmod 700 "$candidate" || die "unable to protect migration candidate"
+  TX_CANDIDATE="$candidate"
+  cp -pR "$profile/." "$candidate" || die "unable to stage migration candidate"
+  /bin/rm -- "$candidate/client_secret.json" || die "unable to prepare migration runtime client"
+  write_runtime_client "$candidate/client_secret.json" || die "unable to write migration runtime client"
+  private_regular_file "$candidate/client_secret.json" || die "migration runtime client is unsafe"
+  runtime_client_matches_registered "$candidate/client_secret.json" || die "migration runtime client does not match registration"
+  if ! check_profile_health "$candidate" "$expected" "$alias" "$mode" >/dev/null; then
+    die "migration candidate identity or health check failed; live profile remains unchanged"
+  fi
+  backup="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.backup.XXXXXX")" || die "unable to reserve profile backup"
+  /bin/rmdir -- "$backup" || die "unable to reserve profile backup"
+  TX_BACKUP="$backup"
+  TX_LIVE="$profile"
+  if ! rename_path "$profile" "$backup"; then
+    TX_BACKUP=""
+    die "unable to stage live profile; live profile remains unchanged"
+  fi
+  begin_profile_activation "$profile"
+  rename_path "$candidate" "$profile" || die "unable to activate migrated profile; transaction will roll back"
+  if ! check_account "$alias" >/dev/null; then
+    die "migrated profile failed live readback; transaction will roll back"
+  fi
+  commit_profile_activation
+  if ! /bin/rm -rf -- "$backup"; then
+    die "migrated profile activated but backup cleanup failed"
+  fi
+  clear_profile_activation
+  release_alias_lock
+  printf 'Account %s migrated\n' "$alias"
+}
+
 reauth_account() {
   [ "$#" -eq 1 ] || usage
-  local alias="$1" profile expected candidate backup
+  local alias="$1" profile expected mode candidate backup
   validate_alias "$alias" || die "invalid profile"
   accounts_root_is_private || die "invalid profile"
   acquire_alias_lock "$alias"
   profile="$(profile_for_alias "$alias")" || die "invalid profile"
   private_regular_file "$profile/profile.json" || die "invalid profile"
   expected="$(profile_expected_email "$profile")" || die "invalid profile"
-  validate_client_json "$profile/client_secret.json" || die "invalid profile client"
+  mode="$(profile_credential_mode "$profile")" || die "invalid profile"
+  [ "$mode" = "encrypted_oauth" ] || die "imported profiles cannot be reauthenticated; use --import-account FILE --email EMAIL --alias $alias --replace"
+  validate_runtime_client_json "$profile/client_secret.json" || die "invalid profile client"
+  runtime_client_matches_registered "$profile/client_secret.json" || die "profile client does not match registration"
   profile_state_is_private "$profile" || die "existing profile has unsafe permissions"
   runtime_ready || die "gws runtime is unavailable or untrusted"
   candidate="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.reauth.XXXXXX")" || die "unable to create reauthentication candidate"
   chmod 700 "$candidate" || die "unable to protect reauthentication candidate"
   TX_CANDIDATE="$candidate"
   cp -pR "$profile/." "$candidate" || die "unable to stage reauthentication candidate"
-  if ! run_isolated "$candidate" auth login --scopes "$GMAIL_SCOPE"; then
+  if ! run_isolated "$candidate" encrypted_oauth auth login --scopes "$GMAIL_SCOPE"; then
     die "OAuth login failed; live profile remains unchanged"
   fi
-  if ! check_profile_health "$candidate" "$expected" "$alias"; then
+  if ! check_profile_health "$candidate" "$expected" "$alias" encrypted_oauth; then
     die "OAuth login identity check failed; live profile remains unchanged"
   fi
   backup="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.backup.XXXXXX")" || die "unable to reserve profile backup"
@@ -720,29 +1416,16 @@ reauth_account() {
     TX_BACKUP=""
     die "unable to stage live profile; live profile remains unchanged"
   fi
-  if ! rename_path "$candidate" "$profile"; then
-    if rename_path "$backup" "$profile"; then
-      TX_BACKUP=""
-      die "unable to activate reauthenticated profile; live profile restored"
-    fi
-    die "unable to activate reauthenticated profile; preserved backup could not be restored"
-  fi
+  begin_profile_activation "$profile"
+  rename_path "$candidate" "$profile" || die "unable to activate reauthenticated profile; transaction will roll back"
   if ! check_account "$alias"; then
-    if ! rename_path "$profile" "$candidate"; then
-      die "reauthenticated profile failed live readback and could not be quarantined"
-    fi
-    if rename_path "$backup" "$profile"; then
-      TX_BACKUP=""
-      die "reauthenticated profile failed live readback; previous profile restored"
-    fi
-    die "reauthenticated profile failed live readback and previous profile could not be restored"
+    die "reauthenticated profile failed live readback; transaction will roll back"
   fi
-  TX_CANDIDATE=""
+  commit_profile_activation
   if ! /bin/rm -rf -- "$backup"; then
     die "reauthenticated profile activated but backup cleanup failed"
   fi
-  TX_BACKUP=""
-  TX_LIVE=""
+  clear_profile_activation
   release_alias_lock
   printf 'Account %s reauthenticated\n' "$alias"
 }
@@ -868,6 +1551,8 @@ case "${1:-}" in
   --install) [ "$#" -eq 1 ] || usage; install_gws ;;
   --register-client) shift; register_client "$@" ;;
   --add-account) shift; [ "$#" -ge 1 ] || usage; add_account "$@" ;;
+  --import-account) shift; import_account "$@" ;;
+  --migrate-account) shift; migrate_account "$@" ;;
   --reauth-account) shift; reauth_account "$@" ;;
   --check-account) shift; [ "$#" -eq 1 ] || usage; check_account "$1" ;;
   --list-accounts) shift; list_accounts "$@" ;;

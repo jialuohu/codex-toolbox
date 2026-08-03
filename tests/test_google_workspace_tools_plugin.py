@@ -130,7 +130,7 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
     def test_plugin_has_exact_gmail_only_inventory_and_provenance(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "google-workspace-tools")
-        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["version"], "0.2.1")
         self.assertEqual(manifest["license"], "Apache-2.0")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("mcpServers", manifest)
@@ -144,7 +144,13 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
         )
         self.assertIn("Apache License", (PLUGIN / "LICENSE").read_text(encoding="utf-8"))
         provenance = (PLUGIN / "PROVENANCE.md").read_text(encoding="utf-8")
-        for required in ("https://github.com/googleworkspace/cli", UPSTREAM_TAG, UPSTREAM_COMMIT, *SKILLS):
+        for required in (
+            "https://github.com/googleworkspace/cli",
+            UPSTREAM_TAG,
+            UPSTREAM_COMMIT,
+            "quota-project runtime-client split is a local safety and compatibility patch",
+            *SKILLS,
+        ):
             self.assertIn(required, provenance)
 
     def test_every_skill_is_discoverable_and_reuses_shared_contract(self):
@@ -200,7 +206,7 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
         ):
             self.assertIn(required, shared)
         self.assertEqual(shared_source.count(GWS_BINARY_SHA256), 1)
-        self.assertEqual(shared_source.count("/usr/bin/python3 -I - <<'PY'"), 3)
+        self.assertEqual(shared_source.count("/usr/bin/python3 -I - <<'PY'"), 4)
         self.assertIn("/usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN", shared_source)
         self.assertIn("same scrubbed absolute `/usr/bin/env` prefix", shared)
         self.assertNotIn("auth status --format", shared)
@@ -223,7 +229,15 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "client_secret.json",
             "credentials.enc",
             ".encryption_key",
-            "Reject `credentials.json`",
+            "rejects `credentials.json`",
+            "imported_authorized_user",
+            "existing_grant",
+            "source_sha256",
+            "lowercase 64-hex",
+            "single-link `credentials.json`",
+            "duplicate keys",
+            "current user",
+            "Boolean `true` is invalid",
             "regular file",
             "700",
             "600",
@@ -233,6 +247,7 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             '"$gws_bin" auth status',
             "GOOGLE_WORKSPACE_CLI_CONFIG_DIR",
             "GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file",
+            'GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="$profile/credentials.json"',
             "GOOGLE_APPLICATION_CREDENTIALS",
             "missing profile-local sentinel",
             "-u GOOGLE_WORKSPACE_CLI_TOKEN",
@@ -256,6 +271,9 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "plain_credentials_exists",
             "status.get(\"plain_credentials_exists\") is False",
             "encryption_valid",
+            "has_refresh_token",
+            "plain_credentials",
+            "client_config",
             "https://www.googleapis.com/auth/gmail.modify",
             "openid",
             "https://www.googleapis.com/auth/userinfo.email",
@@ -468,6 +486,23 @@ class SharedPreflightExecutionTests(unittest.TestCase):
         self.secrets.chmod(0o700)
         (self.secrets / "gws").chmod(0o700)
         self.accounts.chmod(0o700)
+        self.registered_client = self.secrets / "gws" / "client_secret.json"
+        self.registered_client.write_text(
+            json.dumps(
+                {
+                    "installed": {
+                        "client_id": "id",
+                        "client_secret": "secret",
+                        "project_id": "registered-project",
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "redirect_uris": ["http://localhost"],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.registered_client.chmod(0o600)
         self.data = self.root / "data"
         self.log = self.root / "gws.log"
         self.shim_log = self.root / "hostile-shims.log"
@@ -559,6 +594,12 @@ if [ "$#" -eq 2 ] && [ "$1" = "auth" ] && [ "$2" = "status" ]; then
   printf '%s\n' "$FAKE_GWS_STATUS"
   exit "${FAKE_STATUS_EXIT:-0}"
 fi
+if [ "$#" -eq 7 ] && [ "$1" = "gmail" ] && [ "$2" = "users" ] && [ "$3" = "getProfile" ] && [ "$4" = "--params" ] && [ "$5" = '{"userId":"me"}' ] && [ "$6" = "--format" ] && [ "$7" = "json" ]; then
+  /bin/mkdir -p "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/cache"
+  printf '%s\n' '{"fake":"discovery-cache"}' > "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/cache/gmail_v1.json"
+  printf '%s\n' "$FAKE_GWS_GET_PROFILE"
+  exit "${FAKE_GWS_GET_PROFILE_EXIT:-0}"
+fi
 exit 97
 """,
             encoding="utf-8",
@@ -584,7 +625,16 @@ exit 97
         files = {
             "profile.json": json.dumps({"schema_version": 1, "expected_email": email}),
             "client_secret.json": json.dumps(
-                {"installed": {"client_id": "id", "client_secret": "secret", "project_id": "project"}}
+                {
+                    "installed": {
+                        "client_id": "id",
+                        "client_secret": "secret",
+                        "project_id": "",
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "redirect_uris": ["http://localhost"],
+                    }
+                }
             ),
             "credentials.enc": "encrypted",
             ".encryption_key": "encryption-key",
@@ -595,6 +645,74 @@ exit 97
             path.chmod(0o600)
         return profile
 
+    def configure_imported_profile(
+        self, credential_bytes: Optional[bytes] = None
+    ) -> tuple[Path, dict]:
+        for name in ("credentials.enc", ".encryption_key", "credentials.json"):
+            path = self.profile / name
+            if path.exists() or path.is_symlink():
+                path.unlink()
+        if credential_bytes is None:
+            credential_bytes = json.dumps(
+                {
+                    "type": "authorized_user",
+                    "client_id": "id",
+                    "client_secret": "secret",
+                    "refresh_token": "refresh-token",
+                },
+                separators=(",", ":"),
+            ).encode()
+        credentials = self.profile / "credentials.json"
+        credentials.write_bytes(credential_bytes)
+        credentials.chmod(0o600)
+        client = self.profile / "client_secret.json"
+        client.write_text(
+            json.dumps(
+                {
+                    "installed": {
+                        "client_id": "id",
+                        "client_secret": "secret",
+                        "project_id": "",
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "redirect_uris": ["http://localhost"],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        client.chmod(0o600)
+        (self.profile / "profile.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "expected_email": "personal@example.com",
+                    "credential_mode": "imported_authorized_user",
+                    "scope_policy": "existing_grant",
+                    "source_sha256": hashlib.sha256(credential_bytes).hexdigest(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        status = {
+            "user": "PERSONAL@example.com",
+            "token_valid": True,
+            "scopes": [*REQUIRED_SCOPES, "https://www.googleapis.com/auth/gmail.labels"],
+            "storage": "plaintext",
+            "keyring_backend": "file",
+            "encrypted_credentials_exists": False,
+            "plain_credentials_exists": True,
+            "has_refresh_token": True,
+            "plain_credentials": str(credentials),
+            "client_config": str(self.profile / "client_secret.json"),
+        }
+        return credentials, status
+
+    def assert_preflight_rejects_before_gws(self, **kwargs) -> None:
+        result = self.run_preflight(**kwargs)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.log.exists(), "invalid profile must fail before invoking gws")
+
     def run_preflight(
         self,
         *,
@@ -602,6 +720,9 @@ exit 97
         status: Optional[dict] = None,
         status_exit: int = 0,
         status_create_key: bool = False,
+        live_profile: Optional[object] = None,
+        live_profile_raw: Optional[str] = None,
+        live_profile_exit: int = 0,
         secrets_dir: Optional[Path] = None,
         script: Optional[str] = None,
     ) -> subprocess.CompletedProcess:
@@ -619,6 +740,16 @@ exit 97
                 "FAKE_GWS_STATUS": json.dumps(self.status if status is None else status),
                 "FAKE_STATUS_EXIT": str(status_exit),
                 "FAKE_STATUS_CREATE_KEY": "1" if status_create_key else "0",
+                "FAKE_GWS_GET_PROFILE": (
+                    json.dumps(
+                        {"emailAddress": "PERSONAL@example.com"}
+                        if live_profile is None
+                        else live_profile
+                    )
+                    if live_profile_raw is None
+                    else live_profile_raw
+                ),
+                "FAKE_GWS_GET_PROFILE_EXIT": str(live_profile_exit),
                 "GOOGLE_WORKSPACE_CLI_TOKEN": "ambient-token",
                 "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/ambient/credentials.json",
                 "GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE": "/ambient/credential.json",
@@ -672,7 +803,7 @@ exit 97
         if replace is not None:
             old, new = replace
             self.assertIn(old, source, "requested temporary-copy mutation is absent")
-            source = source.replace(old, new, 1)
+            source = source.replace(old, new)
         copied_path.write_text(source, encoding="utf-8")
         return shared_preflight_script(copied_path.read_text(encoding="utf-8"))
 
@@ -719,7 +850,14 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout, "PREFLIGHT_OK\n")
         calls = [line.split("|") for line in self.log.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual([call[0] for call in calls], ["--version", "auth status"])
+        self.assertEqual(
+            [call[0] for call in calls],
+            [
+                "--version",
+                "auth status",
+                'gmail users getProfile --params {"userId":"me"} --format json',
+            ],
+        )
         status_call = calls[1]
         self.assertEqual(status_call[1], "/")
         self.assertEqual(status_call[2], str(self.profile.resolve()))
@@ -727,6 +865,443 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         self.assertEqual(status_call[4], str(self.profile.resolve() / "missing-adc.json"))
         self.assertEqual(status_call[5:], [""] * 10)
         self.assertFalse(self.shim_log.exists())
+
+    def test_preflight_requires_static_runtime_client_contract_before_gws(self):
+        """Catches accepting a legacy, malformed, mismatched, or untrusted runtime client."""
+        client = self.profile / "client_secret.json"
+        registered = json.loads(self.registered_client.read_text(encoding="utf-8"))
+        mutations = {
+            "nonempty runtime project": lambda document: document["installed"].__setitem__(
+                "project_id", "registered-project"
+            ),
+            "missing runtime project": lambda document: document["installed"].pop("project_id"),
+            "nonstring runtime project": lambda document: document["installed"].__setitem__(
+                "project_id", 7
+            ),
+            "mismatched client id": lambda document: document["installed"].__setitem__(
+                "client_id", "other"
+            ),
+            "untrusted auth endpoint": lambda document: document["installed"].__setitem__(
+                "auth_uri", "https://evil.example.invalid/auth"
+            ),
+            "empty client secret": lambda document: document["installed"].__setitem__(
+                "client_secret", ""
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                runtime = json.loads(json.dumps(registered))
+                runtime["installed"]["project_id"] = ""
+                mutate(runtime)
+                client.write_text(json.dumps(runtime), encoding="utf-8")
+                client.chmod(0o600)
+                self.assert_preflight_rejects_before_gws()
+
+        client.write_text(
+            json.dumps({"installed": {"project_id": ""}}), encoding="utf-8"
+        )
+        client.chmod(0o600)
+        self.assert_preflight_rejects_before_gws()
+
+    def test_preflight_rejects_alias_transaction_siblings_before_gws(self):
+        """Catches direct gws use selecting a profile with an in-flight or failed transaction."""
+        for suffix in (
+            "lock",
+            "add.candidate",
+            "import.candidate",
+            "migrate.candidate",
+            "reauth.candidate",
+            "backup.recovery",
+        ):
+            with self.subTest(suffix=suffix):
+                transaction_entry = self.accounts / f".personal.{suffix}"
+                transaction_entry.mkdir(mode=0o700)
+                self.assert_preflight_rejects_before_gws()
+                transaction_entry.rmdir()
+
+        other_alias_lock = self.accounts / ".other.lock"
+        other_alias_lock.mkdir(mode=0o700)
+        result = self.run_preflight()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "PREFLIGHT_OK\n")
+
+    def test_preflight_requires_protected_registered_client_before_gws(self):
+        """Catches trusting a missing, exposed, or symlinked registered OAuth client."""
+        original = self.registered_client.read_bytes()
+        self.registered_client.unlink()
+        self.assert_preflight_rejects_before_gws()
+
+        self.registered_client.write_bytes(original)
+        self.registered_client.chmod(0o644)
+        self.assert_preflight_rejects_before_gws()
+
+        self.registered_client.chmod(0o600)
+        replacement = self.root / "registered-client.json"
+        replacement.write_bytes(original)
+        replacement.chmod(0o600)
+        self.registered_client.unlink()
+        self.registered_client.symlink_to(replacement)
+        self.assert_preflight_rejects_before_gws()
+
+    def test_preflight_validates_registered_client_semantics_before_comparison(self):
+        """Catches a checker that compares client files without validating the registered client."""
+        original = json.loads(self.registered_client.read_text(encoding="utf-8"))
+        mutations = {
+            "empty registered project": lambda document: document["installed"].__setitem__(
+                "project_id", ""
+            ),
+            "untrusted token endpoint": lambda document: document["installed"].__setitem__(
+                "token_uri", "https://evil.example.invalid/token"
+            ),
+            "empty registered client secret": lambda document: document["installed"].__setitem__(
+                "client_secret", ""
+            ),
+        }
+        for mode in ("encrypted", "imported"):
+            for name, mutate in mutations.items():
+                with self.subTest(mode=mode, name=name):
+                    if mode == "imported":
+                        self.configure_imported_profile()
+                    registered = json.loads(json.dumps(original))
+                    mutate(registered)
+                    runtime = json.loads(json.dumps(registered))
+                    runtime["installed"]["project_id"] = ""
+                    self.registered_client.write_text(json.dumps(registered), encoding="utf-8")
+                    self.registered_client.chmod(0o600)
+                    client = self.profile / "client_secret.json"
+                    client.write_text(json.dumps(runtime), encoding="utf-8")
+                    client.chmod(0o600)
+                    self.assert_preflight_rejects_before_gws()
+
+    def test_preflight_rejects_invalid_or_duplicate_registered_client_json_before_gws(self):
+        """Catches accepting malformed or duplicate-key registered client documents."""
+        for contents in (
+            "{",
+            '{"installed":{"client_id":"id","client_id":"other"}}',
+        ):
+            with self.subTest(contents=contents):
+                self.registered_client.write_text(contents, encoding="utf-8")
+                self.registered_client.chmod(0o600)
+                self.assert_preflight_rejects_before_gws()
+
+    def test_preflight_rejects_a_base_secrets_decoy_without_gws_registered_client(self):
+        """Catches resolving the registered client outside the isolated gws root."""
+        decoy = self.secrets / "client_secret.json"
+        self.registered_client.replace(decoy)
+
+        self.assert_preflight_rejects_before_gws()
+
+    def test_preflight_uses_live_mailbox_identity_after_healthy_status(self):
+        """Catches treating auth status as mailbox proof or altering the pinned Gmail argv."""
+        result = self.run_preflight()
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = [line.split("|") for line in self.log.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(
+            [call[0] for call in calls],
+            [
+                "--version",
+                "auth status",
+                'gmail users getProfile --params {"userId":"me"} --format json',
+            ],
+        )
+        live_call = calls[2]
+        self.assertEqual(live_call[1], "/")
+        self.assertEqual(live_call[2], str(self.profile.resolve()))
+        self.assertEqual(live_call[3], "file")
+        self.assertEqual(live_call[4], str(self.profile.resolve() / "missing-adc.json"))
+        self.assertEqual(live_call[5:], [""] * 10)
+        self.assertNotIn("personal@example.com", result.stdout + result.stderr)
+
+    def test_live_mailbox_readback_fails_closed_for_bad_or_wrong_identity(self):
+        """Catches accepting a failed, malformed, missing, or mismatched Gmail identity response."""
+        for name, payload, raw_payload, exit_code in (
+            ("failed", {"emailAddress": "personal@example.com"}, None, 43),
+            ("malformed JSON", None, "{", 0),
+            ("valid JSON non-object", "not an identity object", None, 0),
+            ("missing email", {}, None, 0),
+            ("nonstring email", {"emailAddress": 7}, None, 0),
+            ("wrong email", {"emailAddress": "other@example.com"}, None, 0),
+        ):
+            with self.subTest(name=name):
+                result = self.run_preflight(
+                    live_profile=payload,
+                    live_profile_raw=raw_payload,
+                    live_profile_exit=exit_code,
+                )
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                calls = [
+                    line.split("|")[0]
+                    for line in self.log.read_text(encoding="utf-8").splitlines()
+                ]
+                self.assertEqual(calls, ["--version", "auth status", 'gmail users getProfile --params {"userId":"me"} --format json'])
+
+    def test_imported_live_mailbox_readback_uses_the_same_isolated_environment(self):
+        """Catches an imported profile that validates status but skips isolated live identity proof."""
+        credentials, status = self.configure_imported_profile()
+
+        result = self.run_preflight(status=status)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = [line.split("|") for line in self.log.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(
+            [call[0] for call in calls],
+            [
+                "--version",
+                "auth status",
+                'gmail users getProfile --params {"userId":"me"} --format json',
+            ],
+        )
+        self.assertEqual(calls[2][1], "/")
+        self.assertEqual(calls[2][2], str(self.profile.resolve()))
+        self.assertEqual(calls[2][3], "file")
+        self.assertEqual(calls[2][4], str(self.profile.resolve() / "missing-adc.json"))
+        self.assertEqual(calls[2][5], "")
+        self.assertEqual(calls[2][6], str(credentials))
+        self.assertEqual(calls[2][7:], [""] * 8)
+
+    def test_preflight_private_umask_protects_later_gws_cache_and_next_preflight(self):
+        preflight = self.copied_preflight_script(
+            binary_sha256=self.test_binary_sha256
+        )
+        completion = "printf 'PREFLIGHT_OK\\n'"
+        self.assertEqual(preflight.count(completion), 1)
+        direct_operation = (
+            'GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" '
+            '"$gws_bin" gmail users getProfile '
+            "--params '{\"userId\":\"me\"}' --format json >/dev/null || exit 1"
+        )
+        script = "umask 022\n" + preflight.replace(
+            completion,
+            direct_operation + "\n" + completion,
+            1,
+        )
+
+        first = self.run_preflight(script=script)
+
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        cache = self.profile / "cache"
+        discovery = cache / "gmail_v1.json"
+        self.assertEqual(cache.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(discovery.stat().st_mode & 0o777, 0o600)
+
+        second = self.run_preflight()
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+
+    def test_valid_imported_profile_runs_exact_isolated_plaintext_status(self):
+        credentials, status = self.configure_imported_profile()
+
+        result = self.run_preflight(status=status)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "PREFLIGHT_OK\n")
+        calls = [line.split("|") for line in self.log.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(
+            [call[0] for call in calls],
+            [
+                "--version",
+                "auth status",
+                'gmail users getProfile --params {"userId":"me"} --format json',
+            ],
+        )
+        status_call = calls[1]
+        self.assertEqual(status_call[1], "/")
+        self.assertEqual(status_call[2], str(self.profile))
+        self.assertEqual(status_call[3], "file")
+        self.assertEqual(status_call[4], str(self.profile / "missing-adc.json"))
+        self.assertEqual(status_call[5], "")
+        self.assertEqual(status_call[6], str(credentials))
+        self.assertEqual(status_call[7:], [""] * 8)
+        self.assertFalse(self.shim_log.exists())
+
+    def test_imported_profile_requires_exact_complete_mode_metadata(self):
+        self.configure_imported_profile()
+        baseline = json.loads((self.profile / "profile.json").read_text(encoding="utf-8"))
+        cases = {
+            "implicit legacy marker": {
+                "schema_version": 1,
+                "expected_email": "personal@example.com",
+            },
+            "partial marker": {
+                "schema_version": 1,
+                "expected_email": "personal@example.com",
+                "credential_mode": "imported_authorized_user",
+            },
+            "unknown mode": {**baseline, "credential_mode": "unknown_mode"},
+            "unknown policy": {**baseline, "scope_policy": "unknown_policy"},
+            "uppercase digest": {**baseline, "source_sha256": baseline["source_sha256"].upper()},
+            "extra metadata key": {**baseline, "unexpected": "value"},
+            "boolean schema": {**baseline, "schema_version": True},
+        }
+        for name, metadata in cases.items():
+            with self.subTest(name=name):
+                self.configure_imported_profile()
+                (self.profile / "profile.json").write_text(
+                    json.dumps(metadata), encoding="utf-8"
+                )
+                self.assert_preflight_rejects_before_gws()
+
+    def test_imported_profile_rejects_malformed_or_mismatched_credentials(self):
+        valid = {
+            "type": "authorized_user",
+            "client_id": "id",
+            "client_secret": "secret",
+            "refresh_token": "refresh-token",
+        }
+        credential_cases = {
+            "invalid JSON": b"{",
+            "duplicate key": (
+                b'{"type":"authorized_user","client_id":"id","client_secret":"secret",'
+                b'"refresh_token":"first","refresh_token":"second"}'
+            ),
+            "missing key": json.dumps(
+                {key: value for key, value in valid.items() if key != "refresh_token"}
+            ).encode(),
+            "extra key": json.dumps({**valid, "token_uri": "https://example.invalid"}).encode(),
+            "wrong type": json.dumps({**valid, "type": "service_account"}).encode(),
+            "empty value": json.dumps({**valid, "refresh_token": ""}).encode(),
+            "non-string value": json.dumps({**valid, "client_secret": 7}).encode(),
+        }
+        for name, credential_bytes in credential_cases.items():
+            with self.subTest(name=name):
+                self.configure_imported_profile(credential_bytes)
+                self.assert_preflight_rejects_before_gws()
+
+        self.configure_imported_profile()
+        (self.profile / "client_secret.json").write_text(
+            json.dumps(
+                {
+                    "installed": {
+                        "client_id": "different-id",
+                        "client_secret": "secret",
+                        "project_id": "project",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.assert_preflight_rejects_before_gws()
+
+        self.configure_imported_profile()
+        metadata = json.loads((self.profile / "profile.json").read_text(encoding="utf-8"))
+        metadata["source_sha256"] = "0" * 64
+        (self.profile / "profile.json").write_text(json.dumps(metadata), encoding="utf-8")
+        self.assert_preflight_rejects_before_gws()
+
+    def test_imported_profile_rejects_mixed_or_unsafe_filesystem_state(self):
+        self.configure_imported_profile()
+        encrypted = self.profile / "credentials.enc"
+        encrypted.write_text("encrypted", encoding="utf-8")
+        encrypted.chmod(0o600)
+        self.assert_preflight_rejects_before_gws()
+
+        credentials, _ = self.configure_imported_profile()
+        credentials.chmod(0o644)
+        self.assert_preflight_rejects_before_gws()
+
+        credentials, _ = self.configure_imported_profile()
+        hardlink = self.profile / "credentials-hardlink.json"
+        os.link(credentials, hardlink)
+        self.assert_preflight_rejects_before_gws()
+        hardlink.unlink()
+
+        credentials, _ = self.configure_imported_profile()
+        credentials.unlink()
+        external = self.root / "imported-credentials.json"
+        external.write_text("{}", encoding="utf-8")
+        external.chmod(0o600)
+        credentials.symlink_to(external)
+        self.assert_preflight_rejects_before_gws()
+
+        self.configure_imported_profile()
+        client = self.profile / "client_secret.json"
+        client.chmod(0o644)
+        self.assert_preflight_rejects_before_gws()
+
+    def test_imported_status_rejects_wrong_state_paths_or_scopes(self):
+        _, healthy_status = self.configure_imported_profile()
+        cases = (
+            {"user": "other@example.com"},
+            {"token_valid": False},
+            {"storage": "encrypted"},
+            {"keyring_backend": "keychain"},
+            {"plain_credentials_exists": False},
+            {"encrypted_credentials_exists": True},
+            {"has_refresh_token": False},
+            {"plain_credentials": str(self.profile / "other-credentials.json")},
+            {"client_config": str(self.profile / "other-client.json")},
+            {"scopes": list(REQUIRED_SCOPES[1:])},
+            {"scopes": [*REQUIRED_SCOPES, REQUIRED_SCOPES[0]]},
+            {"scopes": [*REQUIRED_SCOPES, "https://mail.google.com/"]},
+            {"scopes": [*REQUIRED_SCOPES, 7]},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes):
+                status = dict(healthy_status)
+                status.update(changes)
+                result = self.run_preflight(status=status)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        for missing in (
+            "user",
+            "token_valid",
+            "scopes",
+            "storage",
+            "keyring_backend",
+            "plain_credentials_exists",
+            "encrypted_credentials_exists",
+            "has_refresh_token",
+            "plain_credentials",
+            "client_config",
+        ):
+            with self.subTest(missing=missing):
+                status = dict(healthy_status)
+                status.pop(missing)
+                result = self.run_preflight(status=status)
+                self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_profile_field_transfer_preserves_trailing_newline_without_shell_evaluation(self):
+        _, status = self.configure_imported_profile()
+        metadata = json.loads((self.profile / "profile.json").read_text(encoding="utf-8"))
+        metadata["expected_email"] = "neutral$(exit 44)@example.com\n"
+        (self.profile / "profile.json").write_text(json.dumps(metadata), encoding="utf-8")
+        status["user"] = "NEUTRAL$(EXIT 44)@example.com\n"
+
+        result = self.run_preflight(
+            status=status, live_profile={"emailAddress": "NEUTRAL$(EXIT 44)@example.com\n"}
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "PREFLIGHT_OK\n")
+
+    def test_profile_validator_rejects_wrong_owner(self):
+        body = profile_validator_python()
+
+        def with_wrong_owner(validator: str) -> str:
+            return f"""import os
+from types import SimpleNamespace
+
+original_lstat = os.lstat
+
+def wrong_owner_lstat(path):
+    metadata = original_lstat(path)
+    return SimpleNamespace(
+        st_mode=metadata.st_mode,
+        st_uid=os.getuid() + 1,
+        st_nlink=metadata.st_nlink,
+    )
+
+os.lstat = wrong_owner_lstat
+exec(compile({validator!r}, "<wrong-owner-profile-validator>", "exec"))
+"""
+
+        rejected = self.run_profile_validator(body=with_wrong_owner(body))
+        self.assertNotEqual(rejected.returncode, 0, rejected.stdout + rejected.stderr)
+
+        without_owner_check = body.replace("metadata.st_uid != os.getuid() or ", "", 1)
+        self.assertNotEqual(without_owner_check, body, "ownership mutation did not apply")
+        false_success = self.run_profile_validator(body=with_wrong_owner(without_owner_check))
+        self.assertEqual(false_success.returncode, 0, false_success.stdout + false_success.stderr)
 
     def test_preflight_rejects_non_private_or_noncanonical_secrets_root_before_status(self):
         self.secrets.chmod(0o755)
@@ -863,7 +1438,13 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         self.assertNotEqual(without_onerror, body, "onerror mutation did not apply")
         false_success = self.run_profile_validator(body=without_onerror, walk_error=True)
         self.assertEqual(false_success.returncode, 0, false_success.stdout + false_success.stderr)
-        self.assertEqual(false_success.stdout, "personal@example.com\n")
+        self.assertEqual(
+            false_success.stdout,
+            "706572736f6e616c406578616d706c652e636f6d\n"
+            "encrypted_oauth\n"
+            "exact_required\n"
+            "profile validation passed\n",
+        )
 
     def test_failed_or_suffixed_status_cannot_pass(self):
         failed = self.run_preflight(status_exit=41)

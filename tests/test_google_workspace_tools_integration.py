@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -68,6 +70,49 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         value = json.loads(path.read_text(encoding="utf-8"))
         change(value)
         path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+
+    def replace_once_in_region(
+        self,
+        root: Path,
+        relative_path: str,
+        region_start: str,
+        region_end: str,
+        before: str,
+        after: str,
+    ) -> None:
+        path = root / relative_path
+        original = path.read_text(encoding="utf-8")
+        start = original.index(region_start)
+        end = original.index(region_end, start)
+        region = original[start:end]
+        self.assertEqual(
+            region.count(before),
+            1,
+            f"scoped mutation precondition changed for {relative_path}: {before!r}",
+        )
+        changed_region = region.replace(before, after, 1)
+        path.write_text(original[:start] + changed_region + original[end:], encoding="utf-8")
+
+    def refresh_checker_hash(
+        self,
+        root: Path,
+        relative_path: str,
+        constant_name: str,
+    ) -> None:
+        digest = hashlib.sha256((root / relative_path).read_bytes()).hexdigest()
+        checker = root / "scripts" / "check-codex-toolbox-setup.py"
+        original = checker.read_text(encoding="utf-8")
+        pattern = re.compile(
+            rf'(?P<prefix>^{re.escape(constant_name)} = \(\n    ")[0-9a-f]{{64}}'
+            rf'(?P<suffix>"\n\))',
+            re.MULTILINE,
+        )
+        changed, replacements = pattern.subn(
+            rf"\g<prefix>{digest}\g<suffix>",
+            original,
+        )
+        self.assertEqual(replacements, 1, f"checker hash constant missing: {constant_name}")
+        checker.write_text(changed, encoding="utf-8")
 
     def assert_checker_rejects(
         self,
@@ -158,7 +203,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 "    -u GOOGLE_WORKSPACE_PROJECT_ID \\\n",
-                "gws shared runtime must clear ambient GOOGLE_WORKSPACE_PROJECT_ID",
+                "gws shared preflight must prevent an ambient quota-project header",
             ),
             (
                 "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \\\n",
@@ -230,11 +275,11 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 "and len(scopes) == len(required_scopes)\n",
-                "gws shared runtime must reject duplicate or extra scopes",
+                "gws shared encrypted mode must require the exact four scopes",
             ),
             (
                 "and set(scopes) == required_scopes\n",
-                "gws shared runtime must require the exact scope set",
+                "gws shared encrypted mode must require the exact four scopes",
             ),
             (
                 "There is no same-request Gmail connector fallback. Fail closed.\n",
@@ -242,9 +287,36 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
         )
 
+        duplicated_imported_branch_lines = {
+            "  cd / || exit 1\n",
+            "  /usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN \\\n",
+            "    -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \\\n",
+            "    -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \\\n",
+            "    -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \\\n",
+            "    -u GOOGLE_WORKSPACE_CLI_LOG \\\n",
+            "    -u GOOGLE_WORKSPACE_CLI_LOG_FILE \\\n",
+            "    -u GOOGLE_WORKSPACE_PROJECT_ID \\\n",
+            "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \\\n",
+            "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \\\n",
+            "    -u GOOGLE_APPLICATION_CREDENTIALS \\\n",
+            '    GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \\\n',
+            "    GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \\\n",
+            '    GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \\\n',
+        }
+
         for removed_line, expected_message in mutations:
             def mutate(root: Path, line: str = removed_line) -> None:
-                self.replace_once(root, shared_skill, line, "")
+                if line in duplicated_imported_branch_lines:
+                    self.replace_once_in_region(
+                        root,
+                        shared_skill,
+                        'if [ "$credential_mode" = "imported_authorized_user" ]; then\n',
+                        'elif [ "$credential_mode" = "encrypted_oauth" ]; then\n',
+                        line,
+                        "",
+                    )
+                else:
+                    self.replace_once(root, shared_skill, line, "")
 
             with self.subTest(expected_message=expected_message):
                 self.assert_checker_rejects(mutate, expected_message)
@@ -390,7 +462,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 setup_script,
-                '  if ! run_isolated "$candidate" auth login --scopes "$GMAIL_SCOPE"; then\n'
+                '  if ! run_isolated "$candidate" encrypted_oauth auth login --scopes "$GMAIL_SCOPE"; then\n'
                 '    die "OAuth login failed; candidate profile will be removed"\n',
                 '  if ! "$GWS_BIN" auth login --scopes "$GMAIL_SCOPE"; then\n'
                 '    die "OAuth login failed; candidate profile will be removed"\n',
@@ -400,9 +472,9 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 setup_script,
-                '  if ! check_profile_health "$candidate" "$email" "$alias"; then\n'
+                '  if ! check_profile_health "$candidate" "$email" "$alias" encrypted_oauth; then\n'
                 '    die "OAuth login identity check failed; candidate profile will be removed"\n',
-                '  if false && ! check_profile_health "$candidate" "$email" "$alias"; then\n'
+                '  if false && ! check_profile_health "$candidate" "$email" "$alias" encrypted_oauth; then\n'
                 '    die "OAuth login identity check failed; candidate profile will be removed"\n',
             )
 
@@ -485,7 +557,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 add_extra_setup_scope,
-                "setup-gws profile manager must match the canonical reviewed text",
+                "setup-gws required Gmail scope set must remain exactly four",
             ),
             (
                 truncate_license,
@@ -507,6 +579,981 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
 
         for mutate, expected_message in cases:
             with self.subTest(expected_message=expected_message):
+                self.assert_checker_rejects(mutate, expected_message)
+
+    def test_setup_checker_rejects_imported_profile_contract_bypasses(self) -> None:
+        setup_script = "scripts/setup-gws.sh"
+        shared_skill = "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+        credential_assignment = (
+            '      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="$profile/credentials.json" \\\n'
+        )
+        mutations = (
+            (
+                shared_skill,
+                "    if not mode_keys.intersection(metadata):\n",
+                "    if True:\n",
+                "gws shared contract must distinguish legacy encrypted and exact imported metadata",
+            ),
+            (
+                shared_skill,
+                '            or re.fullmatch(r"[0-9a-f]{64}", metadata["source_sha256"]) is None\n',
+                "",
+                "gws shared imported marker must require a lowercase SHA-256 digest",
+            ),
+            (
+                shared_skill,
+                '            or credentials["client_id"] != installed.get("client_id")\n'
+                '            or credentials["client_secret"] != installed.get("client_secret")\n',
+                "",
+                "gws shared imported credentials must match the profile client",
+            ),
+            (
+                shared_skill,
+                '            or hashlib.sha256(credential_bytes).hexdigest() != metadata["source_sha256"]\n',
+                "",
+                "gws shared imported credentials must match the recorded source hash",
+            ),
+            (
+                shared_skill,
+                "        credentials = json.loads(\n"
+                "            credential_bytes.decode(\"utf-8\"), object_pairs_hook=reject_duplicates\n"
+                "        )\n",
+                "        credentials = json.loads(credential_bytes.decode(\"utf-8\"))\n",
+                "gws shared imported credentials must reject duplicate keys",
+            ),
+            (
+                shared_skill,
+                '        credential_keys = {"type", "client_id", "client_secret", "refresh_token"}\n'
+                "        if (\n"
+                "            not isinstance(credentials, dict)\n"
+                "            or set(credentials) != credential_keys\n",
+                "        if (\n"
+                "            not isinstance(credentials, dict)\n",
+                "gws shared imported credentials must use the exact four-key schema",
+            ),
+            (
+                shared_skill,
+                '            or credentials.get("type") != "authorized_user"\n',
+                "",
+                "gws shared imported credentials must be authorized_user",
+            ),
+            (
+                shared_skill,
+                "            or not all(\n"
+                "                isinstance(credentials.get(key), str) and credentials[key]\n"
+                '                for key in ("client_id", "client_secret", "refresh_token")\n'
+                "            )\n",
+                "",
+                "gws shared imported credential fields must be nonempty strings",
+            ),
+            (
+                shared_skill,
+                "    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != mode:\n",
+                "    if stat.S_IMODE(metadata.st_mode) != mode:\n",
+                "gws shared profile objects must be owned by the current user",
+            ),
+            (
+                shared_skill,
+                '            if name == "credentials.json" and file_metadata.st_nlink != 1:\n'
+                '                raise ValueError("unsafe imported credential link count")\n',
+                "",
+                "gws shared imported credentials must be single-link",
+            ),
+            (
+                shared_skill,
+                '        if os.path.lexists(os.path.join(profile, "credentials.enc")):\n'
+                '            raise ValueError("mixed credential state")\n',
+                "",
+                "gws shared imported mode must reject mixed encrypted state",
+            ),
+            (
+                shared_skill,
+                '      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="$profile/credentials.json" \\\n',
+                "",
+                "gws shared imported mode must select credentials only in the imported branch",
+            ),
+            (
+                shared_skill,
+                "        and all(isinstance(scope, str) for scope in scopes)\n"
+                "        and len(scopes) == len(set(scopes))\n",
+                "",
+                "gws shared status must require unique string scopes",
+            ),
+            (
+                shared_skill,
+                "            and required_scopes.issubset(set(scopes))\n",
+                "            and bool(scopes)\n",
+                "gws shared imported mode must require every required scope",
+            ),
+            (
+                shared_skill,
+                "            and required_scopes.issubset(set(scopes))\n"
+                '            and "https://mail.google.com/" not in scopes\n',
+                "            and required_scopes.issubset(set(scopes))\n",
+                "gws shared imported mode must reject the broad Gmail scope",
+            ),
+            (
+                setup_script,
+                '  SOURCE_PATH="$source" DESTINATION_PATH="$destination" IMPORT_ROOT="$SECRETS_BASE/gws-import" CLIENT_FILE="$CLIENT_PATH" /usr/bin/python3 -I - <<\'PY\'\n',
+                '  SOURCE_PATH="$source" DESTINATION_PATH="$destination" IMPORT_ROOT="${TMPDIR:-/tmp}" CLIENT_FILE="$CLIENT_PATH" /usr/bin/python3 -I - <<\'PY\'\n',
+                "setup-gws imported credentials must come from the private staging root",
+            ),
+            (
+                setup_script,
+                "        and os.path.realpath(path) == path\n"
+                "        and stat.S_ISDIR(metadata.st_mode)\n"
+                "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                "        and metadata.st_uid == os.getuid()\n"
+                "        and stat.S_IMODE(metadata.st_mode) == 0o700\n",
+                "        and os.path.realpath(path) == path\n"
+                "        and stat.S_ISDIR(metadata.st_mode)\n"
+                "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                "        and stat.S_IMODE(metadata.st_mode) == 0o700\n",
+                "setup-gws import root must be current-user-owned and mode 700",
+            ),
+            (
+                setup_script,
+                "        or os.path.dirname(source_path) != root\n",
+                "",
+                "setup-gws import source must be a canonical direct child",
+            ),
+            (
+                setup_script,
+                "def safe_source(metadata):\n"
+                "    return (\n"
+                "        stat.S_ISREG(metadata.st_mode)\n"
+                "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                "        and metadata.st_uid == os.getuid()\n"
+                "        and stat.S_IMODE(metadata.st_mode) == 0o600\n"
+                "        and metadata.st_nlink == 1\n"
+                "    )\n",
+                "def safe_source(metadata):\n"
+                "    return (\n"
+                "        stat.S_ISREG(metadata.st_mode)\n"
+                "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                "        and stat.S_IMODE(metadata.st_mode) == 0o600\n"
+                "    )\n",
+                "setup-gws import source must be current-user-owned mode 600 and single-link",
+            ),
+            (
+                setup_script,
+                '    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)\n',
+                "    flags = os.O_RDONLY\n",
+                "setup-gws import copy must resist source races and verify both copies",
+            ),
+            (
+                setup_script,
+                "    destination_fd = os.open(destination_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)\n",
+                "    destination_fd = os.open(destination_path, os.O_WRONLY | os.O_CREAT, 0o644)\n",
+                "setup-gws import copy must resist source races and verify both copies",
+            ),
+            (
+                setup_script,
+                '        if hashlib.sha256(copied.read()).hexdigest() != digest:\n'
+                '            raise ValueError("candidate digest mismatch")\n',
+                "",
+                "setup-gws import copy must resist source races and verify both copies",
+            ),
+            (
+                setup_script,
+                "        identity(after_fd) != identity(opened)\n"
+                "        or identity(after_path) != identity(before)\n"
+                "        or hashlib.sha256(reread).hexdigest() != digest\n",
+                "        False\n",
+                "setup-gws import copy must resist source races and verify both copies",
+            ),
+            (
+                setup_script,
+                '        and metadata.get("source_sha256") == hashlib.sha256(credential_bytes).hexdigest()\n',
+                "",
+                "setup-gws imported profile must verify exact credentials, client, and source hash",
+            ),
+            (
+                setup_script,
+                '    credentials = json.loads(credential_bytes.decode("utf-8"), object_pairs_hook=reject_duplicates)\n'
+                '    with open(os.path.join(root, "client_secret.json"), encoding="utf-8") as source:\n',
+                '    credentials = json.loads(credential_bytes.decode("utf-8"))\n'
+                '    with open(os.path.join(root, "client_secret.json"), encoding="utf-8") as source:\n',
+                "setup-gws imported profile must reject duplicate credential keys",
+            ),
+            (
+                setup_script,
+                '    expected_keys = {"type", "client_id", "client_secret", "refresh_token"}\n'
+                "    valid = (\n"
+                "        isinstance(credentials, dict)\n"
+                "        and set(credentials) == expected_keys\n",
+                "    valid = (\n"
+                "        isinstance(credentials, dict)\n",
+                "setup-gws imported profile must use the exact four-key credential schema",
+            ),
+            (
+                setup_script,
+                '        and credentials.get("type") == "authorized_user"\n'
+                '        and all(isinstance(credentials.get(key), str) and credentials[key] for key in ("client_id", "client_secret", "refresh_token"))\n'
+                '        and credentials["client_id"] == client.get("client_id")\n'
+                '        and credentials["client_secret"] == client.get("client_secret")\n'
+                '        and metadata.get("source_sha256") == hashlib.sha256(credential_bytes).hexdigest()\n',
+                '        and all(isinstance(credentials.get(key), str) and credentials[key] for key in ("client_id", "client_secret", "refresh_token"))\n'
+                '        and credentials["client_id"] == client.get("client_id")\n'
+                '        and credentials["client_secret"] == client.get("client_secret")\n'
+                '        and metadata.get("source_sha256") == hashlib.sha256(credential_bytes).hexdigest()\n',
+                "setup-gws imported profile must require authorized_user credentials",
+            ),
+            (
+                setup_script,
+                '        and all(isinstance(credentials.get(key), str) and credentials[key] for key in ("client_id", "client_secret", "refresh_token"))\n'
+                '        and credentials["client_id"] == client.get("client_id")\n'
+                '        and credentials["client_secret"] == client.get("client_secret")\n'
+                '        and metadata.get("source_sha256") == hashlib.sha256(credential_bytes).hexdigest()\n',
+                '        and credentials["client_id"] == client.get("client_id")\n'
+                '        and credentials["client_secret"] == client.get("client_secret")\n'
+                '        and metadata.get("source_sha256") == hashlib.sha256(credential_bytes).hexdigest()\n',
+                "setup-gws imported credential fields must be nonempty strings",
+            ),
+            (
+                setup_script,
+                '  private_regular_file "$profile/credentials.json" || return 1\n',
+                "",
+                "setup-gws imported mode must require plaintext credentials",
+            ),
+            (
+                setup_script,
+                '  [ ! -e "$profile/credentials.enc" ] && [ ! -L "$profile/credentials.enc" ] || return 1\n',
+                "",
+                "setup-gws imported mode must reject mixed encrypted state",
+            ),
+            (
+                setup_script,
+                '  validate_imported_profile_state "$profile"\n',
+                "  true\n",
+                "setup-gws imported static state must validate credentials, client, and hash",
+            ),
+            (
+                setup_script,
+                '      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="$profile/credentials.json" \\\n',
+                "",
+                "setup-gws imported mode must select credentials only in the imported branch",
+            ),
+            (
+                setup_script,
+                "            and required_scopes.issubset(set(scopes))\n",
+                "            and bool(scopes)\n",
+                "setup-gws imported grants must contain every required scope",
+            ),
+            (
+                setup_script,
+                '            and "https://mail.google.com/" not in scopes\n',
+                "",
+                "setup-gws imported grants must reject the broad Gmail scope",
+            ),
+            (
+                setup_script,
+                "            and len(scopes) == len(required_scopes)\n"
+                "            and set(scopes) == required_scopes\n",
+                "            and required_scopes.issubset(set(scopes))\n",
+                "setup-gws encrypted mode must require the exact four scopes",
+            ),
+            (
+                setup_script,
+                '  [ "$mode" = "encrypted_oauth" ] || die "imported profiles cannot be reauthenticated; use --import-account FILE --email EMAIL --alias $alias --replace"\n',
+                '  if ! run_isolated "$candidate" encrypted_oauth auth login --scopes "$GMAIL_SCOPE"; then\n'
+                '    die "OAuth login failed; live profile remains unchanged"\n'
+                "  fi\n"
+                '  [ "$mode" = "encrypted_oauth" ] || die "imported profiles cannot be reauthenticated; use --import-account FILE --email EMAIL --alias $alias --replace"\n',
+                "setup-gws reauthentication must reject imported profiles before login",
+            ),
+            (
+                setup_script,
+                '    emails_match "$expected" "$email" || die "account alias belongs to another expected email"\n',
+                "",
+                "setup-gws replacement must preserve the alias identity",
+            ),
+            (
+                setup_script,
+                '    [ "$existing_mode" = "imported_authorized_user" ] || die "--replace is only supported for imported account profiles"\n',
+                "",
+                "setup-gws replacement must accept only an existing imported profile",
+            ),
+            (
+                setup_script,
+                '  if ! check_profile_health "$candidate" "$email" "$alias" imported_authorized_user >/dev/null; then\n'
+                '    die "imported credential identity or health check failed; live profile remains unchanged"\n'
+                "  fi\n",
+                "",
+                "setup-gws must validate an imported candidate before activation",
+            ),
+            (
+                setup_script,
+                '    if ! rename_path "$profile" "$backup"; then\n'
+                '      TX_BACKUP=""\n'
+                '      die "unable to stage live profile; live profile remains unchanged"\n'
+                "    fi\n",
+                '    /bin/rm -rf -- "$profile"\n',
+                "setup-gws imported replacement must be transactional and restorable",
+            ),
+            (
+                setup_script,
+                '  ensure_accounts_root\n'
+                '  acquire_alias_lock "$alias"\n'
+                '  profile="$ACCOUNTS_ROOT/$alias"\n'
+                '  [ ! -L "$profile" ] || die "refusing symlinked account profile"\n',
+                '  ensure_accounts_root\n'
+                '  profile="$ACCOUNTS_ROOT/$alias"\n'
+                '  [ ! -L "$profile" ] || die "refusing symlinked account profile"\n',
+                "setup-gws import activation must hold the alias lock",
+            ),
+            (
+                setup_script,
+                '  accounts_root_is_private || die "invalid profile"\n'
+                '  acquire_alias_lock "$alias"\n'
+                '  profile="$(profile_for_alias "$alias")" || die "invalid profile"\n',
+                '  accounts_root_is_private || die "invalid profile"\n'
+                '  profile="$(profile_for_alias "$alias")" || die "invalid profile"\n',
+                "setup-gws reauthentication must hold the alias lock",
+            ),
+            (
+                shared_skill,
+                "            and len(scopes) == len(required_scopes)\n"
+                "            and set(scopes) == required_scopes\n",
+                "            and required_scopes.issubset(set(scopes))\n",
+                "gws shared encrypted mode must require the exact four scopes",
+            ),
+        )
+
+        for relative_path, before, after, expected_message in mutations:
+            def mutate(
+                root: Path,
+                path: str = relative_path,
+                old: str = before,
+                new: str = after,
+            ) -> None:
+                if path == shared_skill and old == credential_assignment:
+                    self.replace_once_in_region(
+                        root,
+                        path,
+                        'if [ "$credential_mode" = "imported_authorized_user" ]; then\n',
+                        'elif [ "$credential_mode" = "encrypted_oauth" ]; then\n',
+                        old,
+                        new,
+                    )
+                elif path == setup_script and old.startswith(
+                    '  accounts_root_is_private || die "invalid profile"\n'
+                ):
+                    self.replace_once_in_region(
+                        root,
+                        path,
+                        "reauth_account() {\n",
+                        "check_all() {\n",
+                        old,
+                        new,
+                    )
+                else:
+                    self.replace_once(root, path, old, new)
+
+            with self.subTest(expected_message=expected_message, mutation=before):
+                self.assert_checker_rejects(mutate, expected_message)
+
+    def test_setup_checker_rejects_hash_refreshed_imported_branch_bypasses(self) -> None:
+        setup_script = "scripts/setup-gws.sh"
+        shared_skill = "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+        credential_assignment = (
+            '      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="$profile/credentials.json" \\\n'
+        )
+
+        def relocate_setup_credentials_to_encrypted(root: Path) -> None:
+            self.replace_once_in_region(
+                root,
+                setup_script,
+                '  if [ "$mode" = "imported_authorized_user" ]; then\n',
+                "    return\n  fi\n",
+                credential_assignment,
+                "",
+            )
+            self.replace_once_in_region(
+                root,
+                setup_script,
+                "  fi\n  /usr/bin/env \\\n",
+                "}\n\nstatus_is_healthy()",
+                "    GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \\\n",
+                "    GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \\\n"
+                + credential_assignment,
+            )
+            self.refresh_checker_hash(root, setup_script, "GWS_SETUP_SHA256")
+
+        def relocate_shared_credentials_to_encrypted(root: Path) -> None:
+            self.replace_once_in_region(
+                root,
+                shared_skill,
+                'if [ "$credential_mode" = "imported_authorized_user" ]; then\n',
+                'elif [ "$credential_mode" = "encrypted_oauth" ]; then\n',
+                credential_assignment,
+                "",
+            )
+            self.replace_once_in_region(
+                root,
+                shared_skill,
+                'elif [ "$credential_mode" = "encrypted_oauth" ]; then\n',
+                "else\n  exit 1\nfi\n",
+                "      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \\\n",
+                "      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \\\n"
+                + credential_assignment,
+            )
+            self.refresh_checker_hash(root, shared_skill, "GWS_SHARED_SKILL_SHA256")
+
+        def mutate_and_refresh(
+            relative_path: str,
+            constant_name: str,
+            before: str,
+            after: str,
+        ) -> Callable[[Path], None]:
+            def mutate(root: Path) -> None:
+                self.replace_once(root, relative_path, before, after)
+                self.refresh_checker_hash(root, relative_path, constant_name)
+
+            return mutate
+
+        cases: tuple[tuple[Callable[[Path], None], str], ...] = (
+            (
+                relocate_setup_credentials_to_encrypted,
+                "setup-gws imported mode must select credentials only in the imported branch",
+            ),
+            (
+                relocate_shared_credentials_to_encrypted,
+                "gws shared imported mode must select credentials only in the imported branch",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    '            and status.get("has_refresh_token") is True\n',
+                    "",
+                ),
+                "setup-gws imported live status must require exact plaintext credential state",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    '            and status.get("plain_credentials") == os.path.join(profile, "credentials.json")\n',
+                    "",
+                ),
+                "setup-gws imported live status must require exact plaintext credential state",
+            ),
+            (
+                mutate_and_refresh(
+                    shared_skill,
+                    "GWS_SHARED_SKILL_SHA256",
+                    '            and status.get("has_refresh_token") is True\n',
+                    "",
+                ),
+                "gws shared imported live status must require exact plaintext credential state",
+            ),
+            (
+                mutate_and_refresh(
+                    shared_skill,
+                    "GWS_SHARED_SKILL_SHA256",
+                    '            and status.get("plain_credentials") == os.path.join(profile, "credentials.json")\n',
+                    "",
+                ),
+                "gws shared imported live status must require exact plaintext credential state",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    "        profile = json.load(source, object_pairs_hook=reject_duplicates)\n",
+                    "        profile = json.load(source)\n",
+                ),
+                "setup-gws profile metadata must reject duplicate keys",
+            ),
+            (
+                mutate_and_refresh(
+                    shared_skill,
+                    "GWS_SHARED_SKILL_SHA256",
+                    "        return json.load(source, object_pairs_hook=reject_duplicates)\n",
+                    "        return json.load(source)\n",
+                ),
+                "gws shared profile metadata must reject duplicate keys",
+            ),
+            (
+                mutate_and_refresh(
+                    shared_skill,
+                    "GWS_SHARED_SKILL_SHA256",
+                    "umask 077\n\n",
+                    "",
+                ),
+                "gws shared executable preflight must establish private umask 077 before profile validation",
+            ),
+            (
+                mutate_and_refresh(
+                    shared_skill,
+                    "GWS_SHARED_SKILL_SHA256",
+                    'gws_runtime_path="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"\n',
+                    'umask 022\n'
+                    'gws_runtime_path="${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws"\n',
+                ),
+                "gws shared executable preflight must keep exactly one lexical umask command line, the leading umask 077",
+            ),
+            (
+                mutate_and_refresh(
+                    shared_skill,
+                    "GWS_SHARED_SKILL_SHA256",
+                    "umask 077\n\n",
+                    "umask 077\n\n"
+                    "printf '%s\\n' \"<<'true'\"\n"
+                    "umask 022\n"
+                    "true\n",
+                ),
+                "gws shared executable preflight must keep exactly one lexical umask command line, the leading umask 077",
+            ),
+            (
+                mutate_and_refresh(
+                    shared_skill,
+                    "GWS_SHARED_SKILL_SHA256",
+                    "umask 077\n\n",
+                    "umask 077\n\n"
+                    "# <<'true'\n"
+                    "umask 022\n"
+                    "true\n",
+                ),
+                "gws shared executable preflight must keep exactly one lexical umask command line, the leading umask 077",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    "    valid = (\n"
+                    "        stat.S_ISREG(metadata.st_mode)\n"
+                    "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                    "        and metadata.st_uid == os.getuid()\n"
+                    "        and stat.S_IMODE(metadata.st_mode) == 0o600\n"
+                    "    )\n",
+                    "    valid = (\n"
+                    "        stat.S_ISREG(metadata.st_mode)\n"
+                    "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                    "        and stat.S_IMODE(metadata.st_mode) == 0o600\n"
+                    "    )\n",
+                ),
+                "setup-gws private regular files must be current-user-owned mode 600",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    "    valid = (\n"
+                    "        stat.S_ISDIR(metadata.st_mode)\n"
+                    "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                    "        and metadata.st_uid == os.getuid()\n"
+                    "        and stat.S_IMODE(metadata.st_mode) == 0o700\n"
+                    "    )\n",
+                    "    valid = (\n"
+                    "        stat.S_ISDIR(metadata.st_mode)\n"
+                    "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                    "        and stat.S_IMODE(metadata.st_mode) == 0o700\n"
+                    "    )\n",
+                ),
+                "setup-gws private profile roots must be current-user-owned mode 700",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    "    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != expected_mode:\n",
+                    "    if stat.S_IMODE(metadata.st_mode) != expected_mode:\n",
+                ),
+                "setup-gws profile objects must be current-user-owned with private modes",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    "def safe_imported_credentials(metadata):\n"
+                    "    return (\n"
+                    "        stat.S_ISREG(metadata.st_mode)\n"
+                    "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                    "        and metadata.st_uid == os.getuid()\n"
+                    "        and stat.S_IMODE(metadata.st_mode) == 0o600\n"
+                    "        and metadata.st_nlink == 1\n"
+                    "    )\n",
+                    "def safe_imported_credentials(metadata):\n"
+                    "    return (\n"
+                    "        stat.S_ISREG(metadata.st_mode)\n"
+                    "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                    "        and metadata.st_uid == os.getuid()\n"
+                    "        and stat.S_IMODE(metadata.st_mode) == 0o600\n"
+                    "    )\n",
+                ),
+                "setup-gws imported credentials must be current-user-owned mode 600 and single-link",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    '        os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),\n',
+                    "        os.O_RDONLY,\n",
+                ),
+                "setup-gws imported profile validation must resist credential path races",
+            ),
+            (
+                mutate_and_refresh(
+                    setup_script,
+                    "GWS_SETUP_SHA256",
+                    "    if identity(after_fd) != identity(opened) or identity(after_path) != identity(before):\n",
+                    "    if False:\n",
+                ),
+                "setup-gws imported profile validation must resist credential path races",
+            ),
+        )
+
+        for mutate, expected_message in cases:
+            with self.subTest(expected_message=expected_message):
+                self.assert_checker_rejects(mutate, expected_message)
+
+    def test_setup_checker_rejects_hash_refreshed_runtime_quota_project_bypasses(self) -> None:
+        """Each mutation changes a real safety boundary, not merely pinned text."""
+        setup_script = "scripts/setup-gws.sh"
+        shared_skill = "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+        plugin_manifest = "plugins/google-workspace-tools/.codex-plugin/plugin.json"
+        readme = "README.md"
+        provenance = "plugins/google-workspace-tools/PROVENANCE.md"
+
+        def mutate_setup(
+            before: str,
+            after: str,
+        ) -> Callable[[Path], None]:
+            def mutate(root: Path) -> None:
+                self.replace_once(root, setup_script, before, after)
+                self.refresh_checker_hash(root, setup_script, "GWS_SETUP_SHA256")
+
+            return mutate
+
+        def mutate_shared(
+            before: str,
+            after: str,
+        ) -> Callable[[Path], None]:
+            def mutate(root: Path) -> None:
+                self.replace_once(root, shared_skill, before, after)
+                self.refresh_checker_hash(root, shared_skill, "GWS_SHARED_SKILL_SHA256")
+
+            return mutate
+
+        def mutate_setup_function(
+            function_name: str,
+            next_function_name: str,
+            before: str,
+            after: str,
+        ) -> Callable[[Path], None]:
+            def mutate(root: Path) -> None:
+                self.replace_once_in_region(
+                    root,
+                    setup_script,
+                    f"{function_name}() {{\n",
+                    f"{next_function_name}() {{\n",
+                    before,
+                    after,
+                )
+                self.refresh_checker_hash(root, setup_script, "GWS_SETUP_SHA256")
+
+            return mutate
+
+        def remove_shared_quota_header(root: Path) -> None:
+            path = root / shared_skill
+            original = path.read_text(encoding="utf-8")
+            before = "    -u GOOGLE_WORKSPACE_PROJECT_ID \\\n"
+            self.assertEqual(original.count(before), 4)
+            path.write_text(original.replace(before, ""), encoding="utf-8")
+            self.refresh_checker_hash(root, shared_skill, "GWS_SHARED_SKILL_SHA256")
+
+        def remove_shared_live_identity_readback(root: Path) -> None:
+            path = root / shared_skill
+            original = path.read_text(encoding="utf-8")
+            before = '      "$gws_bin" gmail users getProfile --params \'{"userId":"me"}\' --format json\n'
+            self.assertEqual(original.count(before), 2)
+            path.write_text(
+                original.replace(
+                    before,
+                    '      "$gws_bin" gmail users getProfile --params \'{"userId":"me"}\' --format json --removed\n',
+                ),
+                encoding="utf-8",
+            )
+            self.refresh_checker_hash(root, shared_skill, "GWS_SHARED_SKILL_SHA256")
+
+        def mutate_manifest(root: Path) -> None:
+            self.rewrite_json(
+                root,
+                plugin_manifest,
+                lambda manifest: manifest.update({"version": "0.2.0"}),
+            )
+
+        cases: tuple[tuple[Callable[[Path], None], str], ...] = (
+            (
+                mutate_setup(
+                    '        and installed["project_id"] == ""\n',
+                    '        and isinstance(installed.get("project_id"), str)\n',
+                ),
+                "setup-gws runtime client validator must require an exactly empty quota project",
+            ),
+            (
+                mutate_setup(
+                    '    expected["installed"]["project_id"] = ""\n'
+                    '    valid = runtime == expected\n',
+                    '    valid = runtime == registered\n',
+                ),
+                "setup-gws runtime comparator must derive exactly the projectless registered client",
+            ),
+            (
+                mutate_setup(
+                    '    client["installed"]["project_id"] = ""\n'
+                    '    encoded = (json.dumps(client, separators=(",", ":")) + "\\n").encode("utf-8")\n',
+                    '    encoded = (json.dumps(client, separators=(",", ":")) + "\\n").encode("utf-8")\n',
+                ),
+                "setup-gws runtime writer must create a projectless client rather than copy the protected registration",
+            ),
+            (
+                mutate_setup_function(
+                    "add_account",
+                    "import_account",
+                    '  if ! write_runtime_client "$candidate/client_secret.json"; then\n'
+                    '    die "unable to create candidate account profile"\n'
+                    '  fi\n',
+                    '  /bin/cp "$CLIENT_PATH" "$candidate/client_secret.json" || die "unable to create candidate account profile"\n'
+                    '  chmod 600 "$candidate/client_secret.json" || die "unable to protect candidate account client"\n',
+                ),
+                "setup-gws account creation must write a projectless runtime client rather than copy the protected registration",
+            ),
+            (
+                mutate_setup_function(
+                    "import_account",
+                    "migrate_account",
+                    '  if ! write_runtime_client "$candidate/client_secret.json"; then\n'
+                    '    die "unable to copy registered OAuth client"\n'
+                    '  fi\n',
+                    '  /bin/cp "$CLIENT_PATH" "$candidate/client_secret.json" || die "unable to copy registered OAuth client"\n'
+                    '  chmod 600 "$candidate/client_secret.json" || die "unable to protect imported account client"\n',
+                ),
+                "setup-gws imported account creation must write a projectless runtime client rather than copy the protected registration",
+            ),
+            (
+                mutate_setup_function(
+                    "runtime_client_matches_registered",
+                    "legacy_runtime_client_matches_registered",
+                    'runtime_client_matches_registered() {\n',
+                    'runtime_client_matches_registered_removed() {\n',
+                ),
+                "setup-gws must define one runtime client comparator",
+            ),
+            (
+                mutate_setup(
+                    '  identity="$(run_isolated "$profile" "$mode" gmail users getProfile --params \'{"userId":"me"}\' --format json 2>/dev/null)" || { printf \'%s: live identity check failed\\n\' "$alias" >&2; return 1; }\n'
+                    '  live_identity_matches_expected "$expected" "$identity" || { printf \'%s: live identity check failed\\n\' "$alias" >&2; return 1; }\n',
+                    '',
+                ),
+                "setup-gws health checks must prove the exact Gmail identity with users.getProfile",
+            ),
+            (
+                mutate_setup_function(
+                    "migrate_account",
+                    "reauth_account",
+                    '  [ "$#" -eq 1 ] || usage\n',
+                    '  [ "$#" -ge 1 ] || usage\n',
+                ),
+                "setup-gws migration must accept exactly one explicit alias",
+            ),
+            (
+                mutate_setup_function(
+                    "migrate_account",
+                    "reauth_account",
+                    '  acquire_alias_lock "$alias"\n'
+                    '  profile="$(profile_for_alias "$alias")" || die "invalid profile"\n',
+                    '  profile="$(profile_for_alias "$alias")" || die "invalid profile"\n',
+                ),
+                "setup-gws migration must hold an explicit alias-scoped lock",
+            ),
+            (
+                mutate_setup_function(
+                    "migrate_account",
+                    "reauth_account",
+                    '  candidate="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.migrate.XXXXXX")" || die "unable to create migration candidate"\n',
+                    '  candidate="$profile"\n',
+                ),
+                "setup-gws migration must stage an alias-scoped candidate",
+            ),
+            (
+                mutate_setup_function(
+                    "migrate_account",
+                    "reauth_account",
+                    '  backup="$(mktemp -d "$ACCOUNTS_ROOT/.${alias}.backup.XXXXXX")" || die "unable to reserve profile backup"\n',
+                    '  backup="$profile"\n',
+                ),
+                "setup-gws migration must reserve an alias-scoped backup",
+            ),
+            (
+                mutate_setup(
+                    '      if ! rename_path "$TX_LIVE" "$TX_CANDIDATE"; then\n',
+                    '      if ! true; then\n',
+                ),
+                "setup-gws EXIT cleanup must quarantine uncommitted live profiles before backup restoration and preserve failed rollback state",
+            ),
+            (
+                mutate_setup_function(
+                    "migrate_account",
+                    "reauth_account",
+                    '  if ! check_account "$alias" >/dev/null; then\n'
+                    '    die "migrated profile failed live readback; transaction will roll back"\n'
+                    '  fi\n'
+                    '  commit_profile_activation\n',
+                    '  commit_profile_activation\n',
+                ),
+                "setup-gws migration must perform final live readback before committing activation",
+            ),
+            (
+                mutate_shared(
+                    '    registered_client_path = os.path.join(gws_root, "client_secret.json")\n',
+                    '    registered_client_path = os.path.join(secrets_root, "client_secret.json")\n',
+                ),
+                "gws shared preflight must read the protected registered client from the gws root",
+            ),
+            (
+                mutate_shared(
+                    '    transaction_prefix = f".{alias}."\n'
+                    '    if any(name.startswith(transaction_prefix) for name in os.listdir(root)):\n'
+                    '        raise ValueError("profile transaction is incomplete")\n',
+                    '',
+                ),
+                "gws shared preflight must reject alias-scoped transaction siblings before invoking gws",
+            ),
+            (
+                mutate_shared(
+                    '    check(registered_client_path, stat.S_ISREG, 0o600)\n'
+                    '    registered_client = load_json(registered_client_path)\n'
+                    '    runtime_client = load_json(runtime_client_path)\n'
+                    '    if not valid_registered_client(registered_client):\n'
+                    '        raise ValueError("invalid registered OAuth client")\n'
+                    '    expected_runtime_client = json.loads(json.dumps(registered_client))\n'
+                    '    expected_runtime_client["installed"]["project_id"] = ""\n'
+                    '    if runtime_client != expected_runtime_client:\n'
+                    '        raise ValueError("invalid runtime OAuth client")\n',
+                    '',
+                ),
+                "gws shared preflight must validate the protected registration and exact projectless runtime equality",
+            ),
+            (
+                remove_shared_quota_header,
+                "gws shared preflight must prevent an ambient quota-project header",
+            ),
+            (
+                remove_shared_live_identity_readback,
+                "gws shared preflight must retain the live Gmail users.getProfile identity readback",
+            ),
+            (
+                mutate_manifest,
+                "google-workspace-tools manifest version must be 0.2.1",
+            ),
+        )
+
+        for mutate, expected_message in cases:
+            with self.subTest(expected_message=expected_message):
+                self.assert_checker_rejects(mutate, expected_message)
+
+        def stale_readme(root: Path) -> None:
+            self.replace_once(
+                root,
+                readme,
+                "A gws request that sends `x-goog-user-project` can receive a quota-project 403.",
+                "Quota failures have no documented cause.",
+            )
+
+        def stale_provenance(root: Path) -> None:
+            self.replace_once(
+                root,
+                provenance,
+                "The quota-project runtime-client split is a local safety and compatibility patch.",
+                "The quota-project behavior is unmodified upstream behavior.",
+            )
+
+        for mutate, expected_message in (
+            (stale_readme, "README must explain the gws quota-project 403 and projectless runtime contract"),
+            (stale_provenance, "google-workspace-tools provenance must identify the local quota-project runtime-client patch"),
+        ):
+            with self.subTest(expected_message=expected_message):
+                self.assert_checker_rejects(mutate, expected_message)
+
+    def test_setup_checker_rejects_imported_profile_documentation_regressions(self) -> None:
+        readme = "README.md"
+        provenance = "plugins/google-workspace-tools/PROVENANCE.md"
+        mutations = (
+            (
+                readme,
+                "Encrypted OAuth is the recommended credential mode.",
+                "Both credential modes are equivalent.",
+                "README must recommend encrypted OAuth",
+            ),
+            (
+                readme,
+                "Imported `authorized_user` JSON is a supported opt-in plaintext-at-rest alternative.",
+                "Imported credentials are encrypted automatically.",
+                "README must identify imported authorized_user JSON as plaintext at rest",
+            ),
+            (
+                readme,
+                "scripts/setup-gws.sh --import-account /absolute/path/to/gws-import/account-one.json --email account-one@example.com --alias account-one",
+                "scripts/setup-gws.sh --add-account account-one@example.com --alias account-one",
+                "README must document imported account onboarding with neutral placeholders",
+            ),
+            (
+                readme,
+                "scripts/setup-gws.sh --import-account /absolute/path/to/gws-import/account-one-rotated.json --email account-one@example.com --alias account-one --replace",
+                "scripts/setup-gws.sh --import-account /absolute/path/to/gws-import/account-one-rotated.json --email account-one@example.com --alias account-two --replace",
+                "README must document same-alias same-identity imported rotation",
+            ),
+            (
+                readme,
+                "The staging source is retained, and import creates another plaintext copy.",
+                "The staging source is deleted after import.",
+                "README must warn that import retains the source and creates another plaintext copy",
+            ),
+            (
+                readme,
+                "Imported grants may contain extra scopes, but always reject `https://mail.google.com/`.",
+                "Imported grants may contain every Gmail scope.",
+                "README must document imported extra-scope and broad-scope policy",
+            ),
+            (
+                readme,
+                "Imported profiles cannot use `--reauth-account`",
+                "Imported profiles can use `--reauth-account`",
+                "README must document that imported profiles cannot be reauthenticated",
+            ),
+            (
+                readme,
+                "The candidate must\npass its live identity and scope checks before the transactional replacement",
+                "The candidate replaces the live profile before validation",
+                "README must document pre-activation imported candidate validation",
+            ),
+            (
+                readme,
+                "the previous live profile is restored if activation or final live readback fails.",
+                "replacement failures may remove the previous live profile.",
+                "README must document transactional imported replacement readback and restoration",
+            ),
+            (
+                provenance,
+                "Imported authorized-user support is a local plaintext-at-rest extension",
+                "Imported authorized-user support comes from upstream",
+                "google-workspace-tools provenance must identify the local imported-profile extension",
+            ),
+        )
+
+        for relative_path, before, after, expected_message in mutations:
+            def mutate(
+                root: Path,
+                path: str = relative_path,
+                old: str = before,
+                new: str = after,
+            ) -> None:
+                self.replace_once(root, path, old, new)
+
+            with self.subTest(expected_message=expected_message, mutation=before):
                 self.assert_checker_rejects(mutate, expected_message)
 
     def test_setup_checker_rejects_profile_manager_state_bypasses(self) -> None:
@@ -536,24 +1583,34 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "setup-gws must enforce the canonical private secrets hierarchy",
             ),
             (
-                "and stat.S_IMODE(metadata.st_mode) == 0o700\n",
-                "and stat.S_IMODE(metadata.st_mode) == 0o755\n",
-                "setup-gws must enforce the canonical private secrets hierarchy",
+                "    valid = (\n"
+                "        stat.S_ISDIR(metadata.st_mode)\n"
+                "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                "        and metadata.st_uid == os.getuid()\n"
+                "        and stat.S_IMODE(metadata.st_mode) == 0o700\n"
+                "    )\n",
+                "    valid = (\n"
+                "        stat.S_ISDIR(metadata.st_mode)\n"
+                "        and not stat.S_ISLNK(metadata.st_mode)\n"
+                "        and metadata.st_uid == os.getuid()\n"
+                "        and stat.S_IMODE(metadata.st_mode) == 0o755\n"
+                "    )\n",
+                "setup-gws private profile roots must be current-user-owned mode 700",
             ),
             (
                 '    required = ("client_id", "client_secret", "project_id", "auth_uri", "token_uri")\n',
                 '    required = ("client_id", "client_secret", "project_id", "auth_uri")\n',
-                "setup-gws must validate the complete Desktop OAuth client contract",
+                "setup-gws registered client validator must require the complete protected Desktop client",
             ),
             (
                 '        and installed["auth_uri"] == "https://accounts.google.com/o/oauth2/auth"\n',
                 '        and installed["auth_uri"] == "https://example.invalid/oauth"\n',
-                "setup-gws must validate the complete Desktop OAuth client contract",
+                "setup-gws registered client validator must require the complete protected Desktop client",
             ),
             (
                 '        and installed["token_uri"] == "https://oauth2.googleapis.com/token"\n',
                 '        and installed["token_uri"] == "https://example.invalid/token"\n',
-                "setup-gws must validate the complete Desktop OAuth client contract",
+                "setup-gws registered client validator must require the complete protected Desktop client",
             ),
             (
                 '  TX_CLIENT_CANDIDATE="$candidate"\n',
@@ -571,13 +1628,20 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "setup-gws must register the OAuth client transactionally without clobbering",
             ),
             (
-                '  ensure_accounts_root\n  acquire_alias_lock "$alias"\n  profile="$ACCOUNTS_ROOT/$alias"\n',
-                '  ensure_accounts_root\n  profile="$ACCOUNTS_ROOT/$alias"\n',
+                '  ensure_accounts_root\n'
+                '  acquire_alias_lock "$alias"\n'
+                '  profile="$ACCOUNTS_ROOT/$alias"\n'
+                '  if [ -L "$profile" ]; then\n',
+                '  ensure_accounts_root\n'
+                '  profile="$ACCOUNTS_ROOT/$alias"\n'
+                '  if [ -L "$profile" ]; then\n',
                 "setup-gws must serialize and reserve account activation",
             ),
             (
-                '  /bin/mkdir "$profile" || die "unable to reserve account profile path"\n',
-                '  /bin/mkdir -p "$profile" || die "unable to reserve account profile path"\n',
+                '  /bin/mkdir "$profile" || die "unable to reserve account profile path"\n'
+                '  TX_RESERVATION="$profile"\n',
+                '  /bin/mkdir -p "$profile" || die "unable to reserve account profile path"\n'
+                '  TX_RESERVATION="$profile"\n',
                 "setup-gws must serialize and reserve account activation",
             ),
             (
@@ -587,9 +1651,11 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 '  if ! check_account "$alias"; then\n'
-                '    if rename_path "$profile" "$candidate"; then\n',
+                '    die "activated account profile failed live readback; transaction will roll back"\n'
+                '  fi\n',
                 '  if false && ! check_account "$alias"; then\n'
-                '    if rename_path "$profile" "$candidate"; then\n',
+                '    die "activated account profile failed live readback; transaction will roll back"\n'
+                '  fi\n',
                 "setup-gws must serialize and reserve account activation",
             ),
             (
@@ -640,8 +1706,19 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 root: Path,
                 old: str = before,
                 new: str = after,
+                message: str = expected_message,
             ) -> None:
-                self.replace_once(root, setup_script, old, new)
+                if message == "setup-gws registered client validator must require the complete protected Desktop client":
+                    self.replace_once_in_region(
+                        root,
+                        setup_script,
+                        "validate_registered_client_json() {\n",
+                        "validate_runtime_client_json() {\n",
+                        old,
+                        new,
+                    )
+                else:
+                    self.replace_once(root, setup_script, old, new)
 
             with self.subTest(expected_message=expected_message, mutation=before):
                 self.assert_checker_rejects(mutate, expected_message)
@@ -670,8 +1747,8 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "gws shared contract must require encrypted credential files before status",
             ),
             (
-                '    if os.path.lexists(os.path.join(profile, "credentials.json")):\n'
-                '        raise ValueError("plaintext profile credentials are forbidden")\n',
+                '        if os.path.lexists(os.path.join(profile, "credentials.json")):\n'
+                '            raise ValueError("plaintext profile credentials are forbidden")\n',
                 "",
                 "gws shared contract must reject plaintext credential state",
             ),
@@ -870,9 +1947,11 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             )
 
         def remove_installer_sanitizer_scrub(root: Path) -> None:
-            self.replace_once(
+            self.replace_once_in_region(
                 root,
                 gws_setup,
+                '  if [ "$mode" = "imported_authorized_user" ]; then\n',
+                "    return\n  fi\n",
                 "    -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \\\n",
                 "",
             )
@@ -904,17 +1983,21 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             )
 
         def remove_adc_sentinel(root: Path) -> None:
-            self.replace_once(
+            self.replace_once_in_region(
                 root,
                 gws_setup,
+                '  if [ "$mode" = "imported_authorized_user" ]; then\n',
+                "    return\n  fi\n",
                 '    GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \\\n',
                 "",
             )
 
         def remove_singular_credential_override_scrub(root: Path) -> None:
-            self.replace_once(
+            self.replace_once_in_region(
                 root,
                 shared_skill,
+                'if [ "$credential_mode" = "imported_authorized_user" ]; then\n',
+                'elif [ "$credential_mode" = "encrypted_oauth" ]; then\n',
                 "    -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \\\n",
                 "",
             )
@@ -950,6 +2033,13 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 lambda manifest: manifest.update({"mcpServers": "./.mcp.json"}),
             )
 
+        def add_manifest_app_declaration(root: Path) -> None:
+            self.rewrite_json(
+                root,
+                plugin_manifest,
+                lambda manifest: manifest.update({"apps": ["gmail"]}),
+            )
+
         def manage_gws_mcp(root: Path) -> None:
             self.replace_once(
                 root,
@@ -962,7 +2052,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.rewrite_json(
                 root,
                 plugin_manifest,
-                lambda manifest: manifest.update({"version": "0.2.0"}),
+                lambda manifest: manifest.update({"version": "0.1.0"}),
             )
 
         def remove_one_skill(root: Path) -> None:
@@ -1045,8 +2135,8 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 "README.md",
-                "Reauthenticate an existing profile, including one with an expired or revoked\n"
-                "token, without changing its expected identity",
+                "Reauthenticate an existing encrypted OAuth profile, including one with an\n"
+                "expired or revoked token, without changing its expected identity",
                 "Reauthenticate an existing healthy profile without changing its expected identity",
             )
 
@@ -1105,7 +2195,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 add_extra_shared_scope,
-                "gws-shared security contract must match the canonical reviewed text",
+                "gws shared required Gmail scope set must remain exactly four",
             ),
             (
                 allow_permanent_delete,
@@ -1120,12 +2210,16 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "google-workspace-tools manifest must not declare MCP servers",
             ),
             (
+                add_manifest_app_declaration,
+                "google-workspace-tools manifest must not declare apps",
+            ),
+            (
                 manage_gws_mcp,
                 "gws must not be a managed MCP server",
             ),
             (
                 change_manifest_version,
-                "google-workspace-tools manifest version must be 0.1.0",
+                "google-workspace-tools manifest version must be 0.2.1",
             ),
             (
                 remove_one_skill,

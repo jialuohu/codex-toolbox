@@ -8,11 +8,13 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import stat
 import subprocess
 import tarfile
 import tempfile
 import time
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -117,6 +119,10 @@ cp "$FAKE_DOWNLOAD" "$out"
     def client_path(self) -> Path:
         return self.secrets_home / "gws" / "client_secret.json"
 
+    @property
+    def import_root(self) -> Path:
+        return self.secrets_home / "gws-import"
+
     def run(self, result: object | None = None, *args: str) -> object:
         """Keep unittest's runner contract while exposing the shell interface."""
         if not isinstance(result, str):
@@ -184,8 +190,25 @@ if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
     printf '%s\\n' "$FAKE_GWS_LIVE_STATUS"
   elif [ -f "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json" ]; then
     cat "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR/.fake-status.json"
+  elif [ "${FAKE_GWS_IMPORTED_STATUS:-0}" = 1 ]; then
+    STATUS_JSON="$FAKE_GWS_STATUS" PROFILE_PATH="$GOOGLE_WORKSPACE_CLI_CONFIG_DIR" /usr/bin/python3 -c 'import json, os; value=json.loads(os.environ["STATUS_JSON"]); root=os.environ["PROFILE_PATH"]; value["plain_credentials"]=value.get("plain_credentials", "").replace("__PROFILE__", root); value["client_config"]=value.get("client_config", "").replace("__PROFILE__", root); print(json.dumps(value))'
   else
     printf '%s\\n' "$FAKE_GWS_STATUS"
+  fi
+  exit 0
+fi
+if [ "$1" = "gmail" ] && [ "$2" = "users" ] && [ "$3" = "getProfile" ]; then
+  profile_name="${GOOGLE_WORKSPACE_CLI_CONFIG_DIR##*/}"
+  if [ "${profile_name#\.}" = "$profile_name" ] && [ -n "${FAKE_GWS_LIVE_GET_PROFILE_READY:-}" ]; then
+    printf ready > "$FAKE_GWS_LIVE_GET_PROFILE_READY"
+    while :; do /bin/sleep 1; done
+  fi
+  if [ "${profile_name#\.}" = "$profile_name" ] && [ -n "${FAKE_GWS_LIVE_GET_PROFILE:-}" ]; then
+    printf '%s\n' "$FAKE_GWS_LIVE_GET_PROFILE"
+  elif [ -n "${FAKE_GWS_GET_PROFILE:-}" ]; then
+    printf '%s\n' "$FAKE_GWS_GET_PROFILE"
+  else
+    printf '%s\n' '{"emailAddress":"account@example.test"}'
   fi
   exit 0
 fi
@@ -217,6 +240,24 @@ exit 3
         result = self.run("--register-client", str(self.write_client()))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def write_imported_credentials(
+        self,
+        *,
+        name: str = "authorized-user.json",
+        payload: object | None = None,
+    ) -> Path:
+        self.import_root.mkdir(exist_ok=True)
+        self.import_root.chmod(0o700)
+        source = self.import_root / name
+        source.write_text(json.dumps(payload if payload is not None else {
+            "type": "authorized_user",
+            "client_id": "desktop-id.apps.googleusercontent.com",
+            "client_secret": "desktop-secret",
+            "refresh_token": "refresh-token",
+        }))
+        source.chmod(0o600)
+        return source
+
     def status(self, address: str, **changes: object) -> None:
         value: dict[str, object] = {
             "user": address,
@@ -230,6 +271,25 @@ exit 3
         }
         value.update(changes)
         self.env["FAKE_GWS_STATUS"] = json.dumps(value)
+        self.env["FAKE_GWS_GET_PROFILE"] = json.dumps({"emailAddress": address})
+
+    def imported_status(self, address: str, profile: Path, **changes: object) -> None:
+        value: dict[str, object] = {
+            "user": address,
+            "token_valid": True,
+            "scopes": [SCOPE, *IDENTITY_SCOPES, "https://www.googleapis.com/auth/drive.metadata.readonly"],
+            "storage": "plaintext",
+            "keyring_backend": "file",
+            "plain_credentials_exists": True,
+            "encrypted_credentials_exists": False,
+            "has_refresh_token": True,
+            "plain_credentials": "__PROFILE__/credentials.json",
+            "client_config": "__PROFILE__/client_secret.json",
+        }
+        value.update(changes)
+        self.env["FAKE_GWS_STATUS"] = json.dumps(value)
+        self.env["FAKE_GWS_IMPORTED_STATUS"] = "1"
+        self.env["FAKE_GWS_GET_PROFILE"] = json.dumps({"emailAddress": address})
 
     def assert_mode(self, path: Path, mode: int) -> None:
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode, path)
@@ -465,6 +525,407 @@ exit 0
         second = self.run("--add-account", "second@example.test")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
         self.assertRegex(self.gws_log.read_text(), r"set:.*/\.second\.add\.[^/|]+")
+
+    def test_import_account_accepts_authorized_user_with_safe_extra_scope(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        source = self.write_imported_credentials()
+        profile = self.accounts_root / "personal"
+        self.imported_status("ACCOUNT@example.test", profile)
+
+        result = self.run(
+            "--import-account",
+            str(source),
+            "--alias",
+            "personal",
+            "--email",
+            "account@example.test",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "Account personal imported\n")
+        self.assertNotIn("account@example.test", result.stdout + result.stderr)
+        credentials = profile / "credentials.json"
+        metadata = json.loads((profile / "profile.json").read_text())
+        self.assertEqual(metadata, {
+            "schema_version": 1,
+            "expected_email": "account@example.test",
+            "credential_mode": "imported_authorized_user",
+            "scope_policy": "existing_grant",
+            "source_sha256": hashlib.sha256(credentials.read_bytes()).hexdigest(),
+        })
+        self.assertEqual(credentials.read_bytes(), source.read_bytes())
+        for path, mode in (
+            (profile, 0o700),
+            (profile / "profile.json", 0o600),
+            (profile / "client_secret.json", 0o600),
+            (credentials, 0o600),
+        ):
+            self.assert_mode(path, mode)
+        status_rows = [
+            line.split("|")
+            for line in self.gws_log.read_text().splitlines()
+            if line.startswith("auth status|")
+        ]
+        self.assertTrue(status_rows)
+        self.assertEqual(status_rows[-1][3], f"set:{credentials}")
+
+    def test_import_account_rejects_bad_arguments_and_authorized_user_shapes(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+        valid = {
+            "type": "authorized_user",
+            "client_id": "desktop-id.apps.googleusercontent.com",
+            "client_secret": "desktop-secret",
+            "refresh_token": "refresh-token",
+        }
+        bad_documents: tuple[tuple[str, str], ...] = (
+            ("malformed", "{"),
+            ("duplicate-key", '{"type":"authorized_user","type":"authorized_user","client_id":"desktop-id.apps.googleusercontent.com","client_secret":"desktop-secret","refresh_token":"refresh-token"}'),
+            ("wrong-type-value", json.dumps({**valid, "type": "service_account"})),
+            ("wrong-field-type", json.dumps({**valid, "refresh_token": ["token"]})),
+            ("missing-field", json.dumps({key: value for key, value in valid.items() if key != "refresh_token"})),
+            ("extra-token-uri", json.dumps({**valid, "token_uri": "https://oauth2.googleapis.com/token"})),
+            ("client-id-mismatch", json.dumps({**valid, "client_id": "other.apps.googleusercontent.com"})),
+            ("client-secret-mismatch", json.dumps({**valid, "client_secret": "other-secret"})),
+        )
+        for name, body in bad_documents:
+            with self.subTest(document=name):
+                source = self.write_imported_credentials(name=f"{name}.json")
+                source.write_text(body)
+                source.chmod(0o600)
+                result = self.run("--import-account", str(source), "--email", "account@example.test", "--alias", "personal")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertFalse(profile.exists())
+
+        source = self.write_imported_credentials(name="valid.json")
+        invalid_commands = (
+            ("missing-email", (str(source), "--alias", "personal")),
+            ("missing-alias", (str(source), "--email", "account@example.test")),
+            ("duplicate-email", (str(source), "--email", "account@example.test", "--email", "account@example.test", "--alias", "personal")),
+            ("duplicate-alias", (str(source), "--email", "account@example.test", "--alias", "personal", "--alias", "personal")),
+            ("duplicate-replace", (str(source), "--email", "account@example.test", "--alias", "personal", "--replace", "--replace")),
+            ("two-positionals", (str(source), str(source), "--email", "account@example.test", "--alias", "personal")),
+        )
+        for name, command in invalid_commands:
+            with self.subTest(arguments=name):
+                result = self.run("--import-account", *command)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertFalse(profile.exists())
+
+    def test_import_account_counts_an_empty_positional_as_the_sole_file_value(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        source = self.write_imported_credentials()
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+
+        result = self.run(
+            "--import-account",
+            "",
+            str(source),
+            "--email",
+            "account@example.test",
+            "--alias",
+            "personal",
+        )
+
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertFalse(profile.exists())
+
+    def test_import_account_rejects_sources_outside_a_private_direct_staging_root(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+
+        outside = self.home / "outside.json"
+        outside.write_text(self.write_imported_credentials().read_text())
+        outside.chmod(0o600)
+        nested_dir = self.import_root / "nested"
+        nested_dir.mkdir()
+        nested_dir.chmod(0o700)
+        nested = nested_dir / "nested.json"
+        nested.write_text(outside.read_text())
+        nested.chmod(0o600)
+        relative = os.path.relpath(self.import_root / "authorized-user.json", ROOT)
+        for name, source in (("relative", relative), ("outside", str(outside)), ("nested", str(nested))):
+            with self.subTest(path=name):
+                result = self.run("--import-account", source, "--email", "account@example.test", "--alias", "personal")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertFalse(profile.exists())
+
+        source = self.import_root / "authorized-user.json"
+        source.chmod(0o644)
+        unsafe_mode = self.run("--import-account", str(source), "--email", "account@example.test", "--alias", "personal")
+        self.assertEqual(unsafe_mode.returncode, 1, unsafe_mode.stdout + unsafe_mode.stderr)
+        source.chmod(0o600)
+
+        hardlink = self.import_root / "hardlink.json"
+        os.link(source, hardlink)
+        linked = self.run("--import-account", str(source), "--email", "account@example.test", "--alias", "personal")
+        self.assertEqual(linked.returncode, 1, linked.stdout + linked.stderr)
+        hardlink.unlink()
+
+        symlink = self.import_root / "symlink.json"
+        symlink.symlink_to(source)
+        linked_source = self.run("--import-account", str(symlink), "--email", "account@example.test", "--alias", "personal")
+        self.assertEqual(linked_source.returncode, 1, linked_source.stdout + linked_source.stderr)
+        symlink.unlink()
+
+        self.import_root.chmod(0o755)
+        unsafe_root = self.run("--import-account", str(source), "--email", "account@example.test", "--alias", "personal")
+        self.assertEqual(unsafe_root.returncode, 1, unsafe_root.stdout + unsafe_root.stderr)
+        self.assertFalse(profile.exists())
+
+    def test_import_source_validator_rejects_wrong_owner(self) -> None:
+        self.register_client()
+        source_path = self.write_imported_credentials()
+        destination = self.home / "candidate-credentials.json"
+        script_source = SCRIPT.read_text()
+        function_start = script_source.index("copy_imported_credentials() {")
+        body_start = script_source.index("<<'PY'\n", function_start) + len("<<'PY'\n")
+        body_end = script_source.index("\nPY\n", body_start)
+        validator_body = script_source[body_start:body_end]
+        real_lstat = os.lstat
+
+        def wrong_source_owner(path: object, *args: object, **kwargs: object) -> object:
+            metadata = real_lstat(path, *args, **kwargs)
+            if os.fspath(path) != str(source_path):
+                return metadata
+            values = {
+                name: getattr(metadata, name)
+                for name in dir(metadata)
+                if name.startswith("st_")
+            }
+            values["st_uid"] = metadata.st_uid + 1
+            return SimpleNamespace(**values)
+
+        environment = {
+            "SOURCE_PATH": str(source_path),
+            "DESTINATION_PATH": str(destination),
+            "IMPORT_ROOT": str(self.import_root),
+            "CLIENT_FILE": str(self.client_path),
+        }
+        with mock.patch.dict(os.environ, environment), mock.patch("os.lstat", side_effect=wrong_source_owner):
+            with self.assertRaises(SystemExit) as rejected:
+                exec(compile(validator_body, "import-source-validator", "exec"), {})
+        self.assertEqual(rejected.exception.code, 1)
+        self.assertFalse(destination.exists())
+
+    def test_imported_profile_static_and_live_health_fail_closed(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        source = self.write_imported_credentials()
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+        imported = self.run("--import-account", str(source), "--email", "account@example.test", "--alias", "personal")
+        self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
+        original_metadata = (profile / "profile.json").read_bytes()
+        original_credentials = (profile / "credentials.json").read_bytes()
+        status_calls_before = sum(line.startswith("auth status|") for line in self.gws_log.read_text().splitlines())
+
+        static_mutations = (
+            ("implicit-imported", lambda: (profile / "profile.json").write_text(json.dumps({"schema_version": 1, "expected_email": "account@example.test"}))),
+            ("partial-mode", lambda: (profile / "profile.json").write_text(json.dumps({"schema_version": 1, "expected_email": "account@example.test", "credential_mode": "imported_authorized_user"}))),
+            ("unknown-mode", lambda: (profile / "profile.json").write_text(json.dumps({"schema_version": 1, "expected_email": "account@example.test", "credential_mode": "unknown", "scope_policy": "existing_grant", "source_sha256": "0" * 64}))),
+            ("checksum", lambda: (profile / "credentials.json").write_bytes(original_credentials + b"\n")),
+            ("mixed-state", lambda: (profile / "credentials.enc").write_text("encrypted")),
+        )
+        for name, mutate in static_mutations:
+            with self.subTest(static=name):
+                (profile / "profile.json").write_bytes(original_metadata)
+                (profile / "credentials.json").write_bytes(original_credentials)
+                (profile / "credentials.enc").unlink(missing_ok=True)
+                for path in (profile / "profile.json", profile / "credentials.json"):
+                    path.chmod(0o600)
+                mutate()
+                (profile / "profile.json").chmod(0o600)
+                if (profile / "credentials.enc").exists():
+                    (profile / "credentials.enc").chmod(0o600)
+                result = self.run("--check-account", "personal")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+        (profile / "profile.json").write_bytes(original_metadata)
+        (profile / "credentials.json").write_bytes(original_credentials)
+        (profile / "credentials.enc").unlink(missing_ok=True)
+        (profile / "profile.json").chmod(0o600)
+        (profile / "credentials.json").chmod(0o600)
+        status_calls_after = sum(line.startswith("auth status|") for line in self.gws_log.read_text().splitlines())
+        self.assertEqual(status_calls_after, status_calls_before, "static failures must precede auth status")
+
+        live_mutations: tuple[tuple[str, dict[str, object]], ...] = (
+            ("identity", {"user": "wrong@example.test"}),
+            ("token", {"token_valid": False}),
+            ("storage", {"storage": "encrypted"}),
+            ("keyring", {"keyring_backend": "keyring"}),
+            ("plaintext-missing", {"plain_credentials_exists": False}),
+            ("encrypted-present", {"encrypted_credentials_exists": True}),
+            ("refresh-missing", {"has_refresh_token": False}),
+            ("wrong-credential-path", {"plain_credentials": "/wrong/credentials.json"}),
+            ("wrong-client-path", {"client_config": "/wrong/client_secret.json"}),
+            ("missing-scope", {"scopes": [SCOPE, *IDENTITY_SCOPES[:-1]]}),
+            ("duplicate-scope", {"scopes": [SCOPE, *IDENTITY_SCOPES, SCOPE]}),
+            ("broad-scope", {"scopes": [SCOPE, *IDENTITY_SCOPES, "https://mail.google.com/"]}),
+            ("non-string-scope", {"scopes": [SCOPE, *IDENTITY_SCOPES, 7]}),
+        )
+        for name, changes in live_mutations:
+            with self.subTest(live=name):
+                self.imported_status("account@example.test", profile, **changes)
+                result = self.run("--check-account", "personal")
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+
+        self.imported_status("ACCOUNT@example.test", profile)
+        healthy = self.run("--check-account", "personal")
+        self.assertEqual(healthy.returncode, 0, healthy.stdout + healthy.stderr)
+
+    def test_imported_profile_rejects_hardlinked_destination_before_status(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        source = self.write_imported_credentials()
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+        imported = self.run(
+            "--import-account",
+            str(source),
+            "--email",
+            "account@example.test",
+            "--alias",
+            "personal",
+        )
+        self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
+        status_calls_before = sum(
+            line.startswith("auth status|")
+            for line in self.gws_log.read_text().splitlines()
+        )
+        external_link = self.home / "linked-imported-credentials.json"
+        os.link(profile / "credentials.json", external_link)
+
+        result = self.run("--check-account", "personal")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        status_calls_after = sum(
+            line.startswith("auth status|")
+            for line in self.gws_log.read_text().splitlines()
+        )
+        self.assertEqual(
+            status_calls_after,
+            status_calls_before,
+            "hard-linked imported credentials must fail static validation before auth status",
+        )
+
+    def test_imported_profile_rejects_boolean_schema_version_before_status(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        source = self.write_imported_credentials()
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+        imported = self.run("--import-account", str(source), "--email", "account@example.test", "--alias", "personal")
+        self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
+        metadata = json.loads((profile / "profile.json").read_text())
+        metadata["schema_version"] = True
+        (profile / "profile.json").write_text(json.dumps(metadata))
+        (profile / "profile.json").chmod(0o600)
+        status_calls_before = sum(line.startswith("auth status|") for line in self.gws_log.read_text().splitlines())
+
+        result = self.run("--check-account", "personal")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        status_calls_after = sum(line.startswith("auth status|") for line in self.gws_log.read_text().splitlines())
+        self.assertEqual(status_calls_after, status_calls_before, "invalid schema type must fail before auth status")
+
+    def test_imported_reauth_is_rejected_before_login(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        source = self.write_imported_credentials()
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+        self.assertEqual(self.run("--import-account", str(source), "--email", "account@example.test", "--alias", "personal").returncode, 0)
+        login_calls_before = sum(line.startswith("auth login|") for line in self.gws_log.read_text().splitlines())
+
+        result = self.run("--reauth-account", "personal")
+
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("--import-account", result.stderr)
+        self.assertIn("--replace", result.stderr)
+        login_calls_after = sum(line.startswith("auth login|") for line in self.gws_log.read_text().splitlines())
+        self.assertEqual(login_calls_after, login_calls_before)
+
+    def test_import_replacement_requires_same_imported_identity_and_is_serialized(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        first = self.write_imported_credentials(name="first.json")
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+        self.assertEqual(self.run("--import-account", str(first), "--email", "account@example.test", "--alias", "personal").returncode, 0)
+        original = self.snapshot_tree(profile)
+
+        without_replace = self.run("--import-account", str(first), "--email", "account@example.test", "--alias", "personal")
+        self.assertEqual(without_replace.returncode, 1, without_replace.stdout + without_replace.stderr)
+        wrong_email = self.run("--import-account", str(first), "--email", "other@example.test", "--alias", "personal", "--replace")
+        self.assertEqual(wrong_email.returncode, 1, wrong_email.stdout + wrong_email.stderr)
+        lock = self.accounts_root / ".personal.lock"
+        lock.mkdir()
+        lock.chmod(0o700)
+        serialized = self.run("--import-account", str(first), "--email", "account@example.test", "--alias", "personal", "--replace")
+        self.assertEqual(serialized.returncode, 1, serialized.stdout + serialized.stderr)
+        self.assertEqual(self.snapshot_tree(profile), original)
+        lock.rmdir()
+
+        self.status("encrypted@example.test")
+        self.env.pop("FAKE_GWS_IMPORTED_STATUS")
+        self.assertEqual(self.run("--add-account", "encrypted@example.test", "--alias", "encrypted").returncode, 0)
+        encrypted_refusal = self.run("--import-account", str(first), "--email", "encrypted@example.test", "--alias", "encrypted", "--replace")
+        self.assertEqual(encrypted_refusal.returncode, 1, encrypted_refusal.stdout + encrypted_refusal.stderr)
+
+    def test_import_replacement_success_and_failures_are_transactional(self) -> None:
+        self.install_fake_runtime()
+        self.register_client()
+        first = self.write_imported_credentials(name="first.json")
+        profile = self.accounts_root / "personal"
+        self.imported_status("account@example.test", profile)
+        self.assertEqual(self.run("--import-account", str(first), "--email", "account@example.test", "--alias", "personal").returncode, 0)
+        original = self.snapshot_tree(profile)
+
+        second_payload = {
+            "type": "authorized_user",
+            "client_id": "desktop-id.apps.googleusercontent.com",
+            "client_secret": "desktop-secret",
+            "refresh_token": "replacement-token",
+        }
+        second = self.write_imported_credentials(name="second.json", payload=second_payload)
+        self.imported_status("wrong@example.test", profile)
+        candidate_failure = self.run("--import-account", str(second), "--email", "account@example.test", "--alias", "personal", "--replace")
+        self.assertEqual(candidate_failure.returncode, 1, candidate_failure.stdout + candidate_failure.stderr)
+        self.assertEqual(self.snapshot_tree(profile), original)
+
+        self.imported_status("account@example.test", profile)
+        wrong_live = {
+            "user": "wrong@example.test",
+            "token_valid": True,
+            "scopes": [SCOPE, *IDENTITY_SCOPES],
+            "storage": "plaintext",
+            "keyring_backend": "file",
+            "plain_credentials_exists": True,
+            "encrypted_credentials_exists": False,
+            "has_refresh_token": True,
+            "plain_credentials": str(profile / "credentials.json"),
+            "client_config": str(profile / "client_secret.json"),
+        }
+        self.env["FAKE_GWS_LIVE_STATUS"] = json.dumps(wrong_live)
+        readback_failure = self.run("--import-account", str(second), "--email", "account@example.test", "--alias", "personal", "--replace")
+        self.assertEqual(readback_failure.returncode, 1, readback_failure.stdout + readback_failure.stderr)
+        self.assertEqual(self.snapshot_tree(profile), original)
+        self.assertEqual([path.name for path in self.accounts_root.iterdir()], ["personal"])
+
+        self.env.pop("FAKE_GWS_LIVE_STATUS")
+        replaced = self.run("--import-account", str(second), "--email", "ACCOUNT@example.test", "--alias", "personal", "--replace")
+        self.assertEqual(replaced.returncode, 0, replaced.stdout + replaced.stderr)
+        self.assertEqual((profile / "credentials.json").read_bytes(), second.read_bytes())
+        self.assertNotEqual(self.snapshot_tree(profile), original)
+        self.assertEqual([path.name for path in self.accounts_root.iterdir()], ["personal"])
 
     def test_add_account_rejects_alias_traversal_symlink_and_expected_email_collision(self) -> None:
         self.install_fake_runtime()
@@ -871,6 +1332,211 @@ exec /bin/chmod "$@"
         self.assertNotIn("Account account reauthenticated", reauthenticated.stdout)
         self.assertEqual(self.snapshot_tree(profile), original)
 
+    def test_signal_during_final_readback_rolls_back_every_activated_profile_transaction(self) -> None:
+        """Catches EXIT cleanup preserving an activated but uncommitted profile after SIGTERM."""
+        self.install_fake_runtime()
+        self.register_client()
+
+        def interrupt_final_readback(*arguments: str) -> subprocess.CompletedProcess[str]:
+            ready = self.home / ("final-readback-" + arguments[-1])
+            child_env = self.env.copy()
+            child_env["FAKE_GWS_LIVE_GET_PROFILE_READY"] = str(ready)
+            process = subprocess.Popen(
+                ["bash", str(self.script), *arguments],
+                cwd=ROOT,
+                env=child_env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+            try:
+                self.wait_for_path(ready, process)
+                os.killpg(process.pid, signal.SIGTERM)
+                stdout, stderr = process.communicate(timeout=10)
+            finally:
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.communicate(timeout=10)
+            return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+
+        def assert_safe_interruption(result: subprocess.CompletedProcess[str]) -> None:
+            self.assertEqual(result.returncode, 130, result.stdout + result.stderr)
+            diagnostic = result.stdout + result.stderr
+            self.assertNotRegex(
+                diagnostic,
+                r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b",
+                "signal diagnostics must never disclose an expected or observed email address",
+            )
+            self.assertNotIn(str(self.home), diagnostic)
+            self.assertNotIn("project-id", diagnostic)
+
+        def assert_only_profiles(*aliases: str) -> None:
+            self.assertEqual(
+                sorted(path.name for path in self.accounts_root.iterdir()),
+                sorted(aliases),
+                "signal cleanup must remove locks, candidates, reservations, backups, and quarantines",
+            )
+
+        with self.subTest(operation="add-new"):
+            self.status("add-signal@example.test")
+            added = interrupt_final_readback(
+                "--add-account", "add-signal@example.test", "--alias", "add-signal"
+            )
+            assert_safe_interruption(added)
+            assert_only_profiles()
+
+        with self.subTest(operation="import-new"):
+            source = self.write_imported_credentials(name="import-new.json")
+            imported = self.accounts_root / "import-new"
+            self.imported_status("import-new@example.test", imported)
+            imported_new = interrupt_final_readback(
+                "--import-account",
+                str(source),
+                "--email",
+                "import-new@example.test",
+                "--alias",
+                "import-new",
+            )
+            assert_safe_interruption(imported_new)
+            assert_only_profiles()
+
+        with self.subTest(operation="import-replace"):
+            original_source = self.write_imported_credentials(name="replace-original.json")
+            replaced = self.accounts_root / "import-replace"
+            self.imported_status("import-replace@example.test", replaced)
+            created = self.run(
+                "--import-account",
+                str(original_source),
+                "--email",
+                "import-replace@example.test",
+                "--alias",
+                "import-replace",
+            )
+            self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+            replaced_before = self.snapshot_tree(replaced)
+            replacement_source = self.write_imported_credentials(
+                name="replace-candidate.json",
+                payload={
+                    "type": "authorized_user",
+                    "client_id": "desktop-id.apps.googleusercontent.com",
+                    "client_secret": "desktop-secret",
+                    "refresh_token": "replacement-refresh-token",
+                },
+            )
+            self.imported_status("import-replace@example.test", replaced)
+            replacement = interrupt_final_readback(
+                "--import-account",
+                str(replacement_source),
+                "--email",
+                "import-replace@example.test",
+                "--alias",
+                "import-replace",
+                "--replace",
+            )
+            assert_safe_interruption(replacement)
+            self.assertEqual(self.snapshot_tree(replaced), replaced_before)
+            assert_only_profiles("import-replace")
+
+        with self.subTest(operation="migrate"):
+            self.env.pop("FAKE_GWS_IMPORTED_STATUS", None)
+            self.status("migrate-signal@example.test")
+            created = self.run(
+                "--add-account", "migrate-signal@example.test", "--alias", "migrate-signal"
+            )
+            self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+            migrated = self.accounts_root / "migrate-signal"
+            migrated.joinpath("client_secret.json").write_bytes(self.client_path.read_bytes())
+            migrated.joinpath("client_secret.json").chmod(0o600)
+            migrated_before = self.snapshot_tree(migrated)
+            migration = interrupt_final_readback("--migrate-account", "migrate-signal")
+            assert_safe_interruption(migration)
+            self.assertEqual(self.snapshot_tree(migrated), migrated_before)
+            assert_only_profiles("import-replace", "migrate-signal")
+
+        with self.subTest(operation="reauth"):
+            self.status("reauth-signal@example.test")
+            self.env["FAKE_GWS_LOGIN_VALUE"] = "original"
+            created = self.run(
+                "--add-account", "reauth-signal@example.test", "--alias", "reauth-signal"
+            )
+            self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+            reauthenticated = self.accounts_root / "reauth-signal"
+            reauthenticated_before = self.snapshot_tree(reauthenticated)
+            self.env["FAKE_GWS_LOGIN_VALUE"] = "replacement"
+            reauth = interrupt_final_readback("--reauth-account", "reauth-signal")
+            assert_safe_interruption(reauth)
+            self.assertEqual(self.snapshot_tree(reauthenticated), reauthenticated_before)
+            assert_only_profiles("import-replace", "migrate-signal", "reauth-signal")
+
+    def test_failed_signal_rollback_preserves_recovery_trees_and_alias_lock(self) -> None:
+        """Catches exposing an uncommitted live profile after rollback itself fails."""
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("rollback-failure@example.test")
+        created = self.run(
+            "--add-account",
+            "rollback-failure@example.test",
+            "--alias",
+            "rollback-failure",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
+        profile = self.accounts_root / "rollback-failure"
+        profile.joinpath("client_secret.json").write_bytes(self.client_path.read_bytes())
+        profile.joinpath("client_secret.json").chmod(0o600)
+        original = self.snapshot_tree(profile)
+        ready = self.home / "rollback-failure-ready"
+        child_env = self.env.copy()
+        child_env["FAKE_GWS_LIVE_GET_PROFILE_READY"] = str(ready)
+        process = subprocess.Popen(
+            ["bash", str(self.script), "--migrate-account", "rollback-failure"],
+            cwd=ROOT,
+            env=child_env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        try:
+            self.wait_for_path(ready, process)
+            candidate_rows = [
+                row
+                for row in (line.split("|") for line in self.gws_log.read_text().splitlines())
+                if row[0] == "auth status" and "/.rollback-failure.migrate." in row[12]
+            ]
+            self.assertEqual(len(candidate_rows), 1)
+            candidate = Path(candidate_rows[0][12].removeprefix("set:"))
+            candidate.mkdir(mode=0o700)
+            os.killpg(process.pid, signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=10)
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate(timeout=10)
+
+        self.assertEqual(process.returncode, 1, stdout + stderr)
+        diagnostic = stdout + stderr
+        self.assertIn("preserved profile backup requires manual review", diagnostic)
+        self.assertIn("preserved candidate profile requires manual review", diagnostic)
+        self.assertNotRegex(
+            diagnostic,
+            r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b",
+        )
+        self.assertNotIn(str(self.home), diagnostic)
+        backups = list(self.accounts_root.glob(".rollback-failure.backup.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(self.snapshot_tree(backups[0]), original)
+        self.assertNotEqual(self.snapshot_tree(profile), original)
+        self.assertEqual(
+            json.loads(profile.joinpath("client_secret.json").read_text())["installed"]["project_id"],
+            "",
+        )
+        lock = self.accounts_root / ".rollback-failure.lock"
+        self.assertTrue(lock.is_dir(), "failed rollback must retain the alias lock")
+        blocked = self.run("--migrate-account", "rollback-failure")
+        self.assertEqual(blocked.returncode, 1, blocked.stdout + blocked.stderr)
+        self.assertIn("already in progress or has a stale lock", blocked.stderr)
+
     def test_reauth_preserves_identity_and_list_never_prints_email(self) -> None:
         self.install_fake_runtime()
         self.register_client()
@@ -941,6 +1607,52 @@ exec /bin/chmod "$@"
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("private permissions", result.stderr)
 
+    def test_extracted_profile_validator_rejects_wrong_owner_for_every_object(self) -> None:
+        source = SCRIPT.read_text()
+        function_start = source.index("profile_state_is_private() {")
+        command_start = source.index('PROFILE_DIR="$1" ', function_start)
+        body_start = source.index("\n", command_start) + 1
+        body_end = source.index("\nPY\n", body_start)
+        validator_body = source[body_start:body_end]
+        profile = self.home / "owned-profile"
+        nested = profile / "token-cache"
+        nested.mkdir(parents=True)
+        profile_file = profile / "profile.json"
+        nested_file = nested / "state.json"
+        profile_file.write_text("{}")
+        nested_file.write_text("{}")
+        profile.chmod(0o700)
+        nested.chmod(0o700)
+        profile_file.chmod(0o600)
+        nested_file.chmod(0o600)
+        real_lstat = os.lstat
+
+        def execute_with_wrong_owner(target: Path) -> int:
+            def wrong_owner(path: object, *args: object, **kwargs: object) -> object:
+                metadata = real_lstat(path, *args, **kwargs)
+                if os.fspath(path) != str(target):
+                    return metadata
+                values = {
+                    name: getattr(metadata, name)
+                    for name in dir(metadata)
+                    if name.startswith("st_")
+                }
+                values["st_uid"] = os.getuid() + 1
+                return SimpleNamespace(**values)
+
+            with mock.patch.dict(os.environ, {"PROFILE_DIR": str(profile)}), mock.patch(
+                "os.lstat", side_effect=wrong_owner
+            ):
+                try:
+                    exec(compile(validator_body, "profile-state-validator", "exec"), {})
+                except SystemExit as error:
+                    return int(error.code)
+            return 0
+
+        for target in (profile, nested, profile_file, nested_file):
+            with self.subTest(target=target.relative_to(profile.parent)):
+                self.assertEqual(execute_with_wrong_owner(target), 1)
+
     def test_pythonpath_hook_cannot_hide_exposed_state_or_wrong_status(self) -> None:
         self.install_fake_runtime()
         self.register_client()
@@ -1006,6 +1718,302 @@ exec /bin/chmod "$@"
         wrong = self.run("--reauth-account", "account")
         self.assertEqual(wrong.returncode, 1, wrong.stdout + wrong.stderr)
         self.assertEqual({name: (profile / name).read_text() for name in original}, original)
+
+    def test_new_profiles_use_a_projectless_runtime_client_without_mutating_registration(self) -> None:
+        """Catches copying the protected registered project ID into a runtime profile."""
+        self.install_fake_runtime()
+        self.register_client()
+        registered = self.client_path.read_bytes()
+        self.status("encrypted@example.test")
+
+        added = self.run("--add-account", "encrypted@example.test", "--alias", "encrypted")
+
+        self.assertEqual(added.returncode, 0, added.stdout + added.stderr)
+        self.assertEqual(
+            json.loads((self.accounts_root / "encrypted" / "client_secret.json").read_text())["installed"]["project_id"],
+            "",
+        )
+        self.assertEqual(self.client_path.read_bytes(), registered)
+
+        source = self.write_imported_credentials()
+        imported_profile = self.accounts_root / "imported"
+        self.imported_status("imported@example.test", imported_profile)
+        imported = self.run("--import-account", str(source), "--email", "imported@example.test", "--alias", "imported")
+
+        self.assertEqual(imported.returncode, 0, imported.stdout + imported.stderr)
+        self.assertEqual(
+            json.loads((imported_profile / "client_secret.json").read_text())["installed"]["project_id"],
+            "",
+        )
+        self.assertEqual(self.client_path.read_bytes(), registered)
+
+    def test_check_rejects_legacy_runtime_project_before_status_and_reauth_accepts_runtime_contract(self) -> None:
+        """Catches accepting a nonempty runtime project ID or treating an empty one as invalid."""
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        profile = self.accounts_root / "account"
+        legacy_client = json.loads((profile / "client_secret.json").read_text())
+        legacy_client["installed"]["project_id"] = "project-id"
+        (profile / "client_secret.json").write_text(json.dumps(legacy_client))
+        (profile / "client_secret.json").chmod(0o600)
+        status_calls_before = sum(line.startswith("auth status|") for line in self.gws_log.read_text().splitlines())
+
+        legacy = self.run("--check-account", "account")
+
+        self.assertEqual(legacy.returncode, 1, legacy.stdout + legacy.stderr)
+        self.assertEqual(
+            sum(line.startswith("auth status|") for line in self.gws_log.read_text().splitlines()),
+            status_calls_before,
+            "legacy runtime project IDs must fail before auth status",
+        )
+        runtime_client = json.loads((profile / "client_secret.json").read_text())
+        runtime_client["installed"]["project_id"] = ""
+        (profile / "client_secret.json").write_text(json.dumps(runtime_client))
+        (profile / "client_secret.json").chmod(0o600)
+
+        reauthenticated = self.run("--reauth-account", "account")
+
+        self.assertEqual(reauthenticated.returncode, 0, reauthenticated.stdout + reauthenticated.stderr)
+
+    def test_health_requires_live_get_profile_identity_after_auth_status(self) -> None:
+        """Catches declaring a profile ready from auth status without a live Gmail identity readback."""
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        self.env["FAKE_GWS_GET_PROFILE"] = json.dumps({"emailAddress": "other@example.test"})
+
+        rejected = self.run("--check-account", "account")
+
+        self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+        self.assertIn("identity", rejected.stderr)
+
+    def test_health_uses_the_pinned_get_profile_me_json_contract(self) -> None:
+        """Catches a live identity check that omits the explicit me target or JSON format."""
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+
+        added = self.run("--add-account", "account@example.test")
+
+        self.assertEqual(added.returncode, 0, added.stdout + added.stderr)
+        self.assertIn(
+            'gmail users getProfile --params {"userId":"me"} --format json|',
+            self.gws_log.read_text(),
+        )
+
+    def test_check_rejects_missing_or_nonstring_runtime_project_id_before_status(self) -> None:
+        """Catches a runtime validator that accepts malformed project IDs or reaches gws first."""
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        profile = self.accounts_root / "account"
+        original = json.loads((profile / "client_secret.json").read_text())
+
+        for name, mutate in (
+            ("missing", lambda client: client["installed"].pop("project_id")),
+            ("nonstring", lambda client: client["installed"].__setitem__("project_id", None)),
+        ):
+            with self.subTest(project_id=name):
+                client = json.loads(json.dumps(original))
+                mutate(client)
+                (profile / "client_secret.json").write_text(json.dumps(client))
+                (profile / "client_secret.json").chmod(0o600)
+                status_calls_before = sum(line.startswith("auth status|") for line in self.gws_log.read_text().splitlines())
+                rejected = self.run("--check-account", "account")
+                self.assertEqual(rejected.returncode, 1, rejected.stdout + rejected.stderr)
+                self.assertEqual(
+                    sum(line.startswith("auth status|") for line in self.gws_log.read_text().splitlines()),
+                    status_calls_before,
+                )
+        (profile / "client_secret.json").write_text(json.dumps(original))
+        (profile / "client_secret.json").chmod(0o600)
+
+    def test_migrate_account_is_transactional_idempotent_and_alias_only_for_encrypted_and_imported_profiles(self) -> None:
+        """Catches in-place migration, lost client fields, non-idempotence, or account-email disclosure."""
+        self.install_fake_runtime()
+        self.register_client()
+        registered = self.client_path.read_bytes()
+        self.status("encrypted@example.test")
+        self.assertEqual(self.run("--add-account", "encrypted@example.test", "--alias", "encrypted").returncode, 0)
+        encrypted = self.accounts_root / "encrypted"
+        source = self.write_imported_credentials()
+        imported = self.accounts_root / "imported"
+        self.imported_status("imported@example.test", imported)
+        self.assertEqual(self.run("--import-account", str(source), "--email", "imported@example.test", "--alias", "imported").returncode, 0)
+        for profile in (encrypted, imported):
+            (profile / "client_secret.json").write_bytes(registered)
+            (profile / "client_secret.json").chmod(0o600)
+
+        for alias, profile, email in (
+            ("encrypted", encrypted, "encrypted@example.test"),
+            ("imported", imported, "imported@example.test"),
+        ):
+            with self.subTest(alias=alias):
+                if alias == "encrypted":
+                    self.status(email)
+                else:
+                    self.imported_status(email, profile)
+                legacy_snapshot = self.snapshot_tree(profile)
+                migrated = self.run("--migrate-account", alias)
+                self.assertEqual(migrated.returncode, 0, migrated.stdout + migrated.stderr)
+                self.assertIn(alias, migrated.stdout)
+                self.assertNotIn(email, migrated.stdout + migrated.stderr)
+                self.assertEqual(
+                    json.loads((profile / "client_secret.json").read_text())["installed"]["project_id"],
+                    "",
+                )
+                self.assertEqual(self.client_path.read_bytes(), registered)
+                migrated_snapshot = self.snapshot_tree(profile)
+                self.assertEqual(
+                    {name: value for name, value in migrated_snapshot.items() if name != "client_secret.json"},
+                    {name: value for name, value in legacy_snapshot.items() if name != "client_secret.json"},
+                    "migration must only replace the runtime-client file",
+                )
+                first_snapshot = self.snapshot_tree(profile)
+                again = self.run("--migrate-account", alias)
+                self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+                self.assertEqual(self.snapshot_tree(profile), first_snapshot)
+
+    def test_migrate_account_rejects_bad_candidates_and_restores_the_exact_live_profile(self) -> None:
+        """Catches migration that swaps an unsafe, unhealthy, or failed-readback candidate into place."""
+        self.install_fake_runtime()
+        self.register_client()
+        self.status("account@example.test")
+        self.assertEqual(self.run("--add-account", "account@example.test").returncode, 0)
+        profile = self.accounts_root / "account"
+        legacy_client = json.loads((profile / "client_secret.json").read_text())
+        legacy_client["installed"]["project_id"] = "project-id"
+        (profile / "client_secret.json").write_text(json.dumps(legacy_client))
+        (profile / "client_secret.json").chmod(0o600)
+        original = self.snapshot_tree(profile)
+
+        mismatch = json.loads((profile / "client_secret.json").read_text())
+        mismatch["installed"]["client_id"] = "other.apps.googleusercontent.com"
+        (profile / "client_secret.json").write_text(json.dumps(mismatch))
+        (profile / "client_secret.json").chmod(0o600)
+        mismatched = self.run("--migrate-account", "account")
+        self.assertEqual(mismatched.returncode, 1, mismatched.stdout + mismatched.stderr)
+        (profile / "client_secret.json").write_bytes(original["client_secret.json"][2])
+        (profile / "client_secret.json").chmod(0o600)
+
+        profile.chmod(0o755)
+        unsafe = self.run("--migrate-account", "account")
+        self.assertEqual(unsafe.returncode, 1, unsafe.stdout + unsafe.stderr)
+        profile.chmod(0o700)
+
+        lock = self.accounts_root / ".account.lock"
+        lock.mkdir()
+        lock.chmod(0o700)
+        serialized = self.run("--migrate-account", "account")
+        self.assertEqual(serialized.returncode, 1, serialized.stdout + serialized.stderr)
+        lock.rmdir()
+
+        self.status("wrong@example.test")
+        unhealthy = self.run("--migrate-account", "account")
+        self.assertEqual(unhealthy.returncode, 1, unhealthy.stdout + unhealthy.stderr)
+        self.assertEqual(self.snapshot_tree(profile), original)
+
+        self.status("account@example.test")
+        self.env["FAKE_GWS_LIVE_STATUS"] = self.env["FAKE_GWS_STATUS"]
+        self.env["FAKE_GWS_LIVE_GET_PROFILE"] = json.dumps({"emailAddress": "wrong@example.test"})
+        readback = self.run("--migrate-account", "account")
+        self.assertEqual(readback.returncode, 1, readback.stdout + readback.stderr)
+        self.assertEqual(self.snapshot_tree(profile), original)
+
+    def test_migrate_imported_account_rejects_bad_candidates_and_rolls_back_without_artifacts(self) -> None:
+        """Catches imported-mode migration failures that leak transactions or replace the live profile."""
+        self.install_fake_runtime()
+        self.register_client()
+        registered = self.client_path.read_bytes()
+        source = self.write_imported_credentials()
+        profile = self.accounts_root / "imported"
+        email = "imported@example.test"
+        self.imported_status(email, profile)
+        self.assertEqual(self.run("--import-account", str(source), "--email", email, "--alias", "imported").returncode, 0)
+        (profile / "client_secret.json").write_bytes(registered)
+        (profile / "client_secret.json").chmod(0o600)
+        original = self.snapshot_tree(profile)
+
+        def assert_alias_only(result: subprocess.CompletedProcess[str]) -> None:
+            self.assertNotRegex(
+                result.stdout + result.stderr,
+                r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b",
+                "migration diagnostics must never echo an expected or observed email address",
+            )
+
+        def assert_restored(snapshot: dict[str, tuple[int, str, bytes | str]], result: object) -> None:
+            assert isinstance(result, subprocess.CompletedProcess)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            assert_alias_only(result)
+            self.assertEqual(self.snapshot_tree(profile), snapshot)
+            self.assertEqual([path.name for path in self.accounts_root.iterdir()], ["imported"])
+
+        mismatch = json.loads((profile / "client_secret.json").read_text())
+        mismatch["installed"]["client_id"] = "other.apps.googleusercontent.com"
+        (profile / "client_secret.json").write_text(json.dumps(mismatch))
+        (profile / "client_secret.json").chmod(0o600)
+        mismatch_snapshot = self.snapshot_tree(profile)
+        assert_restored(mismatch_snapshot, self.run("--migrate-account", "imported"))
+        (profile / "client_secret.json").write_bytes(original["client_secret.json"][2])
+        (profile / "client_secret.json").chmod(0o600)
+
+        profile.chmod(0o755)
+        unsafe_snapshot = self.snapshot_tree(profile)
+        unsafe = self.run("--migrate-account", "imported")
+        self.assertEqual(unsafe.returncode, 1, unsafe.stdout + unsafe.stderr)
+        assert_alias_only(unsafe)
+        self.assertEqual(self.snapshot_tree(profile), unsafe_snapshot)
+        profile.chmod(0o700)
+
+        lock = self.accounts_root / ".imported.lock"
+        lock.mkdir()
+        lock.chmod(0o700)
+        locked = self.run("--migrate-account", "imported")
+        self.assertEqual(locked.returncode, 1, locked.stdout + locked.stderr)
+        assert_alias_only(locked)
+        self.assertEqual(sorted(path.name for path in self.accounts_root.iterdir()), [".imported.lock", "imported"])
+        lock.rmdir()
+        self.assertEqual([path.name for path in self.accounts_root.iterdir()], ["imported"])
+
+        self.imported_status("wrong@example.test", profile)
+        assert_restored(original, self.run("--migrate-account", "imported"))
+
+        self.imported_status(email, profile)
+        live_status = json.loads(self.env["FAKE_GWS_STATUS"])
+        live_status["plain_credentials"] = str(profile / "credentials.json")
+        live_status["client_config"] = str(profile / "client_secret.json")
+        self.env["FAKE_GWS_LIVE_STATUS"] = json.dumps(live_status)
+        self.env["FAKE_GWS_LIVE_GET_PROFILE"] = json.dumps({"emailAddress": "wrong@example.test"})
+        live_status_calls_before = sum(
+            line.startswith("auth status|") and f"set:{profile}|" in line
+            for line in self.gws_log.read_text().splitlines()
+        )
+        assert_restored(original, self.run("--migrate-account", "imported"))
+        self.assertGreater(
+            sum(
+                line.startswith("auth status|") and f"set:{profile}|" in line
+                for line in self.gws_log.read_text().splitlines()
+            ),
+            live_status_calls_before,
+            "live readback must run after the candidate becomes active",
+        )
+
+    def test_migrate_account_requires_exactly_one_alias_without_mutation_or_gws(self) -> None:
+        """Catches accepting zero or multiple migration aliases before argument validation."""
+        self.install_fake_runtime()
+        self.register_client()
+        calls_before = self.gws_log.read_text() if self.gws_log.exists() else ""
+
+        for arguments in ((), ("one", "two")):
+            with self.subTest(arguments=arguments):
+                result = self.run("--migrate-account", *arguments)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertFalse(self.accounts_root.exists())
+                self.assertEqual(self.gws_log.read_text() if self.gws_log.exists() else "", calls_before)
 
 
 if __name__ == "__main__":

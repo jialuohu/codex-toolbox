@@ -18,16 +18,48 @@ canonical non-symlink mode-`700` `gws` and `accounts` directories beneath it.
 The selected profile must be a canonical direct child of the accounts root.
 Fail closed on a secrets root, accounts root, profile, or descendant symlink;
 a missing required file; any directory mode other than `700`; any file mode
-other than `600`; or any traversal error. Require `profile.json`,
-`client_secret.json`, `credentials.enc`, and `.encryption_key` to be regular
-files, non-symlink, and mode-`600` before `auth status`. Reject `credentials.json`
-even when it is otherwise private. `profile.json` must have `schema_version: 1`
-and a non-empty string `expected_email`.
+other than `600`; any selected-profile object not owned by the current user; or
+any traversal error. Also reject any accounts-root sibling whose name begins
+`.ALIAS.` for the selected alias: it is an in-progress or failed setup
+transaction (including its lock, candidate, or backup), and direct `gws` use
+must not bypass it. `profile.json` must have an actual JSON integer
+`schema_version: 1` (Boolean `true` is invalid) and a non-empty string
+`expected_email`.
+
+A profile with none of `credential_mode`, `scope_policy`, or `source_sha256` is
+the legacy encrypted mode. It requires private regular files: `profile.json`,
+`client_secret.json`, `credentials.enc`, and `.encryption_key`; it rejects
+`credentials.json` even when it is otherwise private. Any partial or unknown
+mode discriminant fails closed.
+
+The only imported marker is the exact metadata object containing
+`schema_version`, `expected_email`, `credential_mode: imported_authorized_user`,
+`scope_policy: existing_grant`, and a lowercase 64-hex `source_sha256`. Imported
+mode requires private regular files: `profile.json`, `client_secret.json`, and
+single-link `credentials.json`; it forbids `credentials.enc`. The
+authorized-user document must have exactly `type`, `client_id`, `client_secret`,
+and `refresh_token`; reject duplicate keys, empty values, a type other than
+`authorized_user`, a client pair that does not match
+`client_secret.json.installed`, or credential bytes whose SHA-256 does not match
+the metadata.
+
+Every profile also needs a protected registered OAuth client at
+`$gws_root/client_secret.json`. Its `installed` object must have non-empty
+`client_id`, `client_secret`, and `project_id`, and the trusted Google
+`auth_uri` and `token_uri` endpoints. The profile's runtime
+`client_secret.json` must match that registered JSON in every field except that
+its `installed.project_id` is the explicitly empty string. This is intentional:
+the registered client retains its quota project while the isolated runtime
+client suppresses it. Existing profiles with a nonempty runtime project ID must
+be repaired through `scripts/setup-gws.sh --migrate-account ALIAS`; never edit
+the profile or registered client by hand.
 
 Set `alias` from the user's explicit value, then run this validation before
 exposing the profile or any environment to the CLI:
 
 ```bash
+umask 077
+
 case "$alias" in
   ''|.|..|*/*|*'\'*) exit 1 ;;
 esac
@@ -49,12 +81,14 @@ accounts_root="$(cd -P "$accounts_root_path" && pwd)" || exit 1
 [ "$accounts_root" = "$accounts_root_path" ] || exit 1
 profile="$accounts_root/$alias"
 
-expected_email="$(
+profile_validation="$(
   SECRETS_ROOT="$secrets_root" GWS_ROOT="$gws_root" \
     ACCOUNTS_ROOT="$accounts_root" PROFILE_DIR="$profile" PROFILE_ALIAS="$alias" \
     /usr/bin/python3 -I - <<'PY'
+import hashlib
 import json
 import os
+import re
 import stat
 import sys
 
@@ -71,8 +105,32 @@ def check(path, kind, mode):
     metadata = os.lstat(path)
     if stat.S_ISLNK(metadata.st_mode) or not kind(metadata.st_mode):
         raise ValueError("unsafe profile object")
-    if stat.S_IMODE(metadata.st_mode) != mode:
+    if metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) != mode:
         raise ValueError("unsafe profile mode")
+    return metadata
+
+def reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate key")
+        result[key] = value
+    return result
+
+def load_json(path):
+    with open(path, encoding="utf-8") as source:
+        return json.load(source, object_pairs_hook=reject_duplicates)
+
+def valid_registered_client(document):
+    installed = document["installed"]
+    required = ("client_id", "client_secret", "project_id", "auth_uri", "token_uri")
+    return (
+        isinstance(document, dict)
+        and isinstance(installed, dict)
+        and all(isinstance(installed.get(key), str) and installed[key] for key in required)
+        and installed["auth_uri"] == "https://accounts.google.com/o/oauth2/auth"
+        and installed["token_uri"] == "https://oauth2.googleapis.com/token"
+    )
 
 try:
     secrets_real = os.path.realpath(secrets_root)
@@ -93,6 +151,9 @@ try:
         raise ValueError("profile is not a canonical direct child")
     if os.path.basename(profile_real) != alias or profile != os.path.join(root, alias):
         raise ValueError("profile alias mismatch")
+    transaction_prefix = f".{alias}."
+    if any(name.startswith(transaction_prefix) for name in os.listdir(root)):
+        raise ValueError("profile transaction is incomplete")
 
     check(secrets_root, stat.S_ISDIR, 0o700)
     check(gws_root, stat.S_ISDIR, 0o700)
@@ -106,28 +167,124 @@ try:
         for name in files:
             check(os.path.join(current, name), stat.S_ISREG, 0o600)
 
-    if os.path.lexists(os.path.join(profile, "credentials.json")):
-        raise ValueError("plaintext profile credentials are forbidden")
-
-    for name in (
-        "profile.json",
-        "client_secret.json",
-        "credentials.enc",
-        ".encryption_key",
-    ):
-        check(os.path.join(profile, name), stat.S_ISREG, 0o600)
-
-    with open(os.path.join(profile, "profile.json"), encoding="utf-8") as source:
-        metadata = json.load(source)
-    email = metadata["expected_email"]
-    if metadata["schema_version"] != 1 or not isinstance(email, str) or not email:
+    metadata = load_json(os.path.join(profile, "profile.json"))
+    if not isinstance(metadata, dict):
         raise ValueError("invalid profile metadata")
-except (OSError, ValueError, KeyError, TypeError):
+    email = metadata.get("expected_email")
+    if (
+        type(metadata.get("schema_version")) is not int
+        or metadata["schema_version"] != 1
+        or not isinstance(email, str)
+        or not email
+    ):
+        raise ValueError("invalid profile metadata")
+
+    mode_keys = {"credential_mode", "scope_policy", "source_sha256"}
+    if not mode_keys.intersection(metadata):
+        credential_mode = "encrypted_oauth"
+        scope_policy = "exact_required"
+        if os.path.lexists(os.path.join(profile, "credentials.json")):
+            raise ValueError("plaintext profile credentials are forbidden")
+        for name in (
+            "profile.json",
+            "client_secret.json",
+            "credentials.enc",
+            ".encryption_key",
+        ):
+            check(os.path.join(profile, name), stat.S_ISREG, 0o600)
+    else:
+        imported_keys = {
+            "schema_version",
+            "expected_email",
+            "credential_mode",
+            "scope_policy",
+            "source_sha256",
+        }
+        if (
+            set(metadata) != imported_keys
+            or metadata.get("credential_mode") != "imported_authorized_user"
+            or metadata.get("scope_policy") != "existing_grant"
+            or not isinstance(metadata.get("source_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", metadata["source_sha256"]) is None
+        ):
+            raise ValueError("invalid imported profile metadata")
+        credential_mode = metadata["credential_mode"]
+        scope_policy = metadata["scope_policy"]
+        for name in ("profile.json", "client_secret.json", "credentials.json"):
+            file_metadata = check(os.path.join(profile, name), stat.S_ISREG, 0o600)
+            if name == "credentials.json" and file_metadata.st_nlink != 1:
+                raise ValueError("unsafe imported credential link count")
+        if os.path.lexists(os.path.join(profile, "credentials.enc")):
+            raise ValueError("mixed credential state")
+
+        credential_path = os.path.join(profile, "credentials.json")
+        with open(credential_path, "rb") as source:
+            credential_bytes = source.read()
+        credentials = json.loads(
+            credential_bytes.decode("utf-8"), object_pairs_hook=reject_duplicates
+        )
+        client_document = load_json(os.path.join(profile, "client_secret.json"))
+        installed = client_document["installed"]
+        credential_keys = {"type", "client_id", "client_secret", "refresh_token"}
+        if (
+            not isinstance(credentials, dict)
+            or set(credentials) != credential_keys
+            or credentials.get("type") != "authorized_user"
+            or not all(
+                isinstance(credentials.get(key), str) and credentials[key]
+                for key in ("client_id", "client_secret", "refresh_token")
+            )
+            or not isinstance(installed, dict)
+            or credentials["client_id"] != installed.get("client_id")
+            or credentials["client_secret"] != installed.get("client_secret")
+            or hashlib.sha256(credential_bytes).hexdigest() != metadata["source_sha256"]
+        ):
+            raise ValueError("invalid imported authorized-user credentials")
+
+    registered_client_path = os.path.join(gws_root, "client_secret.json")
+    runtime_client_path = os.path.join(profile, "client_secret.json")
+    check(registered_client_path, stat.S_ISREG, 0o600)
+    registered_client = load_json(registered_client_path)
+    runtime_client = load_json(runtime_client_path)
+    if not valid_registered_client(registered_client):
+        raise ValueError("invalid registered OAuth client")
+    expected_runtime_client = json.loads(json.dumps(registered_client))
+    expected_runtime_client["installed"]["project_id"] = ""
+    if runtime_client != expected_runtime_client:
+        raise ValueError("invalid runtime OAuth client")
+
+    encoded_email = email.encode("utf-8")
+    if b"\0" in encoded_email:
+        raise ValueError("invalid profile field")
+except (OSError, UnicodeError, ValueError, KeyError, TypeError):
     sys.exit(1)
 
-print(email)
+print(encoded_email.hex())
+print(credential_mode)
+print(scope_policy)
+print("profile validation passed")
 PY
 )" || exit 1
+expected_email_hex="${profile_validation%%$'\n'*}"
+profile_validation="${profile_validation#*$'\n'}"
+credential_mode="${profile_validation%%$'\n'*}"
+profile_validation="${profile_validation#*$'\n'}"
+scope_policy="${profile_validation%%$'\n'*}"
+profile_validation="${profile_validation#*$'\n'}"
+[ "$profile_validation" = "profile validation passed" ] || exit 1
+[ -n "$expected_email_hex" ] || exit 1
+case "$expected_email_hex" in
+  *[!0-9a-f]* ) exit 1 ;;
+esac
+[ $(( ${#expected_email_hex} % 2 )) -eq 0 ] || exit 1
+expected_email=""
+while [ -n "$expected_email_hex" ]; do
+  expected_email_byte="${expected_email_hex:0:2}"
+  expected_email_hex="${expected_email_hex:2}"
+  printf -v expected_email_character '%b' "\\x$expected_email_byte" || exit 1
+  expected_email="${expected_email}${expected_email_character}"
+done
+unset profile_validation expected_email_hex expected_email_byte expected_email_character
 ```
 
 Only after profile validation passed, resolve the pinned managed binary. Require
@@ -199,35 +356,62 @@ Run from `/`. Clear ambient gws credential, client, project, sanitizer, and log
 overrides; force the file keyring; and point ADC at a missing profile-local
 sentinel:
 Require an exact case-insensitive email match between live status and
-`profile.json.expected_email`. Also require `token_valid: true`,
-`storage: encrypted`, `keyring_backend: file`,
-`encrypted_credentials_exists: true`, `plain_credentials_exists: false`,
-`encryption_valid: true`, and exactly `gmail.modify`, `openid`,
-`userinfo.email`, and `userinfo.profile`. Reject missing, duplicate, or extra
-status fields and scopes, including the broad
-`https://mail.google.com/` scope.
+`profile.json.expected_email`, `token_valid: true`, and the file keyring in both
+modes. Legacy encrypted mode still requires `storage: encrypted`, encrypted
+credentials present and valid, plaintext credentials absent, and exactly
+`gmail.modify`, `openid`, `userinfo.email`, and `userinfo.profile`. Imported
+mode requires `storage: plaintext`, plaintext credentials present, encrypted
+credentials absent, a refresh token, exact profile-local credential and client
+paths, and unique string scopes containing all four required scopes. Only
+imported mode may have other extra scopes. Reject the broad
+`https://mail.google.com/` scope in either mode.
 
 ```bash
-status_json="$(
-  cd / || exit 1
-  /usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN \
-    -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \
-    -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \
-    -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \
-    -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \
-    -u GOOGLE_WORKSPACE_CLI_LOG \
-    -u GOOGLE_WORKSPACE_CLI_LOG_FILE \
-    -u GOOGLE_WORKSPACE_PROJECT_ID \
-    -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \
-    -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \
-    -u GOOGLE_APPLICATION_CREDENTIALS \
-    GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \
-    GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
-    GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \
-    "$gws_bin" auth status
-)" || exit 1
+if [ "$credential_mode" = "imported_authorized_user" ]; then
+  status_json="$(
+    cd / || exit 1
+    /usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \
+      -u GOOGLE_WORKSPACE_CLI_LOG \
+      -u GOOGLE_WORKSPACE_CLI_LOG_FILE \
+      -u GOOGLE_WORKSPACE_PROJECT_ID \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \
+      -u GOOGLE_APPLICATION_CREDENTIALS \
+      GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \
+      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
+      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="$profile/credentials.json" \
+      GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \
+      "$gws_bin" auth status
+  )" || exit 1
+elif [ "$credential_mode" = "encrypted_oauth" ]; then
+  status_json="$(
+    cd / || exit 1
+    /usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \
+      -u GOOGLE_WORKSPACE_CLI_LOG \
+      -u GOOGLE_WORKSPACE_CLI_LOG_FILE \
+      -u GOOGLE_WORKSPACE_PROJECT_ID \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \
+      -u GOOGLE_APPLICATION_CREDENTIALS \
+      GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \
+      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
+      GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \
+      "$gws_bin" auth status
+  )" || exit 1
+else
+  exit 1
+fi
 
-EXPECTED_EMAIL="$expected_email" STATUS_JSON="$status_json" \
+EXPECTED_EMAIL="$expected_email" CREDENTIAL_MODE="$credential_mode" \
+  SCOPE_POLICY="$scope_policy" PROFILE_PATH="$profile" STATUS_JSON="$status_json" \
   /usr/bin/python3 -I - <<'PY' || exit 1
 import json
 import os
@@ -242,18 +426,107 @@ try:
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile",
     }
-    healthy = (
+    common = (
         isinstance(status.get("user"), str)
         and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
         and status.get("token_valid") is True
-        and status.get("storage") == "encrypted"
         and status.get("keyring_backend") == "file"
-        and status.get("encrypted_credentials_exists") is True
-        and status.get("plain_credentials_exists") is False
-        and status.get("encryption_valid") is True
         and isinstance(scopes, list)
-        and len(scopes) == len(required_scopes)
-        and set(scopes) == required_scopes
+        and all(isinstance(scope, str) for scope in scopes)
+        and len(scopes) == len(set(scopes))
+    )
+    if (
+        os.environ["CREDENTIAL_MODE"] == "encrypted_oauth"
+        and os.environ["SCOPE_POLICY"] == "exact_required"
+    ):
+        healthy = (
+            common
+            and status.get("storage") == "encrypted"
+            and status.get("encrypted_credentials_exists") is True
+            and status.get("plain_credentials_exists") is False
+            and status.get("encryption_valid") is True
+            and len(scopes) == len(required_scopes)
+            and set(scopes) == required_scopes
+            and "https://mail.google.com/" not in scopes
+        )
+    elif (
+        os.environ["CREDENTIAL_MODE"] == "imported_authorized_user"
+        and os.environ["SCOPE_POLICY"] == "existing_grant"
+    ):
+        profile = os.environ["PROFILE_PATH"]
+        healthy = (
+            common
+            and status.get("storage") == "plaintext"
+            and status.get("plain_credentials_exists") is True
+            and status.get("encrypted_credentials_exists") is False
+            and status.get("has_refresh_token") is True
+            and status.get("plain_credentials") == os.path.join(profile, "credentials.json")
+            and status.get("client_config") == os.path.join(profile, "client_secret.json")
+            and required_scopes.issubset(set(scopes))
+            and "https://mail.google.com/" not in scopes
+        )
+    else:
+        healthy = False
+except (ValueError, TypeError, KeyError):
+    healthy = False
+sys.exit(0 if healthy else 1)
+PY
+
+if [ "$credential_mode" = "imported_authorized_user" ]; then
+  identity_json="$(
+    cd / || exit 1
+    /usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \
+      -u GOOGLE_WORKSPACE_CLI_LOG \
+      -u GOOGLE_WORKSPACE_CLI_LOG_FILE \
+      -u GOOGLE_WORKSPACE_PROJECT_ID \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \
+      -u GOOGLE_APPLICATION_CREDENTIALS \
+      GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \
+      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
+      GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE="$profile/credentials.json" \
+      GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \
+      "$gws_bin" gmail users getProfile --params '{"userId":"me"}' --format json
+  )" || exit 1
+elif [ "$credential_mode" = "encrypted_oauth" ]; then
+  identity_json="$(
+    cd / || exit 1
+    /usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_ID \
+      -u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET \
+      -u GOOGLE_WORKSPACE_CLI_LOG \
+      -u GOOGLE_WORKSPACE_CLI_LOG_FILE \
+      -u GOOGLE_WORKSPACE_PROJECT_ID \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE \
+      -u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE \
+      -u GOOGLE_APPLICATION_CREDENTIALS \
+      GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$profile" \
+      GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file \
+      GOOGLE_APPLICATION_CREDENTIALS="$profile/missing-adc.json" \
+      "$gws_bin" gmail users getProfile --params '{"userId":"me"}' --format json
+  )" || exit 1
+else
+  exit 1
+fi
+
+EXPECTED_EMAIL="$expected_email" IDENTITY_JSON="$identity_json" \
+  /usr/bin/python3 -I - <<'PY' || exit 1
+import json
+import os
+import sys
+
+try:
+    identity = json.loads(os.environ["IDENTITY_JSON"])
+    healthy = (
+        isinstance(identity, dict)
+        and isinstance(identity.get("emailAddress"), str)
+        and identity["emailAddress"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
     )
 except (ValueError, TypeError, KeyError):
     healthy = False

@@ -1,6 +1,6 @@
 {
   "name": "google-workspace-tools",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Fail-closed, isolated-profile Gmail workflows using a pinned gws CLI.",
   "author": {
     "name": "Codex Toolbox Maintainers"
