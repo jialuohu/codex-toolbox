@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from docmost_tools.models import ErrorCode, OperationError, OperationResult
+from docmost_tools.models import ErrorCode, OperationError, OperationResult, Page
 
 
 def test_success_result_contains_data_and_no_error() -> None:
@@ -53,3 +53,9 @@ def test_error_codes_are_stable_wire_values() -> None:
     assert ErrorCode.INVALID_MARKDOWN.value == "invalid_markdown"
     assert ErrorCode.UPSTREAM_ERROR.value == "upstream_error"
     assert ErrorCode.INTERNAL_ERROR.value == "internal_error"
+
+
+def test_page_model_maps_v095_authoritative_slug_id() -> None:
+    page = Page.model_validate({"id": "p1", "slugId": "authoritative"})
+
+    assert page.slug_id == "authoritative"

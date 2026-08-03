@@ -2,11 +2,13 @@
 
 __version__ = "0.1.0"
 
+from .client import DocmostReadClient
 from .config import ApiProfile, DocmostSettings, WriteProfile
 from .models import ErrorCode, OperationError, OperationResult
 
 __all__ = [
     "ApiProfile",
+    "DocmostReadClient",
     "DocmostSettings",
     "ErrorCode",
     "OperationError",

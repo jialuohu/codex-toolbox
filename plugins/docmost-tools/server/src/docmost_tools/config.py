@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from pathlib import Path
 
 from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_COOKIE_NAME_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,256}\Z")
 
 
 class ApiProfile(StrEnum):
@@ -66,6 +69,14 @@ class DocmostSettings(BaseSettings):
     def validate_login_url(cls, value: AnyHttpUrl | None) -> AnyHttpUrl | None:
         if value is not None:
             cls._validate_docmost_url(value, allow_path=True)
+        return value
+
+    @field_validator("session_cookie")
+    @classmethod
+    def validate_session_cookie(cls, value: str) -> str:
+        if _COOKIE_NAME_PATTERN.fullmatch(value) is None:
+            msg = "DOCMOST_SESSION_COOKIE must be a valid cookie name"
+            raise ValueError(msg)
         return value
 
     @staticmethod

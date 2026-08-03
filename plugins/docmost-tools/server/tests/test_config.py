@@ -36,6 +36,12 @@ def test_settings_has_browser_only_safe_defaults() -> None:
     assert settings.ca_bundle is None
 
 
+@pytest.mark.parametrize("cookie_name", ["authToken; admin=true", "auth Token", "auth\r\nToken"])
+def test_settings_rejects_unsafe_session_cookie_names(cookie_name: str) -> None:
+    with pytest.raises(ValidationError, match="session_cookie"):
+        settings_from_values(base_url="https://docs.example.test", session_cookie=cookie_name)
+
+
 @pytest.mark.parametrize(
     "base_url",
     [
