@@ -28,7 +28,10 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = ["-ra", "--strict-config"]
-markers = ["real_browser: exercises installed Playwright Chromium against a loopback fake SSO server"]
+markers = [
+  "contract: launches an isolated pinned Docmost v0.95.0 Docker Compose stack",
+  "real_browser: exercises installed Playwright Chromium against a loopback fake SSO server",
+]
 testpaths = ["tests"]
 
 [tool.ruff]

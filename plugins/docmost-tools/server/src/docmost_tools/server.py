@@ -1,4 +1,4 @@
-"""Read-only FastMCP interface for an already-authenticated Docmost session."""
+"""Guarded FastMCP interface for an already-authenticated Docmost session."""
 
 from __future__ import annotations
 
@@ -25,10 +25,18 @@ _READ_ONLY_ANNOTATIONS = ToolAnnotations(
     idempotentHint=True,
     openWorldHint=True,
 )
+_WRITE_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=True,
+)
 _ID_PATTERN = r"^[^\x00-\x1f\x7f]{1,512}$"
 _CURSOR_PATTERN = r"^[A-Za-z0-9._~=-]{1,1024}$"
 _ID_RUNTIME_PATTERN = re.compile(r"[^\x00-\x1f\x7f]{1,512}")
 _CURSOR_RUNTIME_PATTERN = re.compile(r"[A-Za-z0-9._~=-]{1,1024}")
+_NO_CONTROL_PATTERN = r"^[^\x00-\x1f\x7f]{1,250}$"
+_NO_CONTROL_RUNTIME_PATTERN = re.compile(r"[^\x00-\x1f\x7f]+")
 
 
 def _validated_string(value: str, pattern: re.Pattern[str], message: str) -> str:
@@ -53,6 +61,24 @@ def _validated_optional_cursor(value: str | None) -> str | None:
     return value if value is None else _validated_cursor(value)
 
 
+def _validated_title(value: str) -> str:
+    if not value.strip() or _NO_CONTROL_RUNTIME_PATTERN.fullmatch(value) is None:
+        raise ValueError("title is invalid")
+    return value
+
+
+def _validated_timestamp(value: str) -> str:
+    if _NO_CONTROL_RUNTIME_PATTERN.fullmatch(value) is None:
+        raise ValueError("expected_updated_at is invalid")
+    return value
+
+
+def _validated_comment_markdown(value: str) -> str:
+    if not value.strip():
+        raise ValueError("comment Markdown must not be empty")
+    return value
+
+
 Identifier = Annotated[
     str,
     Field(min_length=1, max_length=512, pattern=_ID_PATTERN),
@@ -73,6 +99,22 @@ StandardLimit = Annotated[int, Field(ge=1, le=100)]
 SearchLimit = Annotated[int, Field(ge=1, le=50)]
 Offset = Annotated[int, Field(ge=0)]
 MaxChars = Annotated[int, Field(ge=1, le=100_000)]
+Title = Annotated[
+    str,
+    Field(min_length=1, max_length=250, pattern=_NO_CONTROL_PATTERN),
+    AfterValidator(_validated_title),
+]
+PageMarkdown = Annotated[str, Field(max_length=1_000_000)]
+CommentMarkdown = Annotated[
+    str,
+    Field(min_length=1, max_length=20_000),
+    AfterValidator(_validated_comment_markdown),
+]
+ExpectedUpdatedAt = Annotated[
+    str,
+    Field(min_length=1, max_length=128, pattern=r"^[^\x00-\x1f\x7f]{1,128}$"),
+    AfterValidator(_validated_timestamp),
+]
 
 
 class ToolResult(BaseModel):
@@ -98,7 +140,7 @@ class ToolResult(BaseModel):
         )
 
 
-class _ReadOperations(Protocol):
+class _Operations(Protocol):
     def current_user(self) -> OperationResult[Any]: ...
 
     def list_spaces(self, *, limit: int, cursor: str | None = None) -> OperationResult[Any]: ...
@@ -128,21 +170,36 @@ class _ReadOperations(Protocol):
         self, page_id: str, *, limit: int, cursor: str | None = None
     ) -> OperationResult[Any]: ...
 
+    def create_page(
+        self,
+        space_id: str,
+        title: str,
+        markdown: str,
+        *,
+        parent_page_id: str | None = None,
+    ) -> OperationResult[Any]: ...
+
+    def update_page_title(
+        self, page_id: str, title: str, expected_updated_at: str
+    ) -> OperationResult[Any]: ...
+
+    def create_comment(self, page_id: str, markdown: str) -> OperationResult[Any]: ...
+
 
 def create_server(
     *,
-    client: _ReadOperations | None = None,
+    client: _Operations | None = None,
     startup_error: OperationError | None = None,
 ) -> FastMCP:
     """Create the server without browser, network, settings, or profile I/O."""
 
-    server = FastMCP(name="docmost-read")
+    server = FastMCP(name="docmost")
     unavailable = startup_error or OperationError(
         code=ErrorCode.CONFIGURATION_INVALID,
         message="Docmost MCP session is not initialized",
     )
 
-    def execute(operation: Callable[[_ReadOperations], OperationResult[Any]]) -> ToolResult:
+    def execute(operation: Callable[[_Operations], OperationResult[Any]]) -> ToolResult:
         if startup_error is not None or client is None:
             return ToolResult.from_operation(OperationResult[object](ok=False, error=unavailable))
         try:
@@ -151,7 +208,7 @@ def create_server(
             return ToolResult.from_operation(
                 OperationResult[object].failure(
                     ErrorCode.INTERNAL_ERROR,
-                    "Docmost MCP read operation failed",
+                    "Docmost MCP operation failed",
                 )
             )
 
@@ -239,6 +296,49 @@ def create_server(
             lambda read_client: read_client.list_comments(page_id, limit=limit, cursor=cursor)
         )
 
+    @server.tool(annotations=_WRITE_ANNOTATIONS)
+    def create_page(  # pyright: ignore[reportUnusedFunction]
+        space_id: Identifier,
+        title: Title,
+        markdown: PageMarkdown,
+        parent_page_id: OptionalIdentifier = None,
+    ) -> ToolResult:
+        """Create a page through Markdown import; this is non-idempotent and prompt-gated."""
+
+        return execute(
+            lambda write_client: write_client.create_page(
+                space_id,
+                title,
+                markdown,
+                parent_page_id=parent_page_id,
+            )
+        )
+
+    @server.tool(annotations=_WRITE_ANNOTATIONS)
+    def update_page_title(  # pyright: ignore[reportUnusedFunction]
+        page_id: Identifier,
+        title: Title,
+        expected_updated_at: ExpectedUpdatedAt,
+    ) -> ToolResult:
+        """Optimistically rename a page; the upstream check and write are not atomic."""
+
+        return execute(
+            lambda write_client: write_client.update_page_title(
+                page_id,
+                title,
+                expected_updated_at,
+            )
+        )
+
+    @server.tool(annotations=_WRITE_ANNOTATIONS)
+    def create_comment(  # pyright: ignore[reportUnusedFunction]
+        page_id: Identifier,
+        markdown: CommentMarkdown,
+    ) -> ToolResult:
+        """Create a page comment from a conservative Markdown subset; prompt-gated."""
+
+        return execute(lambda write_client: write_client.create_comment(page_id, markdown))
+
     return server
 
 
@@ -263,7 +363,7 @@ def main() -> int:
     runtime = _runtime_from_environment()
     try:
         create_server(
-            client=cast(_ReadOperations | None, runtime.client),
+            client=cast(_Operations | None, runtime.client),
             startup_error=runtime.startup_error,
         ).run(transport="stdio")
     finally:

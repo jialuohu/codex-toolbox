@@ -128,12 +128,31 @@ class Page(_DocmostModel):
     space_name: str | None = None
     space_slug: str | None = None
     parent: str | None = None
+    position: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
     url: str | None = None
     markdown: str | None = None
     truncated: bool = False
     next_offset: int | None = None
+
+
+class CreatePageResult(BaseModel):
+    """A created page plus an explicit warning when optional nesting failed."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    page: Page
+    partial_success: bool = False
+    warning: OperationError | None = None
+
+    @model_validator(mode="after")
+    def validate_warning_state(self) -> Self:
+        if self.partial_success != (self.warning is not None):
+            raise ValueError("partial_success and warning must be present together")
+        if self.warning is not None and self.warning.code is not ErrorCode.PARTIAL_SUCCESS:
+            raise ValueError("partial-success warning must use the partial_success code")
+        return self
 
 
 class Comment(_DocmostModel):

@@ -1,8 +1,9 @@
-"""Guarded, read-only HTTP compatibility client for Docmost browser sessions."""
+"""Guarded HTTP compatibility client for Docmost browser sessions."""
 
 from __future__ import annotations
 
 import base64
+import json
 import re
 import time
 import unicodedata
@@ -13,9 +14,11 @@ from urllib.parse import quote
 import httpx
 from pydantic import BaseModel, SecretStr, ValidationError
 
+from docmost_tools.comment_markdown import MarkdownValidationError, markdown_to_tiptap
 from docmost_tools.config import DocmostSettings, WriteProfile
 from docmost_tools.models import (
     Comment,
+    CreatePageResult,
     CurrentUser,
     CursorPage,
     ErrorCode,
@@ -41,6 +44,18 @@ _IDENTIFIER_PATTERN = re.compile(r"[^\x00-\x1f\x7f]{1,512}\Z")
 _TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 _SEARCH_CURSOR_PREFIX = "docmost-search.v1."
 _SEARCH_CURSOR_PAYLOAD = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
+_TITLE_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
+_MARKDOWN_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_MAX_TITLE_CHARS = 250
+_MAX_PAGE_MARKDOWN_CHARS = 1_000_000
+_MAX_COMMENT_MARKDOWN_CHARS = 20_000
+_OUTCOME_UNKNOWN_MESSAGE = (
+    "OUTCOME_UNKNOWN: search or read Docmost before retrying this write."
+)
+_PARTIAL_CREATE_MESSAGE = (
+    "Page was created at the space root, but nesting failed. "
+    "Do not retry create_page; read the returned page before any manual move."
+)
 ModelItem = TypeVar("ModelItem", bound=BaseModel)
 
 
@@ -55,7 +70,7 @@ class _ClientFailure(RuntimeError):
 
 
 class DocmostReadClient:
-    """Read fixed Docmost API paths using an in-memory browser session cookie only."""
+    """Use fixed Docmost API paths with an in-memory browser session cookie."""
 
     def __init__(
         self,
@@ -293,6 +308,158 @@ class DocmostReadClient:
             page_scope=True,
         )
 
+    def create_page(
+        self,
+        space_id: str,
+        title: str,
+        markdown: str,
+        *,
+        parent_page_id: str | None = None,
+    ) -> OperationResult[CreatePageResult]:
+        """Create a root page through Markdown import, then optionally nest it once."""
+
+        blocked = self.write_compatibility_error
+        if blocked is not None:
+            return OperationResult[CreatePageResult](ok=False, error=blocked)
+        try:
+            validated_space_id = self._identifier(space_id)
+            validated_title = self._title(title)
+            validated_markdown = self._page_markdown(markdown)
+            validated_parent = (
+                self._identifier(parent_page_id) if parent_page_id is not None else None
+            )
+        except ValueError as error:
+            return cast(OperationResult[CreatePageResult], self._invalid(error))
+
+        def operation() -> CreatePageResult:
+            canonical_parent: str | None = None
+            if validated_parent is not None:
+                parent_data = self._post(
+                    "/api/pages/info",
+                    {"pageId": validated_parent, "format": "markdown"},
+                    page_scope=True,
+                )
+                canonical_parent = self._page_id_from_data(parent_data)
+                if self._page_space_id_from_data(parent_data) != validated_space_id:
+                    raise _ClientFailure(
+                        ErrorCode.PAGE_UNAVAILABLE,
+                        PAGE_UNAVAILABLE_MESSAGE,
+                    )
+
+            imported = self._post_write_multipart(
+                "/api/pages/import",
+                data={"spaceId": validated_space_id},
+                files={
+                    "file": (
+                        "docmost-page.md",
+                        self._import_markdown(validated_title, validated_markdown).encode("utf-8"),
+                        "text/markdown",
+                    )
+                },
+            )
+            created = self._parse_write_result(
+                lambda: self._page_summary_from_data(imported)
+            )
+            if canonical_parent is None:
+                return CreatePageResult(page=created)
+
+            raw_position = imported.get("position")
+            if not isinstance(raw_position, str) or not 5 <= len(raw_position) <= 12:
+                return self._partial_create(created, ErrorCode.UPSTREAM_ERROR)
+            try:
+                self._post_write_json(
+                    "/api/pages/move",
+                    {
+                        "pageId": created.id,
+                        "position": raw_position,
+                        "parentPageId": canonical_parent,
+                    },
+                    page_scope=True,
+                    allow_null_data=True,
+                )
+            except _ClientFailure as error:
+                return self._partial_create(created, error.code)
+            return CreatePageResult(
+                page=created.model_copy(update={"parent": canonical_parent})
+            )
+
+        return self._run_write(operation)
+
+    def update_page_title(
+        self, page_id: str, title: str, expected_updated_at: str
+    ) -> OperationResult[Page]:
+        """Optimistically update a title after a non-atomic timestamp reread."""
+
+        blocked = self.write_compatibility_error
+        if blocked is not None:
+            return OperationResult[Page](ok=False, error=blocked)
+        try:
+            validated_page_id = self._identifier(page_id)
+            validated_title = self._title(title)
+            validated_timestamp = self._timestamp(expected_updated_at)
+        except ValueError as error:
+            return cast(OperationResult[Page], self._page_invalid(error))
+
+        def operation() -> Page:
+            current = self._page_from_data(
+                self._post(
+                    "/api/pages/info",
+                    {"pageId": validated_page_id, "format": "markdown"},
+                    page_scope=True,
+                )
+            )
+            if current.updated_at != validated_timestamp:
+                raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+            updated = self._post_write_json(
+                "/api/pages/update",
+                {"pageId": current.id, "title": validated_title},
+                page_scope=True,
+            )
+            return self._parse_write_result(
+                lambda: self._page_summary_from_data(updated)
+            )
+
+        return self._run_write(operation)
+
+    def create_comment(self, page_id: str, markdown: str) -> OperationResult[Comment]:
+        """Create a page comment from the conservative Markdown subset."""
+
+        blocked = self.write_compatibility_error
+        if blocked is not None:
+            return OperationResult[Comment](ok=False, error=blocked)
+        try:
+            validated_page_id = self._identifier(page_id)
+            if len(markdown) > _MAX_COMMENT_MARKDOWN_CHARS:
+                raise MarkdownValidationError(
+                    f"comment Markdown must be at most {_MAX_COMMENT_MARKDOWN_CHARS} characters"
+                )
+            tiptap = markdown_to_tiptap(markdown)
+        except MarkdownValidationError as error:
+            return OperationResult[Comment].failure(ErrorCode.INVALID_MARKDOWN, str(error))
+        except ValueError as error:
+            return cast(OperationResult[Comment], self._page_invalid(error))
+
+        def operation() -> Comment:
+            canonical_page_id = self._page_id_from_data(
+                self._post(
+                    "/api/pages/info",
+                    {"pageId": validated_page_id, "format": "markdown"},
+                    page_scope=True,
+                )
+            )
+            created = self._post_write_json(
+                "/api/comments/create",
+                {
+                    "pageId": canonical_page_id,
+                    "content": json.dumps(tiptap, ensure_ascii=False, separators=(",", ":")),
+                    "type": "page",
+                },
+                page_scope=True,
+            )
+            return self._parse_write_result(lambda: Comment.model_validate(created))
+
+        return self._run_write(operation)
+
     def _post(
         self, path: str, body: dict[str, object], *, page_scope: bool = False
     ) -> dict[str, object]:
@@ -318,6 +485,62 @@ class DocmostReadClient:
                 continue
             return self._validate_response(response, page_scope=page_scope)
         raise AssertionError("unreachable retry loop")
+
+    def _post_write_json(
+        self,
+        path: str,
+        body: dict[str, object],
+        *,
+        page_scope: bool,
+        allow_null_data: bool = False,
+    ) -> dict[str, object]:
+        try:
+            response = self._http.post(
+                self._endpoint(path),
+                json=body,
+                headers=self._cookie_headers(),
+            )
+        except httpx.TimeoutException as error:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN,
+                _OUTCOME_UNKNOWN_MESSAGE,
+            ) from error
+        except httpx.TransportError as error:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN,
+                _OUTCOME_UNKNOWN_MESSAGE,
+            ) from error
+        return self._validate_write_response(
+            response,
+            page_scope=page_scope,
+            allow_null_data=allow_null_data,
+        )
+
+    def _post_write_multipart(
+        self,
+        path: str,
+        *,
+        data: dict[str, str],
+        files: dict[str, tuple[str, bytes, str]],
+    ) -> dict[str, object]:
+        try:
+            response = self._http.post(
+                self._endpoint(path),
+                data=data,
+                files=files,
+                headers=self._cookie_headers(),
+            )
+        except httpx.TimeoutException as error:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN,
+                _OUTCOME_UNKNOWN_MESSAGE,
+            ) from error
+        except httpx.TransportError as error:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN,
+                _OUTCOME_UNKNOWN_MESSAGE,
+            ) from error
+        return self._validate_write_response(response, page_scope=False)
 
     def _validate_response(
         self, response: httpx.Response, *, page_scope: bool
@@ -354,6 +577,45 @@ class DocmostReadClient:
             raise self._unavailable(page_scope, "Docmost read response had an invalid envelope")
         return cast(dict[str, object], data)
 
+    def _validate_write_response(
+        self,
+        response: httpx.Response,
+        *,
+        page_scope: bool,
+        allow_null_data: bool = False,
+    ) -> dict[str, object]:
+        if response.status_code == 401:
+            raise _ClientFailure(ErrorCode.AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE)
+        if response.status_code in {403, 404} and page_scope:
+            raise _ClientFailure(ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE)
+        if response.status_code == 403:
+            raise _ClientFailure(ErrorCode.UPSTREAM_ERROR, "Docmost write was forbidden")
+        if response.status_code == 409:
+            raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+        if response.status_code in _TRANSIENT_STATUS_CODES:
+            raise _ClientFailure(ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE)
+        if 300 <= response.status_code < 400:
+            raise _ClientFailure(ErrorCode.UPSTREAM_ERROR, "Docmost write request was redirected")
+        if response.status_code != 200:
+            raise _ClientFailure(ErrorCode.UPSTREAM_ERROR, "Docmost write request failed")
+        try:
+            payload = cast(object, response.json())
+        except ValueError as error:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE
+            ) from error
+        if not isinstance(payload, dict):
+            raise _ClientFailure(ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE)
+        envelope = cast(dict[str, object], payload)
+        data = envelope.get("data")
+        if envelope.get("success") is not True or envelope.get("status") != 200:
+            raise _ClientFailure(ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE)
+        if data is None and allow_null_data:
+            return {}
+        if not isinstance(data, dict):
+            raise _ClientFailure(ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE)
+        return cast(dict[str, object], data)
+
     def _run[ResultData](
         self, operation: Callable[[], ResultData], *, page_scope: bool = False
     ) -> OperationResult[ResultData]:
@@ -368,6 +630,37 @@ class DocmostReadClient:
                 ErrorCode.PAGE_UNAVAILABLE if page_scope else ErrorCode.UPSTREAM_ERROR,
                 PAGE_UNAVAILABLE_MESSAGE if page_scope else "Docmost read response was invalid",
             )
+
+    def _run_write[ResultData](
+        self, operation: Callable[[], ResultData]
+    ) -> OperationResult[ResultData]:
+        try:
+            return OperationResult[ResultData].success(operation())
+        except _ClientFailure as error:
+            return OperationResult[ResultData].failure(
+                error.code,
+                error.public_message,
+                retryable=False,
+            )
+        except (ValidationError, TypeError, ValueError):
+            return OperationResult[ResultData].failure(
+                ErrorCode.UPSTREAM_ERROR,
+                "Docmost write response was invalid",
+            )
+
+    @staticmethod
+    def _parse_write_result[ResultData](
+        parser: Callable[[], ResultData],
+    ) -> ResultData:
+        """Treat post-dispatch model failures as an ambiguous committed outcome."""
+
+        try:
+            return parser()
+        except (ValidationError, TypeError, ValueError) as error:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN,
+                _OUTCOME_UNKNOWN_MESSAGE,
+            ) from error
 
     def _cursor_page(
         self, data: dict[str, object], item_type: type[ModelItem]
@@ -424,6 +717,7 @@ class DocmostReadClient:
             space_name=self._string(space.get("name")),
             space_slug=self._string(space_slug),
             parent=self._string(page_data.get("parentPageId", page_data.get("parentId"))),
+            position=self._string(page_data.get("position")),
             created_at=self._string(page_data.get("createdAt")),
             updated_at=self._string(page_data.get("updatedAt")),
             url=url,
@@ -452,6 +746,7 @@ class DocmostReadClient:
             space_name=self._string(space.get("name")),
             space_slug=self._string(space_slug),
             parent=self._string(page_data.get("parentPageId", page_data.get("parentId"))),
+            position=self._string(page_data.get("position")),
             created_at=self._string(page_data.get("createdAt")),
             updated_at=self._string(page_data.get("updatedAt")),
             url=self._page_url(space_slug, title, slug_id),
@@ -467,6 +762,21 @@ class DocmostReadClient:
         if not isinstance(page_id, str) or not page_id:
             raise ValueError("page response must contain an id")
         return page_id
+
+    @staticmethod
+    def _page_space_id_from_data(data: dict[str, object]) -> str:
+        raw_page = data.get("page", data)
+        if not isinstance(raw_page, dict):
+            raise ValueError("page response must contain a page object")
+        page_data = cast(dict[str, object], raw_page)
+        space_id = page_data.get("spaceId")
+        if not isinstance(space_id, str):
+            raw_space = page_data.get("space", data.get("space", {}))
+            if isinstance(raw_space, dict):
+                space_id = cast(dict[str, object], raw_space).get("id")
+        if not isinstance(space_id, str) or not space_id:
+            raise ValueError("page response must contain a space id")
+        return space_id
 
     def _page_url(self, space_slug: object, title: object, slug_id: object) -> str | None:
         if not isinstance(space_slug, str) or not isinstance(slug_id, str):
@@ -526,9 +836,64 @@ class DocmostReadClient:
             "/api/pages/info",
             "/api/pages/sidebar-pages",
             "/api/comments",
+            "/api/pages/import",
+            "/api/pages/move",
+            "/api/pages/update",
+            "/api/comments/create",
         }:
             raise ValueError("Docmost endpoint is not allowlisted")
         return f"{self._origin()}{path}"
+
+    def _cookie_headers(self) -> dict[str, str]:
+        return {
+            "Cookie": (
+                f"{self._settings.session_cookie}="
+                f"{self._session_cookie.get_secret_value()}"
+            )
+        }
+
+    @staticmethod
+    def _title(value: str) -> str:
+        normalized = value.strip()
+        if not normalized or len(normalized) > _MAX_TITLE_CHARS:
+            raise ValueError(f"title must be between 1 and {_MAX_TITLE_CHARS} characters")
+        if _TITLE_CONTROL_PATTERN.search(normalized):
+            raise ValueError("title contains unsupported control characters")
+        return normalized
+
+    @staticmethod
+    def _timestamp(value: str) -> str:
+        if not value or len(value) > 128 or _TITLE_CONTROL_PATTERN.search(value):
+            raise ValueError("expected_updated_at is invalid")
+        return value
+
+    @staticmethod
+    def _page_markdown(value: str) -> str:
+        if len(value) > _MAX_PAGE_MARKDOWN_CHARS:
+            raise ValueError(
+                f"page Markdown must be at most {_MAX_PAGE_MARKDOWN_CHARS} characters"
+            )
+        if _MARKDOWN_CONTROL_PATTERN.search(value):
+            raise ValueError("page Markdown contains unsupported control characters")
+        return value.replace("\r\n", "\n").replace("\r", "\n")
+
+    @staticmethod
+    def _import_markdown(title: str, markdown: str) -> str:
+        escaped_title = re.sub(r"([\\*_[\]`<>])", r"\\\1", title)
+        return f"# {escaped_title}\n\n{markdown}"
+
+    @staticmethod
+    def _partial_create(page: Page, cause: ErrorCode) -> CreatePageResult:
+        return CreatePageResult(
+            page=page.model_copy(update={"parent": None}),
+            partial_success=True,
+            warning=OperationError(
+                code=ErrorCode.PARTIAL_SUCCESS,
+                message=_PARTIAL_CREATE_MESSAGE,
+                retryable=False,
+                details={"move_error": cause.value},
+            ),
+        )
 
     @staticmethod
     def _identifier(value: str) -> str:

@@ -1,0 +1,49 @@
+# Contract fixture derived from Docmost v0.95.0's official compose file.
+# Every service and named volume is scoped by the generated Compose project.
+services:
+  docmost:
+    image: docmost/docmost:0.95.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_URL: "http://127.0.0.1:${DOCMOST_CONTRACT_PORT}"
+      APP_SECRET: "docmost-contract-fixture-only-secret-000000000000"
+      DATABASE_URL: "postgresql://docmost:contract-password@postgres:5432/docmost"
+      REDIS_URL: "redis://redis:6379"
+    ports:
+      - "127.0.0.1:${DOCMOST_CONTRACT_PORT}:3000"
+    volumes:
+      - docmost_storage:/app/data/storage
+
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: docmost
+      POSTGRES_USER: docmost
+      POSTGRES_PASSWORD: "contract-password"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docmost -d docmost"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  redis:
+    image: redis:8
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    volumes:
+      - redis_data:/data
+
+volumes:
+  docmost_storage:
+  postgres_data:
+  redis_data:

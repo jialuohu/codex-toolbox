@@ -1,4 +1,4 @@
-"""Protocol contracts for the read-only Docmost MCP surface."""
+"""Protocol contracts for the guarded Docmost MCP surface."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from docmost_tools.server import create_server
 
 
 class FakeReadClient:
-    """A deterministic read client used to exercise the MCP protocol boundary."""
+    """A deterministic client used to exercise the MCP protocol boundary."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
@@ -67,8 +67,34 @@ class FakeReadClient:
     ) -> OperationResult[dict[str, object]]:
         return self._result("list_comments", page_id, limit=limit, cursor=cursor)
 
+    def create_page(
+        self,
+        space_id: str,
+        title: str,
+        markdown: str,
+        *,
+        parent_page_id: str | None = None,
+    ) -> OperationResult[dict[str, object]]:
+        return self._result(
+            "create_page",
+            space_id,
+            title,
+            markdown,
+            parent_page_id=parent_page_id,
+        )
 
-def test_protocol_lists_exact_read_tools_with_constrained_schemas_and_annotations() -> None:
+    def update_page_title(
+        self, page_id: str, title: str, expected_updated_at: str
+    ) -> OperationResult[dict[str, object]]:
+        return self._result("update_page_title", page_id, title, expected_updated_at)
+
+    def create_comment(
+        self, page_id: str, markdown: str
+    ) -> OperationResult[dict[str, object]]:
+        return self._result("create_comment", page_id, markdown)
+
+
+def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -> None:
     async def exercise() -> None:
         async with create_connected_server_and_client_session(
             create_server(client=FakeReadClient())
@@ -84,11 +110,20 @@ def test_protocol_lists_exact_read_tools_with_constrained_schemas_and_annotation
             "list_pages",
             "list_child_pages",
             "get_comments",
+            "create_page",
+            "update_page_title",
+            "create_comment",
         ]
-        expected_annotations = {
+        read_annotations = {
             "readOnlyHint": True,
             "destructiveHint": False,
             "idempotentHint": True,
+            "openWorldHint": True,
+        }
+        write_annotations = {
+            "readOnlyHint": False,
+            "destructiveHint": False,
+            "idempotentHint": False,
             "openWorldHint": True,
         }
         by_name = {tool.name: tool for tool in tools.tools}
@@ -96,7 +131,12 @@ def test_protocol_lists_exact_read_tools_with_constrained_schemas_and_annotation
             assert tool.annotations is not None
             assert (
                 tool.annotations.model_dump(by_alias=True, exclude_none=True)
-                == expected_annotations
+                == (
+                    read_annotations
+                    if tool.name
+                    not in {"create_page", "update_page_title", "create_comment"}
+                    else write_annotations
+                )
             )
         assert by_name["list_spaces"].inputSchema["properties"]["limit"] == {
             "default": 50,
@@ -125,6 +165,21 @@ def test_protocol_lists_exact_read_tools_with_constrained_schemas_and_annotation
                 schema = schema["anyOf"][0]
             assert schema["minLength"] == 1
             assert schema["maxLength"] in {512, 1024}
+        assert by_name["create_page"].inputSchema["properties"]["title"]["maxLength"] == 250
+        assert (
+            by_name["create_page"].inputSchema["properties"]["markdown"]["maxLength"]
+            == 1_000_000
+        )
+        assert (
+            by_name["create_comment"].inputSchema["properties"]["markdown"]["maxLength"]
+            == 20_000
+        )
+        assert (
+            by_name["update_page_title"].inputSchema["properties"]["expected_updated_at"][
+                "maxLength"
+            ]
+            == 128
+        )
 
     anyio.run(exercise)
 
@@ -157,6 +212,19 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
                 ("list_pages", {"space_id": "space-1"}),
                 ("list_child_pages", {"page_id": "page-1"}),
                 ("get_comments", {"page_id": "page-1"}),
+                (
+                    "create_page",
+                    {"space_id": "space-1", "title": "Page", "markdown": "Body"},
+                ),
+                (
+                    "update_page_title",
+                    {
+                        "page_id": "page-1",
+                        "title": "Renamed",
+                        "expected_updated_at": "2026-01-01T00:00:00Z",
+                    },
+                ),
+                ("create_comment", {"page_id": "page-1", "markdown": "A note"}),
             ]
             for name, arguments in calls:
                 response = await session.call_tool(name, arguments)
@@ -178,6 +246,17 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
             ("list_pages", ("space-1",), {"limit": 50, "cursor": None}),
             ("list_child_pages", ("page-1",), {"limit": 50, "cursor": None}),
             ("list_comments", ("page-1",), {"limit": 50, "cursor": None}),
+            (
+                "create_page",
+                ("space-1", "Page", "Body"),
+                {"parent_page_id": None},
+            ),
+            (
+                "update_page_title",
+                ("page-1", "Renamed", "2026-01-01T00:00:00Z"),
+                {},
+            ),
+            ("create_comment", ("page-1", "A note"), {}),
         ]
 
     anyio.run(exercise)
@@ -297,6 +376,17 @@ def test_protocol_rejects_invalid_tool_arguments_before_operation_results() -> N
             ("search_pages", {"query": "query", "space_id": ""}),
             ("list_spaces", {"cursor": "not allowed!"}),
             ("list_spaces", {"cursor": "cursor\n"}),
+            ("create_page", {"space_id": "space-1", "title": "", "markdown": "Body"}),
+            (
+                "create_page",
+                {"space_id": "space-1", "title": "Page", "markdown": "x" * 1_000_001},
+            ),
+            (
+                "update_page_title",
+                {"page_id": "page-1", "title": "Renamed", "expected_updated_at": ""},
+            ),
+            ("create_comment", {"page_id": "page-1", "markdown": ""}),
+            ("create_comment", {"page_id": "page-1", "markdown": "x" * 20_001}),
         ]
         async with create_connected_server_and_client_session(
             create_server(client=client)
