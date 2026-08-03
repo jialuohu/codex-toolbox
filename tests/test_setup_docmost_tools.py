@@ -15,7 +15,14 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "setup-docmost-tools.sh"
-RECOVERY_COMMAND = '"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login'
+RECOVERY_COMMAND = (
+    'CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" '
+    '"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login'
+)
+RECOVERY_SENTENCE = (
+    "Authentication required. Close the active task, run "
+    f"`{RECOVERY_COMMAND}`, then start a fresh task or reconnect Docmost."
+)
 
 
 class SetupDocmostToolsTest(unittest.TestCase):
@@ -172,6 +179,61 @@ class SetupDocmostToolsTest(unittest.TestCase):
         profile.mkdir(mode=0o700)
         profile.chmod(0o700)
         return profile
+
+    def start_shared_runtime_holder(
+        self,
+    ) -> tuple[subprocess.Popen[str], Path]:
+        runtime_parent = self.codex_home / "runtime"
+        lock_helper = (
+            runtime_parent / "docmost-tools" / "libexec" / "runtime_lock.py"
+        )
+        started = self.home / "shared-lock-started"
+        release = self.home / "shared-lock-release"
+        started.unlink(missing_ok=True)
+        release.unlink(missing_ok=True)
+        holder = subprocess.Popen(
+            [
+                "/usr/bin/python3",
+                str(lock_helper),
+                "--mode",
+                "shared",
+                "--root",
+                str(runtime_parent),
+                "--",
+                "/bin/sh",
+                "-c",
+                ': > "$1"; while [ ! -e "$2" ]; do /bin/sleep 0.01; done',
+                "holder",
+                str(started),
+                str(release),
+            ],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        deadline = time.monotonic() + 5
+        while not started.exists():
+            if holder.poll() is not None:
+                stdout, stderr = holder.communicate()
+                self.fail("shared lock holder exited early: " + stdout + stderr)
+            if time.monotonic() >= deadline:
+                holder.terminate()
+                stdout, stderr = holder.communicate()
+                self.fail("shared lock holder did not start: " + stdout + stderr)
+            time.sleep(0.01)
+
+        def stop_holder() -> None:
+            release.touch()
+            try:
+                holder.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                holder.terminate()
+                holder.communicate(timeout=5)
+
+        self.addCleanup(stop_holder)
+        return holder, release
 
     def test_check_validates_the_locked_runtime_and_chromium_executable(self) -> None:
         self.install_fake_uv()
@@ -459,8 +521,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
         result = self.run_script("--status")
 
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertIn("AUTH_REQUIRED", result.stdout)
-        self.assertIn(RECOVERY_COMMAND, result.stdout)
+        self.assertEqual(result.stdout.strip(), f"Docmost status: {RECOVERY_SENTENCE}")
         commands = self.log_file.read_text()
         self.assertIn("docmost-runtime-stamp check", commands)
         self.assertIn("docmost-smoke", commands)
@@ -475,8 +536,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
         result = self.run_script("--status")
 
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertIn("AUTH_REQUIRED", result.stdout)
-        self.assertIn(RECOVERY_COMMAND, result.stdout)
+        self.assertEqual(result.stdout.strip(), f"Docmost status: {RECOVERY_SENTENCE}")
         self.assertIn("harmless runtime warning", result.stderr)
 
     def test_status_fails_closed_when_the_shared_runtime_is_stale(self) -> None:
@@ -500,9 +560,68 @@ class SetupDocmostToolsTest(unittest.TestCase):
         result = self.run_script("--status")
 
         self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
-        self.assertIn("AUTH_REQUIRED", result.stdout)
-        self.assertIn(RECOVERY_COMMAND, result.stdout)
+        self.assertEqual(result.stdout.strip(), f"Docmost status: {RECOVERY_SENTENCE}")
         self.assertNotIn("docmost-smoke", self.log_file.read_text())
+
+    def test_status_can_overlap_a_shared_lifetime_runtime_lock(self) -> None:
+        self.install_fake_uv()
+        self.write_env()
+        self.create_private_browser_profile()
+        holder, release = self.start_shared_runtime_holder()
+
+        result = self.run_script("--status")
+        release.touch()
+        holder.communicate(timeout=5)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Docmost status: ready", result.stdout)
+
+    def test_login_and_logout_cannot_overlap_a_shared_lifetime_runtime_lock(self) -> None:
+        self.install_fake_uv()
+        self.write_env()
+        self.create_private_browser_profile()
+        for command in ("--login", "--logout"):
+            with self.subTest(command=command):
+                holder, release = self.start_shared_runtime_holder()
+
+                result = self.run_script(command)
+                release.touch()
+                holder.communicate(timeout=5)
+
+                self.assertEqual(result.returncode, 75, result.stdout + result.stderr)
+                self.assertIn("close any active Codex task using Docmost", result.stderr)
+                if self.log_file.exists():
+                    self.assertNotIn("docmost-auth-internal", self.log_file.read_text())
+
+    def test_auth_wrapper_rejects_a_declared_shared_lock_for_login(self) -> None:
+        self.install_fake_uv()
+        self.write_env()
+        runtime_parent = self.codex_home / "runtime"
+        runtime = runtime_parent / "docmost-tools"
+
+        result = subprocess.run(
+            [
+                "/usr/bin/python3",
+                str(runtime / "libexec" / "runtime_lock.py"),
+                "--mode",
+                "shared",
+                "--root",
+                str(runtime_parent),
+                "--",
+                str(runtime / "bin" / "docmost-auth"),
+                "login",
+            ],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("login requires the exclusive runtime lock", result.stderr)
+        if self.log_file.exists():
+            self.assertNotIn("docmost-auth-internal", self.log_file.read_text())
 
     def test_status_rejects_a_nonprivate_browser_profile(self) -> None:
         self.install_fake_uv()
@@ -540,7 +659,16 @@ class SetupDocmostToolsTest(unittest.TestCase):
         environment.pop("CODEX_TOOLBOX_ROOT", None)
 
         result = subprocess.run(
-            ["bash", "-lc", RECOVERY_COMMAND],
+            [
+                str(
+                    self.codex_home
+                    / "runtime"
+                    / "docmost-tools"
+                    / "bin"
+                    / "docmost-auth"
+                ),
+                "login",
+            ],
             cwd=self.home,
             env=environment,
             text=True,

@@ -18,12 +18,13 @@ RUNTIME_LOCK_SOURCE="$SERVER_DIR/src/docmost_tools/runtime_lock.py"
 AUTH_WRAPPER="$UV_PROJECT_ENVIRONMENT/bin/docmost-auth"
 RUNTIME_LOCK_HELPER="$UV_PROJECT_ENVIRONMENT/libexec/runtime_lock.py"
 SMOKE_TOOL="$UV_PROJECT_ENVIRONMENT/bin/docmost-smoke"
-LOGIN_COMMAND='"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login'
+LOGIN_COMMAND='CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" "$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login'
+AUTH_REQUIRED_SENTENCE="Authentication required. Close the active task, run \`$LOGIN_COMMAND\`, then start a fresh task or reconnect Docmost."
 AUTH_REQUIRED=3
 readonly ROOT SERVER_DIR DOCMOST_CODEX_ROOT CODEX_SECRETS_DIR UV_PROJECT_ENVIRONMENT
 readonly RUNTIME_PARENT ENV_FILE PROFILE_DIR BROWSER_PROFILE_DIR RUNTIME_STAMP
 readonly AUTH_WRAPPER_SOURCE RUNTIME_LOCK_SOURCE AUTH_WRAPPER RUNTIME_LOCK_HELPER SMOKE_TOOL
-readonly LOGIN_COMMAND AUTH_REQUIRED
+readonly LOGIN_COMMAND AUTH_REQUIRED_SENTENCE AUTH_REQUIRED
 
 usage() {
   cat >&2 <<'EOF'
@@ -247,7 +248,7 @@ status() {
   require_private_profile_root
   require_current_runtime
   if [ ! -d "$BROWSER_PROFILE_DIR" ]; then
-    echo "Docmost status: AUTH_REQUIRED; run $LOGIN_COMMAND"
+    echo "Docmost status: $AUTH_REQUIRED_SENTENCE"
     return "$AUTH_REQUIRED"
   fi
   require_private_browser_profile
@@ -264,7 +265,7 @@ status() {
     return 0
   fi
   if is_auth_required "$output"; then
-    echo "Docmost status: AUTH_REQUIRED; run $LOGIN_COMMAND"
+    echo "Docmost status: $AUTH_REQUIRED_SENTENCE"
     return "$AUTH_REQUIRED"
   fi
   local error_code
@@ -351,7 +352,7 @@ install() {
 }
 
 login() {
-  validate_runtime_lock shared || fail "Docmost login requires the held shared runtime lock"
+  validate_runtime_lock exclusive || fail "Docmost login requires the held exclusive runtime lock"
   require_private_env
   ensure_private_profile_root
   require_current_runtime
@@ -359,7 +360,7 @@ login() {
 }
 
 logout() {
-  validate_runtime_lock shared || fail "Docmost logout requires the held shared runtime lock"
+  validate_runtime_lock exclusive || fail "Docmost logout requires the held exclusive runtime lock"
   require_private_profile_root
   [ -x "$AUTH_WRAPPER" ] || \
     fail "Docmost auth runtime is missing; rerun the full codex-toolbox setup from its checkout"
@@ -370,9 +371,9 @@ logout() {
 case "$1" in
   --check) require_runtime_root; run_locked shared --check-locked ;;
   --install) install ;;
-  --login) require_runtime_root; run_locked shared --login-locked ;;
+  --login) require_runtime_root; run_locked exclusive --login-locked ;;
   --status) require_runtime_root; run_locked shared --status-locked ;;
-  --logout) require_runtime_root; run_locked shared --logout-locked ;;
+  --logout) require_runtime_root; run_locked exclusive --logout-locked ;;
   --check-locked) check ;;
   --install-locked) install_locked ;;
   --login-locked) login ;;

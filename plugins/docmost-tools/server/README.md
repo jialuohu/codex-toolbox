@@ -13,9 +13,11 @@ nesting move has an ambiguous outcome, the created page is returned with
 
 `docmost-smoke` is a setup-only, bounded headless check. It obtains the existing isolated browser
 session once, verifies `current_user`, and lists one page of spaces. It does not expose the cookie,
-continuously synchronize, or monitor the workspace. Only the installed
-`"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login` command opens a
-headed browser.
+continuously synchronize, or monitor the workspace. Before login or logout, close the active Codex
+task so its lifetime shared runtime lock and in-memory cookie are released. Then run
+`CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" "$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login`
+or the corresponding `--logout` command. Start a fresh task or reconnect Docmost afterward so the
+MCP process loads the new authentication state. Only login opens a headed browser.
 
 The Docker contract is opt-in and never targets a configured hosted instance:
 

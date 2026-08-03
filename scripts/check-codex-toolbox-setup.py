@@ -1747,14 +1747,17 @@ def validate_docmost_tools_contract(
         "Docmost setup must force reinstall the non-editable package",
     )
     require(
-        helper.count("run_locked shared") >= 4
-        and helper.count("validate_runtime_lock shared") >= 4,
-        "Docmost setup must keep check, login, status, and logout under shared locks",
+        "run_locked shared --check-locked" in helper
+        and "run_locked shared --status-locked" in helper
+        and helper.count("validate_runtime_lock shared") >= 2,
+        "Docmost setup must keep check and status under shared locks",
     )
     require(
         "run_locked exclusive --install-locked" in helper
-        and "validate_runtime_lock exclusive" in helper,
-        "Docmost setup must keep installation under an exclusive lock",
+        and "run_locked exclusive --login-locked" in helper
+        and "run_locked exclusive --logout-locked" in helper
+        and helper.count("validate_runtime_lock exclusive") >= 3,
+        "Docmost setup must keep install, login, and logout under exclusive locks",
     )
     require(
         helper.count('--root "$RUNTIME_PARENT"') == 2
@@ -1823,11 +1826,13 @@ def validate_docmost_tools_contract(
         '[ -d "$DOCMOST_RUNTIME_PARENT" ] && [ ! -L "$DOCMOST_RUNTIME_PARENT" ]',
         '[ -d "$DOCMOST_RUNTIME_ROOT" ] && [ ! -L "$DOCMOST_RUNTIME_ROOT" ]',
         '[ -f "$DOCMOST_RUNTIME_LOCK_HELPER" ] && [ ! -L "$DOCMOST_RUNTIME_LOCK_HELPER" ]',
-        '${DOCMOST_RUNTIME_LOCK_MODE:-}" != shared',
+        'DOCMOST_REQUIRED_LOCK_MODE=shared',
+        'DOCMOST_REQUIRED_LOCK_MODE=exclusive',
+        '[ -n "${DOCMOST_RUNTIME_LOCK_MODE:-}" ] || [ -n "${DOCMOST_RUNTIME_LOCK_FD:-}" ]',
+        '"${DOCMOST_RUNTIME_LOCK_MODE:-}" = "$DOCMOST_REQUIRED_LOCK_MODE"',
         '"$DOCMOST_RUNTIME_LOCK_HELPER" --validate-fd',
-        '--mode shared --root "$DOCMOST_RUNTIME_PARENT"; then',
+        '--mode "$DOCMOST_REQUIRED_LOCK_MODE" --root "$DOCMOST_RUNTIME_PARENT"',
         'exec "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER"',
-        '--mode shared --root "$DOCMOST_RUNTIME_PARENT" -- "$DOCMOST_AUTH_WRAPPER" "$@"',
         recovery_text,
     ):
         require(expected in auth_wrapper, f"Docmost auth wrapper must include {expected}")

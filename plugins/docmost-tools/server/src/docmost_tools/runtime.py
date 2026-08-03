@@ -9,10 +9,11 @@ from typing import Any, Protocol, cast
 
 from playwright.sync_api import sync_playwright
 
-from docmost_tools.client import AUTH_REQUIRED_MESSAGE, DocmostReadClient
+from docmost_tools.client import DocmostReadClient
 from docmost_tools.config import DocmostSettings
 from docmost_tools.models import ErrorCode, OperationError, OperationResult
 from docmost_tools.profile import ProfileBusyError, ProfilePathError, ProfilePaths, profile_lock
+from docmost_tools.recovery import AUTH_REQUIRED_SENTENCE
 
 
 class _BrowserContext(Protocol):
@@ -160,4 +161,4 @@ def _extract_session_cookie(
 
 
 def _auth_required_error() -> OperationError:
-    return OperationError(code=ErrorCode.AUTH_REQUIRED, message=AUTH_REQUIRED_MESSAGE)
+    return OperationError(code=ErrorCode.AUTH_REQUIRED, message=AUTH_REQUIRED_SENTENCE)

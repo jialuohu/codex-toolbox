@@ -240,7 +240,15 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
                     "run_locked shared --check-locked",
                     "bash \"$ROOT/scripts/setup-docmost-tools.sh\" --check-locked",
                 ),
-                "Docmost setup must keep check, login, status, and logout under shared locks",
+                "Docmost setup must keep check and status under shared locks",
+            ),
+            (
+                lambda root: replace_helper(
+                    root,
+                    "run_locked exclusive --login-locked",
+                    "run_locked shared --login-locked",
+                ),
+                "Docmost setup must keep install, login, and logout under exclusive locks",
             ),
             (
                 lambda root: replace_helper(
@@ -248,7 +256,7 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
                     "run_locked exclusive --install-locked",
                     "bash \"$ROOT/scripts/setup-docmost-tools.sh\" --install-locked",
                 ),
-                "Docmost setup must keep installation under an exclusive lock",
+                "Docmost setup must keep install, login, and logout under exclusive locks",
             ),
             (
                 lambda root: replace_runtime_lock(

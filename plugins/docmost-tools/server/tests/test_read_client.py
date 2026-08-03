@@ -15,6 +15,13 @@ from docmost_tools.client import AUTH_REQUIRED_MESSAGE, DocmostReadClient
 from docmost_tools.config import DocmostSettings
 from docmost_tools.models import ErrorCode
 
+EXPECTED_AUTH_REQUIRED_MESSAGE = (
+    "Authentication required. Close the active task, run "
+    "`CODEX_TOOLBOX_ROOT=\"${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}\" "
+    "\"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh\" --login`, then start a "
+    "fresh task or reconnect Docmost."
+)
+
 
 def settings(**values: object) -> DocmostSettings:
     return DocmostSettings.model_validate({"base_url": "https://docs.example.test", **values})
@@ -471,7 +478,7 @@ def test_auth_failures_are_not_retried_and_use_exact_recovery_message(status: in
 
     assert result.ok is False and result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
-    assert result.error.message == AUTH_REQUIRED_MESSAGE
+    assert result.error.message == EXPECTED_AUTH_REQUIRED_MESSAGE
     assert attempts == 1
 
 

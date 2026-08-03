@@ -14,6 +14,13 @@ from docmost_tools.config import DocmostSettings
 from docmost_tools.models import ErrorCode
 from docmost_tools.profile import profile_paths
 
+EXPECTED_AUTH_REQUIRED_MESSAGE = (
+    "Authentication required. Close the active task, run "
+    "`CODEX_TOOLBOX_ROOT=\"${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}\" "
+    "\"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh\" --login`, then start a "
+    "fresh task or reconnect Docmost."
+)
+
 
 class FakePage:
     def __init__(self) -> None:
@@ -188,10 +195,7 @@ def test_status_missing_cookie_returns_the_login_recovery_command(tmp_path: Path
     assert result.ok is False
     assert result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
-    assert result.error.message == (
-        "Authentication required. Run "
-        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
-    )
+    assert result.error.message == EXPECTED_AUTH_REQUIRED_MESSAGE
     assert context.closed is True
 
 
@@ -208,10 +212,7 @@ def test_status_401_returns_the_login_recovery_command(
     assert result.ok is False
     assert result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
-    assert result.error.message == (
-        "Authentication required. Run "
-        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
-    )
+    assert result.error.message == EXPECTED_AUTH_REQUIRED_MESSAGE
 
 
 def test_status_reads_a_cookie_scoped_to_the_identity_endpoint(
@@ -473,10 +474,7 @@ def test_login_stale_cookie_times_out_with_recovery_command(
     assert result.ok is False
     assert result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
-    assert result.error.message == (
-        "Authentication required. Run "
-        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
-    )
+    assert result.error.message == EXPECTED_AUTH_REQUIRED_MESSAGE
     assert context.cleared_cookies == [{"name": "authToken"}]
     assert context.closed is True
 
@@ -517,7 +515,8 @@ def test_login_reports_actionable_gui_recovery_without_leaking_playwright_detail
     assert result.error.message == (
         "Docmost browser could not start. Reinstall the Docmost runtime from the "
         "toolbox checkout, then from a desktop GUI run "
-        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
+        "`CODEX_TOOLBOX_ROOT=\"${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}\" "
+        "\"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh\" --login`."
     )
     assert "private display" not in result.error.message
 
@@ -548,7 +547,8 @@ def test_login_reports_actionable_navigation_recovery_without_leaking_details(
     assert result.error.message == (
         "Docmost login page could not be opened. Verify DOCMOST_LOGIN_URL and network "
         "access, then run "
-        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
+        "`CODEX_TOOLBOX_ROOT=\"${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}\" "
+        "\"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh\" --login`."
     )
     assert "private login URL" not in result.error.message
     assert context.closed is True

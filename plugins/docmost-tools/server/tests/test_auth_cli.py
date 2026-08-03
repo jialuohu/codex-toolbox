@@ -9,6 +9,13 @@ import pytest
 from docmost_tools import auth_cli
 from docmost_tools.models import ErrorCode, OperationResult
 
+AUTH_REQUIRED_SENTENCE = (
+    "Authentication required. Close the active task, run "
+    "`CODEX_TOOLBOX_ROOT=\"${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}\" "
+    "\"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh\" --login`, then start a "
+    "fresh task or reconnect Docmost."
+)
+
 
 class FakeAuthService:
     calls: ClassVar[list[str]] = []
@@ -65,8 +72,7 @@ def test_cli_returns_nonzero_and_prints_stable_error_result(
     FakeAuthService.calls = []
     FakeAuthService.result = OperationResult.failure(
         ErrorCode.AUTH_REQUIRED,
-        "Authentication required. Run "
-        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`.",
+        AUTH_REQUIRED_SENTENCE,
     )
     monkeypatch.setenv("CODEX_SECRETS_DIR", str(tmp_path))
     monkeypatch.setenv("DOCMOST_BASE_URL", "http://127.0.0.1:9321")
@@ -81,11 +87,7 @@ def test_cli_returns_nonzero_and_prints_stable_error_result(
         "data": None,
         "error": {
             "code": "auth_required",
-            "message": (
-                "Authentication required. Run "
-                "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" "
-                "login`."
-            ),
+            "message": AUTH_REQUIRED_SENTENCE,
             "retryable": False,
             "details": {},
         },
