@@ -1,6 +1,6 @@
 """Foundation types for the Docmost MCP plugin."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from .client import DocmostReadClient
 from .config import ApiProfile, DocmostSettings, WriteProfile

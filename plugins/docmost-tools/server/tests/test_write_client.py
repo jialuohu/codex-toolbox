@@ -473,6 +473,15 @@ def test_create_comment_rejects_unsafe_markdown_before_any_request(markdown: str
     assert result.error.code is ErrorCode.INVALID_MARKDOWN
 
 
+def test_create_comment_rejects_ordered_list_marker_over_nine_digits_before_any_request() -> None:
+    result = client_for(lambda _: pytest.fail("request must not be sent")).create_comment(
+        "page-1", "1234567890. oversized marker"
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.INVALID_MARKDOWN
+
+
 def test_create_comment_timeout_is_outcome_unknown_and_not_retried() -> None:
     paths: list[str] = []
 

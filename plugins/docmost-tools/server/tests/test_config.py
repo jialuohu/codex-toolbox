@@ -26,6 +26,14 @@ def test_settings_accepts_approved_configuration_values() -> None:
     assert str(settings.ca_bundle) == "/private/tmp/docmost-ca.pem"
 
 
+def test_settings_rejects_relative_ca_bundle_path() -> None:
+    with pytest.raises(ValidationError, match="ca_bundle"):
+        settings_from_values(
+            base_url="https://docs.example.test",
+            ca_bundle="certificates/docmost-ca.pem",
+        )
+
+
 def test_settings_has_browser_only_safe_defaults() -> None:
     settings = settings_from_values(base_url="https://docs.example.test")
 
