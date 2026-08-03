@@ -36,7 +36,8 @@ def _has_required_runtime_lock(command: str) -> bool:
     descriptor = int(raw_descriptor)
     if descriptor <= 2:
         return False
-    codex_home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")).expanduser()
+    raw_codex_home = os.environ.get("CODEX_HOME")
+    codex_home = Path(raw_codex_home).expanduser() if raw_codex_home else Path.home() / ".codex"
     return validate_inherited_lock(codex_home / "runtime", mode, descriptor)
 
 

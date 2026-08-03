@@ -1635,6 +1635,10 @@ def validate_docmost_tools_contract(
         "docmost-tools must define exactly one MCP server named docmost",
     )
     server = servers["docmost"]
+    require(
+        isinstance(server, dict),
+        "docmost MCP server definition must be an object",
+    )
     require(plugin.get("mcpServers") == "./.mcp.json", "docmost manifest must register its MCP config")
     require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",

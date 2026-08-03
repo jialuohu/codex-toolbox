@@ -229,14 +229,59 @@ def test_internal_auth_rejects_an_inherited_lock_mode_mismatch(
         lambda: profile_touches.append("profile") or object(),
     )
 
-    with inherited_runtime_lock(tmp_path, held_mode, monkeypatch):
+    runtime_parent = tmp_path / "runtime"
+    runtime_parent.mkdir()
+    descriptor = open_runtime_lock(runtime_parent)
+    operation = fcntl.LOCK_SH if held_mode == "shared" else fcntl.LOCK_EX
+    fcntl.flock(descriptor, operation | fcntl.LOCK_NB)
+    required_mode = "shared" if command == "status" else "exclusive"
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    monkeypatch.setenv(LOCK_FD_ENV, str(descriptor))
+    monkeypatch.setenv(LOCK_MODE_ENV, required_mode)
+    try:
         exit_code = auth_cli.main([command])
+    finally:
+        os.close(descriptor)
 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 1
     assert payload["error"]["message"] == "Docmost authentication runtime lock is invalid"
     assert profile_touches == []
     assert FakeAuthService.calls == []
+
+
+def test_internal_auth_treats_empty_codex_home_as_unset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    FakeAuthService.calls = []
+    FakeAuthService.result = OperationResult[dict[str, object]](ok=True, data={"state": "ok"})
+    fake_home = tmp_path / "home"
+    codex_home = fake_home / ".codex"
+    runtime_parent = codex_home / "runtime"
+    runtime_parent.mkdir(parents=True)
+    descriptor = open_runtime_lock(runtime_parent)
+    fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("CODEX_HOME", "")
+    monkeypatch.setenv("CODEX_SECRETS_DIR", str(tmp_path))
+    monkeypatch.setenv("DOCMOST_BASE_URL", "http://127.0.0.1:9321")
+    monkeypatch.setenv(LOCK_FD_ENV, str(descriptor))
+    monkeypatch.setenv(LOCK_MODE_ENV, "shared")
+    monkeypatch.setattr(auth_cli, "AuthService", FakeAuthService)
+    try:
+        exit_code = auth_cli.main(["status"])
+    finally:
+        os.close(descriptor)
+
+    assert exit_code == 0
+    assert FakeAuthService.calls == ["status"]
+    assert json.loads(capsys.readouterr().out) == {
+        "ok": True,
+        "data": {"state": "ok"},
+        "error": None,
+    }
 
 
 def test_internal_auth_rejects_status_without_an_inherited_lock(
