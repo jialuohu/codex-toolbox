@@ -34,13 +34,15 @@ A praise-only review is invalid: include at least one evidence-backed correction
 
 Use this deterministic anchor map:
 
-- Current layout: combine `One-sentence summary` and `Summary and takeaway` feedback immediately before `My thoughts`. Append `My thoughts` feedback, including open research questions, at end of file (EOF).
+- Current layout: insert the `one-sentence-summary` block immediately before `Summary and takeaway`, insert the `summary-and-takeaway` block immediately before `My thoughts`, and append the `my-thoughts` block, including open research questions, at end of file (EOF).
 - Previous layout: insert `Summary and takeaway` feedback immediately before `My thoughts`. The previous three-section layout with a separate `Questions` heading remains supported for review.
 - Legacy four-section layout: combine `Takeaway` and `Summary in my own words` feedback immediately before `My thoughts`; it remains supported for review.
 - In either Questions-bearing layout, insert `My thoughts` feedback immediately before `Questions`, then append `Questions` feedback at end of file (EOF).
 
-Require every anchor heading exactly once. Do not migrate any layout.
+Require every anchor heading exactly once. Do not migrate any note layout or heading.
 Require every existing marker pair to occupy its exact layout-specific anchor; otherwise return no-write.
+
+A legacy combined current-layout marker set has a `summary-and-takeaway` pair immediately before `My thoughts` but no `one-sentence-summary` pair. During replacement, split the regenerated section feedback between a new `one-sentence-summary` block at its section-local anchor and the existing `summary-and-takeaway` anchor. This marker migration may change only skill-owned generated blocks and their exact separators; preserve all user-owned bytes byte-for-byte.
 
 ## Callout Contract
 
@@ -65,13 +67,20 @@ Keep the review scannable:
 - `> [!tip]` stronger analysis or wording
 - `> [!question]` open research question
 
-Legal marker order for the current layout is `summary-and-takeaway`, then `my-thoughts`; a `questions` marker is layout-incompatible. For either Questions-bearing layout, legal marker order is `summary-and-takeaway`, `my-thoughts`, then `questions`. Each legal comment slug may have zero or one start/end pair, with no nesting. Duplicate, unmatched, crossed, malformed, layout-incompatible, or out-of-order pairs require no-write. Any unknown `paper-read-review:` marker requires no-write.
+Legal marker order for the current layout is `one-sentence-summary`, `summary-and-takeaway`, then `my-thoughts`; a `questions` marker is layout-incompatible. The `one-sentence-summary` slug is legal only for the current layout. For either Questions-bearing layout, legal marker order is `summary-and-takeaway`, `my-thoughts`, then `questions`. Each legal comment slug may have zero or one start/end pair, with no nesting. Duplicate, unmatched, crossed, malformed, layout-incompatible, or out-of-order pairs require no-write. Any unknown `paper-read-review:` marker requires no-write.
 
 The deprecated `final` slug is not legal output. Accept a complete, well-formed legacy `final` pair only when it is the last generated block at EOF from an older review; remove that pair during the update and do not recreate it. An unmatched, malformed, misplaced, or duplicated legacy pair requires no-write.
 
 Use these exact hidden markers:
 
 ```markdown
+Current layout only:
+
+%% paper-read-review:one-sentence-summary:start %%
+> [!info] Suggested One-sentence summary
+> Concise source-backed sentence. (Section locator)
+%% paper-read-review:one-sentence-summary:end %%
+
 %% paper-read-review:summary-and-takeaway:start %%
 > [!warning] Technical correction
 > - Concise correction. (Section or figure locator)
@@ -105,9 +114,10 @@ Construct the candidate by interleaving untouched byte slices from the captured 
 
 - With no generated markers, interleave blocks between untouched slices and require those untouched slices to concatenate to the exact preimage.
 - With a complete valid marker set, locate each start marker and matching end marker; compare the untouched prefix, every untouched infix between complete pairs, and suffix byte-for-byte with the exact preimage, then replace only bytes inside each pair.
+- With a legacy combined current-layout marker set, treat its complete generated pairs and exact skill-owned separators as replaceable bytes, insert the new `one-sentence-summary` pair at its exact anchor, and require all remaining user-owned slices to concatenate byte-for-byte to the preimage with the old generated pairs removed.
 - When cleaning up a complete legacy `final` pair, treat only that generated block and its exact skill-owned separator as removable bytes. Preserve and compare every surrounding user-owned byte exactly.
 
-Immediately before editing, re-read and compare against the exact preimage. A mismatch or changed preimage requires no-write. On a concurrent edit, re-read; never use a whole-file overwrite. After editing, repeat the applicable insertion, replacement, or legacy-cleanup comparison and verify marker order, callout count, separators, section word limits, callout syntax, and absence of the deprecated `final` slug.
+Immediately before editing, re-read and compare against the exact preimage. A mismatch or changed preimage requires no-write. On a concurrent edit, re-read; never use a whole-file overwrite. After editing, repeat the applicable insertion, replacement, marker-migration, or legacy-cleanup comparison and verify section-local anchors, marker order, callout count, separators, section word limits, callout syntax, and absence of the deprecated `final` slug.
 
 ## Completion Receipt
 

@@ -66,6 +66,8 @@ class PaperReadReviewSkillTests(unittest.TestCase):
     def test_skill_has_stable_marker_and_callout_contract(self) -> None:
         skill = self.read(SKILL)
         for marker in (
+            "%% paper-read-review:one-sentence-summary:start %%",
+            "%% paper-read-review:one-sentence-summary:end %%",
             "%% paper-read-review:summary-and-takeaway:start %%",
             "%% paper-read-review:summary-and-takeaway:end %%",
             "%% paper-read-review:my-thoughts:start %%",
@@ -88,7 +90,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
         self.assertRegex(skill, r"(?i)no new H1 or H2")
         self.assertRegex(skill, r"(?i)at most two callouts")
         self.assertIn(
-            "Legal marker order for the current layout is `summary-and-takeaway`, then `my-thoughts`;",
+            "Legal marker order for the current layout is `one-sentence-summary`, `summary-and-takeaway`, then `my-thoughts`;",
             skill,
         )
         self.assertIn(
@@ -182,7 +184,11 @@ class PaperReadReviewSkillTests(unittest.TestCase):
         skill = self.read(SKILL)
         self.assertRegex(
             skill,
-            r"(?is)current layout.*?One-sentence summary.*?Summary and takeaway.*?before `My thoughts`",
+            r"(?is)current layout.*?`one-sentence-summary`.*?immediately before `Summary and takeaway`",
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)current layout.*?`summary-and-takeaway`.*?immediately before `My thoughts`",
         )
         self.assertRegex(
             skill,
@@ -209,6 +215,21 @@ class PaperReadReviewSkillTests(unittest.TestCase):
         self.assertRegex(
             skill,
             r"(?is)neither.*?(obsidian_files|Obsidian CLI).*?no-write",
+        )
+
+    def test_skill_migrates_only_legacy_generated_blocks_to_section_local_anchors(self) -> None:
+        skill = self.read(SKILL)
+        self.assertRegex(
+            skill,
+            r"(?is)legacy combined current-layout.*?summary-and-takeaway.*?one-sentence-summary.*?split",
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)migration.*?skill-owned generated blocks.*?preserve.*?user-owned.*?byte-for-byte",
+        )
+        self.assertRegex(
+            skill,
+            r"(?is)do not migrate.*?(heading|note layout)",
         )
 
     def test_skill_is_source_backed_and_keeps_private_content_local(self) -> None:
@@ -289,7 +310,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
 
     def test_plugin_packaging_and_docs_expose_the_review_skill(self) -> None:
         manifest = json.loads(self.read(RESEARCH_PLUGIN))
-        self.assertEqual(manifest["version"], "0.6.1")
+        self.assertEqual(manifest["version"], "0.6.2")
         interface = manifest["interface"]
         self.assertIn("review", interface["description"].lower())
         self.assertIn("review", interface["shortDescription"].lower())
@@ -315,6 +336,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
             "review",
             "annotate",
             "no chat-only review mode",
+            "section-local",
         ):
             self.assertIn(expected, readme)
         for expected in (
@@ -322,6 +344,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
             "PAPER_READ_REVIEW_OPENAI",
             "name: paper-read-review",
             "$paper-read-review",
+            "%% paper-read-review:one-sentence-summary:start %%",
         ):
             self.assertIn(expected, checker)
 

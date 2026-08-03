@@ -460,7 +460,9 @@ accuracy, missing contributions, evidence, limitations, and research questions,
 and keeps private note or Zotero content out of public search services. Generated
 comments are concise, use no more than two callouts per section, and separate
 adjacent callouts with an unquoted blank line so Obsidian renders them
-independently.
+independently. In the current three-section layout, generated feedback is
+section-local: One-sentence summary, Summary and takeaway, and My thoughts each
+own a distinct hidden-marker block at the end of their corresponding section.
 
 ## Optional MinerU Document Extraction
 

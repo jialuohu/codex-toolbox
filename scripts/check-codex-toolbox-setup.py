@@ -3114,7 +3114,7 @@ def main() -> None:
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
     require(
-        research_plugin.get("version") == "0.6.1",
+        research_plugin.get("version") == "0.6.2",
         "research-tools must use the current PaperRead workflow version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
@@ -3339,6 +3339,7 @@ def main() -> None:
         "name: paper-read-review",
         "There is no chat-only review mode.",
         "**Mode:** `annotate` or `no-write`",
+        "%% paper-read-review:one-sentence-summary:start %%",
         "%% paper-read-review:summary-and-takeaway:start %%",
         "Preserve frontmatter, hidden prompts, user prose, existing callouts, and heading order byte-for-byte outside generated markers.",
         "Zotero first",
