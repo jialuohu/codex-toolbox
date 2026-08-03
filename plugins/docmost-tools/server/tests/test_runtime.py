@@ -122,7 +122,9 @@ def test_bootstrap_converts_missing_cookie_to_exact_auth_required_without_client
     assert runtime.client is None
     assert runtime.startup_error is not None
     assert runtime.startup_error.code is ErrorCode.AUTH_REQUIRED
-    assert runtime.startup_error.message == "docmost-auth login"
+    assert runtime.startup_error.message == (
+        '"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login'
+    )
     assert context.closed is True
 
 

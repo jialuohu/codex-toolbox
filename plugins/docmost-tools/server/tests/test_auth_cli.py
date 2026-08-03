@@ -29,6 +29,11 @@ class FakeAuthService:
         self.calls.append("logout")
         return self.result
 
+    @classmethod
+    def logout_paths(cls, *_: object) -> OperationResult[dict[str, object]]:
+        cls.calls.append("logout")
+        return cls.result
+
 
 @pytest.mark.parametrize("command", ["login", "status", "logout"])
 def test_cli_prints_a_success_result_for_each_auth_command(
@@ -60,7 +65,8 @@ def test_cli_returns_nonzero_and_prints_stable_error_result(
     FakeAuthService.calls = []
     FakeAuthService.result = OperationResult.failure(
         ErrorCode.AUTH_REQUIRED,
-        "Authentication required. Run `docmost-auth login`.",
+        "Authentication required. Run "
+        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`.",
     )
     monkeypatch.setenv("CODEX_SECRETS_DIR", str(tmp_path))
     monkeypatch.setenv("DOCMOST_BASE_URL", "http://127.0.0.1:9321")
@@ -75,8 +81,52 @@ def test_cli_returns_nonzero_and_prints_stable_error_result(
         "data": None,
         "error": {
             "code": "auth_required",
-            "message": "Authentication required. Run `docmost-auth login`.",
+            "message": (
+                "Authentication required. Run "
+                "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" "
+                "login`."
+            ),
             "retryable": False,
             "details": {},
         },
     }
+
+
+def test_cli_redacts_invalid_credential_bearing_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CODEX_SECRETS_DIR", str(tmp_path))
+    monkeypatch.setenv(
+        "DOCMOST_BASE_URL",
+        "https://private-user:dummy-password@docs.example.test",
+    )
+
+    exit_code = auth_cli.main(["login"])
+
+    output = capsys.readouterr().out
+    payload = json.loads(output)
+    assert exit_code == 1
+    assert payload["error"]["code"] == "configuration_invalid"
+    assert payload["error"]["message"] == "Docmost MCP configuration is invalid"
+    assert "private-user" not in output
+    assert "dummy-password" not in output
+
+
+def test_cli_logout_does_not_require_docmost_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CODEX_SECRETS_DIR", str(tmp_path))
+    monkeypatch.delenv("DOCMOST_BASE_URL", raising=False)
+    profile = tmp_path / "docmost" / "browser-profile"
+    profile.mkdir(parents=True, mode=0o700)
+    profile.parent.chmod(0o700)
+    profile.chmod(0o700)
+    (profile / "session-state").write_text("sensitive")
+
+    exit_code = auth_cli.main(["logout"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["ok"] is True
+    assert payload["data"] == {"logged_out": True}
+    assert not profile.exists()

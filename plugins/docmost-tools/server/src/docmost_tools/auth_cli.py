@@ -13,6 +13,7 @@ from docmost_tools.auth import AuthService
 from docmost_tools.config import DocmostSettings
 from docmost_tools.models import ErrorCode, OperationError, OperationResult
 from docmost_tools.profile import ProfilePathError, profile_paths
+from docmost_tools.runtime import CONFIGURATION_INVALID_MESSAGE
 
 
 def main(argv: Sequence[str] | None = None, *, output: TextIO | None = None) -> int:
@@ -27,19 +28,31 @@ def main(argv: Sequence[str] | None = None, *, output: TextIO | None = None) -> 
 
         destination = sys.stdout
     try:
-        service = AuthService(DocmostSettings.model_validate({}), profile_paths())
-    except (ProfilePathError, ValidationError) as error:
+        paths = profile_paths()
+    except ProfilePathError:
         result: OperationResult[dict[str, object]] = OperationResult[dict[str, object]](
             ok=False,
-            error=OperationError(code=ErrorCode.CONFIGURATION_INVALID, message=str(error)),
+            error=OperationError(
+                code=ErrorCode.CONFIGURATION_INVALID,
+                message=CONFIGURATION_INVALID_MESSAGE,
+            ),
         )
     else:
-        if args.command == "login":
-            result = service.login()
-        elif args.command == "status":
-            result = service.status()
+        if args.command == "logout":
+            result = AuthService.logout_paths(paths)
         else:
-            result = service.logout()
+            try:
+                service = AuthService(DocmostSettings.model_validate({}), paths)
+            except ValidationError:
+                result = OperationResult[dict[str, object]](
+                    ok=False,
+                    error=OperationError(
+                        code=ErrorCode.CONFIGURATION_INVALID,
+                        message=CONFIGURATION_INVALID_MESSAGE,
+                    ),
+                )
+            else:
+                result = service.login() if args.command == "login" else service.status()
     json.dump(result.model_dump(mode="json"), destination)
     destination.write("\n")
     return 0 if result.ok else 1

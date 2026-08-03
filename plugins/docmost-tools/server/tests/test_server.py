@@ -126,16 +126,23 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "idempotentHint": False,
             "openWorldHint": True,
         }
+        replacement_annotations = {
+            **write_annotations,
+            "destructiveHint": True,
+        }
         by_name = {tool.name: tool for tool in tools.tools}
         for tool in tools.tools:
             assert tool.annotations is not None
             assert (
                 tool.annotations.model_dump(by_alias=True, exclude_none=True)
                 == (
-                    read_annotations
-                    if tool.name
-                    not in {"create_page", "update_page_title", "create_comment"}
-                    else write_annotations
+                    replacement_annotations
+                    if tool.name == "update_page_title"
+                    else (
+                        read_annotations
+                        if tool.name not in {"create_page", "create_comment"}
+                        else write_annotations
+                    )
                 )
             )
         assert by_name["list_spaces"].inputSchema["properties"]["limit"] == {

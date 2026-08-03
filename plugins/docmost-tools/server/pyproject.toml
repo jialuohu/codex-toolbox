@@ -16,8 +16,11 @@ dependencies = [
 ]
 
 [project.scripts]
-docmost-auth = "docmost_tools.auth_cli:main"
+docmost-auth-internal = "docmost_tools.auth_cli:main"
 docmost-mcp = "docmost_tools.server:main"
+docmost-runtime-lock = "docmost_tools.runtime_lock:main"
+docmost-runtime-stamp = "docmost_tools.runtime_stamp:main"
+docmost-smoke = "docmost_tools.smoke_cli:main"
 
 [dependency-groups]
 dev = [

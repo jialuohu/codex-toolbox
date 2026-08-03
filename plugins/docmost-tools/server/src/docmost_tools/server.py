@@ -31,6 +31,12 @@ _WRITE_ANNOTATIONS = ToolAnnotations(
     idempotentHint=False,
     openWorldHint=True,
 )
+_REPLACEMENT_WRITE_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=False,
+    openWorldHint=True,
+)
 _ID_PATTERN = r"^[^\x00-\x1f\x7f]{1,512}$"
 _CURSOR_PATTERN = r"^[A-Za-z0-9._~=-]{1,1024}$"
 _ID_RUNTIME_PATTERN = re.compile(r"[^\x00-\x1f\x7f]{1,512}")
@@ -314,7 +320,7 @@ def create_server(
             )
         )
 
-    @server.tool(annotations=_WRITE_ANNOTATIONS)
+    @server.tool(annotations=_REPLACEMENT_WRITE_ANNOTATIONS)
     def update_page_title(  # pyright: ignore[reportUnusedFunction]
         page_id: Identifier,
         title: Title,

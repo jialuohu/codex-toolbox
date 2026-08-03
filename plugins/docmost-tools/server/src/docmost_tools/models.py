@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -84,7 +84,7 @@ class OperationResult[ResultData](BaseModel):
 class _DocmostModel(BaseModel):
     """Tolerant read model for additive upstream response fields."""
 
-    model_config = ConfigDict(extra="allow", populate_by_name=True, frozen=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True)
 
 
 class User(_DocmostModel):
@@ -143,6 +143,7 @@ class CreatePageResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     page: Page
+    placement_status: Literal["root", "nested", "unknown"] = "root"
     partial_success: bool = False
     warning: OperationError | None = None
 
@@ -152,6 +153,12 @@ class CreatePageResult(BaseModel):
             raise ValueError("partial_success and warning must be present together")
         if self.warning is not None and self.warning.code is not ErrorCode.PARTIAL_SUCCESS:
             raise ValueError("partial-success warning must use the partial_success code")
+        if self.placement_status == "root" and self.page.parent is not None:
+            raise ValueError("root placement cannot include a parent")
+        if self.placement_status == "nested" and self.page.parent is None:
+            raise ValueError("nested placement must include a parent")
+        if self.placement_status == "unknown" and not self.partial_success:
+            raise ValueError("unknown placement must include a partial-success warning")
         return self
 
 

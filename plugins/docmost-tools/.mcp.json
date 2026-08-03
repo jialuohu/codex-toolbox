@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "docmost": {
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "set -euo pipefail; DOCMOST_CODEX_ROOT=\"${CODEX_HOME:-$HOME/.codex}\"; DOCMOST_SECRETS_ROOT=\"${CODEX_SECRETS_DIR:-$DOCMOST_CODEX_ROOT/secrets}\"; DOCMOST_RUNTIME_PARENT=\"$DOCMOST_CODEX_ROOT/runtime\"; DOCMOST_RUNTIME_DIR=\"$DOCMOST_RUNTIME_PARENT/docmost-tools\"; DOCMOST_RUNTIME_STAMP=\"$DOCMOST_RUNTIME_DIR/.docmost-tools-source.sha256\"; DOCMOST_RUNTIME_LOCK_HELPER=\"$DOCMOST_RUNTIME_DIR/libexec/runtime_lock.py\"; DOCMOST_PLUGIN_SERVER_DIR=\"$PWD/server\"; SECRET_FILE=\"$DOCMOST_SECRETS_ROOT/docmost.env\"; if [ ! -f \"$SECRET_FILE\" ] || [ -L \"$SECRET_FILE\" ]; then echo \"Missing safe CODEX_SECRETS_DIR/docmost.env\" >&2; exit 1; fi; SECRET_MODE=\"\"; if SECRET_MODE=\"$(stat -f '%Lp' \"$SECRET_FILE\" 2>/dev/null)\"; then :; elif SECRET_MODE=\"$(stat -c '%a' \"$SECRET_FILE\" 2>/dev/null)\"; then :; fi; if [ \"$SECRET_MODE\" != 600 ]; then echo \"CODEX_SECRETS_DIR/docmost.env must have mode 600\" >&2; exit 1; fi; DOCMOST_UV=\"$(command -v uv || true)\"; if [ -z \"$DOCMOST_UV\" ] && [ -n \"${CODEX_LOCAL_BIN_DIR:-}\" ] && [ -x \"$CODEX_LOCAL_BIN_DIR/uv\" ]; then DOCMOST_UV=\"$CODEX_LOCAL_BIN_DIR/uv\"; fi; DOCMOST_SYSTEM_PYTHON=\"$(command -v python3 || true)\"; if [ -z \"$DOCMOST_UV\" ] || [ -z \"$DOCMOST_SYSTEM_PYTHON\" ]; then echo \"Docmost runtime prerequisites are missing; rerun the full codex-toolbox setup from its checkout\" >&2; exit 127; fi; if [ ! -d \"$DOCMOST_RUNTIME_PARENT\" ] || [ -L \"$DOCMOST_RUNTIME_PARENT\" ] || [ ! -d \"$DOCMOST_RUNTIME_DIR\" ] || [ -L \"$DOCMOST_RUNTIME_DIR\" ]; then echo \"Docmost runtime is missing or unsafe; rerun the full codex-toolbox setup from its checkout\" >&2; exit 1; fi; if [ ! -d \"$DOCMOST_PLUGIN_SERVER_DIR\" ]; then echo \"Docmost plugin server directory is missing\" >&2; exit 1; fi; if [ ! -f \"$DOCMOST_RUNTIME_LOCK_HELPER\" ] || [ -L \"$DOCMOST_RUNTIME_LOCK_HELPER\" ] || [ ! -x \"$DOCMOST_RUNTIME_DIR/bin/docmost-mcp\" ] || [ ! -x \"$DOCMOST_RUNTIME_DIR/bin/docmost-runtime-stamp\" ]; then echo \"Docmost runtime is missing or unsafe; rerun the full codex-toolbox setup from its checkout\" >&2; exit 1; fi; readonly DOCMOST_CODEX_ROOT DOCMOST_SECRETS_ROOT DOCMOST_RUNTIME_PARENT DOCMOST_RUNTIME_DIR DOCMOST_RUNTIME_STAMP DOCMOST_RUNTIME_LOCK_HELPER DOCMOST_PLUGIN_SERVER_DIR SECRET_FILE DOCMOST_UV DOCMOST_SYSTEM_PYTHON; export DOCMOST_SECRETS_ROOT DOCMOST_RUNTIME_PARENT DOCMOST_RUNTIME_DIR DOCMOST_RUNTIME_STAMP DOCMOST_RUNTIME_LOCK_HELPER DOCMOST_PLUGIN_SERVER_DIR SECRET_FILE DOCMOST_UV DOCMOST_SYSTEM_PYTHON; exec \"$DOCMOST_SYSTEM_PYTHON\" \"$DOCMOST_RUNTIME_LOCK_HELPER\" --mode shared --root \"$DOCMOST_RUNTIME_PARENT\" -- /bin/zsh -lc 'set -euo pipefail; readonly DOCMOST_SECRETS_ROOT DOCMOST_RUNTIME_PARENT DOCMOST_RUNTIME_DIR DOCMOST_RUNTIME_STAMP DOCMOST_RUNTIME_LOCK_HELPER DOCMOST_PLUGIN_SERVER_DIR SECRET_FILE DOCMOST_UV DOCMOST_SYSTEM_PYTHON; if ! \"$DOCMOST_SYSTEM_PYTHON\" \"$DOCMOST_RUNTIME_LOCK_HELPER\" --validate-fd --mode shared --root \"$DOCMOST_RUNTIME_PARENT\"; then echo \"Docmost runtime lock validation failed\" >&2; exit 1; fi; if ! \"$DOCMOST_RUNTIME_DIR/bin/docmost-runtime-stamp\" check \"$DOCMOST_PLUGIN_SERVER_DIR\" \"$DOCMOST_RUNTIME_STAMP\" >/dev/null 2>&1; then echo \"Docmost runtime is stale; rerun the full codex-toolbox setup from its checkout\" >&2; exit 1; fi; set -a; source \"$SECRET_FILE\"; set +a; CODEX_SECRETS_DIR=\"$DOCMOST_SECRETS_ROOT\"; UV_PROJECT_ENVIRONMENT=\"$DOCMOST_RUNTIME_DIR\"; export CODEX_SECRETS_DIR UV_PROJECT_ENVIRONMENT; exec \"$DOCMOST_UV\" run --frozen --no-sync --directory \"$DOCMOST_PLUGIN_SERVER_DIR\" docmost-mcp'"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "CODEX_SECRETS_DIR",
+        "CODEX_HOME",
+        "CODEX_LOCAL_BIN_DIR"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 180,
+      "default_tools_approval_mode": "auto",
+      "tools": {
+        "create_page": {
+          "approval_mode": "prompt"
+        },
+        "update_page_title": {
+          "approval_mode": "prompt"
+        },
+        "create_comment": {
+          "approval_mode": "prompt"
+        }
+      }
+    }
+  }
+}

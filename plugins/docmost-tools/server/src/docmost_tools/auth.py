@@ -7,13 +7,15 @@ from collections.abc import Callable
 from typing import Any, Protocol, cast
 
 import httpx
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
 from docmost_tools.config import DocmostSettings
 from docmost_tools.models import ErrorCode, OperationError, OperationResult
 from docmost_tools.profile import ProfileBusyError, ProfilePathError, ProfilePaths, profile_lock
+from docmost_tools.recovery import AUTH_LOGIN_COMMAND, AUTH_REQUIRED_SENTENCE
 
-AUTH_REQUIRED_MESSAGE = "Authentication required. Run `docmost-auth login`."
+AUTH_REQUIRED_MESSAGE = AUTH_REQUIRED_SENTENCE
 _COOKIE_WAIT_SECONDS = 300.0
 
 
@@ -23,6 +25,14 @@ class _AuthenticationRequired(RuntimeError):
 
 class _ProbeFailure(RuntimeError):
     """The authenticated Docmost HTTP contract was not available."""
+
+
+class _BrowserLaunchFailure(RuntimeError):
+    """The headed browser could not be created for interactive login."""
+
+
+class _LoginNavigationFailure(RuntimeError):
+    """The configured interactive login page could not be opened."""
 
 
 class _PlaywrightManager(Protocol):
@@ -72,12 +82,18 @@ class AuthService:
     def logout(self) -> OperationResult[dict[str, object]]:
         """Remove only the isolated persistent browser profile while holding its lock."""
 
+        return self.logout_paths(self._paths)
+
+    @classmethod
+    def logout_paths(cls, paths: ProfilePaths) -> OperationResult[dict[str, object]]:
+        """Remove a validated profile without requiring Docmost connection settings."""
+
         try:
-            with profile_lock(self._paths):
-                self._paths.remove_profile()
+            with profile_lock(paths):
+                paths.remove_profile()
         except Exception as error:  # Converted to the stable public result boundary below.
-            return self._failure(error)
-        return self._success({"logged_out": True})
+            return cls._failure(error)
+        return cls._success({"logged_out": True})
 
     def _browser_cookie(self, *, headless: bool) -> str:
         profile = self._paths.ensure_profile_directory()
@@ -91,18 +107,31 @@ class AuthService:
     def _login_identity(self) -> dict[str, object]:
         profile = self._paths.ensure_profile_directory()
         deadline = time.monotonic() + _COOKIE_WAIT_SECONDS
-        with self._playwright_factory() as playwright:
-            context = playwright.chromium.launch_persistent_context(str(profile), headless=False)
+        try:
+            playwright_manager = self._playwright_factory()
+            playwright_context = playwright_manager.__enter__()
+        except PlaywrightError as error:
+            raise _BrowserLaunchFailure from error
+        try:
+            try:
+                context = playwright_context.chromium.launch_persistent_context(
+                    str(profile), headless=False
+                )
+            except PlaywrightError as error:
+                raise _BrowserLaunchFailure from error
             try:
                 page = context.pages[0] if context.pages else context.new_page()
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise _AuthenticationRequired(AUTH_REQUIRED_MESSAGE)
-                page.goto(
-                    self._login_url(),
-                    wait_until="domcontentloaded",
-                    timeout=remaining * 1000,
-                )
+                try:
+                    page.goto(
+                        self._login_url(),
+                        wait_until="domcontentloaded",
+                        timeout=remaining * 1000,
+                    )
+                except PlaywrightError as error:
+                    raise _LoginNavigationFailure from error
                 invalid_cookie: str | None = None
                 while True:
                     try:
@@ -126,6 +155,8 @@ class AuthService:
                     page.wait_for_timeout(min(250.0, remaining * 1000))
             finally:
                 context.close()
+        finally:
+            playwright_manager.__exit__(None, None, None)
 
     def _cookie_from_context(self, context: Any) -> str:
         return self._cookie_value(self._session_cookie(context))
@@ -170,6 +201,7 @@ class AuthService:
             with httpx.Client(
                 verify=True if self._settings.ca_bundle is None else str(self._settings.ca_bundle),
                 follow_redirects=False,
+                trust_env=False,
                 timeout=timeout,
             ) as client:
                 response = client.post(
@@ -215,6 +247,26 @@ class AuthService:
     def _failure(error: Exception) -> OperationResult[dict[str, object]]:
         if isinstance(error, _AuthenticationRequired):
             return AuthService._error(ErrorCode.AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE)
+        if isinstance(error, _BrowserLaunchFailure):
+            return AuthService._error(
+                ErrorCode.INTERNAL_ERROR,
+                "Docmost browser could not start. Reinstall the Docmost runtime from "
+                f"the toolbox checkout, then from a desktop GUI run `{AUTH_LOGIN_COMMAND}`.",
+            )
+        if isinstance(error, _LoginNavigationFailure):
+            return AuthService._error(
+                ErrorCode.UPSTREAM_ERROR,
+                "Docmost login page could not be opened. Verify DOCMOST_LOGIN_URL and "
+                f"network access, then run `{AUTH_LOGIN_COMMAND}`.",
+                retryable=True,
+            )
+        if isinstance(error, PlaywrightError):
+            return AuthService._error(
+                ErrorCode.INTERNAL_ERROR,
+                "Docmost browser authentication failed. Run "
+                f"`{AUTH_LOGIN_COMMAND}` from a "
+                "desktop GUI and verify DOCMOST_LOGIN_URL and network access.",
+            )
         if isinstance(error, ProfileBusyError):
             return AuthService._error(
                 ErrorCode.PROFILE_BUSY,
@@ -222,7 +274,10 @@ class AuthService:
                 retryable=True,
             )
         if isinstance(error, ProfilePathError):
-            return AuthService._error(ErrorCode.CONFIGURATION_INVALID, str(error))
+            return AuthService._error(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Docmost MCP configuration is invalid",
+            )
         if isinstance(error, _ProbeFailure):
             return AuthService._error(ErrorCode.UPSTREAM_ERROR, str(error), retryable=True)
         return AuthService._error(

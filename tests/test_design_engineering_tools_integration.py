@@ -42,7 +42,13 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             shutil.copytree(
                 ROOT,
                 copied_root,
-                ignore=shutil.ignore_patterns(".git", "__pycache__"),
+                ignore=shutil.ignore_patterns(
+                    ".git",
+                    ".venv",
+                    ".pytest_cache",
+                    ".ruff_cache",
+                    "__pycache__",
+                ),
             )
             mutate(copied_root)
 

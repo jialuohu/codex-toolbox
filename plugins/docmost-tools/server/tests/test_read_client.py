@@ -161,6 +161,38 @@ def test_space_and_search_requests_apply_contract_caps_and_pagination() -> None:
     ]
 
 
+@pytest.mark.parametrize("operation", ["spaces", "search", "pages", "comments"])
+def test_paginated_reads_reject_an_upstream_response_over_the_requested_limit(
+    operation: str,
+) -> None:
+    item = (
+        {"id": "space-1"}
+        if operation == "spaces"
+        else {"id": "item-1", "slugId": "item-slug"}
+    )
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=envelope({"items": [item, item], "meta": {"nextCursor": "next"}}),
+        )
+
+    client = client_for(handler)
+    if operation == "spaces":
+        result = client.list_spaces(limit=1)
+    elif operation == "search":
+        result = client.search("query", limit=1)
+    elif operation == "pages":
+        result = client.list_pages("space-1", limit=1)
+    else:
+        result = client.list_comments("page-1", limit=1)
+
+    assert result.ok is False
+    assert result.data is None
+    assert result.error is not None
+    assert result.error.code in {ErrorCode.UPSTREAM_ERROR, ErrorCode.PAGE_UNAVAILABLE}
+
+
 def test_search_uses_an_opaque_round_trippable_cursor_and_default_limit() -> None:
     seen: list[dict[str, object]] = []
 

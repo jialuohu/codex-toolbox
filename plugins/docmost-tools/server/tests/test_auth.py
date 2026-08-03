@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import pytest
+from playwright.sync_api import Error as PlaywrightError
 
 from docmost_tools import auth
 from docmost_tools.auth import AuthService
@@ -187,7 +188,10 @@ def test_status_missing_cookie_returns_the_login_recovery_command(tmp_path: Path
     assert result.ok is False
     assert result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
-    assert result.error.message == "Authentication required. Run `docmost-auth login`."
+    assert result.error.message == (
+        "Authentication required. Run "
+        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
+    )
     assert context.closed is True
 
 
@@ -204,7 +208,10 @@ def test_status_401_returns_the_login_recovery_command(
     assert result.ok is False
     assert result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
-    assert result.error.message == "Authentication required. Run `docmost-auth login`."
+    assert result.error.message == (
+        "Authentication required. Run "
+        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
+    )
 
 
 def test_status_reads_a_cookie_scoped_to_the_identity_endpoint(
@@ -277,6 +284,43 @@ def test_status_uses_tls_verification_when_no_ca_bundle_is_configured(
 
     assert result.ok is True
     assert captured["verify"] is True
+
+
+def test_status_disables_ambient_httpx_proxy_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = FakeContext([{"name": "authToken", "value": "session-secret", "httpOnly": True}])
+    manager = FakePlaywrightManager(context)
+    captured: dict[str, Any] = {}
+    original_client = httpx.Client
+
+    def client_with_transport(**kwargs: Any) -> httpx.Client:
+        captured.update(kwargs)
+        return original_client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200,
+                    json={
+                        "data": {"user": {}, "workspace": {}}
+                        if request.url.path.endswith("/me")
+                        else {"currentVersion": "0.95.0"},
+                        "success": True,
+                        "status": 200,
+                    },
+                )
+            ),
+            **kwargs,
+        )
+
+    monkeypatch.setattr(auth.httpx, "Client", client_with_transport)
+    result = AuthService(
+        settings(),
+        profile_paths(tmp_path),
+        playwright_factory=lambda: manager,
+    ).status()
+
+    assert result.ok is True
+    assert captured["trust_env"] is False
 
 
 def test_login_replaces_a_stale_cookie_without_closing_the_browser(
@@ -429,7 +473,10 @@ def test_login_stale_cookie_times_out_with_recovery_command(
     assert result.ok is False
     assert result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
-    assert result.error.message == "Authentication required. Run `docmost-auth login`."
+    assert result.error.message == (
+        "Authentication required. Run "
+        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
+    )
     assert context.cleared_cookies == [{"name": "authToken"}]
     assert context.closed is True
 
@@ -448,3 +495,60 @@ def test_login_with_an_exhausted_deadline_does_not_navigate(
     assert result.error is not None
     assert result.error.code is ErrorCode.AUTH_REQUIRED
     assert context.pages[0].visits == []
+
+
+def test_login_reports_actionable_gui_recovery_without_leaking_playwright_details(
+    tmp_path: Path,
+) -> None:
+    def unavailable_browser() -> Any:
+        raise PlaywrightError("private display and profile details")
+
+    service = AuthService(
+        settings(),
+        profile_paths(tmp_path),
+        playwright_factory=unavailable_browser,
+    )
+
+    result = service.login()
+
+    assert result.ok is False
+    assert result.error is not None
+    assert result.error.code is ErrorCode.INTERNAL_ERROR
+    assert result.error.message == (
+        "Docmost browser could not start. Reinstall the Docmost runtime from the "
+        "toolbox checkout, then from a desktop GUI run "
+        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
+    )
+    assert "private display" not in result.error.message
+
+
+def test_login_reports_actionable_navigation_recovery_without_leaking_details(
+    tmp_path: Path,
+) -> None:
+    class UnavailableLoginPage(FakePage):
+        def goto(self, url: str, *, wait_until: str, timeout: float) -> None:
+            del url, wait_until, timeout
+            raise PlaywrightError("private login URL and network details")
+
+    context = FakeContext([])
+    context.pages = [UnavailableLoginPage()]
+    manager = FakePlaywrightManager(context)
+    service = AuthService(
+        settings(),
+        profile_paths(tmp_path),
+        playwright_factory=lambda: manager,
+    )
+
+    result = service.login()
+
+    assert result.ok is False
+    assert result.error is not None
+    assert result.error.code is ErrorCode.UPSTREAM_ERROR
+    assert result.error.retryable is True
+    assert result.error.message == (
+        "Docmost login page could not be opened. Verify DOCMOST_LOGIN_URL and network "
+        "access, then run "
+        "`\"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth\" login`."
+    )
+    assert "private login URL" not in result.error.message
+    assert context.closed is True

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from docmost_tools.models import ErrorCode, OperationError, OperationResult, Page
+from docmost_tools.models import CurrentUser, ErrorCode, OperationError, OperationResult, Page
 
 
 def test_success_result_contains_data_and_no_error() -> None:
@@ -59,3 +59,18 @@ def test_page_model_maps_v095_authoritative_slug_id() -> None:
     page = Page.model_validate({"id": "p1", "slugId": "authoritative"})
 
     assert page.slug_id == "authoritative"
+
+
+def test_additive_upstream_fields_are_tolerated_but_not_returned_publicly() -> None:
+    current = CurrentUser.model_validate(
+        {
+            "user": {"id": "u1", "futureSecret": "must-not-pass-through"},
+            "workspace": {"id": "w1", "futureWorkspaceField": {"nested": True}},
+            "futureEnvelopeField": ["unbounded", "payload"],
+        }
+    )
+
+    assert current.model_dump(mode="json") == {
+        "user": {"id": "u1", "name": None, "email": None},
+        "workspace": {"id": "w1", "name": None, "slug": None},
+    }

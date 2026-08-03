@@ -34,6 +34,7 @@ DEFAULT_PLUGINS=(
   "vibe-trading-tools"
   "chronicle-tools"
   "google-workspace-tools"
+  "docmost-tools"
 )
 THIRD_PARTY_DEFAULT_PLUGINS=(
   "ui-ux-pro-max"
@@ -58,6 +59,7 @@ MANAGED_MCP_SERVERS=(
   "robinhood-trading"
   "vibe_trading"
   "zotero"
+  "docmost"
 )
 RETIRED_MCP_SERVERS=(
   "symphony"
@@ -305,6 +307,67 @@ ensure_toolbox_marketplace() {
   esac
 }
 
+DOCMOST_SETUP="$ROOT/scripts/setup-docmost-tools.sh"
+docmost_setup_command() {
+  local server_dir="$1"
+  shift
+  if [ -n "$server_dir" ]; then
+    DOCMOST_SERVER_DIR="$server_dir" "$DOCMOST_SETUP" "$@"
+  else
+    "$DOCMOST_SETUP" "$@"
+  fi
+}
+
+ensure_docmost_ready() {
+  local server_dir="$1"
+  local docmost_status
+  docmost_setup_command "$server_dir" --install
+  if docmost_setup_command "$server_dir" --status; then
+    return 0
+  else
+    docmost_status=$?
+  fi
+  if [ "$docmost_status" -eq 3 ]; then
+    docmost_setup_command "$server_dir" --login
+    docmost_setup_command "$server_dir" --status
+    return
+  fi
+  return "$docmost_status"
+}
+
+active_docmost_server_dir() {
+  local plugin_json
+  plugin_json="$("$CODEX_BIN" plugin list --marketplace "$MARKETPLACE_NAME" --json)"
+  PLUGIN_JSON="$plugin_json" python3 - "$MARKETPLACE_NAME" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+marketplace_name = sys.argv[1]
+data = json.loads(os.environ["PLUGIN_JSON"])
+matches = [
+    plugin
+    for plugin in data.get("installed", [])
+    if plugin.get("name") == "docmost-tools"
+    and plugin.get("marketplaceName") == marketplace_name
+    and plugin.get("installed") is True
+]
+if len(matches) != 1:
+    raise SystemExit("Installed Docmost plugin source is unavailable")
+source = matches[0].get("source")
+path = source.get("path") if isinstance(source, dict) else None
+if not isinstance(path, str) or not path or "\n" in path:
+    raise SystemExit("Installed Docmost plugin source is unavailable")
+server = Path(path) / "server"
+if not server.is_dir():
+    raise SystemExit("Installed Docmost plugin source is unavailable")
+print(server.resolve(strict=True))
+PY
+}
+
+ensure_docmost_ready ""
+
 ensure_toolbox_marketplace
 
 plugin_installed() {
@@ -441,6 +504,10 @@ done
 for plugin in "${DEFAULT_PLUGINS[@]}"; do
   install_or_refresh_plugin "$plugin" "$MARKETPLACE_NAME"
 done
+
+DOCMOST_ACTIVE_SERVER_DIR="$(active_docmost_server_dir)"
+readonly DOCMOST_ACTIVE_SERVER_DIR
+ensure_docmost_ready "$DOCMOST_ACTIVE_SERVER_DIR"
 
 ensure_ui_ux_marketplace
 for plugin in "${THIRD_PARTY_DEFAULT_PLUGINS[@]}"; do

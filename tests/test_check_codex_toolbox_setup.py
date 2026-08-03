@@ -124,6 +124,27 @@ class SetupCheckerScanTests(unittest.TestCase):
             ),
         )
 
+    def test_retired_reference_scan_ignores_generated_runtime_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir) / "fixture-repo"
+            tracker_name = "lin" + "ear"
+            for directory in (".venv", ".pytest_cache", ".ruff_cache", "node_modules"):
+                generated = repo_root / directory / "generated.txt"
+                generated.parent.mkdir(parents=True)
+                generated.write_text(
+                    f"Generated {tracker_name.title()} client metadata\n",
+                    encoding="utf-8",
+                )
+
+            retired_mentions, tracker_mentions = CHECKER.scan_retired_reference_mentions(
+                repo_root,
+                CHECKER_PATH,
+                "sym" + "phony",
+            )
+
+        self.assertEqual(retired_mentions, [])
+        self.assertEqual(tracker_mentions, [])
+
 
 if __name__ == "__main__":
     unittest.main()

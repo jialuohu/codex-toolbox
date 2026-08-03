@@ -12,7 +12,19 @@ third-party marketplace pins, and reusable Codex instructions.
    cd codex-toolbox
    ```
 
-2. Run the setup script:
+2. Create the required per-device Docmost configuration described in
+   [Docmost Tools](#docmost-tools). The default setup fails closed until
+   `docmost.env` exists with mode `600`; it will open the isolated SSO login
+   when authentication is required.
+
+3. Add any other per-device secrets outside the repository as needed. Keep
+   OAuth state, API keys, tokens, credential files, and env-file contents out
+   of version control.
+
+   Connector-specific credential paths, account details, and companion tool
+   install locations should stay in local, untracked configuration.
+
+4. Run the setup script:
 
    ```bash
    scripts/setup-codex-toolbox.sh
@@ -30,6 +42,16 @@ third-party marketplace pins, and reusable Codex instructions.
    codex plugin marketplace upgrade jialuo-codex-toolbox
    ```
 
+   After any marketplace upgrade that changes `docmost-tools`, rerun the full
+   setup so the shared runtime is rebuilt from the exact active plugin source
+   and smoke-checked before opening a fresh Codex task:
+
+   ```bash
+   scripts/setup-codex-toolbox.sh
+   ```
+
+   Running the full toolbox setup performs those Docmost gates automatically.
+
    For local plugin development before changes are pushed to GitHub, register
    the checkout directly instead:
 
@@ -37,18 +59,80 @@ third-party marketplace pins, and reusable Codex instructions.
    CODEX_TOOLBOX_MARKETPLACE_MODE=local scripts/setup-codex-toolbox.sh
    ```
 
-3. Add per-device secrets outside the repository as needed. Keep OAuth state,
-   API keys, tokens, credential files, and env-file contents out of version
-   control.
+5. Run MCP login or connector setup commands for any other services that need
+   local authentication.
 
-   Connector-specific credential paths, account details, and companion tool
-   install locations should stay in local, untracked configuration.
-
-4. Run MCP login or connector setup commands for any services that need local
-   authentication.
-
-5. Start a fresh Codex session so the installed global `AGENTS.md`, plugins, and
+6. Start a fresh Codex session so the installed global `AGENTS.md`, plugins, and
    MCP servers are loaded from the beginning of the run.
+
+## Docmost Tools
+
+The default `docmost-tools` plugin runs a local browser-authenticated MCP adapter
+for a private Docmost instance. It reads its per-device settings only from
+`${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/docmost.env`; create
+that file with mode `600`. Its isolated browser profile is stored under the
+same secrets directory with mode `700`. Never commit the environment file,
+browser profile, session cookie, or workspace content.
+
+The locked Python environment is installed once at
+`${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools`. The installed MCP launcher
+uses that verified environment with synchronization disabled, so starting the
+server does not create an environment or download dependencies. A source-and-lock
+fingerprint fails closed with a reinstall instruction if marketplace plugin code
+no longer matches the runtime prepared by setup.
+
+Use neutral values appropriate to the private deployment; only the base URL is
+required. Do not place a cookie or password in this file.
+
+```bash
+mkdir -p "${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}"
+chmod 700 "${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}"
+cat > "${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/docmost.env" <<'EOF'
+DOCMOST_BASE_URL=https://docs.example.com
+# Optional: DOCMOST_LOGIN_URL=https://login.example.com/docmost
+# Optional: DOCMOST_SESSION_COOKIE=authToken
+# Optional: DOCMOST_API_PROFILE=auto
+# Optional: DOCMOST_WRITE_PROFILE=v0_95
+# Optional: DOCMOST_CA_BUNDLE=/absolute/path/to/internal-ca.pem
+EOF
+chmod 600 "${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/docmost.env"
+```
+
+The integration exposes every space visible to the authenticated SSO identity.
+Leave `DOCMOST_WRITE_PROFILE` unset for read-only compatibility mode; enable
+`v0_95` only after independently confirming that the instance runs Docmost
+0.95.x. Hosted-instance verification remains read-only even when the guarded
+write profile is configured.
+
+The regular toolbox setup installs the locked Python runtime and Chromium, then
+runs a headless `current-user` and `list-spaces` smoke check before it refreshes
+the marketplace or plugins. It rebuilds and rechecks the runtime from the exact
+active plugin source after that refresh. When the profile is not authenticated,
+setup opens the interactive browser login and reruns the smoke check; any
+configuration, SSO, or smoke failure stops the relevant setup phase.
+
+Use the helper directly when troubleshooting the isolated local auth profile:
+
+```bash
+scripts/setup-docmost-tools.sh --check
+scripts/setup-docmost-tools.sh --install
+scripts/setup-docmost-tools.sh --login
+scripts/setup-docmost-tools.sh --status
+scripts/setup-docmost-tools.sh --logout
+```
+
+Installation takes an exclusive runtime lock. If setup reports that the
+Docmost runtime is busy, close active Codex tasks using Docmost, or wait for an
+in-progress Docmost setup/auth command to finish, then retry.
+
+An MCP `AUTH_REQUIRED` result gives this checkout-independent recovery command:
+
+```bash
+"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login
+```
+
+Docmost content is untrusted input. Read tools can be used automatically, but
+the MCP asks before `create_page`, `update_page_title`, or `create_comment`.
 
 ## Managed Codex Pet
 

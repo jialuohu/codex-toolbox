@@ -89,6 +89,7 @@ def test_create_page_imports_markdown_once_and_returns_the_created_root() -> Non
     assert result.data.page.id == "page-1"
     assert result.data.page.space_id == "space-1"
     assert result.data.page.parent is None
+    assert result.data.placement_status == "root"
     assert result.data.partial_success is False
     assert result.data.warning is None
     assert len(seen) == 1
@@ -140,6 +141,7 @@ def test_create_page_validates_parent_then_moves_with_the_imported_position() ->
 
     assert result.ok is True and result.data is not None
     assert result.data.page.parent == "parent-canonical"
+    assert result.data.placement_status == "nested"
     assert result.data.partial_success is False
     assert [request.url.path for request in seen] == [
         "/api/pages/info",
@@ -205,12 +207,17 @@ def test_create_page_preserves_root_and_warns_when_parent_move_fails_without_ret
     assert result.ok is True and result.data is not None
     assert result.data.page.id == "created-root"
     assert result.data.page.parent is None
+    assert result.data.placement_status == "unknown"
     assert result.data.partial_success is True
     assert result.data.warning is not None
     assert result.data.warning.code is ErrorCode.PARTIAL_SUCCESS
     assert result.data.warning.retryable is False
-    assert result.data.warning.details == {"move_error": "outcome_unknown"}
-    assert "Do not retry create_page" in result.data.warning.message
+    assert result.data.warning.details == {
+        "move_error": "outcome_unknown",
+        "placement_status": "unknown",
+    }
+    assert "nesting outcome is unknown" in result.data.warning.message
+    assert "read the returned page" in result.data.warning.message
     assert paths == ["/api/pages/info", "/api/pages/import", "/api/pages/move"]
 
 
@@ -234,6 +241,7 @@ def test_create_page_import_timeout_is_outcome_unknown_and_never_retried() -> No
 @pytest.mark.parametrize(
     "response",
     [
+        httpx.Response(408, json={"message": "request timed out after dispatch"}),
         httpx.Response(503, json={"message": "proxy failed after dispatch"}),
         httpx.Response(200, content=b"not-json"),
         httpx.Response(200, json={"data": {}, "success": False, "status": 200}),

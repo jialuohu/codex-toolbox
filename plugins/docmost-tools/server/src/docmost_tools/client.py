@@ -30,8 +30,9 @@ from docmost_tools.models import (
     Space,
     VersionInfo,
 )
+from docmost_tools.recovery import AUTH_LOGIN_COMMAND
 
-AUTH_REQUIRED_MESSAGE = "docmost-auth login"
+AUTH_REQUIRED_MESSAGE = AUTH_LOGIN_COMMAND
 PAGE_UNAVAILABLE_MESSAGE = "PAGE_UNAVAILABLE"
 WRITE_COMPATIBILITY_BLOCKED_MESSAGE = "WRITE_COMPATIBILITY_BLOCKED"
 _MAX_PAGE_SIZE = 100
@@ -41,7 +42,7 @@ _DEFAULT_SEARCH_SIZE = 20
 _MAX_PAGE_CHARS = 100_000
 _CURSOR_PATTERN = re.compile(r"[A-Za-z0-9._~=-]{1,1024}\Z")
 _IDENTIFIER_PATTERN = re.compile(r"[^\x00-\x1f\x7f]{1,512}\Z")
-_TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
+_TRANSIENT_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 _SEARCH_CURSOR_PREFIX = "docmost-search.v1."
 _SEARCH_CURSOR_PAYLOAD = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 _TITLE_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
@@ -54,6 +55,10 @@ _OUTCOME_UNKNOWN_MESSAGE = (
 )
 _PARTIAL_CREATE_MESSAGE = (
     "Page was created at the space root, but nesting failed. "
+    "Do not retry create_page; read the returned page before any manual move."
+)
+_PARTIAL_CREATE_UNKNOWN_MESSAGE = (
+    "Page was created, but the nesting outcome is unknown. "
     "Do not retry create_page; read the returned page before any manual move."
 )
 ModelItem = TypeVar("ModelItem", bound=BaseModel)
@@ -164,12 +169,17 @@ class DocmostReadClient:
         """List spaces through Docmost's cursor-paginated read route."""
 
         try:
-            body: dict[str, object] = {"limit": self._page_limit(limit)}
+            validated_limit = self._page_limit(limit)
+            body: dict[str, object] = {"limit": validated_limit}
             if cursor is not None:
                 body["cursor"] = self._cursor(cursor)
         except ValueError as error:
             return self._invalid(error)
-        return self._run(lambda: self._cursor_page(self._post("/api/spaces", body), Space))
+        return self._run(
+            lambda: self._cursor_page(
+                self._post("/api/spaces", body), Space, limit=validated_limit
+            )
+        )
 
     def get_space(self, space_id: str) -> OperationResult[Space]:
         """Return a single space by its opaque Docmost identifier."""
@@ -206,7 +216,7 @@ class DocmostReadClient:
                 return self._invalid(error)
 
         def operation() -> SearchResults:
-            result = self._cursor_page(self._post("/api/search", body), Page)
+            result = self._cursor_page(self._post("/api/search", body), Page, limit=limit)
             next_cursor = (
                 self._encode_search_cursor(offset + limit) if len(result.items) == limit else None
             )
@@ -244,9 +254,10 @@ class DocmostReadClient:
         """List only root-level pages in a space (not all descendants)."""
 
         try:
+            validated_limit = self._page_limit(limit)
             body: dict[str, object] = {
                 "spaceId": self._identifier(space_id),
-                "limit": self._page_limit(limit),
+                "limit": validated_limit,
             }
             if cursor is not None:
                 body["cursor"] = self._cursor(cursor)
@@ -255,7 +266,9 @@ class DocmostReadClient:
         return self._run(
             lambda: PageList(
                 **self._cursor_page(
-                    self._post("/api/pages/sidebar-pages", body), Page
+                    self._post("/api/pages/sidebar-pages", body),
+                    Page,
+                    limit=validated_limit,
                 ).model_dump(),
                 root_only=True,
             )
@@ -283,7 +296,9 @@ class DocmostReadClient:
             if validated_cursor is not None:
                 body["cursor"] = validated_cursor
             parsed = self._cursor_page(
-                self._post("/api/pages/sidebar-pages", body, page_scope=True), Page
+                self._post("/api/pages/sidebar-pages", body, page_scope=True),
+                Page,
+                limit=validated_limit,
             )
             return PageList(**parsed.model_dump(), root_only=False)
 
@@ -295,16 +310,21 @@ class DocmostReadClient:
         """List comments for a page through the fixed cursor-paginated endpoint."""
 
         try:
+            validated_limit = self._page_limit(limit)
             body: dict[str, object] = {
                 "pageId": self._identifier(page_id),
-                "limit": self._page_limit(limit),
+                "limit": validated_limit,
             }
             if cursor is not None:
                 body["cursor"] = self._cursor(cursor)
         except ValueError as error:
             return self._page_invalid(error)
         return self._run(
-            lambda: self._cursor_page(self._post("/api/comments", body, page_scope=True), Comment),
+            lambda: self._cursor_page(
+                self._post("/api/comments", body, page_scope=True),
+                Comment,
+                limit=validated_limit,
+            ),
             page_scope=True,
         )
 
@@ -380,7 +400,8 @@ class DocmostReadClient:
             except _ClientFailure as error:
                 return self._partial_create(created, error.code)
             return CreatePageResult(
-                page=created.model_copy(update={"parent": canonical_parent})
+                page=created.model_copy(update={"parent": canonical_parent}),
+                placement_status="nested",
             )
 
         return self._run_write(operation)
@@ -663,17 +684,25 @@ class DocmostReadClient:
             ) from error
 
     def _cursor_page(
-        self, data: dict[str, object], item_type: type[ModelItem]
+        self,
+        data: dict[str, object],
+        item_type: type[ModelItem],
+        *,
+        limit: int,
     ) -> CursorPage[ModelItem]:
         raw_items: object = data["items"] if "items" in data else None
         raw_meta: object = data["meta"] if "meta" in data else {}
         if not isinstance(raw_items, list) or not isinstance(raw_meta, dict):
             raise ValueError("cursor response must contain items and meta")
         items = cast(list[object], raw_items)
+        if len(items) > limit:
+            raise ValueError("cursor response exceeded the requested limit")
         meta = cast(dict[str, object], raw_meta)
         next_cursor = meta.get("nextCursor")
         if next_cursor is not None and not isinstance(next_cursor, str):
             raise ValueError("nextCursor must be a string")
+        if isinstance(next_cursor, str):
+            next_cursor = self._cursor(next_cursor)
         if item_type is Page:
             parsed_items = cast(
                 list[ModelItem],
@@ -884,14 +913,23 @@ class DocmostReadClient:
 
     @staticmethod
     def _partial_create(page: Page, cause: ErrorCode) -> CreatePageResult:
+        placement_unknown = cause is ErrorCode.OUTCOME_UNKNOWN
         return CreatePageResult(
-            page=page.model_copy(update={"parent": None}),
+            page=page if placement_unknown else page.model_copy(update={"parent": None}),
+            placement_status="unknown" if placement_unknown else "root",
             partial_success=True,
             warning=OperationError(
                 code=ErrorCode.PARTIAL_SUCCESS,
-                message=_PARTIAL_CREATE_MESSAGE,
+                message=(
+                    _PARTIAL_CREATE_UNKNOWN_MESSAGE
+                    if placement_unknown
+                    else _PARTIAL_CREATE_MESSAGE
+                ),
                 retryable=False,
-                details={"move_error": cause.value},
+                details={
+                    "move_error": cause.value,
+                    "placement_status": "unknown" if placement_unknown else "root",
+                },
             ),
         )
 

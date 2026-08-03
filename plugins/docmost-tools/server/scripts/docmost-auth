@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Stable, checkout-independent launcher for isolated Docmost authentication.
+set -euo pipefail
+
+DOCMOST_CODEX_ROOT="${CODEX_HOME:-$HOME/.codex}"
+DOCMOST_SECRETS_ROOT="${CODEX_SECRETS_DIR:-$DOCMOST_CODEX_ROOT/secrets}"
+DOCMOST_ENV_FILE="$DOCMOST_SECRETS_ROOT/docmost.env"
+DOCMOST_RUNTIME_PARENT="$DOCMOST_CODEX_ROOT/runtime"
+DOCMOST_RUNTIME_ROOT="$DOCMOST_RUNTIME_PARENT/docmost-tools"
+DOCMOST_AUTH_WRAPPER="$DOCMOST_RUNTIME_ROOT/bin/docmost-auth"
+DOCMOST_AUTH_INTERNAL="$DOCMOST_RUNTIME_ROOT/bin/docmost-auth-internal"
+DOCMOST_RUNTIME_LOCK_HELPER="$DOCMOST_RUNTIME_ROOT/libexec/runtime_lock.py"
+DOCMOST_SYSTEM_PYTHON="$(command -v python3 || true)"
+readonly DOCMOST_CODEX_ROOT DOCMOST_SECRETS_ROOT DOCMOST_ENV_FILE
+readonly DOCMOST_RUNTIME_PARENT DOCMOST_RUNTIME_ROOT DOCMOST_AUTH_WRAPPER DOCMOST_AUTH_INTERNAL
+readonly DOCMOST_RUNTIME_LOCK_HELPER DOCMOST_SYSTEM_PYTHON
+
+fail() {
+  echo "$*" >&2
+  exit 1
+}
+
+file_mode() {
+  local mode
+  if mode="$(stat -f '%Lp' "$1" 2>/dev/null)"; then
+    printf '%s\n' "$mode"
+    return 0
+  fi
+  stat -c '%a' "$1" 2>/dev/null
+}
+
+[ "$#" -eq 1 ] || fail "Usage: docmost-auth login|status|logout"
+[ -n "$DOCMOST_SYSTEM_PYTHON" ] || fail "python3 is required for the Docmost runtime lock"
+[ -d "$DOCMOST_RUNTIME_PARENT" ] && [ ! -L "$DOCMOST_RUNTIME_PARENT" ] || \
+  fail "Docmost runtime is missing or unsafe; rerun the full codex-toolbox setup from its checkout"
+[ -d "$DOCMOST_RUNTIME_ROOT" ] && [ ! -L "$DOCMOST_RUNTIME_ROOT" ] || \
+  fail "Docmost runtime is missing or unsafe; rerun the full codex-toolbox setup from its checkout"
+[ -f "$DOCMOST_RUNTIME_LOCK_HELPER" ] && [ ! -L "$DOCMOST_RUNTIME_LOCK_HELPER" ] || \
+  fail "Docmost runtime lock is missing or unsafe; rerun the full codex-toolbox setup from its checkout"
+if [ "${DOCMOST_RUNTIME_LOCK_MODE:-}" != shared ] || \
+  ! "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER" --validate-fd \
+    --mode shared --root "$DOCMOST_RUNTIME_PARENT"; then
+  exec "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER" \
+    --mode shared --root "$DOCMOST_RUNTIME_PARENT" -- "$DOCMOST_AUTH_WRAPPER" "$@"
+fi
+
+case "$1" in
+  login|status)
+    [ -f "$DOCMOST_ENV_FILE" ] || fail "Missing CODEX_SECRETS_DIR/docmost.env"
+    [ ! -L "$DOCMOST_ENV_FILE" ] || fail "docmost.env must not be a symlink"
+    DOCMOST_ENV_MODE="$(file_mode "$DOCMOST_ENV_FILE")" || \
+      fail "Unable to inspect docmost.env permissions"
+    [ "$DOCMOST_ENV_MODE" = "600" ] || fail "docmost.env must have mode 600"
+    readonly DOCMOST_ENV_MODE
+    CODEX_SECRETS_DIR="$DOCMOST_SECRETS_ROOT"
+    readonly CODEX_SECRETS_DIR
+    export CODEX_SECRETS_DIR
+    set -a
+    # shellcheck disable=SC1090
+    source "$DOCMOST_ENV_FILE"
+    set +a
+    ;;
+  logout)
+    CODEX_SECRETS_DIR="$DOCMOST_SECRETS_ROOT"
+    readonly CODEX_SECRETS_DIR
+    export CODEX_SECRETS_DIR
+    ;;
+  *) fail "Usage: docmost-auth login|status|logout" ;;
+esac
+
+[ -x "$DOCMOST_AUTH_INTERNAL" ] || \
+  fail "Docmost auth runtime is incomplete; rerun the full codex-toolbox setup from its checkout"
+exec "$DOCMOST_AUTH_INTERNAL" "$@"

@@ -1,6 +1,28 @@
 # docmost-tools server
 
-This package provides guarded, browser-session HTTP reads and stable result contracts. The v0.95
-page URL compatibility path derives display slugs from title plus the authoritative `slugId`; search
-uses opaque versioned cursors.
-FastMCP tool registration and all writes remain deliberately out of scope.
+This package provides guarded browser-session HTTP access and stable MCP result contracts. The
+v0.95 page URL compatibility path derives display slugs from title plus the authoritative `slugId`;
+search uses opaque versioned cursors.
+
+The eight reads tolerate additive response fields. The three prompt-gated writes require an explicit
+`DOCMOST_WRITE_PROFILE=v0_95`: page creation uses Markdown import, optional nesting is a separate
+non-retried move, title changes use a disclosed non-atomic timestamp precondition, and comments use
+a conservative Markdown-to-Tiptap converter. Ambiguous write outcomes are never retried. If a
+nesting move has an ambiguous outcome, the created page is returned with
+`placement_status="unknown"` and an explicit read-before-retry warning.
+
+`docmost-smoke` is a setup-only, bounded headless check. It obtains the existing isolated browser
+session once, verifies `current_user`, and lists one page of spaces. It does not expose the cookie,
+continuously synchronize, or monitor the workspace. Only the installed
+`"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login` command opens a
+headed browser.
+
+The Docker contract is opt-in and never targets a configured hosted instance:
+
+```sh
+DOCMOST_RUN_CONTRACT_TESTS=1 uv run --frozen pytest tests/contract/test_v095_contract.py -vv
+```
+
+It launches `docmost/docmost:0.95.0` with isolated PostgreSQL and Redis services under a generated
+Compose project name, creates an ephemeral admin through `/api/auth/setup`, and always tears down
+that exact project's containers and volumes.
