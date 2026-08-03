@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read and normalize one BestBlogs personal brief without retaining content."""
+"""Read and normalize one BestBlogs public or personal brief without retaining content."""
 
 import argparse
 import http.client
