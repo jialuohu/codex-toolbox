@@ -19,7 +19,7 @@ AUTH_WRAPPER="$UV_PROJECT_ENVIRONMENT/bin/docmost-auth"
 RUNTIME_LOCK_HELPER="$UV_PROJECT_ENVIRONMENT/libexec/runtime_lock.py"
 SMOKE_TOOL="$UV_PROJECT_ENVIRONMENT/bin/docmost-smoke"
 LOGIN_COMMAND='CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" "$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login'
-AUTH_REQUIRED_SENTENCE="Authentication required. Close the active task, run \`$LOGIN_COMMAND\`, then start a fresh task or reconnect Docmost."
+AUTH_REQUIRED_SENTENCE='Authentication required. Close the active task, run `CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" "$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login`, then start a fresh task or reconnect Docmost.'
 AUTH_REQUIRED=3
 readonly ROOT SERVER_DIR DOCMOST_CODEX_ROOT CODEX_SECRETS_DIR UV_PROJECT_ENVIRONMENT
 readonly RUNTIME_PARENT ENV_FILE PROFILE_DIR BROWSER_PROFILE_DIR RUNTIME_STAMP

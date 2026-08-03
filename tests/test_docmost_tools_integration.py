@@ -279,6 +279,67 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assert_checker_rejects(mutate, expected)
 
+    def test_setup_checker_rejects_auth_recovery_guidance_regressions(self) -> None:
+        recovery_command = (
+            'CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" '
+            '"$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login'
+        )
+        close_instruction = "Before login or logout, close the active Codex task"
+        fresh_instruction = "After login or logout, start a fresh task or reconnect Docmost"
+
+        def replace_setup(root: Path, old: str, new: str) -> None:
+            path = root / "scripts/setup-docmost-tools.sh"
+            value = path.read_text()
+            self.assertIn(old, value)
+            path.write_text(value.replace(old, new, 1))
+
+        def remove_readme_instruction(root: Path, instruction: str) -> None:
+            path = root / "README.md"
+            value = path.read_text()
+            if recovery_command not in value:
+                old_command = (
+                    '"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/'
+                    'docmost-auth" login'
+                )
+                self.assertIn(old_command, value)
+                value = value.replace(
+                    old_command,
+                    f"{close_instruction}.\n\n{recovery_command}\n\n{fresh_instruction}.",
+                    1,
+                )
+            self.assertIn(instruction, value)
+            path.write_text(value.replace(instruction, "", 1))
+
+        cases = (
+            (
+                lambda root: replace_setup(
+                    root,
+                    recovery_command,
+                    recovery_command.replace("--login", "--status"),
+                ),
+                "Docmost setup must preserve the canonical auth recovery command",
+            ),
+            (
+                lambda root: replace_setup(
+                    root,
+                    "Authentication required. Close the active task",
+                    "Authentication required. Keep the active task open",
+                ),
+                "Docmost setup must preserve the canonical AUTH_REQUIRED sentence",
+            ),
+            (
+                lambda root: remove_readme_instruction(root, close_instruction),
+                "README must tell users to close the active task before Docmost auth changes",
+            ),
+            (
+                lambda root: remove_readme_instruction(root, fresh_instruction),
+                "README must tell users to start a fresh task after Docmost auth changes",
+            ),
+        )
+        for mutate, expected in cases:
+            with self.subTest(expected=expected):
+                self.assert_checker_rejects(mutate, expected)
+
     def test_setup_checker_rejects_a_browser_launch_in_the_stdio_launcher(self) -> None:
         def mutate(root: Path) -> None:
             path = root / "plugins/docmost-tools/.mcp.json"

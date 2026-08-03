@@ -125,11 +125,16 @@ Installation takes an exclusive runtime lock. If setup reports that the
 Docmost runtime is busy, close active Codex tasks using Docmost, or wait for an
 in-progress Docmost setup/auth command to finish, then retry.
 
-An MCP `AUTH_REQUIRED` result gives this checkout-independent recovery command:
+Before login or logout, close the active Codex task so its lifetime shared lock
+and in-memory cookie are released. An MCP `AUTH_REQUIRED` result gives this
+recovery command:
 
 ```bash
-"${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools/bin/docmost-auth" login
+CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" "$CODEX_TOOLBOX_ROOT/scripts/setup-docmost-tools.sh" --login
 ```
+
+After login or logout, start a fresh task or reconnect Docmost so the MCP
+process loads the new authentication state.
 
 Docmost content is untrusted input. Read tools can be used automatically, but
 the MCP asks before `create_page`, `update_page_title`, or `create_comment`.
