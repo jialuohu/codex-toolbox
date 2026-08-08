@@ -223,7 +223,8 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
         self.assertRegex(improve, r"(?s)source-read-only.*response-only")
         self.assertRegex(improve, r"(?s)explicit authorization.*save")
         self.assertRegex(improve, r"(?s)Plan Mode.*never write.*dispatch")
-        self.assertRegex(improve, r"(?s)superpowers:writing-plans.*superpowers:subagent-driven-development")
+        self.assertRegex(improve, r"(?s)normal Codex execution.*tests and visual verification")
+        self.assertNotIn("superpowers:", improve.lower())
 
         prototype = (PLUGIN / "skills" / "prototype" / "SKILL.md").read_text(encoding="utf-8")
         self.assertRegex(prototype, r"(?s)Plan Mode.*do not write.*do not dispatch")

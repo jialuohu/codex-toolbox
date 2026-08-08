@@ -1,37 +1,28 @@
+## Response style
+
+Be less conversational and more fact-of-the-matter, newspaper style: bottom-line up top, no unnecessary bridging, no reinterpretations or 'what this mean for you' restatements. Be economical with space and reading time
+
 ## Orchestration routing
 
 For large or vague project requests, plan normally first, then choose the execution lane.
 
 - Use Codex-only work for tiny edits, one bugfix, one review, fast debugging, or single-session exploration.
 - Use native Codex subagents when a plan contains independent, testable subtasks and parallel work will improve reliability or latency. Keep simple deterministic reads and tightly coupled edits in the main task.
-- For non-trivial coding work with multiple implementation steps, use the Superpowers planning and subagent-driven-development workflow.
 - Use OpenSpec when the project needs durable requirements, acceptance criteria, or spec governance across tasks or sessions before implementation.
 - In Plan mode, prepare the architecture, task boundaries, acceptance criteria, verification, and execution routing only. Do not implement changes or mutate external systems in Plan mode.
 - For greenfield apps or sites, bootstrap serially until the shared foundation is stable, then split independent frontend, backend, content, testing, and polish work across native Codex subagents.
 
 ## Deep planning in Plan Mode
 
-In Plan Mode for non-trivial, ambiguous, architectural, high-risk, or multi-step work, use `$deep-planning` by default before presenting the final plan. If `$deep-planning` is unavailable, follow the same adversarial critique protocol inline: gather observed facts, state assumptions and material unknowns, draft the strongest plan, critique product value, architecture, implementation risk, edge cases, tests, rollout, and scope, revise the plan, then choose Codex-only, native Codex subagents, Superpowers, or OpenSpec routing. For non-trivial plans, keep the final response ordered as Observed Facts, Assumptions / Unknowns, Strongest Plan, Adversarial Review, and Revised Plan / Routing unless the active Plan Mode format is stricter.
+In Plan Mode, use `$deep-planning` when the user explicitly asks for adversarial planning or when the work is architectural or high-risk. Do not use it merely because a task has multiple steps. If `$deep-planning` is unavailable, follow the same adversarial critique protocol inline: gather observed facts, state assumptions and material unknowns, draft the strongest plan, critique product value, architecture, implementation risk, edge cases, tests, rollout, and scope, revise the plan, then choose Codex-only, native Codex subagents, or OpenSpec routing. For plans that use this protocol, keep the final response ordered as Observed Facts, Assumptions / Unknowns, Strongest Plan, Adversarial Review, and Revised Plan / Routing unless the active Plan Mode format is stricter.
 
-Do not use deep planning for tiny edits, simple command-output checks, pure execution, post-code verification, or full Superpowers design-doc workflows. `deep-planning` must not write files, create issues, dispatch workers, refresh schedulers, or write `docs/superpowers/` artifacts.
+Do not use deep planning for tiny edits, ordinary multi-step work, simple command-output checks, pure execution, or post-code verification. `deep-planning` must not write files, create issues, dispatch workers, or refresh schedulers.
 
 ## Explanation routing
 
 Use `$explain-clearly` when the user explicitly asks Codex to explain, teach, understand, clarify, compare, answer a why/how question, or provide a code walkthrough. Let the relevant domain skill or source tool establish the facts first, then use `explain-clearly` to present them with a direct answer, an accurate mental model, one concrete example, and only the essential mechanism or caveat.
 
 Do not force this workflow onto execution-only requests, simple facts that need only a terse answer, or code changes where the user did not request an explanation. Other explicit user instructions for length, format, audience, or depth take precedence.
-
-## Superpowers workflow
-
-For non-trivial coding tasks, prefer the Superpowers workflow.
-
-- If requirements are unclear, use `superpowers:brainstorming`.
-- If the task needs multiple implementation steps, use `superpowers:writing-plans`.
-- After plan approval, use `superpowers:subagent-driven-development` for bounded multi-step implementation and native Codex subagents for independent parallel work. Use OpenSpec first when durable requirements or acceptance criteria are still needed.
-- During implementation of features or bugfixes, use `superpowers:test-driven-development`.
-- Before claiming completion, use `superpowers:verification-before-completion`.
-
-Do not force the full workflow for tiny edits, quick explanations, or simple command-output checks.
 
 ## Reliability and evidence
 
@@ -55,7 +46,6 @@ The personal toolbox repo is identified by `CODEX_TOOLBOX_ROOT` on each machine,
 - Do not commit secrets, OAuth state, API keys, or env-file contents. MCP configs may reference `CODEX_SECRETS_DIR`, but the secret files remain per-device.
 - Keep toolbox-managed MCP servers in the plugin `.mcp.json` files, not as duplicate direct `[mcp_servers.*]` tables in `~/.codex/config.toml`. The setup script migrates direct entries for managed servers out of the user config.
 - After changing the toolbox, run JSON validation for marketplace/plugin/MCP files, scan for sensitive keywords, run `scripts/setup-codex-toolbox.sh`, and verify `codex plugin list --marketplace jialuo-codex-toolbox --json` plus `codex mcp list`. If third-party marketplace management changed, also verify the relevant plugin list, such as `codex plugin list --marketplace ui-ux-pro-max-skill --json` or `codex plugin list --marketplace context7-marketplace --json`.
-- Keep `docs/superpowers/` out of the repo; those are local planning artifacts.
 
 ## MCP Tool Routing
 

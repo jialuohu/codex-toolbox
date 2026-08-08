@@ -530,23 +530,20 @@ Build a polished business website for a small AI consulting agency.
 
 The global instructions let Codex plan first and then select the narrowest
 execution lane. Tiny changes stay in the main task. Independent, testable work
-can run through native Codex subagents, while non-trivial coding uses the
-Superpowers planning and subagent-driven-development workflow. Use OpenSpec
-when durable requirements, acceptance criteria, or spec governance should be
-settled before implementation.
+can run through native Codex subagents. Other implementation work uses normal
+Codex behavior. Use OpenSpec when durable requirements, acceptance criteria, or
+spec governance should be settled before implementation.
 
 ## Deep Planning
 
-Plan Mode uses `$deep-planning` by default for non-trivial work before the
-final plan is presented. The skill is a critique gate: it gathers observed
-facts, states assumptions and material unknowns, drafts the strongest plan,
-challenges product value, architecture, implementation risk, edge cases, tests,
-rollout, and scope, then chooses Codex-only, native Codex subagents,
-Superpowers, or OpenSpec routing.
-
-Superpowers remains the design and implementation workflow. Deep Planning does
-not write `docs/superpowers/` artifacts, create issues, dispatch workers, or
-perform verification after code changes.
+Plan Mode uses `$deep-planning` when the user explicitly requests adversarial
+planning or when work is architectural or high-risk. Ordinary multi-step work
+uses normal Codex planning. The skill is a read-only critique gate: it gathers
+observed facts, states assumptions and material unknowns, drafts the strongest
+plan, challenges product value, architecture, implementation risk, edge cases,
+tests, rollout, and scope, then chooses Codex-only, native Codex subagents, or
+OpenSpec routing. It does not create artifacts, dispatch workers, or perform
+verification after code changes.
 
 ## Explain Clearly
 

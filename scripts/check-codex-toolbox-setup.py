@@ -2005,15 +2005,19 @@ def main() -> None:
     )
     require(GLOBAL_AGENTS.exists(), "canonical global AGENTS file must exist")
     require(
-        GLOBAL_AGENTS.read_text().startswith("## Orchestration routing\n"),
-        "canonical global AGENTS file must start with orchestration routing",
+        GLOBAL_AGENTS.read_text().startswith("## Response style\n"),
+        "canonical global AGENTS file must start with response style",
     )
     global_agents_text = GLOBAL_AGENTS.read_text()
     global_agents_normalized = " ".join(global_agents_text.split())
+    require(
+        "Be less conversational and more fact-of-the-matter, newspaper style: bottom-line up top, no unnecessary bridging, no reinterpretations or 'what this mean for you' restatements. Be economical with space and reading time"
+        in global_agents_text,
+        "global AGENTS must preserve the configured response style",
+    )
     for expected in (
         "native Codex subagents",
         "independent, testable subtasks",
-        "Superpowers planning and subagent-driven-development workflow",
         "durable requirements, acceptance criteria",
         "Plan mode",
         "Do not implement changes or mutate external systems in Plan mode",
@@ -2122,7 +2126,7 @@ def main() -> None:
         "draft the strongest plan",
         "OpenSpec",
         "must not write files",
-        "docs/superpowers/",
+        "ordinary multi-step work",
     ):
         require(expected in global_agents_text, f"global AGENTS deep planning must mention {expected}")
     for expected in (
@@ -2138,10 +2142,9 @@ def main() -> None:
             expected in global_agents_text,
             f"global AGENTS explanation routing must mention {expected}",
         )
-    require(
-        "## Superpowers workflow" in global_agents_text,
-        "canonical global AGENTS file must preserve the Superpowers workflow section",
-    )
+    require("Superpowers" not in global_agents_text, "global AGENTS must not route through Superpowers")
+    require("superpowers:" not in global_agents_text, "global AGENTS must not invoke Superpowers skills")
+    require("Superpowers" not in readme_text, "README must not document Superpowers routing")
     require(SYNC_AGENTS_SCRIPT.exists(), "setup must include an AGENTS sync script")
     sync_agents_script = SYNC_AGENTS_SCRIPT.read_text()
     require(
@@ -2999,13 +3002,16 @@ def main() -> None:
         "Adversarial Review",
         "Revised Plan / Routing",
         "Do not edit or write files",
-        "docs/superpowers/",
+        "ordinary multi-step work",
         "Codex-only",
         "Native Codex subagents",
-        "Superpowers",
         "OpenSpec",
     ):
         require(expected in deep_planning_text, f"deep-planning skill must mention {expected}")
+    require(
+        "Superpowers" not in deep_planning_text and "superpowers:" not in deep_planning_text,
+        "deep-planning skill must not route through Superpowers",
+    )
     deep_planning_openai = DEEP_PLANNING_OPENAI.read_text()
     for expected in (
         'display_name: "Deep Planning"',

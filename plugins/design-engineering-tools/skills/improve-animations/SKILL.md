@@ -21,6 +21,5 @@ Do not save plan files, dispatch executors, install dependencies, run formatters
 or modify source by default. In Plan Mode or a user-requested read-only task,
 never write plan files or dispatch executors. An explicit authorization from the
 user is required before the skill can save a plan. After explicit authorization to implement, route
-planning through `superpowers:writing-plans` and execution through
-`superpowers:subagent-driven-development`, including its TDD and verification
-requirements; this skill does not execute the plan itself.
+the task back to normal Codex execution with tests and visual verification
+appropriate to the scope; this skill does not execute the plan itself.

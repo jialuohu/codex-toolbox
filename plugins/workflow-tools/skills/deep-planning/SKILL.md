@@ -1,6 +1,6 @@
 ---
 name: deep-planning
-description: Use when Codex is in Plan Mode for non-trivial, ambiguous, architectural, multi-step, high-risk, or orchestration-bound work; when reviewing a plan before coding; or when the user asks to think deeply, challenge assumptions, do adversarial planning, or choose between Codex-only, native Codex subagents, Superpowers, and OpenSpec. Do not use for tiny edits, simple command-output checks, pure execution, post-code verification, or full Superpowers design-doc workflows.
+description: Use when Codex is in Plan Mode for architectural or high-risk work; when reviewing a plan before coding; or when the user asks to think deeply, challenge assumptions, or do adversarial planning. Do not use merely because work has multiple steps, or for tiny edits, simple command-output checks, pure execution, or post-code verification.
 ---
 
 # Deep Planning
@@ -13,13 +13,11 @@ adversarial critique gate, not an execution workflow.
 - Do not edit or write files, create issues, dispatch workers, refresh
   schedulers, mutate external systems, or run implementation steps from this
   skill.
-- Do not write `docs/superpowers/` artifacts. Superpowers owns design docs,
-  implementation plans, execution, TDD, and completion verification.
-- Do not replace `superpowers:brainstorming` when the user wants a full
-  collaborative design/spec workflow. Use this skill only to critique and route
-  Plan Mode work.
-- For tiny edits, simple command-output checks, pure execution, or post-code
-  verification, skip the full protocol and answer directly.
+- Keep the critique in the response; do not create persistent planning or
+  design artifacts.
+- For ordinary multi-step work, tiny edits, simple command-output checks, pure
+  execution, or post-code verification, skip the full protocol and use normal
+  Codex behavior.
 
 ## Protocol
 
@@ -35,7 +33,7 @@ adversarial critique gate, not an execution workflow.
 5. **Revise or block.** Fix the plan inline when the answer is inferable. Ask
    the user only when a material unknown remains.
 6. **Route execution.** End by choosing the next lane: Codex-only, native Codex
-   subagents, Superpowers, or OpenSpec.
+   subagents, or OpenSpec.
 
 ## Adversarial Review Axes
 
@@ -60,9 +58,6 @@ adversarial critique gate, not an execution workflow.
   or single-session exploration.
 - **Native Codex subagents:** Use when the revised plan has independent,
   testable subtasks that can run in parallel within the current task.
-- **Superpowers:** Use when the task needs collaborative brainstorming, a
-  written implementation plan, TDD execution, subagent-driven development, or
-  verification-before-completion.
 - **OpenSpec:** Use when the work benefits from durable requirements,
   acceptance criteria, or multi-agent/spec governance before implementation.
 
