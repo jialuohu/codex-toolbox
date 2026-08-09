@@ -52,8 +52,8 @@ class PaperReviewWorkflowTests(unittest.TestCase):
             "Research/PaperReview",
             "Never send a private title",
             "Do not invoke `$paper-library-intake`",
-            "download_attachment",
-            "release_attachment_download",
+            "docmost_download_attachment",
+            "docmost_release_attachment_download",
             "in a `finally` path",
             "zotero_attachment.py attach",
             "zotero_read_pdf_pages",
@@ -72,7 +72,7 @@ class PaperReviewWorkflowTests(unittest.TestCase):
             "Remove names, paper-specific summaries",
             "Stop on multiple exact-title children",
             "Paper Review ID:",
-            "create_page",
+            "docmost_create_page",
         ):
             self.assertIn(expected, text)
 
@@ -110,7 +110,7 @@ class PaperReviewWorkflowTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json").read_text()
         )
-        self.assertEqual(manifest["version"], "0.7.0")
+        self.assertEqual(manifest["version"], "0.7.1")
         self.assertTrue(
             any(
                 "$paper-review-sync" in prompt

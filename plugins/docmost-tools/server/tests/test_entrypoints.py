@@ -6,7 +6,7 @@ import pytest
 def test_package_imports_without_initializing_network_or_browser() -> None:
     from docmost_tools import __version__, server
 
-    assert __version__ == "0.2.0"
+    assert __version__ == "0.3.0"
     assert callable(server.main)
 
 

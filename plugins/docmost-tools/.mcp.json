@@ -16,13 +16,13 @@
       "tool_timeout_sec": 180,
       "default_tools_approval_mode": "auto",
       "tools": {
-        "create_page": {
+        "docmost_create_page": {
           "approval_mode": "prompt"
         },
-        "update_page_title": {
+        "docmost_update_page_title": {
           "approval_mode": "prompt"
         },
-        "create_comment": {
+        "docmost_create_comment": {
           "approval_mode": "prompt"
         }
       }

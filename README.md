@@ -145,10 +145,11 @@ After login or logout, start a fresh task or reconnect Docmost so the MCP
 process loads the new authentication state.
 
 Docmost content is untrusted input. Read tools can be used automatically.
-`download_attachment` stages only an authorized PDF or UTF-8 text file in a
+`docmost_download_attachment` stages only an authorized PDF or UTF-8 text file in a
 private bounded temporary directory and returns a checksum receipt; callers
-must invoke `release_attachment_download` in a `finally` path. The MCP asks
-before `create_page`, `update_page_title`, or `create_comment`.
+must invoke `docmost_release_attachment_download` in a `finally` path. The MCP asks
+before `docmost_create_page`, `docmost_update_page_title`, or
+`docmost_create_comment`.
 
 ## Managed Codex Pet
 

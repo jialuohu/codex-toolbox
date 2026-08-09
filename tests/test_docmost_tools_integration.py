@@ -75,19 +75,19 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(uv, "uv is required for the installed launcher integration test")
         assert uv is not None
         expected_tools = {
-            "get_current_user",
-            "list_spaces",
-            "get_space",
-            "search_pages",
-            "get_page",
-            "list_pages",
-            "list_child_pages",
-            "get_comments",
-            "download_attachment",
-            "release_attachment_download",
-            "create_page",
-            "update_page_title",
-            "create_comment",
+            "docmost_get_current_user",
+            "docmost_list_spaces",
+            "docmost_get_space",
+            "docmost_search_pages",
+            "docmost_get_page",
+            "docmost_list_pages",
+            "docmost_list_child_pages",
+            "docmost_get_comments",
+            "docmost_download_attachment",
+            "docmost_release_attachment_download",
+            "docmost_create_page",
+            "docmost_update_page_title",
+            "docmost_create_comment",
         }
 
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -270,12 +270,14 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         def mutate(root: Path) -> None:
             path = root / "plugins/docmost-tools/.mcp.json"
             value = json.loads(path.read_text())
-            value["mcpServers"]["docmost"]["tools"]["create_page"]["approval_mode"] = "auto"
+            value["mcpServers"]["docmost"]["tools"]["docmost_create_page"][
+                "approval_mode"
+            ] = "auto"
             path.write_text(json.dumps(value, indent=2) + "\n")
 
         self.assert_checker_rejects(
             mutate,
-            "docmost create_page must require approval",
+            "docmost_create_page must require approval",
         )
 
     def test_setup_checker_rejects_an_extra_docmost_mcp_server(self) -> None:

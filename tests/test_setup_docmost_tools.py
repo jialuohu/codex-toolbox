@@ -1053,7 +1053,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.create_private_browser_profile()
         mcp_path = self.installed_plugin_root / ".mcp.json"
         mcp = json.loads(mcp_path.read_text())
-        mcp["mcpServers"]["docmost"]["tools"]["create_page"][
+        mcp["mcpServers"]["docmost"]["tools"]["docmost_create_page"][
             "approval_mode"
         ] = "auto"
         mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")

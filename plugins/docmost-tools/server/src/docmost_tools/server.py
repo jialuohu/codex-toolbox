@@ -240,13 +240,13 @@ def create_server(
                 )
             )
 
-    @server.tool(annotations=_READ_ONLY_ANNOTATIONS)
+    @server.tool(name="docmost_get_current_user", annotations=_READ_ONLY_ANNOTATIONS)
     def get_current_user() -> ToolResult:  # pyright: ignore[reportUnusedFunction]
         """Get the authenticated Docmost user and workspace."""
 
         return execute(lambda read_client: read_client.current_user())
 
-    @server.tool(annotations=_READ_ONLY_ANNOTATIONS)
+    @server.tool(name="docmost_list_spaces", annotations=_READ_ONLY_ANNOTATIONS)
     def list_spaces(  # pyright: ignore[reportUnusedFunction]
         limit: StandardLimit = 50,
         cursor: OptionalCursor = None,
@@ -255,13 +255,13 @@ def create_server(
 
         return execute(lambda read_client: read_client.list_spaces(limit=limit, cursor=cursor))
 
-    @server.tool(annotations=_READ_ONLY_ANNOTATIONS)
+    @server.tool(name="docmost_get_space", annotations=_READ_ONLY_ANNOTATIONS)
     def get_space(space_id: Identifier) -> ToolResult:  # pyright: ignore[reportUnusedFunction]
         """Get one Docmost space by its opaque identifier."""
 
         return execute(lambda read_client: read_client.get_space(space_id))
 
-    @server.tool(annotations=_READ_ONLY_ANNOTATIONS)
+    @server.tool(name="docmost_search_pages", annotations=_READ_ONLY_ANNOTATIONS)
     def search_pages(  # pyright: ignore[reportUnusedFunction]
         query: Query,
         space_id: OptionalIdentifier = None,
@@ -276,7 +276,7 @@ def create_server(
             )
         )
 
-    @server.tool(annotations=_READ_ONLY_ANNOTATIONS)
+    @server.tool(name="docmost_get_page", annotations=_READ_ONLY_ANNOTATIONS)
     def get_page(  # pyright: ignore[reportUnusedFunction]
         page_id: Identifier,
         offset: Offset = 0,
@@ -288,7 +288,7 @@ def create_server(
             lambda read_client: read_client.get_page(page_id, offset=offset, max_chars=max_chars)
         )
 
-    @server.tool(annotations=_READ_ONLY_ANNOTATIONS)
+    @server.tool(name="docmost_list_pages", annotations=_READ_ONLY_ANNOTATIONS)
     def list_pages(  # pyright: ignore[reportUnusedFunction]
         space_id: Identifier,
         limit: StandardLimit = 50,
@@ -300,7 +300,7 @@ def create_server(
             lambda read_client: read_client.list_pages(space_id, limit=limit, cursor=cursor)
         )
 
-    @server.tool(annotations=_READ_ONLY_ANNOTATIONS)
+    @server.tool(name="docmost_list_child_pages", annotations=_READ_ONLY_ANNOTATIONS)
     def list_child_pages(  # pyright: ignore[reportUnusedFunction]
         page_id: Identifier,
         limit: StandardLimit = 50,
@@ -312,7 +312,7 @@ def create_server(
             lambda read_client: read_client.list_child_pages(page_id, limit=limit, cursor=cursor)
         )
 
-    @server.tool(annotations=_READ_ONLY_ANNOTATIONS)
+    @server.tool(name="docmost_get_comments", annotations=_READ_ONLY_ANNOTATIONS)
     def get_comments(  # pyright: ignore[reportUnusedFunction]
         page_id: Identifier,
         limit: StandardLimit = 50,
@@ -324,7 +324,7 @@ def create_server(
             lambda read_client: read_client.list_comments(page_id, limit=limit, cursor=cursor)
         )
 
-    @server.tool(annotations=_DOWNLOAD_ANNOTATIONS)
+    @server.tool(name="docmost_download_attachment", annotations=_DOWNLOAD_ANNOTATIONS)
     def download_attachment(  # pyright: ignore[reportUnusedFunction]
         page_id: Identifier,
         attachment_id: Identifier,
@@ -335,7 +335,10 @@ def create_server(
             lambda read_client: read_client.download_attachment(page_id, attachment_id)
         )
 
-    @server.tool(annotations=_RELEASE_ANNOTATIONS)
+    @server.tool(
+        name="docmost_release_attachment_download",
+        annotations=_RELEASE_ANNOTATIONS,
+    )
     def release_attachment_download(  # pyright: ignore[reportUnusedFunction]
         download_token: DownloadToken,
     ) -> ToolResult:
@@ -345,7 +348,7 @@ def create_server(
             lambda read_client: read_client.release_attachment_download(download_token)
         )
 
-    @server.tool(annotations=_WRITE_ANNOTATIONS)
+    @server.tool(name="docmost_create_page", annotations=_WRITE_ANNOTATIONS)
     def create_page(  # pyright: ignore[reportUnusedFunction]
         space_id: Identifier,
         title: Title,
@@ -363,7 +366,7 @@ def create_server(
             )
         )
 
-    @server.tool(annotations=_REPLACEMENT_WRITE_ANNOTATIONS)
+    @server.tool(name="docmost_update_page_title", annotations=_REPLACEMENT_WRITE_ANNOTATIONS)
     def update_page_title(  # pyright: ignore[reportUnusedFunction]
         page_id: Identifier,
         title: Title,
@@ -379,7 +382,7 @@ def create_server(
             )
         )
 
-    @server.tool(annotations=_WRITE_ANNOTATIONS)
+    @server.tool(name="docmost_create_comment", annotations=_WRITE_ANNOTATIONS)
     def create_comment(  # pyright: ignore[reportUnusedFunction]
         page_id: Identifier,
         markdown: CommentMarkdown,

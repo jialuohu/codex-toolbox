@@ -24,7 +24,7 @@ Resolve the `Jialuo Hu` space and exact `Paper Review` parent by live IDs. List 
 
 Use this strict order:
 
-1. **Assignment form:** When the assignment row has exactly one `.txt` review-form attachment, call Docmost `download_attachment`, require UTF-8 `text/plain`, read the staged file, and release its token in `finally`. Use its blank headings, instructions, fields, and unselected options. Remove reviewer names and email addresses, readiness/status values, selected scores or recommendations, and any filled prose before page creation; retain the assigned paper number/title only when they are fixed form context.
+1. **Assignment form:** When the assignment row has exactly one `.txt` review-form attachment, call Docmost `docmost_download_attachment`, require UTF-8 `text/plain`, read the staged file, and release its token with `docmost_release_attachment_download` in `finally`. Use its blank headings, instructions, fields, and unselected options. Remove reviewer names and email addresses, readiness/status values, selected scores or recommendations, and any filled prose before page creation; retain the assigned paper number/title only when they are fixed form context.
 2. **Same venue and year:** Search the `Review Dojo` space for the matching venue/year review hierarchy, including work by other reviewers; candidates need not be children of the user's target parent. Map candidates to historical assignment rows or managed identities and inspect only pages from the same normalized venue and year.
 3. **Fallback asset:** Use `assets/conference-review-template.md` for a conference or `assets/journal-review-template.md` for a journal when no safe venue template exists.
 
@@ -42,6 +42,6 @@ Prepend this managed block to the chosen blank template:
 > Confidential review workspace — do not share outside the review process.
 ```
 
-Create the page with Docmost `create_page`, the exact `Jialuo Hu` space ID, exact Paper Number title, and exact Paper Review parent ID. Do not create comments or use title updates as a substitute.
+Create the page with Docmost `docmost_create_page`, the exact `Jialuo Hu` space ID, exact Paper Number title, and exact Paper Review parent ID. Do not create comments or use title updates as a substitute.
 
 Read the created page back and verify its title, parent, identity marker, assignment link, and blank template structure. Return `reused`, `created`, `ambiguous`, `partial`, or `failed`, with the page ID and canonical Docmost URL. If nesting partially fails, preserve the returned page receipt and report repair-needed; do not create another page.

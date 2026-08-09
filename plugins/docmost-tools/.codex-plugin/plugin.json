@@ -1,6 +1,6 @@
 {
   "name": "docmost-tools",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Browser-authenticated MCP integration for a private Docmost instance.",
   "mcpServers": "./.mcp.json",
   "author": {

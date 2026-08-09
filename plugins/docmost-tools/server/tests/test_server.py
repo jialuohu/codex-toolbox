@@ -119,19 +119,19 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             tools = await session.list_tools()
 
         assert [tool.name for tool in tools.tools] == [
-            "get_current_user",
-            "list_spaces",
-            "get_space",
-            "search_pages",
-            "get_page",
-            "list_pages",
-            "list_child_pages",
-            "get_comments",
-            "download_attachment",
-            "release_attachment_download",
-            "create_page",
-            "update_page_title",
-            "create_comment",
+            "docmost_get_current_user",
+            "docmost_list_spaces",
+            "docmost_get_space",
+            "docmost_search_pages",
+            "docmost_get_page",
+            "docmost_list_pages",
+            "docmost_list_child_pages",
+            "docmost_get_comments",
+            "docmost_download_attachment",
+            "docmost_release_attachment_download",
+            "docmost_create_page",
+            "docmost_update_page_title",
+            "docmost_create_comment",
         ]
         read_annotations = {
             "readOnlyHint": True,
@@ -163,26 +163,29 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
         for tool in tools.tools:
             assert tool.annotations is not None
             expected_annotations = {
-                "download_attachment": download_annotations,
-                "release_attachment_download": release_annotations,
-                "create_page": write_annotations,
-                "create_comment": write_annotations,
-                "update_page_title": replacement_annotations,
+                "docmost_download_attachment": download_annotations,
+                "docmost_release_attachment_download": release_annotations,
+                "docmost_create_page": write_annotations,
+                "docmost_create_comment": write_annotations,
+                "docmost_update_page_title": replacement_annotations,
             }.get(tool.name, read_annotations)
             assert (
                 tool.annotations.model_dump(by_alias=True, exclude_none=True)
                 == expected_annotations
             )
-        assert by_name["list_spaces"].inputSchema["properties"]["limit"] == {
+        assert by_name["docmost_list_spaces"].inputSchema["properties"]["limit"] == {
             "default": 50,
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",
             "type": "integer",
         }
-        assert by_name["search_pages"].inputSchema["properties"]["limit"]["maximum"] == 50
-        assert by_name["get_page"].inputSchema["properties"]["offset"]["minimum"] == 0
-        assert by_name["get_page"].inputSchema["properties"]["max_chars"] == {
+        assert (
+            by_name["docmost_search_pages"].inputSchema["properties"]["limit"]["maximum"]
+            == 50
+        )
+        assert by_name["docmost_get_page"].inputSchema["properties"]["offset"]["minimum"] == 0
+        assert by_name["docmost_get_page"].inputSchema["properties"]["max_chars"] == {
             "default": 50000,
             "maximum": 100000,
             "minimum": 1,
@@ -190,32 +193,35 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "type": "integer",
         }
         for tool_name, field in (
-            ("get_space", "space_id"),
-            ("get_page", "page_id"),
-            ("search_pages", "query"),
-            ("list_spaces", "cursor"),
+            ("docmost_get_space", "space_id"),
+            ("docmost_get_page", "page_id"),
+            ("docmost_search_pages", "query"),
+            ("docmost_list_spaces", "cursor"),
         ):
             schema = by_name[tool_name].inputSchema["properties"][field]
             if "anyOf" in schema:
                 schema = schema["anyOf"][0]
             assert schema["minLength"] == 1
             assert schema["maxLength"] in {512, 1024}
-        assert by_name["create_page"].inputSchema["properties"]["title"]["maxLength"] == 250
         assert (
-            by_name["create_page"].inputSchema["properties"]["markdown"]["maxLength"]
+            by_name["docmost_create_page"].inputSchema["properties"]["title"]["maxLength"]
+            == 250
+        )
+        assert (
+            by_name["docmost_create_page"].inputSchema["properties"]["markdown"]["maxLength"]
             == 1_000_000
         )
         assert (
-            by_name["create_comment"].inputSchema["properties"]["markdown"]["maxLength"]
+            by_name["docmost_create_comment"].inputSchema["properties"]["markdown"]["maxLength"]
             == 20_000
         )
         assert (
-            by_name["update_page_title"].inputSchema["properties"]["expected_updated_at"][
-                "maxLength"
-            ]
+            by_name["docmost_update_page_title"].inputSchema["properties"][
+                "expected_updated_at"
+            ]["maxLength"]
             == 128
         )
-        assert by_name["release_attachment_download"].inputSchema["properties"][
+        assert by_name["docmost_release_attachment_download"].inputSchema["properties"][
             "download_token"
         ] == {
             "maxLength": 128,
@@ -248,32 +254,32 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
             create_server(client=client)
         ) as session:
             calls: list[tuple[str, dict[str, object]]] = [
-                ("get_current_user", {}),
-                ("list_spaces", {}),
-                ("get_space", {"space_id": "space-1"}),
-                ("search_pages", {"query": "flow matching"}),
-                ("get_page", {"page_id": "page-1"}),
-                ("list_pages", {"space_id": "space-1"}),
-                ("list_child_pages", {"page_id": "page-1"}),
-                ("get_comments", {"page_id": "page-1"}),
+                ("docmost_get_current_user", {}),
+                ("docmost_list_spaces", {}),
+                ("docmost_get_space", {"space_id": "space-1"}),
+                ("docmost_search_pages", {"query": "flow matching"}),
+                ("docmost_get_page", {"page_id": "page-1"}),
+                ("docmost_list_pages", {"space_id": "space-1"}),
+                ("docmost_list_child_pages", {"page_id": "page-1"}),
+                ("docmost_get_comments", {"page_id": "page-1"}),
                 (
-                    "download_attachment",
+                    "docmost_download_attachment",
                     {"page_id": "page-1", "attachment_id": "attachment-1"},
                 ),
-                ("release_attachment_download", {"download_token": "A" * 32}),
+                ("docmost_release_attachment_download", {"download_token": "A" * 32}),
                 (
-                    "create_page",
+                    "docmost_create_page",
                     {"space_id": "space-1", "title": "Page", "markdown": "Body"},
                 ),
                 (
-                    "update_page_title",
+                    "docmost_update_page_title",
                     {
                         "page_id": "page-1",
                         "title": "Renamed",
                         "expected_updated_at": "2026-01-01T00:00:00Z",
                     },
                 ),
-                ("create_comment", {"page_id": "page-1", "markdown": "A note"}),
+                ("docmost_create_comment", {"page_id": "page-1", "markdown": "A note"}),
             ]
             for name, arguments in calls:
                 response = await session.call_tool(name, arguments)
@@ -320,7 +326,7 @@ def test_protocol_serializes_startup_errors_as_stable_untrusted_results() -> Non
         async with create_connected_server_and_client_session(
             create_server(startup_error=error)
         ) as session:
-            response = await session.call_tool("get_current_user", {})
+            response = await session.call_tool("docmost_get_current_user", {})
 
         assert response.isError is False
         assert response.structuredContent == {
@@ -346,7 +352,7 @@ def test_protocol_serializes_operation_forbidden_as_a_stable_untrusted_result() 
         async with create_connected_server_and_client_session(
             create_server(client=ForbiddenOperationClient())
         ) as session:
-            response = await session.call_tool("get_current_user", {})
+            response = await session.call_tool("docmost_get_current_user", {})
 
         assert response.isError is False
         assert response.structuredContent == {
@@ -378,7 +384,7 @@ def test_invalid_runtime_config_returns_a_sanitized_startup_error_over_the_proto
         async with create_connected_server_and_client_session(
             create_server(startup_error=runtime.startup_error)
         ) as session:
-            response = await session.call_tool("get_current_user", {})
+            response = await session.call_tool("docmost_get_current_user", {})
 
         assert response.structuredContent is not None
         assert response.structuredContent["error"]["code"] == "configuration_invalid"
@@ -394,9 +400,9 @@ def test_protocol_maps_valid_optional_arguments_for_every_constrained_tool_famil
             create_server(client=client)
         ) as session:
             requests: list[tuple[str, dict[str, object]]] = [
-                ("list_spaces", {"limit": 100, "cursor": "space.cursor"}),
+                ("docmost_list_spaces", {"limit": 100, "cursor": "space.cursor"}),
                 (
-                    "search_pages",
+                    "docmost_search_pages",
                     {
                         "query": "serving",
                         "space_id": "space-1",
@@ -404,14 +410,17 @@ def test_protocol_maps_valid_optional_arguments_for_every_constrained_tool_famil
                         "cursor": "search.cursor",
                     },
                 ),
-                ("get_page", {"page_id": "page-1", "offset": 10, "max_chars": 100000}),
-                ("list_pages", {"space_id": "space-1", "limit": 1, "cursor": "root.cursor"}),
+                ("docmost_get_page", {"page_id": "page-1", "offset": 10, "max_chars": 100000}),
                 (
-                    "list_child_pages",
+                    "docmost_list_pages",
+                    {"space_id": "space-1", "limit": 1, "cursor": "root.cursor"},
+                ),
+                (
+                    "docmost_list_child_pages",
                     {"page_id": "page-1", "limit": 100, "cursor": "child.cursor"},
                 ),
                 (
-                    "get_comments",
+                    "docmost_get_comments",
                     {"page_id": "page-1", "limit": 1, "cursor": "comment.cursor"},
                 ),
             ]
@@ -441,31 +450,34 @@ def test_protocol_rejects_invalid_tool_arguments_before_operation_results() -> N
     async def exercise() -> None:
         client = FakeReadClient()
         invalid_requests: list[tuple[str, dict[str, object]]] = [
-            ("list_spaces", {"limit": 0}),
-            ("list_spaces", {"limit": 101}),
-            ("search_pages", {"query": "query", "limit": 0}),
-            ("search_pages", {"query": "query", "limit": 51}),
-            ("get_page", {"page_id": "page-1", "offset": -1}),
-            ("get_page", {"page_id": "page-1", "max_chars": 0}),
-            ("get_page", {"page_id": "page-1", "max_chars": 100001}),
-            ("get_space", {"space_id": ""}),
-            ("search_pages", {"query": ""}),
-            ("search_pages", {"query": "query", "space_id": ""}),
-            ("list_spaces", {"cursor": "not allowed!"}),
-            ("list_spaces", {"cursor": "cursor\n"}),
-            ("create_page", {"space_id": "space-1", "title": "", "markdown": "Body"}),
+            ("docmost_list_spaces", {"limit": 0}),
+            ("docmost_list_spaces", {"limit": 101}),
+            ("docmost_search_pages", {"query": "query", "limit": 0}),
+            ("docmost_search_pages", {"query": "query", "limit": 51}),
+            ("docmost_get_page", {"page_id": "page-1", "offset": -1}),
+            ("docmost_get_page", {"page_id": "page-1", "max_chars": 0}),
+            ("docmost_get_page", {"page_id": "page-1", "max_chars": 100001}),
+            ("docmost_get_space", {"space_id": ""}),
+            ("docmost_search_pages", {"query": ""}),
+            ("docmost_search_pages", {"query": "query", "space_id": ""}),
+            ("docmost_list_spaces", {"cursor": "not allowed!"}),
+            ("docmost_list_spaces", {"cursor": "cursor\n"}),
             (
-                "create_page",
+                "docmost_create_page",
+                {"space_id": "space-1", "title": "", "markdown": "Body"},
+            ),
+            (
+                "docmost_create_page",
                 {"space_id": "space-1", "title": "Page", "markdown": "x" * 1_000_001},
             ),
             (
-                "update_page_title",
+                "docmost_update_page_title",
                 {"page_id": "page-1", "title": "Renamed", "expected_updated_at": ""},
             ),
-            ("create_comment", {"page_id": "page-1", "markdown": ""}),
-            ("create_comment", {"page_id": "page-1", "markdown": "x" * 20_001}),
+            ("docmost_create_comment", {"page_id": "page-1", "markdown": ""}),
+            ("docmost_create_comment", {"page_id": "page-1", "markdown": "x" * 20_001}),
             (
-                "release_attachment_download",
+                "docmost_release_attachment_download",
                 {"download_token": "contains spaces and is invalid"},
             ),
         ]

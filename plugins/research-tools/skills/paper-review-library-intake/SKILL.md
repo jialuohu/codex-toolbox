@@ -9,7 +9,7 @@ Converge one private assignment into one Zotero parent and one readable PDF. Kee
 
 ## Authority and boundaries
 
-- Treat `check` as read-only. Do not call `download_attachment`, create a parent, change collection membership, or attach a file.
+- Treat `check` as read-only. Do not call `docmost_download_attachment`, create a parent, change collection membership, or attach a file.
 - Treat an explicit paper-review `sync`, `repair`, `import`, or `save` request as authority only for the named assignment, its PDF, and `Research/PaperReview` membership.
 - Never send a private title, paper number, PDF, abstract, author list, review form, or review text to Paper Search, web search, Firecrawl, or another public service.
 - Do not invoke `$paper-library-intake`: its public-discovery and `Research/ReadLater` behavior is intentionally different.
@@ -42,7 +42,7 @@ Docmost Assignment: <assignment-url>
 ## Import workflow
 
 1. Resolve the live personal Zotero library and the exact existing collection path `Research/PaperReview`. Do not create or substitute a same-named leaf elsewhere.
-2. Call Docmost `download_attachment(page_id, attachment_id)`. Require `application/pdf`, record its token, path, basename, byte count, and SHA-256, and reject any ambiguous row-to-attachment mapping before this call.
+2. Call Docmost `docmost_download_attachment(page_id, attachment_id)`. Require `application/pdf`, record its token, path, basename, byte count, and SHA-256, and reject any ambiguous row-to-attachment mapping before this call.
 3. Inspect only the staged private PDF locally. Use the assignment title, venue, year, and number as authoritative. Add creators only when the first page clearly names them; leave anonymous or unavailable creators blank. Do not infer identities.
 4. Run the redacted storage detector from the existing `$paper-library-intake` helper without printing the environment:
 
@@ -63,7 +63,7 @@ Docmost Assignment: <assignment-url>
    ```
 
    For official Zotero Storage, use the same helper's `attach-cloud` command. Never fall back between configured backends. Reuse a broken child only when the helper's receipt authoritatively identifies it.
-7. Always call Docmost `release_attachment_download(download_token)` in a `finally` path, even after an import or verification failure. Never copy the staged PDF into the repository or an Obsidian vault.
+7. Always call Docmost `docmost_release_attachment_download(download_token)` in a `finally` path, even after an import or verification failure. Never copy the staged PDF into the repository or an Obsidian vault.
 
 If a parent write succeeds but attachment work fails, keep the parent and return `repair-needed` with its key and any helper-provided child key. Do not create another parent on retry.
 

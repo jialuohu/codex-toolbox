@@ -468,7 +468,11 @@ if (
     or transport_args != configured_args
 ):
     fail("Installed Docmost MCP launcher is unexpected")
-expected_writes = {"create_page", "update_page_title", "create_comment"}
+expected_writes = {
+    "docmost_create_page",
+    "docmost_update_page_title",
+    "docmost_create_comment",
+}
 write_tools = configured.get("tools")
 if (
     configured.get("default_tools_approval_mode") != "auto"

@@ -188,8 +188,8 @@ def test_protocol_tool_calls_never_reopen_the_browser_after_bootstrap(tmp_path: 
         async with create_connected_server_and_client_session(
             create_server(client=cast(Any, runtime.client), startup_error=runtime.startup_error)
         ) as session:
-            current_user = await session.call_tool("get_current_user", {})
-            spaces = await session.call_tool("list_spaces", {})
+            current_user = await session.call_tool("docmost_get_current_user", {})
+            spaces = await session.call_tool("docmost_list_spaces", {})
             assert current_user.isError is False
             assert current_user.structuredContent is not None
             assert current_user.structuredContent["ok"] is True

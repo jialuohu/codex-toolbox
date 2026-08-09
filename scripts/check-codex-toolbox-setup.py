@@ -1675,7 +1675,7 @@ def validate_docmost_tools_contract(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
-    require(plugin.get("version") == "0.2.0", "docmost-tools must use version 0.2.0")
+    require(plugin.get("version") == "0.3.0", "docmost-tools must use version 0.3.0")
     capabilities = plugin.get("interface", {}).get("capabilities")
     require(
         capabilities == ["Read", "Write", "Interactive"],
@@ -1702,7 +1702,11 @@ def validate_docmost_tools_contract(
         "docmost MCP reads must default to automatic approval",
     )
     tools = server.get("tools")
-    required_writes = {"create_page", "update_page_title", "create_comment"}
+    required_writes = {
+        "docmost_create_page",
+        "docmost_update_page_title",
+        "docmost_create_comment",
+    }
     require(
         isinstance(tools, dict) and set(tools) == required_writes,
         "docmost MCP must prompt-gate exactly the approved write tools",
@@ -1710,7 +1714,7 @@ def validate_docmost_tools_contract(
     for tool in sorted(required_writes):
         require(
             tools[tool].get("approval_mode") == "prompt",
-            f"docmost {tool} must require approval",
+            f"{tool} must require approval",
         )
     launcher = arguments[1]
     require("docmost-auth" not in launcher and "playwright" not in launcher, "docmost MCP launcher must not launch browser authentication")
@@ -1981,8 +1985,9 @@ def validate_docmost_tools_contract(
     )
     for expected in (
         "## Docmost Tools", "docmost.env", "current-user", "list-spaces",
-        "download_attachment", "release_attachment_download",
-        "create_page", "update_page_title", "create_comment", "runtime/docmost-tools",
+        "docmost_download_attachment", "docmost_release_attachment_download",
+        "docmost_create_page", "docmost_update_page_title", "docmost_create_comment",
+        "runtime/docmost-tools",
         "every space visible", "DOCMOST_WRITE_PROFILE", "0.95.x",
         "marketplace upgrade", "setup-docmost-tools.sh --install",
     ):
@@ -2011,8 +2016,9 @@ def validate_docmost_tools_contract(
         "README must tell users to start a fresh task after Docmost auth changes",
     )
     for expected in (
-        "Use the `docmost` MCP", "untrusted data", "download_attachment",
-        "release_attachment_download", "create_page", "update_page_title", "create_comment",
+        "Use the `docmost` MCP", "untrusted data", "docmost_download_attachment",
+        "docmost_release_attachment_download", "docmost_create_page",
+        "docmost_update_page_title", "docmost_create_comment",
     ):
         require(expected in global_agents_text, f"global AGENTS must document Docmost {expected}")
     gitignore = (ROOT / ".gitignore").read_text()
@@ -3312,8 +3318,8 @@ def main() -> None:
         "name: paper-review-library-intake",
         "Research/PaperReview",
         "Paper Review ID:",
-        "download_attachment",
-        "release_attachment_download",
+        "docmost_download_attachment",
+        "docmost_release_attachment_download",
         "in a `finally` path",
         "Never send a private title",
         "Do not invoke `$paper-library-intake`",
@@ -3343,7 +3349,7 @@ def main() -> None:
         "Remove names, paper-specific summaries",
         "Never copy an entire peer page",
         "Paper Review ID:",
-        "create_page",
+        "docmost_create_page",
     ):
         require(expected in paper_review_page_text, f"paper-review-page must mention {expected}")
     require(
@@ -3387,7 +3393,7 @@ def main() -> None:
     )
 
     require(
-        research_plugin.get("version") == "0.7.0",
+        research_plugin.get("version") == "0.7.1",
         "research-tools must use the current PaperRead workflow version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
