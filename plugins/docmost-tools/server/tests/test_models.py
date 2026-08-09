@@ -52,6 +52,9 @@ def test_error_codes_are_stable_wire_values() -> None:
     assert ErrorCode.OUTCOME_UNKNOWN.value == "outcome_unknown"
     assert ErrorCode.PARTIAL_SUCCESS.value == "partial_success"
     assert ErrorCode.INVALID_MARKDOWN.value == "invalid_markdown"
+    assert ErrorCode.ATTACHMENT_UNAVAILABLE.value == "attachment_unavailable"
+    assert ErrorCode.UNSUPPORTED_ATTACHMENT.value == "unsupported_attachment"
+    assert ErrorCode.ATTACHMENT_TOO_LARGE.value == "attachment_too_large"
     assert ErrorCode.UPSTREAM_ERROR.value == "upstream_error"
     assert ErrorCode.INTERNAL_ERROR.value == "internal_error"
 

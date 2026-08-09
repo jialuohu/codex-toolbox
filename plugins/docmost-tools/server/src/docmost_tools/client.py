@@ -14,9 +14,13 @@ from urllib.parse import quote
 import httpx
 from pydantic import BaseModel, SecretStr, ValidationError
 
+from docmost_tools.attachment_download import AttachmentDownloadStore, AttachmentStageError
 from docmost_tools.comment_markdown import MarkdownValidationError, markdown_to_tiptap
 from docmost_tools.config import DocmostSettings, WriteProfile
 from docmost_tools.models import (
+    AttachmentDownload,
+    AttachmentInfo,
+    AttachmentRelease,
     Comment,
     CreatePageResult,
     CurrentUser,
@@ -51,6 +55,9 @@ _MARKDOWN_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _MAX_TITLE_CHARS = 250
 _MAX_PAGE_MARKDOWN_CHARS = 1_000_000
 _MAX_COMMENT_MARKDOWN_CHARS = 20_000
+_MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
+_DOWNLOAD_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{32,128}\Z")
+_FILENAME_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 _OUTCOME_UNKNOWN_MESSAGE = "OUTCOME_UNKNOWN: search or read Docmost before retrying this write."
 _PARTIAL_CREATE_MESSAGE = (
     "Page was created at the space root, but nesting failed. "
@@ -101,6 +108,7 @@ class DocmostReadClient:
             trust_env=False,
             timeout=httpx.Timeout(connect=5.0, read=20.0, write=20.0, pool=5.0),
         )
+        self._downloads = AttachmentDownloadStore(max_bytes=_MAX_ATTACHMENT_BYTES)
         self._version_result: OperationResult[VersionInfo] | None = None
 
     def __repr__(self) -> str:
@@ -118,7 +126,10 @@ class DocmostReadClient:
     def close(self) -> None:
         """Deterministically release the underlying pooled HTTP resources."""
 
-        self._http.close()
+        try:
+            self._downloads.close()
+        finally:
+            self._http.close()
 
     @property
     def read_profile(self) -> Literal["v0_95", "generic"]:
@@ -327,6 +338,73 @@ class DocmostReadClient:
             page_scope=True,
         )
 
+    def download_attachment(
+        self, page_id: str, attachment_id: str
+    ) -> OperationResult[AttachmentDownload]:
+        """Stage one authorized PDF or UTF-8 text attachment in private local storage."""
+
+        try:
+            validated_page_id = self._identifier(page_id)
+            validated_attachment_id = self._identifier(attachment_id)
+        except ValueError as error:
+            return cast(OperationResult[AttachmentDownload], self._page_invalid(error))
+
+        def operation() -> AttachmentDownload:
+            canonical_page_id = self._page_id_from_data(
+                self._post(
+                    "/api/pages/info",
+                    {"pageId": validated_page_id},
+                    page_scope=True,
+                )
+            )
+            try:
+                metadata = AttachmentInfo.model_validate(
+                    self._post(
+                        "/api/files/info",
+                        {"attachmentId": validated_attachment_id},
+                        page_scope=True,
+                    )
+                )
+            except _ClientFailure as error:
+                if error.code in {ErrorCode.PAGE_UNAVAILABLE, ErrorCode.FORBIDDEN}:
+                    raise _ClientFailure(
+                        ErrorCode.ATTACHMENT_UNAVAILABLE,
+                        "ATTACHMENT_UNAVAILABLE",
+                    ) from error
+                raise
+            if (
+                metadata.id != validated_attachment_id
+                or metadata.page_id != canonical_page_id
+                or metadata.type != "file"
+            ):
+                raise _ClientFailure(
+                    ErrorCode.ATTACHMENT_UNAVAILABLE,
+                    "ATTACHMENT_UNAVAILABLE",
+                )
+            filename, media_type = self._validated_attachment_metadata(metadata)
+            if metadata.file_size > _MAX_ATTACHMENT_BYTES:
+                raise _ClientFailure(
+                    ErrorCode.ATTACHMENT_TOO_LARGE,
+                    "ATTACHMENT_TOO_LARGE",
+                )
+            return self._download_and_stage(metadata, filename=filename, media_type=media_type)
+
+        return self._run(operation, page_scope=False)
+
+    def release_attachment_download(
+        self, download_token: str
+    ) -> OperationResult[AttachmentRelease]:
+        """Release one managed temporary download; repeated release is safe."""
+
+        if _DOWNLOAD_TOKEN_PATTERN.fullmatch(download_token) is None:
+            return OperationResult[AttachmentRelease].failure(
+                ErrorCode.CONFIGURATION_INVALID,
+                "download_token is invalid",
+            )
+        return OperationResult[AttachmentRelease].success(
+            AttachmentRelease(released=self._downloads.release(download_token))
+        )
+
     def create_page(
         self,
         space_id: str,
@@ -502,6 +580,86 @@ class DocmostReadClient:
             return self._validate_response(response, page_scope=page_scope)
         raise AssertionError("unreachable retry loop")
 
+    def _download_and_stage(
+        self,
+        metadata: AttachmentInfo,
+        *,
+        filename: str,
+        media_type: Literal["application/pdf", "text/plain"],
+    ) -> AttachmentDownload:
+        try:
+            with self._http.stream(
+                "GET",
+                self._attachment_endpoint(metadata.id, filename),
+                headers=self._cookie_headers(),
+            ) as response:
+                if response.status_code == 401:
+                    raise _ClientFailure(ErrorCode.AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE)
+                if response.status_code in {403, 404}:
+                    raise _ClientFailure(
+                        ErrorCode.ATTACHMENT_UNAVAILABLE,
+                        "ATTACHMENT_UNAVAILABLE",
+                    )
+                if 300 <= response.status_code < 400:
+                    raise _ClientFailure(
+                        ErrorCode.ATTACHMENT_UNAVAILABLE,
+                        "ATTACHMENT_UNAVAILABLE",
+                    )
+                if response.status_code != 200:
+                    raise _ClientFailure(
+                        ErrorCode.UPSTREAM_ERROR,
+                        "Docmost attachment download failed",
+                        retryable=response.status_code in _TRANSIENT_STATUS_CODES,
+                    )
+
+                response_type = self._normalized_media_type(response.headers.get("content-type"))
+                if response_type != media_type:
+                    raise _ClientFailure(
+                        ErrorCode.UNSUPPORTED_ATTACHMENT,
+                        "UNSUPPORTED_ATTACHMENT",
+                    )
+                content_length = response.headers.get("content-length")
+                if content_length is not None:
+                    if not content_length.isdecimal():
+                        raise _ClientFailure(
+                            ErrorCode.ATTACHMENT_UNAVAILABLE,
+                            "ATTACHMENT_UNAVAILABLE",
+                        )
+                    declared_size = int(content_length)
+                    if declared_size > _MAX_ATTACHMENT_BYTES:
+                        raise _ClientFailure(
+                            ErrorCode.ATTACHMENT_TOO_LARGE,
+                            "ATTACHMENT_TOO_LARGE",
+                        )
+                    if declared_size != metadata.file_size:
+                        raise _ClientFailure(
+                            ErrorCode.ATTACHMENT_UNAVAILABLE,
+                            "ATTACHMENT_UNAVAILABLE",
+                        )
+                try:
+                    return self._downloads.stage(
+                        filename=filename,
+                        media_type=media_type,
+                        chunks=response.iter_bytes(),
+                        expected_size=metadata.file_size,
+                    )
+                except AttachmentStageError as error:
+                    if error.kind == "too_large":
+                        raise _ClientFailure(
+                            ErrorCode.ATTACHMENT_TOO_LARGE,
+                            "ATTACHMENT_TOO_LARGE",
+                        ) from error
+                    raise _ClientFailure(
+                        ErrorCode.UNSUPPORTED_ATTACHMENT,
+                        "UNSUPPORTED_ATTACHMENT",
+                    ) from error
+        except httpx.TransportError as error:
+            raise _ClientFailure(
+                ErrorCode.UPSTREAM_ERROR,
+                "Docmost attachment download failed",
+                retryable=True,
+            ) from error
+
     def _post_write_json(
         self,
         path: str,
@@ -563,10 +721,11 @@ class DocmostReadClient:
     ) -> dict[str, object]:
         if response.status_code == 401:
             raise _ClientFailure(ErrorCode.AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE)
-        if response.status_code == 403:
+        if response.status_code in {403, 404}:
             if page_scope:
                 raise _ClientFailure(ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE)
-            raise _ClientFailure(ErrorCode.FORBIDDEN, FORBIDDEN_MESSAGE)
+            if response.status_code == 403:
+                raise _ClientFailure(ErrorCode.FORBIDDEN, FORBIDDEN_MESSAGE)
         if 300 <= response.status_code < 400:
             raise self._unavailable(page_scope, "Docmost read request was redirected")
         if response.status_code != 200:
@@ -858,6 +1017,7 @@ class DocmostReadClient:
             "/api/pages/info",
             "/api/pages/sidebar-pages",
             "/api/comments",
+            "/api/files/info",
             "/api/pages/import",
             "/api/pages/move",
             "/api/pages/update",
@@ -865,6 +1025,15 @@ class DocmostReadClient:
         }:
             raise ValueError("Docmost endpoint is not allowlisted")
         return f"{self._origin()}{path}"
+
+    def _attachment_endpoint(self, attachment_id: str, filename: str) -> str:
+        identifier = self._identifier(attachment_id)
+        if self._safe_filename(filename) != filename:
+            raise ValueError("attachment filename is invalid")
+        return (
+            f"{self._origin()}/api/files/{quote(identifier, safe='')}/"
+            f"{quote(filename, safe='')}"
+        )
 
     def _cookie_headers(self) -> dict[str, str]:
         return {
@@ -938,6 +1107,51 @@ class DocmostReadClient:
         if value < 1 or value > _MAX_PAGE_SIZE:
             raise ValueError(f"limit must be between 1 and {_MAX_PAGE_SIZE}")
         return value
+
+    @staticmethod
+    def _safe_filename(value: str) -> str:
+        if (
+            not value
+            or len(value) > 512
+            or value in {".", ".."}
+            or "/" in value
+            or "\\" in value
+            or _FILENAME_CONTROL_PATTERN.search(value)
+        ):
+            raise ValueError("attachment filename is invalid")
+        return value
+
+    @staticmethod
+    def _normalized_media_type(value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.split(";", 1)[0].strip().lower()
+
+    @classmethod
+    def _validated_attachment_metadata(
+        cls, metadata: AttachmentInfo
+    ) -> tuple[str, Literal["application/pdf", "text/plain"]]:
+        try:
+            filename = cls._safe_filename(metadata.file_name)
+        except ValueError as error:
+            raise _ClientFailure(
+                ErrorCode.UNSUPPORTED_ATTACHMENT,
+                "UNSUPPORTED_ATTACHMENT",
+            ) from error
+        extension = metadata.file_ext.lower()
+        mime_type = cls._normalized_media_type(metadata.mime_type)
+        if (
+            filename.lower().endswith(".pdf")
+            and extension == ".pdf"
+            and mime_type == "application/pdf"
+        ):
+            return filename, "application/pdf"
+        if filename.lower().endswith(".txt") and extension == ".txt" and mime_type == "text/plain":
+            return filename, "text/plain"
+        raise _ClientFailure(
+            ErrorCode.UNSUPPORTED_ATTACHMENT,
+            "UNSUPPORTED_ATTACHMENT",
+        )
 
     @staticmethod
     def _unavailable(page_scope: bool, message: str, *, retryable: bool = False) -> _ClientFailure:

@@ -21,6 +21,9 @@ class ErrorCode(StrEnum):
     OUTCOME_UNKNOWN = "outcome_unknown"
     PARTIAL_SUCCESS = "partial_success"
     INVALID_MARKDOWN = "invalid_markdown"
+    ATTACHMENT_UNAVAILABLE = "attachment_unavailable"
+    UNSUPPORTED_ATTACHMENT = "unsupported_attachment"
+    ATTACHMENT_TOO_LARGE = "attachment_too_large"
     UPSTREAM_ERROR = "upstream_error"
     INTERNAL_ERROR = "internal_error"
 
@@ -196,3 +199,36 @@ class VersionInfo(_DocmostModel):
     """The version signal used solely for read-profile selection."""
 
     current_version: str | None = Field(default=None, alias="currentVersion")
+
+
+class AttachmentInfo(_DocmostModel):
+    """Private attachment metadata used to validate a requested download."""
+
+    id: str
+    file_name: str = Field(alias="fileName")
+    file_size: int = Field(alias="fileSize", ge=0)
+    file_ext: str = Field(alias="fileExt")
+    mime_type: str = Field(alias="mimeType")
+    type: str
+    page_id: str = Field(alias="pageId")
+
+
+class AttachmentDownload(BaseModel):
+    """A private temporary attachment snapshot plus its integrity receipt."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    download_token: str = Field(min_length=32, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    local_path: str = Field(min_length=1)
+    filename: str = Field(min_length=1, max_length=512)
+    media_type: Literal["application/pdf", "text/plain"]
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class AttachmentRelease(BaseModel):
+    """Idempotent cleanup result for one temporary download token."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    released: bool

@@ -1,7 +1,7 @@
 {
   "name": "research-tools",
-  "version": "0.6.2",
-  "description": "Research skills and MCP servers for PaperRead drafts and reviews, paper-library intake, Zotero-linked Todoist reading tasks, public paper search, clean web-page extraction, quality-first local document extraction, and source-backed LLM Wiki maintenance.",
+  "version": "0.7.0",
+  "description": "Research skills and MCP servers for PaperRead drafts and reviews, private paper-review assignment sync, paper-library intake, Zotero-linked Todoist reading tasks, public paper search, clean web-page extraction, quality-first local document extraction, and source-backed LLM Wiki maintenance.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -10,9 +10,9 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Research Tools",
-    "description": "Create and review PaperRead notes, manage paper intake and linked reading tasks, and use source-backed research tools.",
-    "shortDescription": "PaperRead draft and review, paper intake, Zotero-linked Todoist reading, document, and LLM Wiki tools.",
-    "longDescription": "Research Tools packages lightweight PaperRead draft and source-backed review workflows for Obsidian notes, Zotero-first paper-library intake, Zotero-linked Todoist reading-task planning, paper-search MCP, Zotero MCP, Defuddle web extraction, quality-first local MinerU document extraction, and the Research LLM Wiki workflow for source-backed Obsidian research synthesis.",
+    "description": "Create and review PaperRead notes, synchronize private review assignments, manage paper intake and linked reading tasks, and use source-backed research tools.",
+    "shortDescription": "PaperRead, private paper-review sync, paper intake, Todoist reading, document, and LLM Wiki tools.",
+    "longDescription": "Research Tools packages lightweight PaperRead draft and source-backed review workflows for Obsidian notes, confidential Docmost-to-Zotero-to-Todoist paper-review reconciliation, Zotero-first public paper-library intake, Zotero-linked Todoist reading-task planning, paper-search MCP, Zotero MCP, Defuddle web extraction, quality-first local MinerU document extraction, and the Research LLM Wiki workflow for source-backed Obsidian research synthesis.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -20,7 +20,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use $paper-read-draft, $paper-read-review, $paper-library-intake, or $zotero-todoist-reading-tasks.",
+      "Use $paper-read-draft, $paper-read-review, $paper-review-sync, $paper-library-intake, or $zotero-todoist-reading-tasks.",
       "Extract a complex local document with checksum-verified MinerU outputs.",
       "Use the Research LLM Wiki to ingest, query, or lint my research vault wiki."
     ]

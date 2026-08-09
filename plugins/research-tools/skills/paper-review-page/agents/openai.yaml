@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Review Page"
+  short_description: "Create confidential review pages from blank forms"
+  default_prompt: "Use $paper-review-page to prepare a blank Docmost page for an assigned paper."

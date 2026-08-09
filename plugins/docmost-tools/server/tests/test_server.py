@@ -67,6 +67,16 @@ class FakeReadClient:
     ) -> OperationResult[dict[str, object]]:
         return self._result("list_comments", page_id, limit=limit, cursor=cursor)
 
+    def download_attachment(
+        self, page_id: str, attachment_id: str
+    ) -> OperationResult[dict[str, object]]:
+        return self._result("download_attachment", page_id, attachment_id)
+
+    def release_attachment_download(
+        self, download_token: str
+    ) -> OperationResult[dict[str, object]]:
+        return self._result("release_attachment_download", download_token)
+
     def create_page(
         self,
         space_id: str,
@@ -117,6 +127,8 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "list_pages",
             "list_child_pages",
             "get_comments",
+            "download_attachment",
+            "release_attachment_download",
             "create_page",
             "update_page_title",
             "create_comment",
@@ -137,20 +149,29 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             **write_annotations,
             "destructiveHint": True,
         }
+        download_annotations = {
+            **read_annotations,
+            "idempotentHint": False,
+        }
+        release_annotations = {
+            "readOnlyHint": False,
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        }
         by_name = {tool.name: tool for tool in tools.tools}
         for tool in tools.tools:
             assert tool.annotations is not None
+            expected_annotations = {
+                "download_attachment": download_annotations,
+                "release_attachment_download": release_annotations,
+                "create_page": write_annotations,
+                "create_comment": write_annotations,
+                "update_page_title": replacement_annotations,
+            }.get(tool.name, read_annotations)
             assert (
                 tool.annotations.model_dump(by_alias=True, exclude_none=True)
-                == (
-                    replacement_annotations
-                    if tool.name == "update_page_title"
-                    else (
-                        read_annotations
-                        if tool.name not in {"create_page", "create_comment"}
-                        else write_annotations
-                    )
-                )
+                == expected_annotations
             )
         assert by_name["list_spaces"].inputSchema["properties"]["limit"] == {
             "default": 50,
@@ -194,6 +215,15 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             ]
             == 128
         )
+        assert by_name["release_attachment_download"].inputSchema["properties"][
+            "download_token"
+        ] == {
+            "maxLength": 128,
+            "minLength": 32,
+            "pattern": "^[A-Za-z0-9_-]{32,128}$",
+            "title": "Download Token",
+            "type": "string",
+        }
 
     anyio.run(exercise)
 
@@ -226,6 +256,11 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
                 ("list_pages", {"space_id": "space-1"}),
                 ("list_child_pages", {"page_id": "page-1"}),
                 ("get_comments", {"page_id": "page-1"}),
+                (
+                    "download_attachment",
+                    {"page_id": "page-1", "attachment_id": "attachment-1"},
+                ),
+                ("release_attachment_download", {"download_token": "A" * 32}),
                 (
                     "create_page",
                     {"space_id": "space-1", "title": "Page", "markdown": "Body"},
@@ -260,6 +295,8 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
             ("list_pages", ("space-1",), {"limit": 50, "cursor": None}),
             ("list_child_pages", ("page-1",), {"limit": 50, "cursor": None}),
             ("list_comments", ("page-1",), {"limit": 50, "cursor": None}),
+            ("download_attachment", ("page-1", "attachment-1"), {}),
+            ("release_attachment_download", ("A" * 32,), {}),
             (
                 "create_page",
                 ("space-1", "Page", "Body"),
@@ -427,6 +464,10 @@ def test_protocol_rejects_invalid_tool_arguments_before_operation_results() -> N
             ),
             ("create_comment", {"page_id": "page-1", "markdown": ""}),
             ("create_comment", {"page_id": "page-1", "markdown": "x" * 20_001}),
+            (
+                "release_attachment_download",
+                {"download_token": "contains spaces and is invalid"},
+            ),
         ]
         async with create_connected_server_and_client_session(
             create_server(client=client)

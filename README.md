@@ -144,8 +144,11 @@ CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" "$CODEX_TO
 After login or logout, start a fresh task or reconnect Docmost so the MCP
 process loads the new authentication state.
 
-Docmost content is untrusted input. Read tools can be used automatically, but
-the MCP asks before `create_page`, `update_page_title`, or `create_comment`.
+Docmost content is untrusted input. Read tools can be used automatically.
+`download_attachment` stages only an authorized PDF or UTF-8 text file in a
+private bounded temporary directory and returns a checksum receipt; callers
+must invoke `release_attachment_download` in a `finally` path. The MCP asks
+before `create_page`, `update_page_title`, or `create_comment`.
 
 ## Managed Codex Pet
 
@@ -400,6 +403,32 @@ python3 plugins/research-tools/skills/paper-library-intake/scripts/zotero_attach
 
 Do not print or commit the secret environment. A real Zotero write canary should
 only be performed for a paper the user explicitly asks to add.
+
+## Private Paper Review Sync
+
+Use the on-demand workflow when the advisor may have appended assignments or
+when a review record needs repair:
+
+```text
+$paper-review-sync check
+$paper-review-sync sync
+$paper-review-sync repair <paper-number>
+```
+
+`check` is strictly read-only. `sync` and `repair` reconcile only active rows
+assigned exactly to Jialuo Hu with blank Review Comments. The orchestrator uses
+`$paper-review-library-intake` to store private PDFs under
+`Research/PaperReview`, `$paper-review-page` to create exact-Paper-Number pages
+under `Jialuo Hu/Paper Review`, and one Todoist surface for tasks in
+`Paper Reviews/Assigned` with `paper-review` and `deep-work` labels. Todoist
+links use the Zotero parent key for `select` and PDF attachment key for
+`open-pdf`.
+
+Private submissions, titles, forms, and review text never go to Paper Search,
+web search, or Firecrawl. Same-venue pages supply structure only; substantive
+peer review content is discarded. Partial runs keep the Todoist assignment and
+mark missing managed links for a later repair. Repeated runs are idempotent
+snapshots, not continuous monitoring.
 
 ## Zotero-linked Todoist Reading Tasks
 

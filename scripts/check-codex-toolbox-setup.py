@@ -58,6 +58,37 @@ PAPER_LIBRARY_INTAKE_OPENAI = PAPER_LIBRARY_INTAKE_SKILL.parent / "agents" / "op
 PAPER_LIBRARY_ATTACHMENT = (
     PAPER_LIBRARY_INTAKE_SKILL.parent / "scripts" / "zotero_attachment.py"
 )
+PAPER_REVIEW_LIBRARY_INTAKE_SKILL = (
+    ROOT
+    / "plugins"
+    / "research-tools"
+    / "skills"
+    / "paper-review-library-intake"
+    / "SKILL.md"
+)
+PAPER_REVIEW_LIBRARY_INTAKE_OPENAI = (
+    PAPER_REVIEW_LIBRARY_INTAKE_SKILL.parent / "agents" / "openai.yaml"
+)
+PAPER_REVIEW_PAGE_SKILL = (
+    ROOT / "plugins" / "research-tools" / "skills" / "paper-review-page" / "SKILL.md"
+)
+PAPER_REVIEW_PAGE_OPENAI = PAPER_REVIEW_PAGE_SKILL.parent / "agents" / "openai.yaml"
+PAPER_REVIEW_CONFERENCE_TEMPLATE = (
+    PAPER_REVIEW_PAGE_SKILL.parent / "assets" / "conference-review-template.md"
+)
+PAPER_REVIEW_JOURNAL_TEMPLATE = (
+    PAPER_REVIEW_PAGE_SKILL.parent / "assets" / "journal-review-template.md"
+)
+PAPER_REVIEW_PAGE_STRUCTURE = (
+    PAPER_REVIEW_PAGE_SKILL.parent / "scripts" / "template_structure.py"
+)
+PAPER_REVIEW_SYNC_SKILL = (
+    ROOT / "plugins" / "research-tools" / "skills" / "paper-review-sync" / "SKILL.md"
+)
+PAPER_REVIEW_SYNC_OPENAI = PAPER_REVIEW_SYNC_SKILL.parent / "agents" / "openai.yaml"
+PAPER_REVIEW_SYNC_CONTRACT = (
+    PAPER_REVIEW_SYNC_SKILL.parent / "scripts" / "paper_review_contract.py"
+)
 ZOTERO_TODOIST_READING_TASKS_SKILL = (
     ROOT
     / "plugins"
@@ -1644,6 +1675,7 @@ def validate_docmost_tools_contract(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
+    require(plugin.get("version") == "0.2.0", "docmost-tools must use version 0.2.0")
     capabilities = plugin.get("interface", {}).get("capabilities")
     require(
         capabilities == ["Read", "Write", "Interactive"],
@@ -1949,6 +1981,7 @@ def validate_docmost_tools_contract(
     )
     for expected in (
         "## Docmost Tools", "docmost.env", "current-user", "list-spaces",
+        "download_attachment", "release_attachment_download",
         "create_page", "update_page_title", "create_comment", "runtime/docmost-tools",
         "every space visible", "DOCMOST_WRITE_PROFILE", "0.95.x",
         "marketplace upgrade", "setup-docmost-tools.sh --install",
@@ -1978,7 +2011,8 @@ def validate_docmost_tools_contract(
         "README must tell users to start a fresh task after Docmost auth changes",
     )
     for expected in (
-        "Use the `docmost` MCP", "untrusted data", "create_page", "update_page_title", "create_comment",
+        "Use the `docmost` MCP", "untrusted data", "download_attachment",
+        "release_attachment_download", "create_page", "update_page_title", "create_comment",
     ):
         require(expected in global_agents_text, f"global AGENTS must document Docmost {expected}")
     gitignore = (ROOT / ".gitignore").read_text()
@@ -2076,6 +2110,20 @@ def main() -> None:
         require(
             expected in global_agents_normalized,
             f"global AGENTS paper intake routing must mention {expected}",
+        )
+    for expected in (
+        "$paper-review-sync",
+        "$paper-review-library-intake",
+        "$paper-review-page",
+        "Review Dojo/Review Assignments",
+        "Research/PaperReview",
+        "Jialuo Hu/Paper Review",
+        "strictly read-only",
+        "not continuous monitoring",
+    ):
+        require(
+            expected in global_agents_normalized,
+            f"global AGENTS paper-review routing must mention {expected}",
         )
     for expected in (
         "$zotero-todoist-reading-tasks",
@@ -2217,6 +2265,19 @@ def main() -> None:
         PAPER_LIBRARY_ATTACHMENT.exists(),
         "paper-library-intake must include the WebDAV attachment helper",
     )
+    for path, message in (
+        (PAPER_REVIEW_LIBRARY_INTAKE_SKILL, "research-tools must include paper-review-library-intake"),
+        (PAPER_REVIEW_LIBRARY_INTAKE_OPENAI, "paper-review-library-intake must include OpenAI metadata"),
+        (PAPER_REVIEW_PAGE_SKILL, "research-tools must include paper-review-page"),
+        (PAPER_REVIEW_PAGE_OPENAI, "paper-review-page must include OpenAI metadata"),
+        (PAPER_REVIEW_CONFERENCE_TEMPLATE, "paper-review-page must include a conference fallback"),
+        (PAPER_REVIEW_JOURNAL_TEMPLATE, "paper-review-page must include a journal fallback"),
+        (PAPER_REVIEW_PAGE_STRUCTURE, "paper-review-page must include its structure helper"),
+        (PAPER_REVIEW_SYNC_SKILL, "research-tools must include paper-review-sync"),
+        (PAPER_REVIEW_SYNC_OPENAI, "paper-review-sync must include OpenAI metadata"),
+        (PAPER_REVIEW_SYNC_CONTRACT, "paper-review-sync must include its contract helper"),
+    ):
+        require(path.exists(), message)
     require(
         PAPER_READ_DRAFT_SKILL.exists(),
         "research-tools must include paper-read-draft skill",
@@ -2398,6 +2459,18 @@ def main() -> None:
             expected in readme_text,
             f"README Zotero-Todoist workflow must mention {expected}",
         )
+    for expected in (
+        "## Private Paper Review Sync",
+        "$paper-review-sync check",
+        "$paper-review-sync sync",
+        "$paper-review-sync repair",
+        "$paper-review-library-intake",
+        "$paper-review-page",
+        "Research/PaperReview",
+        "Paper Reviews/Assigned",
+        "not continuous monitoring",
+    ):
+        require(expected in readme_text, f"README paper-review workflow must mention {expected}")
     for expected in (
         "Todoist Task Planning",
         "$todoist-task-planning",
@@ -3233,8 +3306,88 @@ def main() -> None:
         "attachment_operation_failed",
     ):
         require(expected in attachment_text, f"paper attachment helper must mention {expected}")
+
+    paper_review_library_text = PAPER_REVIEW_LIBRARY_INTAKE_SKILL.read_text()
+    for expected in (
+        "name: paper-review-library-intake",
+        "Research/PaperReview",
+        "Paper Review ID:",
+        "download_attachment",
+        "release_attachment_download",
+        "in a `finally` path",
+        "Never send a private title",
+        "Do not invoke `$paper-library-intake`",
+        "zotero_attachment.py attach",
+        "zotero_read_pdf_pages",
+        "zotero://select/library/items/<PARENT_KEY>",
+        "zotero://open-pdf/library/items/<ATTACHMENT_KEY>",
+    ):
+        require(
+            expected in paper_review_library_text,
+            f"paper-review-library-intake must mention {expected}",
+        )
     require(
-        research_plugin.get("version") == "0.6.2",
+        "$paper-review-library-intake" in PAPER_REVIEW_LIBRARY_INTAKE_OPENAI.read_text(),
+        "paper-review-library-intake metadata must expose the skill trigger",
+    )
+
+    paper_review_page_text = PAPER_REVIEW_PAGE_SKILL.read_text()
+    for expected in (
+        "name: paper-review-page",
+        "Jialuo Hu/Paper Review",
+        "Paper Number exactly",
+        "Assignment form",
+        "Same venue and year",
+        "Fallback asset",
+        "template_structure.py",
+        "Remove names, paper-specific summaries",
+        "Never copy an entire peer page",
+        "Paper Review ID:",
+        "create_page",
+    ):
+        require(expected in paper_review_page_text, f"paper-review-page must mention {expected}")
+    require(
+        paper_review_page_text.index("**Assignment form:**")
+        < paper_review_page_text.index("**Same venue and year:**")
+        < paper_review_page_text.index("**Fallback asset:**"),
+        "paper-review-page must prefer assignment form, then venue structure, then fallback",
+    )
+    require(
+        "$paper-review-page" in PAPER_REVIEW_PAGE_OPENAI.read_text(),
+        "paper-review-page metadata must expose the skill trigger",
+    )
+
+    paper_review_sync_text = PAPER_REVIEW_SYNC_SKILL.read_text()
+    for expected in (
+        "name: paper-review-sync",
+        "$paper-review-sync check",
+        "$paper-review-sync sync",
+        "$paper-review-sync repair",
+        "strictly read-only",
+        "Assigned To",
+        "Reviewer",
+        "Jialuo Hu",
+        "Review Comments",
+        "paper-review",
+        "deep-work",
+        "Paper Reviews",
+        "Assigned",
+        "Paper Review ID:",
+        "Review page: repair-needed",
+        "Zotero: repair-needed",
+        "$paper-review-library-intake",
+        "$paper-review-page",
+        "not continuous synchronization",
+        "paper_review_contract.py",
+    ):
+        require(expected in paper_review_sync_text, f"paper-review-sync must mention {expected}")
+    require(
+        "$paper-review-sync" in PAPER_REVIEW_SYNC_OPENAI.read_text(),
+        "paper-review-sync metadata must expose the skill trigger",
+    )
+
+    require(
+        research_plugin.get("version") == "0.7.0",
         "research-tools must use the current PaperRead workflow version",
     )
     mineru_skill_text = MINERU_DOCUMENT_SKILL.read_text()
@@ -3317,6 +3470,10 @@ def main() -> None:
             for prompt in research_interface.get("defaultPrompt", [])
         ),
         "research-tools default prompts must surface zotero-todoist-reading-tasks",
+    )
+    require(
+        any("$paper-review-sync" in prompt for prompt in research_interface.get("defaultPrompt", [])),
+        "research-tools default prompts must surface paper-review-sync",
     )
     require(
         any("mineru" in prompt.lower() for prompt in research_interface.get("defaultPrompt", [])),

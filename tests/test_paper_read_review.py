@@ -310,7 +310,7 @@ class PaperReadReviewSkillTests(unittest.TestCase):
 
     def test_plugin_packaging_and_docs_expose_the_review_skill(self) -> None:
         manifest = json.loads(self.read(RESEARCH_PLUGIN))
-        self.assertEqual(manifest["version"], "0.6.2")
+        self.assertEqual(manifest["version"], "0.7.0")
         interface = manifest["interface"]
         self.assertIn("review", interface["description"].lower())
         self.assertIn("review", interface["shortDescription"].lower())

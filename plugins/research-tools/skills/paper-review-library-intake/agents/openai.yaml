@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paper Review Library Intake"
+  short_description: "Import private review PDFs safely to Zotero"
+  default_prompt: "Use $paper-review-library-intake to import a private Docmost review assignment into Zotero."

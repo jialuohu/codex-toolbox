@@ -8,7 +8,10 @@ The toolbox setup requires `uv` and `python3` on `PATH`; this locked project req
 After plugin refresh, setup builds this package from the absolute installed MCP cwd reported by
 `codex mcp get docmost --json`, not from the marketplace source checkout.
 
-The eight reads tolerate additive response fields. The three prompt-gated writes require an explicit
+The eight ordinary reads tolerate additive response fields. The private attachment download/release
+pair validates page association, accepts only bounded PDF or UTF-8 text files, stages mode-`0600`
+snapshots under a mode-`0700` temporary root, and removes them by opaque token or server shutdown.
+The three prompt-gated writes require an explicit
 `DOCMOST_WRITE_PROFILE=v0_95`: page creation uses Markdown import, optional nesting is a separate
 non-retried move, title changes use a disclosed non-atomic timestamp precondition, and comments use
 a conservative Markdown-to-Tiptap converter. Ambiguous write outcomes are never retried. If a

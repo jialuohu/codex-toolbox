@@ -37,6 +37,18 @@ _REPLACEMENT_WRITE_ANNOTATIONS = ToolAnnotations(
     idempotentHint=False,
     openWorldHint=True,
 )
+_DOWNLOAD_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=False,
+    openWorldHint=True,
+)
+_RELEASE_ANNOTATIONS = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=True,
+    openWorldHint=False,
+)
 _ID_PATTERN = r"^[^\x00-\x1f\x7f]{1,512}$"
 _CURSOR_PATTERN = r"^[A-Za-z0-9._~=-]{1,1024}$"
 _ID_RUNTIME_PATTERN = re.compile(r"[^\x00-\x1f\x7f]{1,512}")
@@ -121,6 +133,10 @@ ExpectedUpdatedAt = Annotated[
     Field(min_length=1, max_length=128, pattern=r"^[^\x00-\x1f\x7f]{1,128}$"),
     AfterValidator(_validated_timestamp),
 ]
+DownloadToken = Annotated[
+    str,
+    Field(min_length=32, max_length=128, pattern=r"^[A-Za-z0-9_-]{32,128}$"),
+]
 
 
 class ToolResult(BaseModel):
@@ -175,6 +191,12 @@ class _Operations(Protocol):
     def list_comments(
         self, page_id: str, *, limit: int, cursor: str | None = None
     ) -> OperationResult[Any]: ...
+
+    def download_attachment(
+        self, page_id: str, attachment_id: str
+    ) -> OperationResult[Any]: ...
+
+    def release_attachment_download(self, download_token: str) -> OperationResult[Any]: ...
 
     def create_page(
         self,
@@ -300,6 +322,27 @@ def create_server(
 
         return execute(
             lambda read_client: read_client.list_comments(page_id, limit=limit, cursor=cursor)
+        )
+
+    @server.tool(annotations=_DOWNLOAD_ANNOTATIONS)
+    def download_attachment(  # pyright: ignore[reportUnusedFunction]
+        page_id: Identifier,
+        attachment_id: Identifier,
+    ) -> ToolResult:
+        """Download one authorized PDF or UTF-8 text file to private temporary storage."""
+
+        return execute(
+            lambda read_client: read_client.download_attachment(page_id, attachment_id)
+        )
+
+    @server.tool(annotations=_RELEASE_ANNOTATIONS)
+    def release_attachment_download(  # pyright: ignore[reportUnusedFunction]
+        download_token: DownloadToken,
+    ) -> ToolResult:
+        """Delete one managed temporary attachment snapshot; repeated release is safe."""
+
+        return execute(
+            lambda read_client: read_client.release_attachment_download(download_token)
         )
 
     @server.tool(annotations=_WRITE_ANNOTATIONS)
