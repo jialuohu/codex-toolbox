@@ -130,6 +130,10 @@ EXPLAIN_CLEARLY_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "explain-clearly" / "SKILL.md"
 )
 EXPLAIN_CLEARLY_OPENAI = EXPLAIN_CLEARLY_SKILL.parent / "agents" / "openai.yaml"
+SHIP_TOOLBOX_SKILL = (
+    ROOT / "plugins" / "workflow-tools" / "skills" / "ship-toolbox" / "SKILL.md"
+)
+SHIP_TOOLBOX_OPENAI = SHIP_TOOLBOX_SKILL.parent / "agents" / "openai.yaml"
 PAPER_FIGURE_PLUGIN = ROOT / "plugins" / "paper-figure-tools" / ".codex-plugin" / "plugin.json"
 PAPER_FIGURE_SKILL = (
     ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
@@ -2522,6 +2526,11 @@ def main() -> None:
         EXPLAIN_CLEARLY_OPENAI.exists(),
         "explain-clearly must include OpenAI agent metadata",
     )
+    require(SHIP_TOOLBOX_SKILL.exists(), "workflow-tools must include ship-toolbox skill")
+    require(
+        SHIP_TOOLBOX_OPENAI.exists(),
+        "ship-toolbox must include OpenAI agent metadata",
+    )
     require(PAPER_FIGURE_PLUGIN.exists(), "paper-figure-tools plugin manifest must exist")
     require(
         PAPER_FIGURE_SKILL.exists(),
@@ -2817,6 +2826,30 @@ def main() -> None:
         require(
             expected in readme_text,
             f"README explanation workflow must mention {expected}",
+        )
+    for expected in (
+        "Ship Toolbox",
+        "$ship-toolbox",
+        "synchronized `main`",
+        "explicit paths and hunks",
+        "Git-backed local marketplace",
+        "does not create branches",
+    ):
+        require(
+            expected in readme_text,
+            f"README shipping workflow must mention {expected}",
+        )
+    for expected in (
+        "$ship-toolbox",
+        "only when the user explicitly invokes it",
+        "synchronized `main`",
+        "never stage unrelated work",
+        "create an empty commit",
+        "force-push",
+    ):
+        require(
+            expected in global_agents_text,
+            f"global AGENTS shipping routing must mention {expected}",
         )
     for expected in (
         "Managed Codex Pet",
@@ -3338,8 +3371,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.2.0",
-        "workflow-tools plugin version must reflect the explanation update",
+        workflow_plugin.get("version") == "0.3.0",
+        "workflow-tools plugin version must reflect the shipping update",
     )
     require(
         "mcpServers" not in workflow_plugin,
@@ -3361,6 +3394,18 @@ def main() -> None:
     require(
         "explanation" in workflow_interface.get("longDescription", "").lower(),
         "workflow-tools plugin description must mention explanations",
+    )
+    require(
+        "Ship Toolbox" in workflow_interface.get("longDescription", ""),
+        "workflow-tools plugin description must mention Ship Toolbox",
+    )
+    require(
+        {"Read", "Write"}.issubset(set(workflow_interface.get("capabilities", []))),
+        "workflow-tools must expose Read and Write capabilities",
+    )
+    require(
+        any("ship-toolbox" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools default prompts must surface ship-toolbox usage",
     )
     deep_planning_text = DEEP_PLANNING_SKILL.read_text()
     for expected in (
@@ -3417,6 +3462,60 @@ def main() -> None:
         require(
             expected in explain_clearly_openai,
             f"explain-clearly OpenAI metadata must mention {expected}",
+        )
+    ship_toolbox_files = {
+        path.relative_to(SHIP_TOOLBOX_SKILL.parent).as_posix()
+        for path in SHIP_TOOLBOX_SKILL.parent.rglob("*")
+        if path.is_file()
+    }
+    require(
+        ship_toolbox_files == {"SKILL.md", "agents/openai.yaml"},
+        "ship-toolbox must remain instruction-only with SKILL.md and agents/openai.yaml",
+    )
+    ship_toolbox_text = SHIP_TOOLBOX_SKILL.read_text()
+    for expected in (
+        "name: ship-toolbox",
+        "Use only when explicitly invoked as $ship-toolbox",
+        "jialuohu/codex-toolbox",
+        "origin/main",
+        "git rev-list --left-right --count",
+        "git add .",
+        "git add -A",
+        "git diff --cached --name-status",
+        "python3 scripts/check-codex-toolbox-setup.py",
+        "scripts/privacy-audit.sh current",
+        "python3 -m unittest discover -s tests",
+        "git push origin main",
+        "git ls-remote origin",
+        "GitHub Actions",
+        "scripts/setup-codex-toolbox.sh",
+        "sourceType",
+        "codex mcp list",
+        "Wrong branch",
+        "Behind or diverged",
+        "Ambiguous mixed changes",
+        "No-change refresh",
+        "Push failed",
+        "CI failed",
+        "Post-push setup failed",
+        "Privacy or test gate failed",
+        "empty commit",
+        "force-push",
+        "rebase",
+        "reset",
+        "revert automatically",
+    ):
+        require(expected in ship_toolbox_text, f"ship-toolbox skill must mention {expected}")
+    ship_toolbox_openai = SHIP_TOOLBOX_OPENAI.read_text()
+    for expected in (
+        'display_name: "Ship Toolbox"',
+        'short_description: "Validate, publish, and refresh toolbox changes."',
+        'default_prompt: "Use $ship-toolbox to validate, commit, push, refresh, and verify the current toolbox changes."',
+        "allow_implicit_invocation: false",
+    ):
+        require(
+            expected in ship_toolbox_openai,
+            f"ship-toolbox OpenAI metadata must mention {expected}",
         )
     require(
         paper_figure_plugin.get("skills") == "./skills/",

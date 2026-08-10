@@ -1,0 +1,6 @@
+interface:
+  display_name: "Ship Toolbox"
+  short_description: "Validate, publish, and refresh toolbox changes."
+  default_prompt: "Use $ship-toolbox to validate, commit, push, refresh, and verify the current toolbox changes."
+policy:
+  allow_implicit_invocation: false

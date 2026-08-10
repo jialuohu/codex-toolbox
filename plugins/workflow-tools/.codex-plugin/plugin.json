@@ -1,23 +1,25 @@
 {
   "name": "workflow-tools",
-  "version": "0.2.0",
-  "description": "Codex planning, explanation, and workflow skills.",
+  "version": "0.3.0",
+  "description": "Codex planning, explanation, and explicit toolbox shipping skills.",
   "author": {
     "name": "Jialuo Hu"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Workflow Tools",
-    "shortDescription": "Clear explanations and Plan Mode critique.",
-    "longDescription": "Workflow Tools packages Explain Clearly for concise explanations with mental models and examples, plus Deep Planning for adversarial Plan Mode critique and execution routing.",
+    "shortDescription": "Plan, explain, and safely ship toolbox changes.",
+    "longDescription": "Workflow Tools packages Explain Clearly for concise explanations, Deep Planning for adversarial Plan Mode critique, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
-      "Read"
+      "Read",
+      "Write"
     ],
     "defaultPrompt": [
       "Use $explain-clearly to explain this with a simple mental model and concrete example.",
       "Use $deep-planning to critique this plan before implementation.",
+      "Use $ship-toolbox to validate, commit, push, refresh, and verify the current toolbox changes.",
       "Review this Plan Mode request for assumptions, risks, and routing."
     ]
   }

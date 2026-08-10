@@ -46,6 +46,7 @@ The personal toolbox repo is identified by `CODEX_TOOLBOX_ROOT` on each machine,
 - Do not commit secrets, OAuth state, API keys, or env-file contents. MCP configs may reference `CODEX_SECRETS_DIR`, but the secret files remain per-device.
 - Keep toolbox-managed MCP servers in the plugin `.mcp.json` files, not as duplicate direct `[mcp_servers.*]` tables in `~/.codex/config.toml`. The setup script migrates direct entries for managed servers out of the user config.
 - After changing the toolbox, run JSON validation for marketplace/plugin/MCP files, scan for sensitive keywords, run `scripts/setup-codex-toolbox.sh`, and verify `codex plugin list --marketplace jialuo-codex-toolbox --json` plus `codex mcp list`. If third-party marketplace management changed, also verify the relevant plugin list, such as `codex plugin list --marketplace ui-ux-pro-max-skill --json` or `codex plugin list --marketplace context7-marketplace --json`.
+- Use `$ship-toolbox` only when the user explicitly invokes it for the complete toolbox release workflow. Its invocation authorizes task-scoped validation, explicit staging, commit, push to synchronized `main`, relevant CI verification, local setup, and installed plugin/MCP verification without another confirmation. It must stop for the wrong branch, behind or diverged history, ambiguous mixed changes, failed gates, failed CI, or a live setup lock; it must never stage unrelated work, create an empty commit, force-push, rebase, reset, or automatically revert.
 
 ## MCP Tool Routing
 

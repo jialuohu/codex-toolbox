@@ -676,6 +676,22 @@ Example prompt:
 Use $explain-clearly to explain JavaScript closures with a simple mental model and one concrete example.
 ```
 
+## Ship Toolbox
+
+Use `$ship-toolbox` explicitly after completing a task-scoped plugin or skill
+change. It requires synchronized `main`, runs repository and affected-plugin
+gates, stages only explicit paths and hunks, commits and pushes without a second
+confirmation, verifies the remote SHA and relevant CI, then refreshes and
+checks the Git-backed local marketplace. It does not create branches, pull
+requests, tags, releases, empty commits, or history rewrites, and it preserves
+unrelated worktree changes.
+
+Example prompt:
+
+```text
+Use $ship-toolbox to validate, commit, push, refresh, and verify the current toolbox changes.
+```
+
 ## Paper Figure Workflow
 
 Use `$paper-figure-workflow` when a research repo needs reproducible paper
