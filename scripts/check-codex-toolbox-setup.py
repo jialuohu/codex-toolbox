@@ -19,6 +19,11 @@ STINKY_PENGUIN_MANIFEST = STINKY_PENGUIN_DIR / "pet.json"
 STINKY_PENGUIN_SPRITESHEET = STINKY_PENGUIN_DIR / "spritesheet.webp"
 MINERU_SETUP = ROOT / "scripts" / "setup-mineru.sh"
 MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
+WEB_DATA_DIR = ROOT / "plugins" / "web-data-tools"
+WEB_DATA_PLUGIN = WEB_DATA_DIR / ".codex-plugin" / "plugin.json"
+WEB_DATA_MCP = WEB_DATA_DIR / ".mcp.json"
+FIRECRAWL_LAUNCHER = WEB_DATA_DIR / "scripts" / "run-firecrawl-mcp.sh"
+FIRECRAWL_PROXY = WEB_DATA_DIR / "scripts" / "firecrawl_budget_proxy.py"
 OBSIDIAN_MCP = ROOT / "plugins" / "obsidian-tools" / ".mcp.json"
 GAME_ASSET_PLUGIN = ROOT / "plugins" / "game-asset-tools" / ".codex-plugin" / "plugin.json"
 GAME_ASSET_MCP = ROOT / "plugins" / "game-asset-tools" / ".mcp.json"
@@ -2241,17 +2246,37 @@ def main() -> None:
     for expected in (
         "Use built-in Codex web search by default",
         "ordinary public discovery",
-        "Use Firecrawl only",
-        "full-page clean Markdown",
-        "without `scrapeOptions`",
+        "Firecrawl is mandatory",
+        "public community or forum discussions",
+        "user reports",
+        "sentiment",
+        "community troubleshooting",
+        "known public thread URL",
+        "exactly one web source",
+        "highlights",
+        "no `scrapeOptions`",
         "limit of 5 or less",
-        "scrape only the selected URLs",
-        "explicit page limit",
-        "Interact or Agent",
+        "no more than two selected threads",
+        "official or canonical corroboration",
+        "fixed 900-credit billing-period cap",
+        "`firecrawl_budget_status`",
+        "Markdown-only `firecrawl_scrape`",
+        "community coverage is degraded",
+        "separate connected Firecrawl app",
+        "private local files",
     ):
         require(
             expected in global_agents_text,
-            f"global AGENTS cost-aware web routing must mention {expected}",
+            f"global AGENTS metered community routing must mention {expected}",
+        )
+    for retired_promise in (
+        "Every map or crawl must have an explicit page limit",
+        "Use Firecrawl Interact or Agent",
+        "After using `firecrawl_search`, call the Firecrawl feedback tool",
+    ):
+        require(
+            retired_promise not in global_agents_text,
+            f"global AGENTS must remove retired Firecrawl promise {retired_promise}",
         )
     for expected in (
         "paper-figure-tools",
@@ -2482,6 +2507,10 @@ def main() -> None:
         PAPER_READ_REVIEW_OPENAI.exists(),
         "paper-read-review must include OpenAI agent metadata",
     )
+    require(WEB_DATA_PLUGIN.exists(), "web-data-tools plugin manifest must exist")
+    require(WEB_DATA_MCP.exists(), "web-data-tools must define an MCP config")
+    require(FIRECRAWL_LAUNCHER.exists(), "web-data-tools must include the Firecrawl launcher")
+    require(FIRECRAWL_PROXY.exists(), "web-data-tools must include the Firecrawl budget proxy")
     require(OBSIDIAN_MCP.exists(), "obsidian-tools must define an MCP config")
     require(CODER_PLUGIN.exists(), "coder-tools plugin manifest must exist")
     require(CODER_MCP.exists(), "coder-tools must define an MCP config")
@@ -2517,6 +2546,8 @@ def main() -> None:
         "todoist-task-planning must include OpenAI agent metadata",
     )
     marketplace = json.loads(MARKETPLACE.read_text())
+    web_data_plugin = json.loads(WEB_DATA_PLUGIN.read_text())
+    web_data_mcp = json.loads(WEB_DATA_MCP.read_text())
     obsidian_mcp = json.loads(OBSIDIAN_MCP.read_text())
     game_asset_plugin = json.loads(GAME_ASSET_PLUGIN.read_text())
     game_asset_mcp = json.loads(GAME_ASSET_MCP.read_text())
@@ -2540,6 +2571,65 @@ def main() -> None:
     todoist_server = productivity_mcp.get("mcpServers", {}).get("todoist")
     coder_server = coder_mcp.get("mcpServers", {}).get("coder")
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
+
+    require(web_data_plugin.get("name") == "web-data-tools", "web-data-tools name must be exact")
+    require(web_data_plugin.get("version") == "0.4.0", "web-data-tools must use version 0.4.0")
+    require(
+        web_data_plugin.get("mcpServers") == "./.mcp.json",
+        "web-data-tools manifest must register its MCP config",
+    )
+    firecrawl_servers = web_data_mcp.get("mcpServers", {})
+    require(
+        set(firecrawl_servers) == {"firecrawl"},
+        "web-data-tools MCP config must expose only the Firecrawl server",
+    )
+    firecrawl_server = firecrawl_servers.get("firecrawl", {})
+    require(
+        firecrawl_server.get("command") == "/bin/sh"
+        and firecrawl_server.get("args") == ["scripts/run-firecrawl-mcp.sh", "serve"]
+        and firecrawl_server.get("cwd") == ".",
+        "Firecrawl MCP must launch the bundled metering proxy from the plugin root",
+    )
+    require(
+        {"CODEX_HOME", "CODEX_SECRETS_DIR"}.issubset(
+            set(firecrawl_server.get("env_vars", []))
+        ),
+        "Firecrawl MCP must forward only the paths needed for private state and secrets",
+    )
+    firecrawl_mcp_text = WEB_DATA_MCP.read_text()
+    for forbidden in ("disabled_tools", "firecrawl_search_feedback", "firecrawl_feedback"):
+        require(
+            forbidden not in firecrawl_mcp_text,
+            f"Firecrawl MCP config must not rely on the legacy direct surface: {forbidden}",
+        )
+    require(
+        FIRECRAWL_LAUNCHER.stat().st_mode & 0o111,
+        "Firecrawl launcher must be executable",
+    )
+    firecrawl_launcher_text = FIRECRAWL_LAUNCHER.read_text()
+    for expected in (
+        "firecrawl.env",
+        "firecrawl_budget_proxy.py",
+        "serve",
+        "status",
+        "600",
+    ):
+        require(expected in firecrawl_launcher_text, f"Firecrawl launcher must preserve {expected}")
+    firecrawl_proxy_text = FIRECRAWL_PROXY.read_text()
+    for expected in (
+        "BUDGET_CAP_CREDITS = 900",
+        'STATE_FILENAME = "firecrawl-budget.json"',
+        "firecrawl_search",
+        "firecrawl_scrape",
+        "firecrawl_budget_status",
+        "FIRECRAWL_BUDGET_EXHAUSTED",
+        "FIRECRAWL_BUDGET_UNAVAILABLE",
+        "FIRECRAWL_REQUEST_NOT_BOUNDED",
+        "BOUNDED_SERVER_INSTRUCTIONS",
+        "sanitize_initialize_result",
+        "/v2/team/credit-usage",
+    ):
+        require(expected in firecrawl_proxy_text, f"Firecrawl budget proxy must preserve {expected}")
 
     validate_docmost_tools_contract(
         marketplace,
@@ -2608,6 +2698,26 @@ def main() -> None:
         marketplace.get("name") == "jialuo-codex-toolbox",
         "marketplace must be named jialuo-codex-toolbox",
     )
+    for expected in (
+        "## Firecrawl Routing and Budget",
+        "`firecrawl_search`",
+        "Markdown-only `firecrawl_scrape`",
+        "`firecrawl_budget_status`",
+        "fixed 900-credit cap",
+        "Search reserves 2 credits",
+        "basic Scrape reserves 1 credit",
+        "not refunded",
+        "fail closed",
+        "FIRECRAWL_BUDGET_EXHAUSTED",
+        "FIRECRAWL_BUDGET_UNAVAILABLE",
+        "FIRECRAWL_REQUEST_NOT_BOUNDED",
+        "degraded-coverage notice",
+        "separate connected Firecrawl app",
+        "${CODEX_HOME:-~/.codex}/state/firecrawl-budget.json",
+        "plugins/web-data-tools/scripts/run-firecrawl-mcp.sh status",
+        "never reports Firecrawl credentials",
+    ):
+        require(expected in readme_text, f"README Firecrawl budget contract must mention {expected}")
     for expected in (
         "$mineru-document-extraction",
         "complex, scanned, OCR-heavy, or layout-sensitive local documents",

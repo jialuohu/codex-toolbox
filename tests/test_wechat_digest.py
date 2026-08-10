@@ -3590,7 +3590,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("It uses no claim/renew/ack gates.", fallback)
         for option in (
             'formats: ["markdown"]', "onlyMainContent: true", "mobile: true",
-            "storeInCache: false", 'proxy: "auto"',
+            "storeInCache: false", 'proxy: "basic"',
         ):
             self.assertIn(option, fallback, option)
         commands = self.paragraph_containing(interactive, "Use `configured-sources`")
@@ -3640,7 +3640,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("Firecrawl only", standalone_route)
         self.assertTrue(routing_text.isascii())
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.3.7")
+        self.assertEqual(plugin["version"], "0.4.0")
         self.assertIn("wechat reader and digest tools", plugin["description"].lower())
 
     def test_skill_declares_the_operational_digest_contract(self):
@@ -3680,7 +3680,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertNotIn("20 bodies", text)
         for clause in (
             "pending entry's exact validated `url`", "formats: [\"markdown\"]",
-            "onlyMainContent: true", "mobile: true", "storeInCache: false", 'proxy: "auto"',
+            "onlyMainContent: true", "mobile: true", "storeInCache: false", 'proxy: "basic"',
             "never select tools", "trigger additional calls", "prepare a complete article output block",
             "then call `ack <article_id>`", "then include the prepared block in the final digest",
             "run `status` directly", "body_budget", "day", "used", "limit",
@@ -3800,7 +3800,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("$wechat-digest", metadata)
         self.assertNotIn("dependencies:", metadata)
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.3.7")
+        self.assertEqual(plugin["version"], "0.4.0")
         joined = json.dumps(plugin).lower()
         for capability in ("wechat", "firecrawl", "playwright"):
             self.assertIn(capability, joined)
