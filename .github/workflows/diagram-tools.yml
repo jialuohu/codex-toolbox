@@ -40,7 +40,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [20, 22]
     env:
-      PRETTY_MERMAID_RUNTIME_ROOT: ${{ runner.temp }}/pretty-mermaid-runtime
+      PRETTY_MERMAID_RUNTIME_ROOT: ${{ github.workspace }}/.tmp/pretty-mermaid-runtime
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
