@@ -1,0 +1,11 @@
+{
+  "name": "diagram-tools-plugin-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:contract": "node skills/pretty-mermaid/scripts/contract-cli.mjs runtime/bootstrap",
+    "test:integration": "DIAGRAM_TOOLS_INTEGRATION=1 node --test tests/runtime-manager.integration.test.mjs"
+  }
+}

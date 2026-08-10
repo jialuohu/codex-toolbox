@@ -1,0 +1,7 @@
+flowchart LR
+  Start[Start] --> Check{Check}
+  Check -->|Yes| Done[Done]
+  Check -->|No| Retry[Retry]
+  subgraph Service[Service Boundary]
+    Retry --> Check
+  end

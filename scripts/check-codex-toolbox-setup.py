@@ -141,6 +141,17 @@ PAPER_FIGURE_REFERENCE = (
     / "references"
     / "templates.md"
 )
+DIAGRAM_TOOLS_DIR = ROOT / "plugins" / "diagram-tools"
+DIAGRAM_TOOLS_PLUGIN = DIAGRAM_TOOLS_DIR / ".codex-plugin" / "plugin.json"
+PRETTY_MERMAID_DIR = DIAGRAM_TOOLS_DIR / "skills" / "pretty-mermaid"
+PRETTY_MERMAID_SKILL = PRETTY_MERMAID_DIR / "SKILL.md"
+PRETTY_MERMAID_OPENAI = PRETTY_MERMAID_DIR / "agents" / "openai.yaml"
+PRETTY_MERMAID_CLI = PRETTY_MERMAID_DIR / "scripts" / "pretty-mermaid.mjs"
+PRETTY_MERMAID_FIXTURES = PRETTY_MERMAID_DIR / "assets" / "fixtures"
+DIAGRAM_BOOTSTRAP = DIAGRAM_TOOLS_DIR / "runtime" / "bootstrap"
+DIAGRAM_SETUP = ROOT / "scripts" / "setup-diagram-tools.sh"
+DIAGRAM_WORKFLOW = ROOT / ".github" / "workflows" / "diagram-tools.yml"
+DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 PRODUCTIVITY_PLUGIN = ROOT / "plugins" / "productivity-tools" / ".codex-plugin" / "plugin.json"
 PRODUCTIVITY_MCP = ROOT / "plugins" / "productivity-tools" / ".mcp.json"
 DOCMOST_DIR = ROOT / "plugins" / "docmost-tools"
@@ -2031,6 +2042,169 @@ def validate_docmost_tools_contract(
         require(expected in gitignore, f".gitignore must exclude Docmost runtime state: {expected}")
 
 
+def validate_diagram_tools_contract(
+    marketplace: dict,
+    setup_text: str,
+    readme_text: str,
+    global_agents_text: str,
+    default_plugins: list[str],
+    managed_mcp_servers: list[str],
+) -> None:
+    """Validate the rolling, offline, skill-only Mermaid renderer."""
+    required_files = (
+        DIAGRAM_TOOLS_PLUGIN,
+        PRETTY_MERMAID_SKILL,
+        PRETTY_MERMAID_OPENAI,
+        PRETTY_MERMAID_CLI,
+        PRETTY_MERMAID_DIR / "scripts" / "contact-sheet.mjs",
+        PRETTY_MERMAID_DIR / "scripts" / "runtime-manager.mjs",
+        PRETTY_MERMAID_DIR / "scripts" / "contract-cli.mjs",
+        PRETTY_MERMAID_DIR / "references" / "cli.md",
+        DIAGRAM_TOOLS_DIR / "LICENSE",
+        DIAGRAM_TOOLS_DIR / "PROVENANCE.md",
+        DIAGRAM_TOOLS_DIR / "THIRD_PARTY_NOTICES.md",
+        DIAGRAM_BOOTSTRAP / "package.json",
+        DIAGRAM_BOOTSTRAP / "package-lock.json",
+        DIAGRAM_SETUP,
+        DIAGRAM_WORKFLOW,
+        DEPENDABOT,
+    )
+    require(all(path.is_file() for path in required_files), "diagram-tools required files must exist")
+
+    plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
+    require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
+    require(plugin.get("version") == "0.1.0", "diagram-tools manifest version must be 0.1.0")
+    require(plugin.get("skills") == "./skills/", "diagram-tools must expose its skills directory")
+    require(plugin.get("license") == "MIT", "diagram-tools manifest must declare MIT")
+    require("mcpServers" not in plugin, "diagram-tools must remain skill-only")
+    require(not (DIAGRAM_TOOLS_DIR / ".mcp.json").exists(), "diagram-tools must not define MCP")
+
+    entry = next(
+        (item for item in marketplace.get("plugins", []) if item.get("name") == "diagram-tools"),
+        None,
+    )
+    require(entry is not None, "marketplace must include diagram-tools")
+    require(
+        entry.get("source") == {"source": "local", "path": "./plugins/diagram-tools"},
+        "diagram-tools marketplace source must be local",
+    )
+    require(
+        entry.get("policy") == {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+        "diagram-tools marketplace policy must be AVAILABLE and ON_INSTALL",
+    )
+    require(default_plugins.count("diagram-tools") == 1, "setup must install diagram-tools once")
+    require(
+        "diagram-tools" not in managed_mcp_servers,
+        "diagram-tools must not be a managed MCP server",
+    )
+    require(
+        '"$ROOT/scripts/setup-diagram-tools.sh" --update' in setup_text,
+        "full toolbox setup must update the contract-gated diagram runtime",
+    )
+    require(DIAGRAM_SETUP.stat().st_mode & 0o111, "diagram setup helper must be executable")
+    diagram_setup_text = DIAGRAM_SETUP.read_text()
+    for expected in (
+        "CODEX_LOCAL_BIN_DIR",
+        "PRETTY_MERMAID_LAUNCHER",
+        "Refusing to replace non-symlink launcher",
+        "NODE_MAJOR",
+    ):
+        require(expected in diagram_setup_text, f"diagram setup launcher must preserve {expected}")
+
+    skill_text = PRETTY_MERMAID_SKILL.read_text()
+    require("[TODO:" not in skill_text, "pretty-mermaid skill must not contain placeholders")
+    for expected in (
+        "name: pretty-mermaid",
+        "self-contained SVG",
+        "genuine PNG",
+        "Do not install packages during an ordinary render",
+        "$paper-figure-workflow",
+        "references/cli.md",
+    ):
+        require(expected in skill_text, f"pretty-mermaid skill must mention {expected}")
+    openai_text = PRETTY_MERMAID_OPENAI.read_text()
+    require(
+        'display_name: "Pretty Mermaid"' in openai_text
+        and "$pretty-mermaid" in openai_text,
+        "pretty-mermaid OpenAI metadata must match the skill",
+    )
+
+    fixture_manifest = json.loads((PRETTY_MERMAID_FIXTURES / "manifest.json").read_text())
+    expected_fixtures = {"flowchart.mmd", "state.mmd", "sequence.mmd", "class.mmd", "er.mmd", "xy.mmd"}
+    actual_fixtures = {item.get("file") for item in fixture_manifest.get("fixtures", [])}
+    require(actual_fixtures == expected_fixtures, "pretty-mermaid core fixture inventory must be exact")
+    require(
+        all((PRETTY_MERMAID_FIXTURES / name).is_file() for name in expected_fixtures),
+        "pretty-mermaid fixture files must exist",
+    )
+
+    bootstrap_package = json.loads((DIAGRAM_BOOTSTRAP / "package.json").read_text())
+    bootstrap_lock = json.loads((DIAGRAM_BOOTSTRAP / "package-lock.json").read_text())
+    dependencies = bootstrap_package.get("dependencies", {})
+    fallback_version = dependencies.get("beautiful-mermaid")
+    locked_fallback = bootstrap_lock.get("packages", {}).get("node_modules/beautiful-mermaid", {})
+    require(
+        re.fullmatch(r"\d+\.\d+\.\d+", fallback_version or "") is not None,
+        "diagram fallback must be one exact stable release",
+    )
+    require(
+        locked_fallback.get("version") == fallback_version
+        and str(locked_fallback.get("integrity", "")).startswith("sha512-"),
+        "diagram fallback lock must match its approved version and integrity",
+    )
+    require(
+        all(
+            isinstance(value, str)
+            and not any(marker in value for marker in ("^", "~", "*", "latest"))
+            for value in dependencies.values()
+        ),
+        "diagram bootstrap dependencies must be exact installation receipts",
+    )
+    script_text = "\n".join(
+        path.read_text()
+        for path in (PRETTY_MERMAID_DIR / "scripts").rglob("*.mjs")
+    )
+    require(
+        fallback_version not in script_text,
+        "Beautiful Mermaid fallback version must not appear in adapter or runtime logic",
+    )
+    for expected in (
+        "renderMermaidSVG",
+        "renderMermaidSVGAsync",
+        "renderMermaidASCII",
+        "renderMermaidAscii",
+        "THEMES",
+        "color-mix",
+        "@import",
+        "active.json",
+        "previous.json",
+        "--ignore-scripts",
+        "--audit-level=high",
+    ):
+        require(expected in script_text, f"diagram runtime must preserve {expected} handling")
+
+    for expected in ("## Diagram Tools", "contract-gated rolling runtime", "Normal rendering is offline"):
+        require(expected in readme_text, f"README Diagram Tools section must mention {expected}")
+    for expected in ("native inline Mermaid", "$pretty-mermaid", "$paper-figure-workflow", "offline active runtime"):
+        require(expected in global_agents_text, f"global AGENTS diagram routing must mention {expected}")
+    require(
+        "beautiful-mermaid" in DEPENDABOT.read_text()
+        and "plugins/diagram-tools/runtime/bootstrap" in DEPENDABOT.read_text(),
+        "Dependabot must advance only the approved diagram fallback",
+    )
+    workflow_text = DIAGRAM_WORKFLOW.read_text()
+    for expected in (
+        "ubuntu-latest",
+        "macos-latest",
+        "test:contract",
+        "--update --strict",
+        "contact-sheet.mjs",
+        "SVG and PNG contact sheets",
+        "upload-artifact",
+    ):
+        require(expected in workflow_text, f"diagram CI must include {expected}")
+
+
 def main() -> None:
     script = SETUP_SCRIPT.read_text()
     readme_text = README.read_text()
@@ -2387,6 +2561,14 @@ def main() -> None:
         marketplace,
         global_agents_text,
         readme_text,
+        default_plugin_entries,
+        managed_mcp_server_entries,
+    )
+    validate_diagram_tools_contract(
+        marketplace,
+        script,
+        readme_text,
+        global_agents_text,
         default_plugin_entries,
         managed_mcp_server_entries,
     )

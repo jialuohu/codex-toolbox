@@ -1,0 +1,10 @@
+{
+  "fixtures": [
+    { "file": "flowchart.mmd", "labels": ["Start", "Check", "Done", "Retry"] },
+    { "file": "state.mmd", "labels": ["Idle", "Working", "Complete"] },
+    { "file": "sequence.mmd", "labels": ["Client", "Service", "Request", "Response"] },
+    { "file": "class.mmd", "labels": ["Account", "PremiumAccount"] },
+    { "file": "er.mmd", "labels": ["CUSTOMER", "ORDER", "LINE_ITEM"] },
+    { "file": "xy.mmd", "labels": ["Monthly Revenue", "Jan", "Revenue"] }
+  ]
+}

@@ -190,7 +190,16 @@ class SetupDocmostToolsTest(unittest.TestCase):
             + "\n"
         )
 
+    def install_fake_node(self) -> None:
+        self.write_executable(
+            "node",
+            "#!/bin/sh\n"
+            "printf 'node %s\\n' \"$*\" >> \"$FAKE_DOCMOST_LOG\"\n"
+            "if [ \"$1\" = -p ]; then printf '20\\n'; fi\n",
+        )
+
     def install_fake_codex(self) -> None:
+        self.install_fake_node()
         if not self.marketplace_plugin_root.exists():
             shutil.copytree(
                 ROOT / "plugins" / "docmost-tools",
@@ -866,6 +875,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
             log,
         )
         self.assertIn("codex mcp get docmost --json", log)
+        self.assertIn("runtime-manager.mjs update", log)
         self.assertEqual(log.count("sync --frozen --no-dev --no-editable"), 2)
 
     def test_global_setup_rejects_an_absent_installed_docmost_mcp(self) -> None:

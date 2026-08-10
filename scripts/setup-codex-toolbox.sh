@@ -28,6 +28,7 @@ DEFAULT_PLUGINS=(
   "design-engineering-tools"
   "workflow-tools"
   "coder-tools"
+  "diagram-tools"
   "paper-figure-tools"
   "productivity-tools"
   "trading-tools"
@@ -630,6 +631,8 @@ done
 for plugin in "${DEFAULT_PLUGINS[@]}"; do
   install_or_refresh_plugin "$plugin" "$MARKETPLACE_NAME"
 done
+
+"$ROOT/scripts/setup-diagram-tools.sh" --update
 
 DOCMOST_INSTALLED_SERVER_DIR="$(installed_docmost_server_dir)"
 readonly DOCMOST_INSTALLED_SERVER_DIR

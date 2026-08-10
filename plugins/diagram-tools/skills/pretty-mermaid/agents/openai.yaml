@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pretty Mermaid"
+  short_description: "Export polished Mermaid diagrams"
+  default_prompt: "Use $pretty-mermaid to save Mermaid source and export a polished SVG or PNG."

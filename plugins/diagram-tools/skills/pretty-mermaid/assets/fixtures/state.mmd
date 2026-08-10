@@ -1,0 +1,5 @@
+stateDiagram-v2
+  [*] --> Idle
+  Idle --> Working: begin
+  Working --> Complete: finish
+  Complete --> [*]

@@ -1,0 +1,91 @@
+name: Diagram Tools
+
+on:
+  pull_request:
+    paths:
+      - ".agents/plugins/marketplace.json"
+      - ".github/dependabot.yml"
+      - ".github/workflows/diagram-tools.yml"
+      - "README.md"
+      - "config/codex/AGENTS.global.md"
+      - "plugins/diagram-tools/**"
+      - "scripts/check-codex-toolbox-setup.py"
+      - "scripts/setup-codex-toolbox.sh"
+      - "scripts/setup-diagram-tools.sh"
+  push:
+    branches: [main]
+    paths:
+      - ".agents/plugins/marketplace.json"
+      - ".github/dependabot.yml"
+      - ".github/workflows/diagram-tools.yml"
+      - "README.md"
+      - "config/codex/AGENTS.global.md"
+      - "plugins/diagram-tools/**"
+      - "scripts/check-codex-toolbox-setup.py"
+      - "scripts/setup-codex-toolbox.sh"
+      - "scripts/setup-diagram-tools.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [20, 22]
+    env:
+      PRETTY_MERMAID_RUNTIME_ROOT: ${{ runner.temp }}/pretty-mermaid-runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: plugins/diagram-tools/runtime/bootstrap/package-lock.json
+      - name: Install approved bootstrap dependencies
+        working-directory: plugins/diagram-tools/runtime/bootstrap
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Audit approved runtime
+        working-directory: plugins/diagram-tools/runtime/bootstrap
+        run: npm audit --omit=dev --audit-level=high
+      - name: Validate toolbox integration
+        run: python3 scripts/check-codex-toolbox-setup.py
+      - name: Scan current tree for private paths and secrets
+        run: scripts/privacy-audit.sh current
+      - name: Run unit tests
+        working-directory: plugins/diagram-tools
+        run: npm test
+      - name: Verify approved fallback contract
+        working-directory: plugins/diagram-tools
+        run: npm run test:contract
+      - name: Stage and verify newest stable renderer
+        run: scripts/setup-diagram-tools.sh --update --strict
+      - name: Render SVG and PNG contact sheets
+        run: >-
+          node plugins/diagram-tools/skills/pretty-mermaid/scripts/contact-sheet.mjs
+          "${{ runner.temp }}/diagram-artifacts"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diagram-tools-${{ matrix.os }}-node-${{ matrix.node }}
+          path: ${{ runner.temp }}/diagram-artifacts
+          if-no-files-found: error
+
+  runtime-manager:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: plugins/diagram-tools/runtime/bootstrap/package-lock.json
+      - name: Exercise promotion, idempotency, and fallback
+        working-directory: plugins/diagram-tools
+        run: npm run test:integration

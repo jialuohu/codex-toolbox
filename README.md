@@ -65,6 +65,47 @@ third-party marketplace pins, and reusable Codex instructions.
 6. Start a fresh Codex session so the installed global `AGENTS.md`, plugins, and
    MCP servers are loaded from the beginning of the run.
 
+## Diagram Tools
+
+The default `diagram-tools` plugin provides `$pretty-mermaid` for polished
+Mermaid artifacts. It preserves editable `.mmd` source and exports
+self-contained SVG, real PNG through Resvg, or plain ASCII/Unicode. Use native
+inline Mermaid for quick task explanations and `$paper-figure-workflow` for
+publication pipelines requiring draw.io, Matplotlib, or SVG/PDF cleanup.
+
+The renderer uses a contract-gated rolling runtime under
+`${CODEX_HOME:-$HOME/.codex}/runtime/diagram-tools`. Toolbox setup resolves the
+newest stable `beautiful-mermaid` release, installs it into an isolated
+candidate with lifecycle scripts disabled, verifies package integrity and
+production audit results, renders the compatibility fixtures, and promotes it
+atomically. A rejected release cannot replace the working runtime. Fresh
+installations fall back to the lockfile-approved release; Dependabot proposes
+updates to that fallback separately.
+
+Normal rendering is offline. Check, update, or roll back the runtime with:
+
+```bash
+scripts/setup-diagram-tools.sh --check
+scripts/setup-diagram-tools.sh --update
+scripts/setup-diagram-tools.sh --update --strict
+scripts/setup-diagram-tools.sh --rollback
+```
+
+Toolbox setup installs the stable CLI in `CODEX_LOCAL_BIN_DIR`, defaulting to
+`~/.local/bin`:
+
+```bash
+pretty-mermaid themes
+pretty-mermaid capabilities --json
+pretty-mermaid render --input diagram.mmd --output diagram.svg --format svg --theme github-light
+pretty-mermaid render --input diagram.mmd --output diagram.png --format png --theme tokyo-night --scale 2
+pretty-mermaid batch --input-dir diagrams --output-dir rendered --format svg --workers 4
+```
+
+Beautiful Mermaid intentionally supports a subset of Mermaid syntax. The
+active capability report names the tested diagram families and available
+themes; unsupported syntax fails without rewriting the `.mmd` source.
+
 ## Docmost Tools
 
 The default `docmost-tools` plugin runs a local browser-authenticated MCP adapter
