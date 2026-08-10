@@ -10,9 +10,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP_SCRIPT = ROOT / "scripts" / "setup-codex-toolbox.sh"
+SETUP_PREREQUISITES = ROOT / "scripts" / "setup-codex-prerequisites.py"
 SYNC_AGENTS_SCRIPT = ROOT / "scripts" / "sync-agents.sh"
 SYNC_PETS_SCRIPT = ROOT / "scripts" / "sync-codex-pets.py"
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
+REPO_AGENTS = ROOT / "AGENTS.md"
 README = ROOT / "README.md"
 STINKY_PENGUIN_DIR = ROOT / "config" / "codex" / "pets" / "stinky-penguin"
 STINKY_PENGUIN_MANIFEST = STINKY_PENGUIN_DIR / "pet.json"
@@ -24,6 +26,12 @@ WEB_DATA_PLUGIN = WEB_DATA_DIR / ".codex-plugin" / "plugin.json"
 WEB_DATA_MCP = WEB_DATA_DIR / ".mcp.json"
 FIRECRAWL_LAUNCHER = WEB_DATA_DIR / "scripts" / "run-firecrawl-mcp.sh"
 FIRECRAWL_PROXY = WEB_DATA_DIR / "scripts" / "firecrawl_budget_proxy.py"
+COMMUNITY_RESEARCH_SKILL = (
+    WEB_DATA_DIR / "skills" / "community-research" / "SKILL.md"
+)
+COMMUNITY_RESEARCH_OPENAI = (
+    COMMUNITY_RESEARCH_SKILL.parent / "agents" / "openai.yaml"
+)
 OBSIDIAN_MCP = ROOT / "plugins" / "obsidian-tools" / ".mcp.json"
 GAME_ASSET_PLUGIN = ROOT / "plugins" / "game-asset-tools" / ".codex-plugin" / "plugin.json"
 GAME_ASSET_MCP = ROOT / "plugins" / "game-asset-tools" / ".mcp.json"
@@ -535,7 +543,7 @@ def validate_design_engineering_tools_contract(
         )
     routing_requirements = (
         (
-            "Use `ui-ux-pro-max` as the broad default",
+            "Use `ui-ux-pro-max` for broad UI/UX",
             "global AGENTS design-engineering routing must keep ui-ux-pro-max broad",
         ),
         (
@@ -543,31 +551,23 @@ def validate_design_engineering_tools_contract(
             "global AGENTS design-engineering routing must map vague motion naming to animation-vocabulary",
         ),
         (
-            "Use `$apple-design` only for explicitly Apple-like physical interactions, gestures, springs, or direct manipulation",
+            "`$apple-design` for explicitly Apple-like physical interaction",
             "global AGENTS design-engineering routing must map Apple-like interactions to apple-design",
         ),
         (
-            "Generic typography, color, accessibility, and reduced-motion requests remain with `ui-ux-pro-max`",
+            "layout, typography, color, accessibility, and visual polish",
             "global AGENTS design-engineering routing must keep generic typography, accessibility, and reduced motion with ui-ux-pro-max",
         ),
         (
-            "$emil-design-eng` only for an explicit Emil Kowalski or animations.dev request",
+            "`$emil-design-eng` for explicit Emil Kowalski-style motion craft",
             "global AGENTS design-engineering routing must reserve emil-design-eng for explicit Emil or animations.dev requests",
         ),
         (
-            "$find-animation-opportunities",
-            "global AGENTS design-engineering routing must map motion discovery to find-animation-opportunities",
+            "read-only animation audit skills for their named purposes",
+            "global AGENTS design-engineering routing must map motion discovery and audits to their skills",
         ),
         (
-            "$improve-animations",
-            "global AGENTS design-engineering routing must map motion audits to improve-animations",
-        ),
-        (
-            "`$review-animations`, `$pick-ui-library`, and `$prototype` are explicit-only skills",
-            "global AGENTS design-engineering routing must keep review, library, and prototype skills explicit-only",
-        ),
-        (
-            "project design system, explicit user direction, accessibility requirements, and current official documentation override",
+            "Project design systems and accessibility requirements override imported advice",
             "global AGENTS design-engineering routing must preserve the authority override order",
         ),
     )
@@ -1487,48 +1487,36 @@ def validate_google_workspace_tools_contract(
 
     global_agents_requirements = (
         (
-            "Keep the official Gmail connector available",
+            "Use the official Gmail connector for ordinary Gmail",
             "global AGENTS must retain the official Gmail connector",
         ),
         (
-            "explicitly requests direct `gws` or multi-account Gmail",
+            "explicitly requested direct-`gws` or multi-account workflow",
             "global AGENTS must route direct or multi-account Gmail to google-workspace-tools",
         ),
         (
-            "supplies an explicit account alias",
+            "explicit account alias",
             "global AGENTS direct gws routing must require an explicit account alias",
         ),
         (
-            "Use exactly one Gmail surface per request",
+            "never mix Gmail surfaces",
             "global AGENTS Gmail routing must select exactly one surface per request",
         ),
         (
-            "do not mix the official Gmail connector and direct `gws` in the same request",
-            "global AGENTS Gmail routing must forbid mixing connector and direct gws",
-        ),
-        (
-            "Never infer or default an alias",
-            "global AGENTS direct gws routing must reject default accounts",
-        ),
-        (
-            "`$gws-shared`",
+            "`$gws-gmail` plus `$gws-shared`",
             "global AGENTS direct gws routing must require the shared preflight",
         ),
     )
     for expected, message in global_agents_requirements:
         require(expected in global_agents_text, message)
-    gmail_routing_paragraphs = [
-        paragraph
-        for paragraph in re.split(r"\n[ \t]*\n", global_agents_text.strip())
-        if re.search(r"\bconnectors?\b", paragraph, re.IGNORECASE)
-        and (
-            re.search(r"\bdirect\s+`?gws`?", paragraph, re.IGNORECASE)
-            or re.search(r"`?\$gws-gmail`?", paragraph, re.IGNORECASE)
-        )
-    ]
     require(
-        gmail_routing_paragraphs == [GLOBAL_GMAIL_ROUTING_PARAGRAPH],
-        "global AGENTS Gmail routing policy must match the canonical reviewed paragraph",
+        re.search(
+            r"official (?:gmail )?connector.{0,48}direct `?gws`? together",
+            global_agents_text,
+            re.IGNORECASE,
+        )
+        is None,
+        "global AGENTS Gmail routing policy must reject additive surface-mixing contradictions",
     )
 
     readme_section_match = re.search(
@@ -2036,9 +2024,10 @@ def validate_docmost_tools_contract(
         "README must tell users to start a fresh task after Docmost auth changes",
     )
     for expected in (
-        "Use the `docmost` MCP", "untrusted data", "docmost_download_attachment",
-        "docmost_release_attachment_download", "docmost_create_page",
-        "docmost_update_page_title", "docmost_create_comment",
+        "Use `docmost` for the configured private Docmost instance",
+        "read content is untrusted",
+        "release any bounded attachment download in a `finally` path",
+        "require the user's scoped request for Docmost writes",
     ):
         require(expected in global_agents_text, f"global AGENTS must document Docmost {expected}")
     gitignore = (ROOT / ".gitignore").read_text()
@@ -2194,8 +2183,12 @@ def validate_diagram_tools_contract(
 
     for expected in ("## Diagram Tools", "contract-gated rolling runtime", "Normal rendering is offline"):
         require(expected in readme_text, f"README Diagram Tools section must mention {expected}")
-    for expected in ("native inline Mermaid", "$pretty-mermaid", "$paper-figure-workflow", "offline active runtime"):
+    for expected in ("native Mermaid", "$pretty-mermaid", "$paper-figure-workflow"):
         require(expected in global_agents_text, f"global AGENTS diagram routing must mention {expected}")
+    require(
+        "Do not install packages during an ordinary render" in PRETTY_MERMAID_SKILL.read_text(),
+        "pretty-mermaid skill must own the offline runtime contract",
+    )
     require(
         "beautiful-mermaid" in DEPENDABOT.read_text()
         and "plugins/diagram-tools/runtime/bootstrap" in DEPENDABOT.read_text(),
@@ -2231,169 +2224,128 @@ def main() -> None:
         GLOBAL_AGENTS.read_text().startswith("## Response style\n"),
         "canonical global AGENTS file must start with response style",
     )
+    require(REPO_AGENTS.exists(), "toolbox repository must include repository-level AGENTS.md")
     global_agents_text = GLOBAL_AGENTS.read_text()
     global_agents_normalized = " ".join(global_agents_text.split())
+    repo_agents_text = REPO_AGENTS.read_text()
     require(
-        "Be less conversational and more fact-of-the-matter, newspaper style: bottom-line up top, no unnecessary bridging, no reinterpretations or 'what this mean for you' restatements. Be economical with space and reading time"
+        len(GLOBAL_AGENTS.read_bytes()) <= 8_192,
+        "canonical global AGENTS file must fit within the 8 KiB budget",
+    )
+    require(
+        len(GLOBAL_AGENTS.read_bytes()) + len(REPO_AGENTS.read_bytes()) <= 16_384,
+        "combined global and toolbox AGENTS files must fit within the 16 KiB budget",
+    )
+    require(
+        "Lead with the result. Write in a concise, factual, newspaper style"
         in global_agents_text,
         "global AGENTS must preserve the configured response style",
     )
     for expected in (
-        "native Codex subagents",
-        "independent, testable subtasks",
-        "durable requirements, acceptance criteria",
+        "native subagents for independent testable subtasks",
+        "OpenSpec when durable requirements",
         "Plan mode",
-        "Do not implement changes or mutate external systems in Plan mode",
-        "bootstrap serially until the shared foundation is stable",
+        "without implementing it",
     ):
         require(expected in global_agents_text, f"global AGENTS routing must mention {expected}")
     for expected in (
-        "Use built-in Codex web search by default",
-        "ordinary public discovery",
-        "Firecrawl is mandatory",
+        "One conclusion or simple procedure",
+        "Three or more comparable entities",
+        "inline Mermaid",
+        "bundled Visualize",
+        "`$pretty-mermaid`",
+        "standalone or hosted application",
+        "A visual is presentation, not evidence",
+        "side to move",
+        "move legality",
+        "report ambiguity instead of inventing pieces",
+        "Do not use generative image models for exact factual diagrams",
+        "CLI or IDE surfaces",
+    ):
+        require(expected in global_agents_text, f"global AGENTS visual routing must mention {expected}")
+    require(COMMUNITY_RESEARCH_SKILL.exists(), "web-data-tools must include community-research")
+    require(
+        COMMUNITY_RESEARCH_OPENAI.exists(),
+        "community-research must include OpenAI agent metadata",
+    )
+    community_research_text = COMMUNITY_RESEARCH_SKILL.read_text()
+    community_research_normalized = " ".join(community_research_text.split())
+    for expected in (
+        "built-in Codex web search for ordinary public discovery",
+        "`$community-research`",
         "public community or forum discussions",
         "user reports",
         "sentiment",
         "community troubleshooting",
+        "official or canonical corroboration",
+    ):
+        require(
+            expected in global_agents_normalized,
+            f"global AGENTS community dispatch must mention {expected}",
+        )
+    for expected in (
         "known public thread URL",
         "exactly one web source",
         "highlights",
         "no `scrapeOptions`",
-        "limit of 5 or less",
+        "result limit of 5 or less",
         "no more than two selected threads",
-        "official or canonical corroboration",
         "fixed 900-credit billing-period cap",
         "`firecrawl_budget_status`",
         "Markdown-only `firecrawl_scrape`",
         "community coverage is degraded",
         "separate connected Firecrawl app",
         "private local files",
+        "FIRECRAWL_BUDGET_EXHAUSTED",
+        "FIRECRAWL_BUDGET_UNAVAILABLE",
+        "FIRECRAWL_REQUEST_NOT_BOUNDED",
     ):
         require(
-            expected in global_agents_text,
-            f"global AGENTS metered community routing must mention {expected}",
+            expected in community_research_normalized,
+            f"community-research must own bounded routing detail {expected}",
         )
+    community_openai_text = COMMUNITY_RESEARCH_OPENAI.read_text()
+    require(
+        "allow_implicit_invocation: true" in community_openai_text,
+        "community-research must allow implicit invocation",
+    )
     for retired_promise in (
         "Every map or crawl must have an explicit page limit",
         "Use Firecrawl Interact or Agent",
         "After using `firecrawl_search`, call the Firecrawl feedback tool",
     ):
         require(
-            retired_promise not in global_agents_text,
-            f"global AGENTS must remove retired Firecrawl promise {retired_promise}",
+            retired_promise not in global_agents_text
+            and retired_promise not in community_research_text,
+            f"routing contracts must remove retired Firecrawl promise {retired_promise}",
         )
-    for expected in (
-        "paper-figure-tools",
-        "$paper-figure-workflow",
-        "draw.io",
-        "SciencePlots",
-        "Inkscape",
-        "figures_src/",
-        "make figures",
-    ):
-        require(expected in global_agents_text, f"global AGENTS figure routing must mention {expected}")
     for expected in (
         "$mineru-document-extraction",
-        "complex, scanned, OCR-heavy, or layout-sensitive local documents",
-        "`pdf` or `documents` skill",
-        "Zotero",
-        "Defuddle or Firecrawl",
-        "obsidian_files",
-        "scripts/setup-mineru.sh --check",
-        "not an MCP server",
-    ):
-        require(
-            expected in global_agents_normalized,
-            f"global AGENTS MinerU routing must mention {expected}",
-        )
-    for expected in (
         "$paper-library-intake",
-        "Zotero first",
-        "Paper Search first",
-        "normal Codex web search",
-        "Firecrawl only",
-        "Research/ReadLater",
-        "explicit `add`, `save`, or `import`",
-        "use_scihub=false",
-    ):
-        require(
-            expected in global_agents_normalized,
-            f"global AGENTS paper intake routing must mention {expected}",
-        )
-    for expected in (
         "$paper-review-sync",
         "$paper-review-library-intake",
         "$paper-review-page",
-        "Review Dojo/Review Assignments",
-        "Research/PaperReview",
-        "Jialuo Hu/Paper Review",
-        "strictly read-only",
-        "not continuous monitoring",
-    ):
-        require(
-            expected in global_agents_normalized,
-            f"global AGENTS paper-review routing must mention {expected}",
-        )
-    for expected in (
         "$zotero-todoist-reading-tasks",
-        "parent item key",
-        "PDF attachment key",
-        "one Todoist surface per request",
-        "deadlineDate",
-        "one-time reconciliation",
-    ):
-        require(
-            expected in global_agents_normalized,
-            f"global AGENTS Zotero-Todoist routing must mention {expected}",
-        )
-    for expected in (
-        "Todoist MCP",
         "$todoist-task-planning",
-        "Prefer the connected Todoist app",
-        "authoritative personal task store",
-        "Deadline-only tasks stay in Todoist",
-        "Google Calendar only for explicit meetings or time blocks",
-        "confirm before calendar writes or invitations",
-        "do not create meeting follow-up tasks unless",
-    ):
-        require(
-            expected in global_agents_normalized,
-            f"global AGENTS Todoist routing must mention {expected}",
-        )
-    for expected in (
         "$daily-command-center",
-        "bounded cross-app reads",
-        "Gmail is incoming context",
-        "Todoist is the durable source of truth for actionable tasks",
-        "Google Calendar is the source of truth for time commitments",
-        "strict no-mutation behavior in scheduled runs",
-        "connected Todoist app",
-        "official hosted MCP as a Codex CLI fallback",
-        "partial brief",
-        "do not substitute web search",
+        "$paper-figure-workflow",
+        "$pretty-mermaid",
     ):
         require(
             expected in global_agents_normalized,
-            f"global AGENTS daily command center routing must mention {expected}",
+            f"global AGENTS must dispatch to owning skill {expected}",
         )
     for expected in (
         "$deep-planning",
-        "adversarial critique protocol",
-        "If `$deep-planning` is unavailable",
-        "draft the strongest plan",
+        "adversarial, architectural, or high-risk planning",
         "OpenSpec",
-        "must not write files",
-        "ordinary multi-step work",
     ):
         require(expected in global_agents_text, f"global AGENTS deep planning must mention {expected}")
     for expected in (
-        "## Explanation routing",
         "$explain-clearly",
-        "explain, teach, understand",
         "why/how",
         "code walkthrough",
         "execution-only",
-        "explicit user instructions",
     ):
         require(
             expected in global_agents_text,
@@ -2420,6 +2372,50 @@ def main() -> None:
         '"$ROOT/scripts/sync-agents.sh" --install' in script,
         "setup script must install global AGENTS instructions",
     )
+    require(SETUP_PREREQUISITES.exists(), "setup must include the prerequisite helper")
+    prerequisites_text = SETUP_PREREQUISITES.read_text()
+    for expected in (
+        "legacy-skills --install",
+        "ensure-rg --install",
+        "resolve-codex",
+    ):
+        require(expected in script, f"setup script must run prerequisite step {expected}")
+    for expected in (
+        '"chronicle"',
+        '"defuddle"',
+        '"json-canvas"',
+        '"obsidian-bases"',
+        '"obsidian-cli"',
+        '"obsidian-markdown"',
+        '"playwright"',
+        "/Applications/ChatGPT.app/Contents/Resources/codex",
+        "/Applications/Codex.app/Contents/Resources/codex",
+        '"install", "ripgrep"',
+        "CODEX_LOCAL_BIN_DIR",
+        "Refusing to modify legacy skills",
+    ):
+        require(expected in prerequisites_text, f"setup prerequisites must preserve {expected}")
+    require(
+        '"hatch-pet"' not in prerequisites_text.split("CHATGPT_CODEX", 1)[0],
+        "setup prerequisite migration must not manage hatch-pet",
+    )
+    for expected in (
+        "seven known duplicate user-skill links",
+        ".cc-switch/skills",
+        "preserves their targets and `hatch-pet`",
+        "working `rg` through Homebrew",
+        "`PATH`, the current ChatGPT app, then the legacy",
+        "setup-codex-prerequisites.py legacy-skills --check",
+        "setup-codex-prerequisites.py ensure-rg --check",
+        "setup-codex-prerequisites.py resolve-codex",
+    ):
+        require(expected in readme_normalized, f"README setup prerequisites must mention {expected}")
+    for expected in (
+        "8 KiB budget",
+        "below 16 KiB",
+        "owning skills",
+    ):
+        require(expected in readme_normalized, f"README AGENTS ownership must mention {expected}")
     require(SYNC_PETS_SCRIPT.exists(), "setup must include a Codex pet sync script")
     require(
         'python3 "$ROOT/scripts/sync-codex-pets.py" --install' in script,
@@ -2582,7 +2578,11 @@ def main() -> None:
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
 
     require(web_data_plugin.get("name") == "web-data-tools", "web-data-tools name must be exact")
-    require(web_data_plugin.get("version") == "0.4.0", "web-data-tools must use version 0.4.0")
+    require(web_data_plugin.get("version") == "0.5.0", "web-data-tools must use version 0.5.0")
+    require(
+        web_data_plugin.get("skills") == "./skills/",
+        "web-data-tools manifest must expose its community-research skill",
+    )
     require(
         web_data_plugin.get("mcpServers") == "./.mcp.json",
         "web-data-tools manifest must register its MCP config",
@@ -2709,6 +2709,7 @@ def main() -> None:
     )
     for expected in (
         "## Firecrawl Routing and Budget",
+        "$community-research",
         "`firecrawl_search`",
         "Markdown-only `firecrawl_scrape`",
         "`firecrawl_budget_status`",
@@ -2822,9 +2823,12 @@ def main() -> None:
         "$explain-clearly",
         "mental model",
         "concrete example",
+        "smallest useful format",
+        "bundled Visualize",
+        "ambiguous chess positions",
     ):
         require(
-            expected in readme_text,
+            expected in readme_normalized,
             f"README explanation workflow must mention {expected}",
         )
     for expected in (
@@ -2842,14 +2846,12 @@ def main() -> None:
     for expected in (
         "$ship-toolbox",
         "only when the user explicitly invokes it",
-        "synchronized `main`",
-        "never stage unrelated work",
-        "create an empty commit",
-        "force-push",
+        "never make `$ship-toolbox` implicitly invocable",
+        "synchronized-`main`",
     ):
         require(
-            expected in global_agents_text,
-            f"global AGENTS shipping routing must mention {expected}",
+            expected in repo_agents_text,
+            f"repository AGENTS shipping routing must mention {expected}",
         )
     for expected in (
         "Managed Codex Pet",
@@ -3371,8 +3373,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.3.0",
-        "workflow-tools plugin version must reflect the shipping update",
+        workflow_plugin.get("version") == "0.4.0",
+        "workflow-tools plugin version must reflect the readability update",
     )
     require(
         "mcpServers" not in workflow_plugin,
@@ -3450,13 +3452,19 @@ def main() -> None:
         "analogy",
         "terse factual query",
         "explicit user instructions",
+        "Choose the Smallest Useful Format",
+        "bundled Visualize",
+        "A visual is presentation, not evidence",
+        "For chess",
+        "responsive and accessible",
+        "CLI or IDE",
     ):
         require(expected in explain_clearly_text, f"explain-clearly skill must mention {expected}")
     explain_clearly_openai = EXPLAIN_CLEARLY_OPENAI.read_text()
     for expected in (
         'display_name: "Explain Clearly"',
         'short_description: "Clear mental models and concrete examples."',
-        'default_prompt: "Use $explain-clearly to explain this with a simple mental model and concrete example."',
+        'default_prompt: "Use $explain-clearly to lead with the answer, choose the smallest useful format, and give one accurate mental model and concrete example."',
         "allow_implicit_invocation: true",
     ):
         require(

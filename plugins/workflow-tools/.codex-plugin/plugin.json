@@ -1,6 +1,6 @@
 {
   "name": "workflow-tools",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Codex planning, explanation, and explicit toolbox shipping skills.",
   "author": {
     "name": "Jialuo Hu"
@@ -17,7 +17,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use $explain-clearly to explain this with a simple mental model and concrete example.",
+      "Use $explain-clearly to lead with the answer, choose the smallest useful format, and give one accurate mental model and concrete example.",
       "Use $deep-planning to critique this plan before implementation.",
       "Use $ship-toolbox to validate, commit, push, refresh, and verify the current toolbox changes.",
       "Review this Plan Mode request for assumptions, risks, and routing."

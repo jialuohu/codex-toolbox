@@ -280,7 +280,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             path = root / "config" / "codex" / "AGENTS.global.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "Use `ui-ux-pro-max` as the broad default",
+                    "Use `ui-ux-pro-max` for broad UI/UX",
                     "Use the broad design default",
                     1,
                 ),
@@ -300,8 +300,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             path = root / "config" / "codex" / "AGENTS.global.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "Use `$apple-design` only for explicitly Apple-like physical interactions, "
-                    "gestures, springs, or direct manipulation",
+                    "`$apple-design` for explicitly Apple-like physical interaction",
                     "Use `$ios-design` for interactions",
                     1,
                 ),
@@ -312,8 +311,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             path = root / "config" / "codex" / "AGENTS.global.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "Generic typography, color, accessibility, and reduced-motion requests "
-                    "remain with `ui-ux-pro-max`",
+                    "layout, typography, color, accessibility, and visual polish",
                     "Generic visual requests may use either skill",
                     1,
                 ),
@@ -324,7 +322,9 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             path = root / "config" / "codex" / "AGENTS.global.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "animations.dev request", "motion request", 1
+                    "`$emil-design-eng` for explicit Emil Kowalski-style motion craft",
+                    "generic motion craft",
+                    1,
                 ),
                 encoding="utf-8",
             )
@@ -333,7 +333,9 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             path = root / "config" / "codex" / "AGENTS.global.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "$find-animation-opportunities", "$find-motion-opportunities", 1
+                    "read-only animation audit skills for their named purposes",
+                    "generic animation guidance",
+                    1,
                 ),
                 encoding="utf-8",
             )
@@ -360,7 +362,9 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             path = root / "config" / "codex" / "AGENTS.global.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "current official documentation override", "current guidance suggests", 1
+                    "Project design systems and accessibility requirements override imported advice",
+                    "Imported advice overrides project requirements",
+                    1,
                 ),
                 encoding="utf-8",
             )
@@ -456,9 +460,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             (erase_apple_routing, "global AGENTS design-engineering routing must map Apple-like interactions to apple-design"),
             (erase_apple_generic_ui_boundary, "global AGENTS design-engineering routing must keep generic typography, accessibility, and reduced motion with ui-ux-pro-max"),
             (erase_emil_routing, "global AGENTS design-engineering routing must reserve emil-design-eng for explicit Emil or animations.dev requests"),
-            (erase_discovery_routing, "global AGENTS design-engineering routing must map motion discovery to find-animation-opportunities"),
-            (erase_audit_routing, "global AGENTS design-engineering routing must map motion audits to improve-animations"),
-            (erase_explicit_only_routing, "global AGENTS design-engineering routing must keep review, library, and prototype skills explicit-only"),
+            (erase_discovery_routing, "global AGENTS design-engineering routing must map motion discovery and audits to their skills"),
             (erase_authority_routing, "global AGENTS design-engineering routing must preserve the authority override order"),
             (erase_readme_scope, "README design-engineering section must describe motion vocabulary scope"),
             (erase_readme_url, "README design-engineering section must cite the upstream URL"),

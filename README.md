@@ -35,6 +35,18 @@ third-party marketplace pins, and reusable Codex instructions.
    plugins, installs third-party marketplace pins, removes stale direct MCP
    overrides for managed servers, and copies
    `config/codex/AGENTS.global.md` to `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`.
+   Before Codex operations, it safely removes only the seven known duplicate
+   user-skill links that still point into `.cc-switch/skills`, preserves their
+   targets and `hatch-pet`, ensures a working `rg` through Homebrew when needed,
+   and resolves Codex from `PATH`, the current ChatGPT app, then the legacy
+   Codex app. Inspect those prerequisites without changing local state with:
+
+   ```bash
+   python3 scripts/setup-codex-prerequisites.py legacy-skills --check
+   python3 scripts/setup-codex-prerequisites.py ensure-rg --check
+   python3 scripts/setup-codex-prerequisites.py resolve-codex
+   ```
+
    Because the toolbox marketplace is Git-backed, users can refresh it later
    from the Codex Desktop app by clicking **Upgrade**, or from the CLI:
 
@@ -603,9 +615,10 @@ Crawl, Map, Monitor, Agent, Interact, Parse, Extract, structured JSON, actions,
 profiles, enhanced or automatic proxies, unknown tools, and other unbounded
 options.
 
-Firecrawl is mandatory for requests that explicitly seek public community or
-forum discussions, user reports, sentiment, or community troubleshooting. A
-known thread URL goes directly to Scrape. Discovery uses one web source with
+The implicitly invocable `$community-research` skill owns requests that seek
+public community or forum discussions, user reports, sentiment, or community
+troubleshooting. Firecrawl is mandatory within that bounded workflow. A known
+thread URL goes directly to Scrape. Discovery uses one web source with
 highlights and at most five results, then scrapes no more than two selected
 threads when the highlights are insufficient. Built-in Codex web search remains
 the corroboration route for official or canonical sources.
@@ -668,7 +681,13 @@ verification after code changes.
 Use `$explain-clearly` when a concept, why/how question, comparison, or code
 walkthrough needs a clear mental model and concrete example. It leads with the
 direct answer, uses one accurate example by default, and adds only the mechanism
-or caveat needed to avoid a misleading simplification.
+or caveat needed to avoid a misleading simplification. It also chooses the
+smallest useful format: prose for simple results, a table for repeated
+comparisons, inline Mermaid for static relationships, bundled Visualize for
+spatial or interactive explanations, and `$pretty-mermaid` for reusable
+artifacts. Exact data and legal state are validated before rendering; ambiguous
+chess positions are reported rather than invented, and CLI or IDE tasks receive
+text, table, Mermaid, ASCII, or coordinate fallbacks.
 
 Example prompt:
 
@@ -708,7 +727,12 @@ Use $paper-figure-workflow to set up clean, reproducible figures for this AI/sys
 
 ## AGENTS.md Sync
 
-The canonical global instructions live at `config/codex/AGENTS.global.md`.
+The canonical global instructions live at `config/codex/AGENTS.global.md` and
+stay within an 8 KiB budget. Repository-specific development and shipping rules
+live in the root `AGENTS.md`; together they stay below 16 KiB so nested project
+instructions retain headroom. Detailed workflow, quota, and validation
+contracts belong to their owning skills rather than the always-loaded global
+file.
 
 Use:
 

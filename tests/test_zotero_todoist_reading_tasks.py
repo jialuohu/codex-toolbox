@@ -228,16 +228,19 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
             (README, "By default, each uniquely resolved Zotero parent"),
             (README, "without Obsidian notes"),
             (GLOBAL_AGENTS, "$zotero-todoist-reading-tasks"),
-            (GLOBAL_AGENTS, "default PaperRead coupling"),
-            (GLOBAL_AGENTS, "sole owner of note identity, safe creation, and URI generation"),
-            (GLOBAL_AGENTS, "`note-missing`"),
+            (SKILL, "Create or reuse the PaperRead draft"),
+            (SKILL, "sole owner of note identity, safe creation, and URI generation"),
+            (SKILL, "`note-missing`"),
             (SETUP_CHECKER, "ZOTERO_TODOIST_READING_TASKS_SKILL"),
             (SETUP_CHECKER, "ZOTERO_TODOIST_READING_TASKS_OPENAI"),
             (SETUP_CHECKER, '"0.7.1"'),
             (SETUP_CHECKER, "research-tools must declare obsidian_files as a dependency"),
             (SETUP_CHECKER, "research-tools must not duplicate the Obsidian MCP server"),
         ):
-            self.assertIn(expected, path.read_text())
+            self.assertIn(
+                " ".join(expected.split()),
+                " ".join(path.read_text().split()),
+            )
 
 
 if __name__ == "__main__":

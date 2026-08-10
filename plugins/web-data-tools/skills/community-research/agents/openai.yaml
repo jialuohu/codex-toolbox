@@ -1,0 +1,6 @@
+interface:
+  display_name: "Community Research"
+  short_description: "Research bounded public community evidence"
+  default_prompt: "Use $community-research to sample public community reports with bounded Firecrawl and corroborate factual claims with canonical sources."
+policy:
+  allow_implicit_invocation: true

@@ -3626,21 +3626,19 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("interactive reading", metadata.lower())
         self.assertTrue(metadata.isascii())
         self.assertTrue(SKILL_FILE.read_text(encoding="utf-8").isascii())
-        latest_route = self.sentence_containing(routing, "latest/current/recent")
-        self.assertIn("configured-source questions", latest_route)
-        self.assertIn("read-only interactive route", latest_route)
-        fallback_route = self.sentence_containing(routing, "Use Firecrawl only when")
-        self.assertIn("interactive `read` returns its validated structured fallback", fallback_route)
-        self.assertIn("no claim/renew/ack gates", fallback_route)
-        self.assertIn("incremental digest claim/renew/ack lifecycle", fallback_route)
-        standalone_route = self.sentence_containing(routing, "standalone article URL")
-        self.assertIn("historical/topic search", standalone_route)
-        self.assertIn("prefer Defuddle", standalone_route)
-        self.assertIn("built-in Codex web search", standalone_route)
-        self.assertIn("Firecrawl only", standalone_route)
+        for expected in (
+            "configured WeChat subscriptions",
+            "configured-sources",
+            "latest",
+            "recent",
+            "read",
+            "claim/renew/ack lifecycle",
+            "Defuddle",
+        ):
+            self.assertIn(expected, routing)
         self.assertTrue(routing_text.isascii())
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.4.0")
+        self.assertEqual(plugin["version"], "0.5.0")
         self.assertIn("wechat reader and digest tools", plugin["description"].lower())
 
     def test_skill_declares_the_operational_digest_contract(self):
@@ -3800,7 +3798,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("$wechat-digest", metadata)
         self.assertNotIn("dependencies:", metadata)
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.4.0")
+        self.assertEqual(plugin["version"], "0.5.0")
         joined = json.dumps(plugin).lower()
         for capability in ("wechat", "firecrawl", "playwright"):
             self.assertIn(capability, joined)

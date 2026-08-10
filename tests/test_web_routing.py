@@ -1,74 +1,70 @@
+import json
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
-SETUP_CHECKER = ROOT / "scripts" / "check-codex-toolbox-setup.py"
+COMMUNITY_SKILL = (
+    ROOT / "plugins" / "web-data-tools" / "skills" / "community-research" / "SKILL.md"
+)
+COMMUNITY_AGENT = COMMUNITY_SKILL.parent / "agents" / "openai.yaml"
+WEB_PLUGIN = ROOT / "plugins" / "web-data-tools" / ".codex-plugin" / "plugin.json"
 
 
 class WebRoutingContractTests(unittest.TestCase):
-    def test_global_routes_ordinary_search_to_codex_and_community_to_firecrawl(self) -> None:
+    def test_global_keeps_only_concise_search_dispatch(self) -> None:
         text = GLOBAL_AGENTS.read_text(encoding="utf-8")
 
-        codex_position = text.index("Use built-in Codex web search by default")
-        firecrawl_position = text.index("Firecrawl is mandatory")
-        self.assertLess(codex_position, firecrawl_position)
-        for expected in (
-            "ordinary public discovery",
-            "current facts",
-            "documentation",
-            "news",
-            "citations",
-            "public community or forum discussions",
-            "user reports",
-            "sentiment",
-            "community troubleshooting",
-            "official or canonical corroboration",
+        expected_sentence = (
+            "Use built-in Codex web search for ordinary public discovery, current facts, "
+            "documentation, news, and citations; use `$community-research` for public "
+            "community or forum discussions, user reports, sentiment, or community "
+            "troubleshooting, alongside official or canonical corroboration."
+        )
+        self.assertIn(expected_sentence, text)
+        for detail_owned_by_the_skill in (
+            "exactly one web source",
+            "no `scrapeOptions`",
+            "no more than two selected threads",
+            "fixed 900-credit billing-period cap",
+            "FIRECRAWL_BUDGET_EXHAUSTED",
         ):
-            self.assertIn(expected, text)
+            self.assertNotIn(detail_owned_by_the_skill, text)
 
-    def test_global_enforces_metered_bounded_firecrawl_route(self) -> None:
-        text = GLOBAL_AGENTS.read_text(encoding="utf-8")
+    def test_community_skill_owns_bounded_metered_firecrawl_contract(self) -> None:
+        text = COMMUNITY_SKILL.read_text(encoding="utf-8")
+        normalized = " ".join(text.split())
 
         for expected in (
             "known public thread URL",
             "exactly one web source",
             "no `scrapeOptions`",
-            "limit of 5 or less",
+            "result limit of 5 or less",
             "no more than two selected threads",
             "fixed 900-credit billing-period cap",
             "`firecrawl_budget_status`",
             "Markdown-only `firecrawl_scrape`",
-            "community coverage is degraded",
             "separate connected Firecrawl app",
             "private local files",
+            "community coverage is degraded",
+            "official or canonical",
         ):
-            self.assertIn(expected, text)
-        for retired_promise in (
-            "Every map or crawl must have an explicit page limit",
-            "Use Firecrawl Interact or Agent",
-            "After using `firecrawl_search`, call the Firecrawl feedback tool",
+            self.assertIn(expected, normalized)
+        for stable_error_code in (
+            "FIRECRAWL_BUDGET_EXHAUSTED",
+            "FIRECRAWL_BUDGET_UNAVAILABLE",
+            "FIRECRAWL_REQUEST_NOT_BOUNDED",
         ):
-            self.assertNotIn(retired_promise, text)
+            self.assertIn(stable_error_code, normalized)
 
-    def test_setup_checker_enforces_the_metered_community_route(self) -> None:
-        text = SETUP_CHECKER.read_text(encoding="utf-8")
+    def test_community_skill_is_implicit_and_plugin_version_is_current(self) -> None:
+        agent_text = COMMUNITY_AGENT.read_text(encoding="utf-8")
+        manifest = json.loads(WEB_PLUGIN.read_text(encoding="utf-8"))
 
-        for expected in (
-            "Use built-in Codex web search by default",
-            "Firecrawl is mandatory",
-            "public community or forum discussions",
-            "known public thread URL",
-            "exactly one web source",
-            "no `scrapeOptions`",
-            "limit of 5 or less",
-            "no more than two selected threads",
-            "fixed 900-credit billing-period cap",
-            "`firecrawl_budget_status`",
-            "separate connected Firecrawl app",
-        ):
-            self.assertIn(expected, text)
+        self.assertIn("allow_implicit_invocation: true", agent_text)
+        self.assertEqual(manifest["version"], "0.5.0")
+        self.assertIn("community research", manifest["description"].lower())
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 {
   "name": "web-data-tools",
-  "version": "0.4.0",
-  "description": "Bounded, metered Firecrawl Search, Scrape, and budget status; browser automation; safe WeChat reader and digest tools; and read-only BestBlogs public and personal brief readers.",
+  "version": "0.5.0",
+  "description": "Bounded community research with metered Firecrawl Search, Scrape, and budget status; browser automation; safe WeChat reader and digest tools; and read-only BestBlogs public and personal brief readers.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -10,8 +10,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Web Data Tools",
-    "shortDescription": "Metered Firecrawl, Playwright, WeChat, and BestBlogs tools.",
-    "longDescription": "Web Data Tools packages bounded, metered Firecrawl Search and Scrape, Playwright CLI browser automation, safe BestBlogs-backed WeChat reader and digest workflows, and read-only public and personal brief readers.",
+    "shortDescription": "Community research, Playwright, WeChat, and BestBlogs tools.",
+    "longDescription": "Web Data Tools packages bounded public community research with metered Firecrawl Search and Scrape, Playwright CLI browser automation, safe BestBlogs-backed WeChat reader and digest workflows, and read-only public and personal brief readers.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -19,7 +19,7 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "Extract web data, automate a browser flow, read and safely digest configured WeChat sources, or read a public or personal BestBlogs brief."
+      "Research public community evidence, extract bounded web data, automate a browser flow, read and safely digest configured WeChat sources, or read a public or personal BestBlogs brief."
     ]
   }
 }

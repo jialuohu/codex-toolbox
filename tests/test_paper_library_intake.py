@@ -999,20 +999,29 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
 
     def test_global_routing_readme_wiki_and_checker_expose_one_workflow(self) -> None:
         agents = GLOBAL_AGENTS.read_text()
+        skill = SKILL.read_text()
         readme = README.read_text()
         wiki = RESEARCH_LLM_WIKI.read_text()
         checker = SETUP_CHECKER.read_text()
 
         for expected in (
             "$paper-library-intake",
-            "Zotero first",
+            "Search Zotero first",
+            "paper_search_mcp",
+            "never enable Sci-Hub",
+            "A scoped import does not authorize merge, deletion, indexing, or unrelated cleanup",
+        ):
+            self.assertIn(expected, agents)
+        for expected in (
+            "$paper-library-intake",
+            "Search Zotero first",
             "Paper Search first",
             "normal Codex web search",
             "Firecrawl only",
             "Research/ReadLater",
-            "explicit `add`, `save`, or `import`",
+            "use_scihub=false",
         ):
-            self.assertIn(expected, agents)
+            self.assertIn(expected, skill)
         for expected in (
             "$paper-library-intake find",
             "$paper-library-intake add",

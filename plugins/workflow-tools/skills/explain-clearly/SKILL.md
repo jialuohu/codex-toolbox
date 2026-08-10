@@ -30,6 +30,28 @@ Infer the user's level from their wording. Define unavoidable jargon inline.
 For a terse factual query that was explicitly routed here, or when the user
 explicitly requests brevity, the Direct answer may be the complete response.
 
+## Choose the Smallest Useful Format
+
+Add a visual only when it makes an important relationship materially easier to
+understand. Use concise prose or a short list for one conclusion or a simple
+procedure; a Markdown table for three or more comparable entities or repeated
+fields; inline Mermaid for a static relationship, hierarchy, or sequence; and
+bundled Visualize for spatial, changing, adjustable, or inspectable information
+on a supported desktop, web, or mobile surface. Use `$pretty-mermaid` when the
+user needs reusable `.mmd` source or SVG, PNG, or terminal ASCII output. Build
+project files or use Sites for a standalone or hosted application rather than
+putting it in inline Visualize.
+
+Lead with the result, show the smallest useful representation, and add only the
+essential caveat. Do not narrate every element already visible in a diagram or
+table. A visual is presentation, not evidence: validate the source data,
+coordinates, calculations, and legal state first. For chess, reconstruct and
+validate the exact position, orientation, side to move, and move legality before
+drawing a board or arrow; report ambiguity instead of inventing pieces. Never
+use a generative image model for an exact factual diagram. Make Visualize output
+responsive and accessible; in a CLI or IDE, fall back to Mermaid, a table,
+ASCII, or explicit coordinates.
+
 ## Adapt the Explanation
 
 - For a comparison, lead with the practical distinction, compare only the

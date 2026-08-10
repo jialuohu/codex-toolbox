@@ -294,12 +294,12 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             (
                 "config/codex/AGENTS.global.md",
                 "\nUse the official Gmail connector and direct gws together in the same request.\n",
-                "global AGENTS Gmail routing policy must match the canonical reviewed paragraph",
+                "global AGENTS Gmail routing policy must reject additive surface-mixing contradictions",
             ),
             (
                 "config/codex/AGENTS.global.md",
                 "\nFor urgent Gmail work, use the official connector and direct `gws` together.\n",
-                "global AGENTS Gmail routing policy must match the canonical reviewed paragraph",
+                "global AGENTS Gmail routing policy must reject additive surface-mixing contradictions",
             ),
         )
 
@@ -988,7 +988,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 global_agents,
-                "explicitly requests direct `gws` or multi-account Gmail",
+                "explicitly requested direct-`gws` or multi-account workflow",
                 "requests Gmail access",
             )
 
@@ -996,7 +996,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 global_agents,
-                "supplies an explicit account alias",
+                "explicit account alias",
                 "has a configured account",
             )
 
@@ -1004,7 +1004,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 global_agents,
-                "Use exactly one Gmail surface per request",
+                "never mix Gmail surfaces",
                 "Choose a Gmail surface when convenient",
             )
 
@@ -1012,7 +1012,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.replace_once(
                 root,
                 global_agents,
-                "Keep the official Gmail connector available",
+                "Use the official Gmail connector for ordinary Gmail",
                 "Prefer direct gws for all Gmail work",
             )
 

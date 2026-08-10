@@ -2,7 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_CODEX="/Applications/Codex.app/Contents/Resources/codex"
+PREREQUISITES="$ROOT/scripts/setup-codex-prerequisites.py"
+export CODEX_LOCAL_BIN_DIR="${CODEX_LOCAL_BIN_DIR:-$HOME/.local/bin}"
 MARKETPLACE_NAME="jialuo-codex-toolbox"
 TOOLBOX_MARKETPLACE_SOURCE="${CODEX_TOOLBOX_MARKETPLACE_SOURCE:-jialuohu/codex-toolbox}"
 TOOLBOX_MARKETPLACE_GIT_URL="https://github.com/jialuohu/codex-toolbox.git"
@@ -66,27 +67,16 @@ RETIRED_MCP_SERVERS=(
   "symphony"
 )
 
-resolve_codex() {
-  if command -v codex >/dev/null 2>&1 && codex --version >/dev/null 2>&1; then
-    command -v codex
-    return 0
-  fi
-
-  if [ -x "$APP_CODEX" ] && "$APP_CODEX" --version >/dev/null 2>&1; then
-    printf '%s\n' "$APP_CODEX"
-    return 0
-  fi
-
-  return 1
-}
-
-CODEX_BIN="$(resolve_codex || true)"
+python3 "$PREREQUISITES" legacy-skills --install
+python3 "$PREREQUISITES" ensure-rg --install
+CODEX_BIN="$(python3 "$PREREQUISITES" resolve-codex || true)"
 
 if [ -z "$CODEX_BIN" ]; then
   cat >&2 <<'EOF'
 Could not find a working Codex CLI.
 
-The npm `codex` wrapper may be broken, and the Codex app binary was not usable.
+The PATH `codex` wrapper may be broken, and neither the ChatGPT nor legacy Codex
+app binary was usable.
 Reinstall or repair Codex, then rerun this script.
 EOF
   exit 1
