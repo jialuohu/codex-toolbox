@@ -79,10 +79,13 @@ third-party marketplace pins, and reusable Codex instructions.
 
 ## Diagram Tools
 
-The default `diagram-tools` plugin provides `$pretty-mermaid` for polished
-Mermaid artifacts. It preserves editable `.mmd` source and exports
-self-contained SVG, real PNG through Resvg, or plain ASCII/Unicode. Use native
-inline Mermaid for quick task explanations and `$paper-figure-workflow` for
+The default `diagram-tools` plugin makes `$pretty-mermaid` the default renderer
+whenever Mermaid is the chosen visual format. It preserves editable `.mmd`
+source and exports self-contained SVG, real PNG through Resvg, or plain
+ASCII/Unicode. Graphical surfaces default to SVG, while terminals use ASCII;
+automatic artifacts go in a task-scoped temporary directory when no destination
+is requested. Native inline Mermaid is reserved for explicit requests or a
+disclosed runtime or syntax fallback. Use `$paper-figure-workflow` for
 publication pipelines requiring draw.io, Matplotlib, or SVG/PDF cleanup.
 
 The renderer uses a contract-gated rolling runtime under
@@ -683,9 +686,11 @@ walkthrough needs a clear mental model and concrete example. It leads with the
 direct answer, uses one accurate example by default, and adds only the mechanism
 or caveat needed to avoid a misleading simplification. It also chooses the
 smallest useful format: prose for simple results, a table for repeated
-comparisons, inline Mermaid for static relationships, bundled Visualize for
-spatial or interactive explanations, and `$pretty-mermaid` for reusable
-artifacts. Exact data and legal state are validated before rendering; ambiguous
+comparisons, `$pretty-mermaid` by default for static relationships, and bundled
+Visualize for spatial or interactive explanations. Pretty Mermaid saves `.mmd`
+source and renders SVG or terminal ASCII; native inline Mermaid is an explicit
+choice or disclosed renderer fallback. Exact data and legal state are validated
+before rendering; ambiguous
 chess positions are reported rather than invented, and CLI or IDE tasks receive
 text, table, Mermaid, ASCII, or coordinate fallbacks.
 

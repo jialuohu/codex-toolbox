@@ -1,7 +1,7 @@
 {
   "name": "diagram-tools",
-  "version": "0.1.0",
-  "description": "Polished, offline Mermaid exports with a contract-gated rolling renderer.",
+  "version": "0.2.0",
+  "description": "Default, polished offline Mermaid rendering with editable source and a contract-gated runtime.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -18,8 +18,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Diagram Tools",
-    "shortDescription": "Export polished Mermaid diagrams.",
-    "longDescription": "Diagram Tools preserves editable Mermaid source and produces self-contained SVG, real PNG, or terminal-friendly ASCII through a tested, offline runtime.",
+    "shortDescription": "Render Mermaid diagrams by default.",
+    "longDescription": "Diagram Tools is the default Mermaid renderer, preserving editable source and producing self-contained SVG, real PNG, or terminal-friendly ASCII through a tested offline runtime.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -27,7 +27,7 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use $pretty-mermaid to export a polished SVG or PNG.",
+      "Use $pretty-mermaid by default for Mermaid diagrams and export editable source with polished SVG or PNG.",
       "Render these Mermaid sources as terminal-friendly ASCII."
     ]
   }

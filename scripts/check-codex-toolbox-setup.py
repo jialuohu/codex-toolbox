@@ -2071,7 +2071,7 @@ def validate_diagram_tools_contract(
 
     plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
-    require(plugin.get("version") == "0.1.0", "diagram-tools manifest version must be 0.1.0")
+    require(plugin.get("version") == "0.2.0", "diagram-tools manifest version must be 0.2.0")
     require(plugin.get("skills") == "./skills/", "diagram-tools must expose its skills directory")
     require(plugin.get("license") == "MIT", "diagram-tools manifest must declare MIT")
     require("mcpServers" not in plugin, "diagram-tools must remain skill-only")
@@ -2115,6 +2115,10 @@ def validate_diagram_tools_contract(
         "name: pretty-mermaid",
         "self-contained SVG",
         "genuine PNG",
+        "Use this skill by default whenever Mermaid is selected",
+        "task-scoped temporary directory with `mktemp -d`",
+        "native inline Mermaid only",
+        "reuse the exact source",
         "Do not install packages during an ordinary render",
         "$paper-figure-workflow",
         "references/cli.md",
@@ -2123,7 +2127,7 @@ def validate_diagram_tools_contract(
     openai_text = PRETTY_MERMAID_OPENAI.read_text()
     require(
         'display_name: "Pretty Mermaid"' in openai_text
-        and "$pretty-mermaid" in openai_text,
+        and "Use $pretty-mermaid by default" in openai_text,
         "pretty-mermaid OpenAI metadata must match the skill",
     )
 
@@ -2181,10 +2185,26 @@ def validate_diagram_tools_contract(
     ):
         require(expected in script_text, f"diagram runtime must preserve {expected} handling")
 
-    for expected in ("## Diagram Tools", "contract-gated rolling runtime", "Normal rendering is offline"):
+    for expected in (
+        "## Diagram Tools",
+        "the default renderer",
+        "task-scoped temporary directory",
+        "contract-gated rolling runtime",
+        "Normal rendering is offline",
+    ):
         require(expected in readme_text, f"README Diagram Tools section must mention {expected}")
-    for expected in ("native Mermaid", "$pretty-mermaid", "$paper-figure-workflow"):
+    for expected in (
+        "$pretty-mermaid` by default whenever Mermaid is the chosen format",
+        "task-scoped temporary directory",
+        "native inline Mermaid only",
+        "$paper-figure-workflow",
+    ):
         require(expected in global_agents_text, f"global AGENTS diagram routing must mention {expected}")
+    for retired in (
+        "Use native Mermaid for quick response diagrams",
+        "Static relationships, hierarchy, or sequence: inline Mermaid",
+    ):
+        require(retired not in global_agents_text, f"global AGENTS must remove retired routing: {retired}")
     require(
         "Do not install packages during an ordinary render" in PRETTY_MERMAID_SKILL.read_text(),
         "pretty-mermaid skill must own the offline runtime contract",
@@ -2251,9 +2271,9 @@ def main() -> None:
     for expected in (
         "One conclusion or simple procedure",
         "Three or more comparable entities",
-        "inline Mermaid",
+        "`$pretty-mermaid` by default",
+        "native inline Mermaid only",
         "bundled Visualize",
-        "`$pretty-mermaid`",
         "standalone or hosted application",
         "A visual is presentation, not evidence",
         "side to move",
@@ -3373,8 +3393,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.4.0",
-        "workflow-tools plugin version must reflect the readability update",
+        workflow_plugin.get("version") == "0.5.0",
+        "workflow-tools plugin version must reflect default Pretty Mermaid routing",
     )
     require(
         "mcpServers" not in workflow_plugin,
@@ -3453,6 +3473,9 @@ def main() -> None:
         "terse factual query",
         "explicit user instructions",
         "Choose the Smallest Useful Format",
+        "`$pretty-mermaid` by default",
+        "native inline Mermaid only",
+        "editable `.mmd` source",
         "bundled Visualize",
         "A visual is presentation, not evidence",
         "For chess",
@@ -3464,7 +3487,7 @@ def main() -> None:
     for expected in (
         'display_name: "Explain Clearly"',
         'short_description: "Clear mental models and concrete examples."',
-        'default_prompt: "Use $explain-clearly to lead with the answer, choose the smallest useful format, and give one accurate mental model and concrete example."',
+        'default_prompt: "Use $explain-clearly to lead with the answer, choose the smallest useful format, use Pretty Mermaid by default for diagrams, and give one accurate mental model and concrete example."',
         "allow_implicit_invocation: true",
     ):
         require(

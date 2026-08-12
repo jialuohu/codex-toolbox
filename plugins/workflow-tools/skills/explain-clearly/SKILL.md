@@ -35,12 +35,14 @@ explicitly requests brevity, the Direct answer may be the complete response.
 Add a visual only when it makes an important relationship materially easier to
 understand. Use concise prose or a short list for one conclusion or a simple
 procedure; a Markdown table for three or more comparable entities or repeated
-fields; inline Mermaid for a static relationship, hierarchy, or sequence; and
-bundled Visualize for spatial, changing, adjustable, or inspectable information
-on a supported desktop, web, or mobile surface. Use `$pretty-mermaid` when the
-user needs reusable `.mmd` source or SVG, PNG, or terminal ASCII output. Build
-project files or use Sites for a standalone or hosted application rather than
-putting it in inline Visualize.
+fields; `$pretty-mermaid` by default for a static relationship, hierarchy, or
+sequence; and bundled Visualize for spatial, changing, adjustable, or
+inspectable information on a supported desktop, web, or mobile surface. Pretty
+Mermaid saves editable `.mmd` source and renders SVG on graphical surfaces or
+ASCII in a terminal. Use native inline Mermaid only when explicitly requested
+or as a disclosed fallback for an unavailable renderer or rejected syntax.
+Build project files or use Sites for a standalone or hosted application rather
+than putting it in inline Visualize.
 
 Lead with the result, show the smallest useful representation, and add only the
 essential caveat. Do not narrate every element already visible in a diagram or

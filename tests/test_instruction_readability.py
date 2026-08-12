@@ -6,6 +6,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
 REPO_AGENTS = ROOT / "AGENTS.md"
+README = ROOT / "README.md"
+PRETTY_SKILL = (
+    ROOT / "plugins" / "diagram-tools" / "skills" / "pretty-mermaid" / "SKILL.md"
+)
+DIAGRAM_PLUGIN = ROOT / "plugins" / "diagram-tools" / ".codex-plugin" / "plugin.json"
 EXPLAIN_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "explain-clearly" / "SKILL.md"
 )
@@ -45,9 +50,10 @@ class ReadabilityContractTests(unittest.TestCase):
         for expected in (
             "One conclusion or simple procedure",
             "Three or more comparable entities",
-            "inline Mermaid",
+            "`$pretty-mermaid` by default",
+            "native inline Mermaid only",
+            "task-scoped temporary directory",
             "bundled Visualize",
-            "`$pretty-mermaid`",
             "standalone or hosted application",
             "not inline Visualize",
             "A visual is presentation, not evidence",
@@ -65,9 +71,12 @@ class ReadabilityContractTests(unittest.TestCase):
         for expected in (
             "Choose the Smallest Useful Format",
             "Markdown table for three or more comparable entities",
-            "inline Mermaid",
+            "`$pretty-mermaid` by default",
+            "native inline Mermaid only",
+            "editable `.mmd` source",
+            "SVG on graphical surfaces",
+            "ASCII in a terminal",
             "bundled Visualize",
-            "`$pretty-mermaid`",
             "A visual is presentation, not evidence",
             "For chess",
             "responsive and accessible",
@@ -75,11 +84,47 @@ class ReadabilityContractTests(unittest.TestCase):
         ):
             self.assertIn(expected, text)
 
-    def test_workflow_version_bumped_without_implicit_ship_toolbox(self) -> None:
-        manifest = json.loads(WORKFLOW_PLUGIN.read_text(encoding="utf-8"))
+    def test_pretty_mermaid_default_routing_and_fallback_contract(self) -> None:
+        global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
+        skill_text = PRETTY_SKILL.read_text(encoding="utf-8")
+        explain_text = EXPLAIN_SKILL.read_text(encoding="utf-8")
+        readme_text = README.read_text(encoding="utf-8")
+
+        for expected in (
+            "Use this skill by default whenever Mermaid is selected",
+            "task-scoped temporary directory with `mktemp -d`",
+            "default to SVG",
+            "render ASCII",
+            "explicit destination, format, theme, color, scale, or transparency",
+            "native inline Mermaid only",
+            "runtime is unavailable or rejects the syntax",
+            "reuse the exact source",
+            "$paper-figure-workflow",
+        ):
+            self.assertIn(expected, skill_text)
+
+        for text in (global_text, explain_text, readme_text):
+            self.assertIn("$pretty-mermaid", text)
+            self.assertIn("default", text)
+            self.assertIn("native inline Mermaid", text)
+
+        for retired in (
+            "Static relationships, hierarchy, or sequence: inline Mermaid",
+            "Use native Mermaid for quick response diagrams",
+            "Use native inline Mermaid for a quick in-task explanation",
+            "inline Mermaid for static relationships",
+            "inline Mermaid for quick task explanations",
+        ):
+            for text in (global_text, skill_text, explain_text, readme_text):
+                self.assertNotIn(retired, text)
+
+    def test_plugin_versions_bumped_without_implicit_ship_toolbox(self) -> None:
+        workflow_manifest = json.loads(WORKFLOW_PLUGIN.read_text(encoding="utf-8"))
+        diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
-        self.assertEqual(manifest["version"], "0.4.0")
+        self.assertEqual(workflow_manifest["version"], "0.5.0")
+        self.assertEqual(diagram_manifest["version"], "0.2.0")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
 

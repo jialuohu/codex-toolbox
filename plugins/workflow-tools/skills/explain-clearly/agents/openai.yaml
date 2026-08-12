@@ -1,6 +1,6 @@
 interface:
   display_name: "Explain Clearly"
   short_description: "Clear mental models and concrete examples."
-  default_prompt: "Use $explain-clearly to lead with the answer, choose the smallest useful format, and give one accurate mental model and concrete example."
+  default_prompt: "Use $explain-clearly to lead with the answer, choose the smallest useful format, use Pretty Mermaid by default for diagrams, and give one accurate mental model and concrete example."
 policy:
   allow_implicit_invocation: true

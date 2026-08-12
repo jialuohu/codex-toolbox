@@ -8,9 +8,8 @@ Use the smallest format that materially improves understanding:
 
 - One conclusion or simple procedure: concise prose or a short list.
 - Three or more comparable entities or repeated fields: a Markdown table.
-- Static relationships, hierarchy, or sequence: inline Mermaid.
+- Static relationships, hierarchy, or sequence: `$pretty-mermaid` by default.
 - Spatial, changing, adjustable, or inspectable information: bundled Visualize on supported desktop, web, or mobile surfaces.
-- Reusable `.mmd`, SVG, PNG, or terminal ASCII: `$pretty-mermaid`.
 - A standalone or hosted application: project files or Sites, not inline Visualize.
 
 Lead with the result, show the smallest useful representation, and add only the essential caveat. Do not restate every visual element in prose. A visual is presentation, not evidence: validate source data, coordinates, calculations, and legal state before rendering. For chess, reconstruct and validate the exact position, orientation, side to move, and move legality before drawing a board or arrow; report ambiguity instead of inventing pieces. Do not use generative image models for exact factual diagrams. Make Visualize output responsive and accessible; in CLI or IDE surfaces, fall back to Mermaid, a table, ASCII, or explicit coordinates.
@@ -41,7 +40,7 @@ Prefer the installed MCP server, connected app, or skill that owns a service or 
 - Use `$wechat-digest` for configured WeChat subscriptions: route current requests through `configured-sources` then `latest`, `recent`, or `read`; preserve the skill's exact claim/renew/ack lifecycle for incremental digests. Use Defuddle for a straightforward standalone article URL.
 - Use `$mineru-document-extraction` for complex scanned, OCR-heavy, or layout-sensitive local documents; keep caches and outputs outside Git checkouts and Obsidian vaults. Use simple document readers for straightforward born-digital files.
 - Use PixelLab only for requested pixel-art game assets; creation can spend credits and remains prompt-gated.
-- Use native Mermaid for quick response diagrams, `$pretty-mermaid` for editable source or rendered exports, and `$paper-figure-workflow` for publication pipelines involving draw.io, Matplotlib, Inkscape, SVG, or PDF.
+- Use `$pretty-mermaid` by default whenever Mermaid is the chosen format: save editable `.mmd` source and render SVG on graphical surfaces or ASCII in a terminal. With no requested destination, use a task-scoped temporary directory. Use native inline Mermaid only when explicitly requested or when the renderer is unavailable or rejects the syntax; disclose the fallback and preserve the source semantics. Use `$paper-figure-workflow` for publication pipelines involving draw.io, Matplotlib, Inkscape, SVG, or PDF.
 - Use `$paper-library-intake` for one paper's discovery, Zotero check, classification, or explicitly requested import. Search Zotero first for private-library state, then `paper_search_mcp` for public scholarly discovery and lawful open-access retrieval; never enable Sci-Hub. A scoped import does not authorize merge, deletion, indexing, or unrelated cleanup.
 - Use `$paper-review-sync` for private review-assignment reconciliation; never send confidential submissions to public search or scraping. Use `$paper-review-library-intake` and `$paper-review-page` for their private workflow stages.
 - Use Zotero for the user's saved research library. Treat additions, annotations, indexing, library switching, and deletion as mutations requiring scoped authorization.
