@@ -334,13 +334,11 @@ def shell_function_blocks(script: str, name: str) -> list[str]:
     )
 
 
-def scan_retired_reference_mentions(
+def scan_retired_tracker_mentions(
     root: Path,
     checker_path: Path,
-    retired_orchestrator: str,
-) -> tuple[list[tuple[str, int, str]], list[tuple[str, int, str]]]:
-    """Return retired-orchestrator and retired-tracker mentions outside ignored paths."""
-    retired_mentions = []
+) -> list[tuple[str, int, str]]:
+    """Return retired issue-tracker integration mentions outside ignored paths."""
     retired_tracker_mentions = []
     ignored_scan_parts = {".git", ".worktrees", ".venv", ".pytest_cache", ".ruff_cache", "__pycache__", "node_modules"}
     for path in root.rglob("*"):
@@ -356,8 +354,6 @@ def scan_retired_reference_mentions(
         except UnicodeDecodeError:
             continue
         for line_number, line in enumerate(lines, start=1):
-            if retired_orchestrator in line.lower():
-                retired_mentions.append((str(relative_path), line_number, line.strip()))
             if re.search(
                 r"(?:https?://(?:www\.)?linear\.app\b|\bLINEAR_[A-Z0-9_]+\b|"
                 r"\blinear\s+(?:issue|issues|ticket|tickets|project|projects|team|teams|"
@@ -369,7 +365,7 @@ def scan_retired_reference_mentions(
                 line,
             ):
                 retired_tracker_mentions.append((str(relative_path), line_number, line.strip()))
-    return retired_mentions, retired_tracker_mentions
+    return retired_tracker_mentions
 
 
 def daily_skill_frontmatter(skill_text: str) -> str:
@@ -2587,10 +2583,8 @@ def main() -> None:
     trading_mcp = json.loads(TRADING_MCP.read_text())
     default_plugins = array_body(script, "DEFAULT_PLUGINS")
     default_plugin_entries = shell_array_entries(script, "DEFAULT_PLUGINS")
-    retired_plugins = array_body(script, "RETIRED_PLUGINS")
     managed_mcp_servers = array_body(script, "MANAGED_MCP_SERVERS")
     managed_mcp_server_entries = shell_array_entries(script, "MANAGED_MCP_SERVERS")
-    retired_mcp_servers = array_body(script, "RETIRED_MCP_SERVERS")
     pixellab_server = game_asset_mcp.get("mcpServers", {}).get("pixellab")
     robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
     todoist_server = productivity_mcp.get("mcpServers", {}).get("todoist")
@@ -2698,25 +2692,9 @@ def main() -> None:
         "obsidian_files must forward CODEX_OBSIDIAN_VAULT to its STDIO server",
     )
 
-    retired_orchestrator = "sym" + "phony"
-    retired_plugin_name = retired_orchestrator + "-tools"
-    require(
-        not (ROOT / "plugins" / retired_plugin_name).exists(),
-        "retired orchestration plugin directory must be absent",
-    )
-    retired_mentions, retired_tracker_mentions = scan_retired_reference_mentions(
+    retired_tracker_mentions = scan_retired_tracker_mentions(
         ROOT,
         Path(__file__),
-        retired_orchestrator,
-    )
-    allowed_retired_mentions = {
-        ("scripts/setup-codex-toolbox.sh", f'"{retired_plugin_name}"'),
-        ("scripts/setup-codex-toolbox.sh", f'"{retired_orchestrator}"'),
-    }
-    require(
-        len(retired_mentions) == 2
-        and {(path, line) for path, _, line in retired_mentions} == allowed_retired_mentions,
-        "retired orchestration references must be limited to the plugin and MCP migration tombstones",
     )
     require(
         not retired_tracker_mentions,
@@ -2982,14 +2960,6 @@ def main() -> None:
         "setup script must install the game-asset-tools plugin",
     )
     require(
-        '  "symphony-tools"' not in default_plugins,
-        "setup script must not install the retired symphony-tools plugin",
-    )
-    require(
-        '  "symphony-tools"' in retired_plugins,
-        "setup script must retain the symphony-tools migration tombstone",
-    )
-    require(
         '  "workflow-tools"' in default_plugins,
         "setup script must install the workflow-tools plugin",
     )
@@ -3008,19 +2978,6 @@ def main() -> None:
     require(
         '  "pixellab"' in managed_mcp_servers,
         "setup script must manage the pixellab MCP server cleanup list",
-    )
-    require(
-        '  "symphony"' not in managed_mcp_servers,
-        "setup script must not treat the retired symphony MCP server as active",
-    )
-    require(
-        '  "symphony"' in retired_mcp_servers,
-        "setup script must retain the symphony MCP migration tombstone",
-    )
-    require(
-        'for server in "${RETIRED_MCP_SERVERS[@]}"; do' in script
-        and 'Removed retired direct MCP config: ${server}' in script,
-        "setup script must clean up retired direct MCP config overrides",
     )
     require(
         '  "todoist"' in managed_mcp_servers,
@@ -3045,13 +3002,6 @@ def main() -> None:
     require(
         game_asset_plugin.get("mcpServers") == "./.mcp.json",
         "game-asset-tools must expose its MCP config",
-    )
-    require(
-        not any(
-            plugin.get("name") == "symphony-tools"
-            for plugin in marketplace.get("plugins", [])
-        ),
-        "marketplace must not include the retired symphony-tools plugin",
     )
     require(
         any(

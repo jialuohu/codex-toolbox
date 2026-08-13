@@ -47,7 +47,6 @@ CONTEXT7_DEFAULT_PLUGINS=(
 RETIRED_PLUGINS=(
   "lab-weekly-update"
   "context7-docs"
-  "symphony-tools"
 )
 MANAGED_MCP_SERVERS=(
   "alpaca"
@@ -63,10 +62,6 @@ MANAGED_MCP_SERVERS=(
   "zotero"
   "docmost"
 )
-RETIRED_MCP_SERVERS=(
-  "symphony"
-)
-
 python3 "$PREREQUISITES" legacy-skills --install
 python3 "$PREREQUISITES" ensure-rg --install
 CODEX_BIN="$(python3 "$PREREQUISITES" resolve-codex || true)"
@@ -606,15 +601,6 @@ for server in "${MANAGED_MCP_SERVERS[@]}"; do
     echo "Removed direct MCP config override: ${server}"
   else
     echo "Direct MCP config override not present: ${server}"
-  fi
-done
-
-for server in "${RETIRED_MCP_SERVERS[@]}"; do
-  if direct_mcp_config_present "$server"; then
-    "$CODEX_BIN" mcp remove "$server" >/dev/null
-    echo "Removed retired direct MCP config: ${server}"
-  else
-    echo "Retired direct MCP config not present: ${server}"
   fi
 done
 

@@ -16,34 +16,33 @@ SPEC.loader.exec_module(CHECKER)
 
 
 class SetupCheckerScanTests(unittest.TestCase):
-    def test_retired_reference_scan_checks_a_repo_nested_below_worktrees(self) -> None:
+    def test_retired_tracker_scan_checks_a_repo_nested_below_worktrees(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir) / ".worktrees" / "fixture-repo"
             forbidden = repo_root / "docs" / "forbidden.md"
             ignored = repo_root / ".worktrees" / "ignored.md"
-            retired_orchestrator = "sym" + "phony"
+            tracker_name = "lin" + "ear"
+            tracker_brand = tracker_name.title()
             forbidden.parent.mkdir(parents=True)
             ignored.parent.mkdir(parents=True)
-            forbidden.write_text(f"{retired_orchestrator} is forbidden here\n")
-            ignored.write_text(f"{retired_orchestrator} stays ignored here\n")
+            forbidden.write_text(f"Use {tracker_brand} to track work.\n")
+            ignored.write_text(f"Use {tracker_brand} to track work.\n")
 
-            scan = getattr(CHECKER, "scan_retired_reference_mentions", None)
-            self.assertIsNotNone(scan, "setup checker must expose its retired-reference scan")
+            scan = getattr(CHECKER, "scan_retired_tracker_mentions", None)
+            self.assertIsNotNone(scan, "setup checker must expose its retired-tracker scan")
             if scan is None:
                 return
-            retired_mentions, tracker_mentions = scan(
+            tracker_mentions = scan(
                 repo_root,
                 CHECKER_PATH,
-                retired_orchestrator,
             )
 
         self.assertEqual(
-            retired_mentions,
-            [("docs/forbidden.md", 1, f"{retired_orchestrator} is forbidden here")],
+            tracker_mentions,
+            [("docs/forbidden.md", 1, f"Use {tracker_brand} to track work.")],
         )
-        self.assertEqual(tracker_mentions, [])
 
-    def test_retired_reference_scan_distinguishes_tracker_integration_from_motion_vocabulary(
+    def test_retired_tracker_scan_distinguishes_integration_from_motion_vocabulary(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -84,13 +83,11 @@ class SetupCheckerScanTests(unittest.TestCase):
                 f"Use a {tracker_name} timing function for a spinner.\n", encoding="utf-8"
             )
 
-            retired_mentions, tracker_mentions = CHECKER.scan_retired_reference_mentions(
+            tracker_mentions = CHECKER.scan_retired_tracker_mentions(
                 repo_root,
                 CHECKER_PATH,
-                "sym" + "phony",
             )
 
-        self.assertEqual(retired_mentions, [])
         self.assertEqual(
             sorted(tracker_mentions),
             sorted(
@@ -124,7 +121,7 @@ class SetupCheckerScanTests(unittest.TestCase):
             ),
         )
 
-    def test_retired_reference_scan_ignores_generated_runtime_directories(self) -> None:
+    def test_retired_tracker_scan_ignores_generated_runtime_directories(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir) / "fixture-repo"
             tracker_name = "lin" + "ear"
@@ -136,13 +133,11 @@ class SetupCheckerScanTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-            retired_mentions, tracker_mentions = CHECKER.scan_retired_reference_mentions(
+            tracker_mentions = CHECKER.scan_retired_tracker_mentions(
                 repo_root,
                 CHECKER_PATH,
-                "sym" + "phony",
             )
 
-        self.assertEqual(retired_mentions, [])
         self.assertEqual(tracker_mentions, [])
 
 
