@@ -202,10 +202,12 @@ Require an exact case-insensitive email match between live status and
 `profile.json.expected_email`. Also require `token_valid: true`,
 `storage: encrypted`, `keyring_backend: file`,
 `encrypted_credentials_exists: true`, `plain_credentials_exists: false`,
-`encryption_valid: true`, and exactly `gmail.modify`, `openid`,
-`userinfo.email`, and `userinfo.profile`. Reject missing, duplicate, or extra
-status fields and scopes, including the broad
-`https://mail.google.com/` scope.
+`encryption_valid: true`, and the exact permission semantics of
+`gmail.modify`, `openid`, `userinfo.email`, and `userinfo.profile`. The pinned
+CLI may report the equivalent identity aliases `email` and `profile` alongside
+the two full `userinfo` URLs. Accept either the four canonical scopes or those
+same four plus both aliases. Reject missing, duplicate, partially aliased, or
+otherwise extra scopes, including the broad `https://mail.google.com/` scope.
 
 ```bash
 status_json="$(
@@ -242,6 +244,11 @@ try:
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile",
     }
+    accepted_scope_sets = (
+        required_scopes,
+        required_scopes | {"email", "profile"},
+    )
+    scope_set = set(scopes) if isinstance(scopes, list) else set()
     healthy = (
         isinstance(status.get("user"), str)
         and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
@@ -252,8 +259,8 @@ try:
         and status.get("plain_credentials_exists") is False
         and status.get("encryption_valid") is True
         and isinstance(scopes, list)
-        and len(scopes) == len(required_scopes)
-        and set(scopes) == required_scopes
+        and len(scopes) == len(scope_set)
+        and any(scope_set == accepted for accepted in accepted_scope_sets)
     )
 except (ValueError, TypeError, KeyError):
     healthy = False

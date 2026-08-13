@@ -260,8 +260,9 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "openid",
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile",
-            "len(scopes) == len(required_scopes)",
-            "set(scopes) == required_scopes",
+            "accepted_scope_sets",
+            "len(scopes) == len(scope_set)",
+            "any(scope_set == accepted for accepted in accepted_scope_sets)",
             "https://mail.google.com/",
             "absolute attachment paths",
             "no same-request Gmail connector fallback",
@@ -728,6 +729,12 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         self.assertEqual(status_call[5:], [""] * 10)
         self.assertFalse(self.shim_log.exists())
 
+    def test_status_accepts_complete_gws_identity_alias_reporting(self):
+        status = dict(self.status)
+        status["scopes"] = [*REQUIRED_SCOPES, "email", "profile"]
+        result = self.run_preflight(status=status)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_preflight_rejects_non_private_or_noncanonical_secrets_root_before_status(self):
         self.secrets.chmod(0o755)
         exposed = self.run_preflight()
@@ -820,6 +827,8 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
             {"scopes": list(REQUIRED_SCOPES[1:])},
             {"scopes": [*REQUIRED_SCOPES, "https://mail.google.com/"]},
             {"scopes": [*REQUIRED_SCOPES, REQUIRED_SCOPES[0]]},
+            {"scopes": [*REQUIRED_SCOPES, "email"]},
+            {"scopes": [*REQUIRED_SCOPES, "profile"]},
             {"token_valid": False},
             {"storage": "plaintext"},
             {"keyring_backend": "keychain"},

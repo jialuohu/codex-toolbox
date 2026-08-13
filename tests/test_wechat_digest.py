@@ -1122,6 +1122,17 @@ class WechatDigestTests(unittest.TestCase):
         self.assertIn("feed_json_too_deep", result["warnings"])
         self.assertFalse(state["sources"]["s1"]["initialized"])
 
+    def test_json_depth_guard_does_not_depend_on_encoder_recursion_limit(self):
+        deep = "leaf"
+        for _ in range(wechat.MAX_JSON_DEPTH + 1):
+            deep = [deep]
+        original_dumps = wechat.json.dumps
+        wechat.json.dumps = lambda *args, **kwargs: '"encoder accepted deep input"'
+        try:
+            self.assertIsNone(wechat._json_fingerprint(deep))
+        finally:
+            wechat.json.dumps = original_dumps
+
     def test_malformed_article_makes_complete_transport_partial_without_state_advance(self):
         state = wechat.new_state()
         wechat.configure_sources(state, ["s1"])

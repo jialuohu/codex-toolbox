@@ -229,12 +229,12 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 "gws shared runtime must require the userinfo.profile identity scope",
             ),
             (
-                "and len(scopes) == len(required_scopes)\n",
-                "gws shared runtime must reject duplicate or extra scopes",
+                "and len(scopes) == len(scope_set)\n",
+                "gws shared runtime must reject duplicate scopes",
             ),
             (
-                "and set(scopes) == required_scopes\n",
-                "gws shared runtime must require the exact scope set",
+                "and any(scope_set == accepted for accepted in accepted_scope_sets)\n",
+                "gws shared runtime must require one exact accepted scope set",
             ),
             (
                 "There is no same-request Gmail connector fallback. Fail closed.\n",

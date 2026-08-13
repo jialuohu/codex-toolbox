@@ -517,6 +517,11 @@ try:
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile",
     }
+    accepted_scope_sets = (
+        required_scopes,
+        required_scopes | {"email", "profile"},
+    )
+    scope_set = set(scopes) if isinstance(scopes, list) else set()
     healthy = (
         isinstance(status.get("user"), str)
         and status["user"].casefold() == os.environ["EXPECTED_EMAIL"].casefold()
@@ -527,8 +532,8 @@ try:
         and status.get("encryption_valid") is True
         and status.get("plain_credentials_exists") is False
         and isinstance(scopes, list)
-        and len(scopes) == len(required_scopes)
-        and set(scopes) == required_scopes
+        and len(scopes) == len(scope_set)
+        and any(scope_set == accepted for accepted in accepted_scope_sets)
     )
 except (ValueError, TypeError, KeyError):
     healthy = False

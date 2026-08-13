@@ -232,7 +232,7 @@ GOOGLE_WORKSPACE_LICENSE_SHA256 = (
     "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
 )
 GWS_SHARED_SKILL_SHA256 = (
-    "f4a3c44f994335838d44eaa5a00c64969169d7a352629c93e534e91fce23a95b"
+    "0bd1debf74c8161591394d4bf3a3a470150b351f0807088de1602f0285b8128a"
 )
 GWS_GMAIL_SKILL_SHA256 = (
     "5dec2f19457737a4611fe073c9cb943c0e2337af12b7bb7cdd9e3b8571216ef3"
@@ -271,7 +271,7 @@ GWS_ENSURE_RUNTIME_FUNCTION_SHA256 = (
     "2ab4dacc442950d52d571e8acdabc6209635e2596c4d84ad204b5f71069ea366"
 )
 GWS_SETUP_SHA256 = (
-    "f156b8c52464b2ec3bcec6a677313dec596f8702e52d90010999586250e27a2c"
+    "37c2181cd84236f9e7ab706b28990f39c27545abc150a93fe44921329cb85d40"
 )
 GLOBAL_GMAIL_ROUTING_PARAGRAPH = (
     "Keep the official Gmail connector available for ordinary connected Gmail requests. "
@@ -917,12 +917,12 @@ def validate_google_workspace_tools_contract(
             "setup-gws must require the userinfo.profile identity scope",
         ),
         (
-            "and len(scopes) == len(required_scopes)",
-            "setup-gws must reject duplicate or extra scopes",
+            "and len(scopes) == len(scope_set)",
+            "setup-gws must reject duplicate scopes",
         ),
         (
-            "and set(scopes) == required_scopes",
-            "setup-gws must require the exact scope set",
+            "and any(scope_set == accepted for accepted in accepted_scope_sets)",
+            "setup-gws must require one exact accepted scope set",
         ),
         (
             "chmod 700",
@@ -1211,12 +1211,12 @@ def validate_google_workspace_tools_contract(
             "gws shared runtime must require the userinfo.profile identity scope",
         ),
         (
-            "and len(scopes) == len(required_scopes)\n",
-            "gws shared runtime must reject duplicate or extra scopes",
+            "and len(scopes) == len(scope_set)\n",
+            "gws shared runtime must reject duplicate scopes",
         ),
         (
-            "and set(scopes) == required_scopes\n",
-            "gws shared runtime must require the exact scope set",
+            "and any(scope_set == accepted for accepted in accepted_scope_sets)\n",
+            "gws shared runtime must require one exact accepted scope set",
         ),
         (
             "There is no same-request Gmail connector fallback. Fail closed.\n",

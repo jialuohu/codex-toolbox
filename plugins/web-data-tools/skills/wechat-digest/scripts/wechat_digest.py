@@ -35,6 +35,7 @@ PREVIOUS_STATE_VERSION = 3
 STATE_VERSION = 4
 MAX_BODY_BYTES = 1_000_000
 MAX_STATE_BYTES = 16 * 1024 * 1024
+MAX_JSON_DEPTH = 1000
 BODY_DAILY_LIMIT = 35
 TOTAL_DAILY_LIMIT = 50
 PRESERVE_BODY_CEILING = 30
@@ -1119,7 +1120,31 @@ def _page_items(data):
     return data["dataList"], counters[0] if counters else None, None
 
 
+def _json_nesting_is_bounded(value):
+    stack = [(value, 1, False)]
+    active_containers = set()
+    while stack:
+        current, depth, exiting = stack.pop()
+        if exiting:
+            active_containers.discard(id(current))
+            continue
+        if not isinstance(current, (dict, list, tuple)):
+            continue
+        if depth > MAX_JSON_DEPTH:
+            return False
+        marker = id(current)
+        if marker in active_containers:
+            return False
+        active_containers.add(marker)
+        stack.append((current, depth, True))
+        children = current.values() if isinstance(current, dict) else current
+        stack.extend((child, depth + 1, False) for child in children)
+    return True
+
+
 def _json_fingerprint(value):
+    if not _json_nesting_is_bounded(value):
+        return None
     try:
         encoded = json.dumps(
             value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
@@ -2132,6 +2157,8 @@ def main(argv=None):
     except RecursionError:
         result = {"error": "operation failed safely"}
     try:
+        if not _json_nesting_is_bounded(result):
+            raise ValueError("JSON output nesting exceeds limit")
         output = json.dumps(result, ensure_ascii=False, sort_keys=True)
     except (RecursionError, TypeError, ValueError):
         result = {"error": "output serialization failed safely"}
