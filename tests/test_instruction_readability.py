@@ -11,6 +11,10 @@ PRETTY_SKILL = (
     ROOT / "plugins" / "diagram-tools" / "skills" / "pretty-mermaid" / "SKILL.md"
 )
 DIAGRAM_PLUGIN = ROOT / "plugins" / "diagram-tools" / ".codex-plugin" / "plugin.json"
+DRAWIO_SKILL = ROOT / "plugins" / "drawio-tools" / "skills" / "drawio" / "SKILL.md"
+PAPER_FIGURE_SKILL = (
+    ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
+)
 EXPLAIN_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "explain-clearly" / "SKILL.md"
 )
@@ -53,6 +57,7 @@ class ReadabilityContractTests(unittest.TestCase):
             "`$pretty-mermaid` by default",
             "native inline Mermaid only",
             "task-scoped temporary directory",
+            "$drawio",
             "bundled Visualize",
             "standalone or hosted application",
             "not inline Visualize",
@@ -100,6 +105,7 @@ class ReadabilityContractTests(unittest.TestCase):
             "runtime is unavailable or rejects the syntax",
             "reuse the exact source",
             "$paper-figure-workflow",
+            "$drawio",
         ):
             self.assertIn(expected, skill_text)
 
@@ -118,13 +124,26 @@ class ReadabilityContractTests(unittest.TestCase):
             for text in (global_text, skill_text, explain_text, readme_text):
                 self.assertNotIn(retired, text)
 
+    def test_drawio_owns_advanced_editable_work_without_replacing_mermaid(self) -> None:
+        global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
+        pretty_text = PRETTY_SKILL.read_text(encoding="utf-8")
+        drawio_text = DRAWIO_SKILL.read_text(encoding="utf-8")
+        paper_text = PAPER_FIGURE_SKILL.read_text(encoding="utf-8")
+
+        self.assertIn("$pretty-mermaid` by default", global_text)
+        self.assertIn("Use `$drawio` for explicit editable, multi-page, browser, or exported draw.io work", global_text)
+        self.assertIn("Use `$drawio` for explicit draw.io", pretty_text)
+        self.assertIn("Keep Pretty Mermaid as the default", drawio_text)
+        self.assertIn("$paper-figure-workflow", drawio_text)
+        self.assertIn("Use `$drawio` for native `.drawio` creation", paper_text)
+
     def test_plugin_versions_bumped_without_implicit_ship_toolbox(self) -> None:
         workflow_manifest = json.loads(WORKFLOW_PLUGIN.read_text(encoding="utf-8"))
         diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
         self.assertEqual(workflow_manifest["version"], "0.5.0")
-        self.assertEqual(diagram_manifest["version"], "0.2.0")
+        self.assertEqual(diagram_manifest["version"], "0.3.0")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
 

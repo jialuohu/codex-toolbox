@@ -1,0 +1,41 @@
+{
+  "name": "drawio-tools",
+  "version": "0.1.0",
+  "description": "Create, inspect, edit, open, and export editable draw.io diagrams through a pinned official MCP runtime.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com",
+    "url": "https://github.com/jialuohu"
+  },
+  "homepage": "https://www.drawio.com/docs/manual/generate/drawio-mcp-server/",
+  "repository": "https://github.com/jialuohu/codex-toolbox",
+  "license": "MIT",
+  "keywords": [
+    "drawio",
+    "diagrams.net",
+    "diagram",
+    "mcp",
+    "svg",
+    "pdf"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Draw.io Tools",
+    "shortDescription": "Editable draw.io diagrams and exports.",
+    "longDescription": "Draw.io Tools provides the official draw.io MCP tool surface from a setup-time verified offline runtime, plus optional draw.io Desktop export to editable PNG, SVG, and PDF artifacts.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "websiteURL": "https://www.drawio.com/",
+    "defaultPrompt": [
+      "Use $drawio to create an editable multi-page architecture diagram and open it in draw.io.",
+      "Use $drawio to edit this .drawio file and export an editable SVG or PDF."
+    ],
+    "brandColor": "#F08705"
+  }
+}

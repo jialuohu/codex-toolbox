@@ -1,0 +1,11 @@
+interface:
+  display_name: "Draw.io"
+  short_description: "Create and edit native draw.io diagrams."
+  default_prompt: "Use $drawio to create or edit an editable draw.io diagram and retain its native source."
+policy:
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "drawio"
+      description: "Official draw.io MCP tools from the verified toolbox runtime"

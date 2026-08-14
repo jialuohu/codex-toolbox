@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "pathBase": "skillRoot",
+  "defaultTheme": "white",
+  "sourceAsset": "assets/source/Stevens-PPT-TPL-2022-INSTRUCT.pptx",
+  "galleryAsset": "assets/templates/Stevens-Presentation-Themes-Gallery.pptx",
+  "checksumFile": "references/asset-checksums.json",
+  "templateStructure": {
+    "theme": { "slides": 18, "masters": 2, "layouts": 39, "notesSlides": 18, "indexSlide": 1 },
+    "gallery": { "slides": 4, "masters": 2, "layouts": 22, "notesSlides": 4 }
+  },
+  "typography": {
+    "coverTitle": { "typeface": "Saira Condensed", "fontSizePt": 54, "maxLines": 2 },
+    "slideTitle": { "typeface": "Saira Condensed", "fontSizePt": 40, "maxLines": 2 },
+    "subhead": { "typeface": "IBM Plex Sans", "fontSizePt": 20 },
+    "body": { "typeface": "IBM Plex Sans", "fontSizePt": 18 }
+  },
+  "themes": {
+    "white": {
+      "assetPath": "assets/templates/Stevens-Presentation-Template-White.pptx",
+      "tokens": {
+        "surface": "#FFFFFF",
+        "onSurface": "#363D45",
+        "secondaryText": "#7F7F7F",
+        "brandPlane": "#A32638",
+        "logo": "positive",
+        "series": ["#A32638", "#004380", "#EBC73B"]
+      }
+    },
+    "dark": {
+      "assetPath": "assets/templates/Stevens-Presentation-Template-Dark.pptx",
+      "tokens": {
+        "surface": "#363D45",
+        "onSurface": "#FFFFFF",
+        "secondaryText": "#E4E5E6",
+        "brandPlane": "#A32638",
+        "logo": "negative",
+        "series": ["#EBC73B", "#E7842E", "#4896CF"]
+      }
+    }
+  },
+  "archetypes": [
+    { "id": "text-cover", "slideNumber": 2, "layoutName": "Stevens 01 — Text Cover" },
+    { "id": "image-cover", "slideNumber": 3, "layoutName": "Stevens 02 — Image Cover" },
+    { "id": "roadmap", "slideNumber": 4, "layoutName": "Stevens 03 — Roadmap" },
+    { "id": "section-divider", "slideNumber": 5, "layoutName": "Stevens 04 — Section Divider" },
+    { "id": "key-message", "slideNumber": 6, "layoutName": "Stevens 05 — Key Message" },
+    { "id": "title-body", "slideNumber": 7, "layoutName": "Stevens 06 — Title / Body" },
+    { "id": "two-column", "slideNumber": 8, "layoutName": "Stevens 07 — Two Column" },
+    { "id": "three-point", "slideNumber": 9, "layoutName": "Stevens 08 — Three Point" },
+    { "id": "text-figure-left", "slideNumber": 10, "layoutName": "Stevens 09 — Text / Figure Left" },
+    { "id": "figure-text-right", "slideNumber": 11, "layoutName": "Stevens 10 — Figure / Text Right" },
+    { "id": "full-figure-caption", "slideNumber": 12, "layoutName": "Stevens 11 — Full Figure + Caption" },
+    { "id": "chart", "slideNumber": 13, "layoutName": "Stevens 12 — Chart" },
+    { "id": "results-table", "slideNumber": 14, "layoutName": "Stevens 13 — Results Table / Comparison" },
+    { "id": "metrics", "slideNumber": 15, "layoutName": "Stevens 14 — Metrics" },
+    { "id": "technical-canvas", "slideNumber": 16, "layoutName": "Stevens 15 — Technical Canvas" },
+    { "id": "quote", "slideNumber": 17, "layoutName": "Stevens 16 — Quote" },
+    { "id": "closing", "slideNumber": 18, "layoutName": "Stevens 17 — Closing / Q&A" }
+  ]
+}

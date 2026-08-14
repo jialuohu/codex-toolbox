@@ -1,19 +1,28 @@
 #!/usr/bin/env bash
-# Stable, checkout-independent launcher for isolated Docmost authentication.
+# Stable wrapper for one immutable Docmost authentication runtime generation.
 set -euo pipefail
 
-DOCMOST_CODEX_ROOT="${CODEX_HOME:-$HOME/.codex}"
-DOCMOST_SECRETS_ROOT="${CODEX_SECRETS_DIR:-$DOCMOST_CODEX_ROOT/secrets}"
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+SELF="$SELF_DIR/docmost-auth"
+RUNTIME_ROOT="$(cd "$SELF_DIR/.." && pwd)"
+GENERATION_ENVS="$(cd "$RUNTIME_ROOT/.." && pwd)"
+GENERATION_ROOT="$(cd "$GENERATION_ENVS/.." && pwd)"
+RUNTIME_PARENT="$(cd "$GENERATION_ROOT/.." && pwd)"
+GENERATION_ID="$(basename "$RUNTIME_ROOT")"
+DOCMOST_CODEX_ROOT="$(printenv CODEX_HOME 2>/dev/null || true)"
+if [ -z "$DOCMOST_CODEX_ROOT" ]; then
+  DOCMOST_CODEX_ROOT="$HOME/.codex"
+fi
+DOCMOST_SECRETS_ROOT="$(printenv CODEX_SECRETS_DIR 2>/dev/null || true)"
+if [ -z "$DOCMOST_SECRETS_ROOT" ]; then
+  DOCMOST_SECRETS_ROOT="$DOCMOST_CODEX_ROOT/secrets"
+fi
 DOCMOST_ENV_FILE="$DOCMOST_SECRETS_ROOT/docmost.env"
-DOCMOST_RUNTIME_PARENT="$DOCMOST_CODEX_ROOT/runtime"
-DOCMOST_RUNTIME_ROOT="$DOCMOST_RUNTIME_PARENT/docmost-tools"
-DOCMOST_AUTH_WRAPPER="$DOCMOST_RUNTIME_ROOT/bin/docmost-auth"
-DOCMOST_AUTH_INTERNAL="$DOCMOST_RUNTIME_ROOT/bin/docmost-auth-internal"
-DOCMOST_RUNTIME_LOCK_HELPER="$DOCMOST_RUNTIME_ROOT/libexec/runtime_lock.py"
-DOCMOST_SYSTEM_PYTHON="$(command -v python3 || true)"
-readonly DOCMOST_CODEX_ROOT DOCMOST_SECRETS_ROOT DOCMOST_ENV_FILE
-readonly DOCMOST_RUNTIME_PARENT DOCMOST_RUNTIME_ROOT DOCMOST_AUTH_WRAPPER DOCMOST_AUTH_INTERNAL
-readonly DOCMOST_RUNTIME_LOCK_HELPER DOCMOST_SYSTEM_PYTHON
+DOCMOST_AUTH_INTERNAL="$RUNTIME_ROOT/bin/docmost-auth-internal"
+DOCMOST_RUNTIME_LOCK="$RUNTIME_ROOT/bin/docmost-runtime-lock"
+readonly SELF_DIR SELF RUNTIME_ROOT GENERATION_ENVS GENERATION_ROOT RUNTIME_PARENT
+readonly GENERATION_ID DOCMOST_CODEX_ROOT DOCMOST_SECRETS_ROOT DOCMOST_ENV_FILE
+readonly DOCMOST_AUTH_INTERNAL DOCMOST_RUNTIME_LOCK
 
 fail() {
   echo "$*" >&2
@@ -30,30 +39,54 @@ file_mode() {
 }
 
 [ "$#" -eq 1 ] || fail "Usage: docmost-auth login|status|logout"
-[ -n "$DOCMOST_SYSTEM_PYTHON" ] || fail "python3 is required for the Docmost runtime lock"
-[ -d "$DOCMOST_RUNTIME_PARENT" ] && [ ! -L "$DOCMOST_RUNTIME_PARENT" ] || \
-  fail "Docmost runtime is missing or unsafe; rerun the full codex-toolbox setup from its checkout"
-[ -d "$DOCMOST_RUNTIME_ROOT" ] && [ ! -L "$DOCMOST_RUNTIME_ROOT" ] || \
-  fail "Docmost runtime is missing or unsafe; rerun the full codex-toolbox setup from its checkout"
-[ -f "$DOCMOST_RUNTIME_LOCK_HELPER" ] && [ ! -L "$DOCMOST_RUNTIME_LOCK_HELPER" ] || \
-  fail "Docmost runtime lock is missing or unsafe; rerun the full codex-toolbox setup from its checkout"
+case "$GENERATION_ID" in
+  (*[!0-9a-f]*|'') fail "Docmost authentication runtime generation is invalid" ;;
+esac
+[ "$(printf '%s' "$GENERATION_ID" | wc -c | tr -d ' ')" = 64 ] || \
+  fail "Docmost authentication runtime generation is invalid"
+[ "$GENERATION_ENVS" = "$GENERATION_ROOT/envs" ] || \
+  fail "Docmost authentication runtime layout is invalid"
+[ "$RUNTIME_PARENT" = "$DOCMOST_CODEX_ROOT/runtime" ] || \
+  fail "Docmost authentication runtime escapes CODEX_HOME"
+[ -d "$RUNTIME_ROOT" ] && [ ! -L "$RUNTIME_ROOT" ] || \
+  fail "Docmost authentication runtime is missing or unsafe"
+[ -x "$DOCMOST_RUNTIME_LOCK" ] && [ ! -L "$DOCMOST_RUNTIME_LOCK" ] || \
+  fail "Docmost authentication runtime lock is missing or unsafe"
+
 case "$1" in
-  status) DOCMOST_REQUIRED_LOCK_MODE=shared ;;
-  login|logout) DOCMOST_REQUIRED_LOCK_MODE=exclusive ;;
+  status) REQUIRED_SESSION_MODE=shared ;;
+  login|logout) REQUIRED_SESSION_MODE=exclusive ;;
   *) fail "Usage: docmost-auth login|status|logout" ;;
 esac
-readonly DOCMOST_REQUIRED_LOCK_MODE
-if [ -n "${DOCMOST_RUNTIME_LOCK_MODE:-}" ] || [ -n "${DOCMOST_RUNTIME_LOCK_FD:-}" ]; then
-  [ "${DOCMOST_RUNTIME_LOCK_MODE:-}" = "$DOCMOST_REQUIRED_LOCK_MODE" ] || \
-    fail "Docmost $1 requires the $DOCMOST_REQUIRED_LOCK_MODE runtime lock"
-  "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER" --validate-fd \
-    --mode "$DOCMOST_REQUIRED_LOCK_MODE" --root "$DOCMOST_RUNTIME_PARENT" || \
-    fail "Docmost $1 requires a valid held $DOCMOST_REQUIRED_LOCK_MODE runtime lock"
-else
-  exec "$DOCMOST_SYSTEM_PYTHON" "$DOCMOST_RUNTIME_LOCK_HELPER" \
-    --mode "$DOCMOST_REQUIRED_LOCK_MODE" --root "$DOCMOST_RUNTIME_PARENT" -- \
-    "$DOCMOST_AUTH_WRAPPER" "$@"
+readonly REQUIRED_SESSION_MODE
+
+SESSION_MODE="$(printenv DOCMOST_RUNTIME_LOCK_MODE 2>/dev/null || true)"
+SESSION_FD="$(printenv DOCMOST_RUNTIME_LOCK_FD 2>/dev/null || true)"
+GENERATION_MODE="$(printenv DOCMOST_GENERATION_LOCK_MODE 2>/dev/null || true)"
+GENERATION_FD="$(printenv DOCMOST_GENERATION_LOCK_FD 2>/dev/null || true)"
+HELD_GENERATION="$(printenv DOCMOST_GENERATION_ID 2>/dev/null || true)"
+readonly SESSION_MODE SESSION_FD GENERATION_MODE GENERATION_FD HELD_GENERATION
+
+if [ -z "$SESSION_MODE$SESSION_FD$GENERATION_MODE$GENERATION_FD$HELD_GENERATION" ]; then
+  exec "$DOCMOST_RUNTIME_LOCK" \
+    --kind session --mode "$REQUIRED_SESSION_MODE" --root "$RUNTIME_PARENT" -- \
+    "$DOCMOST_RUNTIME_LOCK" \
+      --kind generation --mode shared --root "$GENERATION_ROOT" \
+      --generation "$GENERATION_ID" -- \
+      "$SELF" "$@"
 fi
+
+[ "$SESSION_MODE" = "$REQUIRED_SESSION_MODE" ] || \
+  fail "Docmost $1 requires the held $REQUIRED_SESSION_MODE session lock"
+[ "$GENERATION_MODE" = "shared" ] && [ "$HELD_GENERATION" = "$GENERATION_ID" ] || \
+  fail "Docmost $1 requires the held shared generation lock"
+"$DOCMOST_RUNTIME_LOCK" --validate-fd \
+  --kind session --mode "$REQUIRED_SESSION_MODE" --root "$RUNTIME_PARENT" || \
+  fail "Docmost $1 requires a valid held $REQUIRED_SESSION_MODE session lock"
+"$DOCMOST_RUNTIME_LOCK" --validate-fd \
+  --kind generation --mode shared --root "$GENERATION_ROOT" \
+  --generation "$GENERATION_ID" || \
+  fail "Docmost $1 requires a valid held shared generation lock"
 
 case "$1" in
   login|status)
@@ -79,6 +112,7 @@ case "$1" in
   *) fail "Usage: docmost-auth login|status|logout" ;;
 esac
 
-[ -x "$DOCMOST_AUTH_INTERNAL" ] || \
+[ -x "$DOCMOST_AUTH_INTERNAL" ] && [ ! -L "$DOCMOST_AUTH_INTERNAL" ] || \
   fail "Docmost auth runtime is incomplete; rerun the full codex-toolbox setup from its checkout"
+unset PYTHONPATH VIRTUAL_ENV
 exec "$DOCMOST_AUTH_INTERNAL" "$@"

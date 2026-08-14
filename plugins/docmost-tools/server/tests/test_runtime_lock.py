@@ -7,7 +7,27 @@ import os
 import stat
 from pathlib import Path
 
-from docmost_tools.runtime_lock import LOCK_NAME, open_runtime_lock, validate_inherited_lock
+import pytest
+
+import docmost_tools.runtime_lock as runtime_lock
+from docmost_tools.runtime_lock import (
+    LOCK_NAME,
+    open_generation_lock,
+    open_runtime_lock,
+    open_setup_lock,
+    validate_inherited_generation_lock,
+    validate_inherited_lock,
+    validate_inherited_setup_lock,
+)
+
+GENERATION_A = "a" * 64
+GENERATION_B = "b" * 64
+
+
+def generation_root(tmp_path: Path) -> Path:
+    root = tmp_path / "docmost-tools-generations"
+    (root / "locks").mkdir(parents=True)
+    return root
 
 
 def test_shared_holder_blocks_exclusive_but_allows_shared(tmp_path: Path) -> None:
@@ -110,3 +130,61 @@ def test_created_lock_is_private_regular_and_owned(tmp_path: Path) -> None:
         assert metadata.st_nlink == 1
     finally:
         os.close(descriptor)
+
+
+def test_runtime_lock_rejects_a_root_owned_by_another_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(runtime_lock.os, "geteuid", lambda: os.getuid() + 1)
+
+    with pytest.raises(RuntimeError, match="configuration is invalid"):
+        open_runtime_lock(tmp_path)
+
+
+def test_generation_locks_are_independent_and_validate_identity(tmp_path: Path) -> None:
+    root = generation_root(tmp_path)
+    first = open_generation_lock(root, GENERATION_A)
+    second = open_generation_lock(root, GENERATION_B)
+    try:
+        fcntl.flock(first, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        fcntl.flock(second, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        assert validate_inherited_generation_lock(root, GENERATION_A, "shared", first)
+        assert validate_inherited_generation_lock(root, GENERATION_B, "exclusive", second)
+        assert not validate_inherited_generation_lock(root, GENERATION_B, "shared", first)
+    finally:
+        os.close(second)
+        os.close(first)
+
+
+def test_setup_lock_does_not_conflict_with_session_lock(tmp_path: Path) -> None:
+    generations = generation_root(tmp_path)
+    session = open_runtime_lock(tmp_path)
+    setup = open_setup_lock(generations)
+    try:
+        fcntl.flock(session, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        fcntl.flock(setup, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        assert validate_inherited_lock(tmp_path, "shared", session)
+        assert validate_inherited_setup_lock(generations, "exclusive", setup)
+    finally:
+        os.close(setup)
+        os.close(session)
+
+
+def test_generation_lock_rejects_invalid_id_and_symlinked_lock_root(tmp_path: Path) -> None:
+    root = generation_root(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (root / "locks").rmdir()
+    (root / "locks").symlink_to(outside, target_is_directory=True)
+
+    for generation in ("not-a-hash", GENERATION_A):
+        try:
+            open_generation_lock(root, generation)
+        except RuntimeError as error:
+            assert "invalid" in str(error)
+        else:
+            raise AssertionError("unsafe generation lock was accepted")
+
+    assert list(outside.iterdir()) == []

@@ -1,0 +1,72 @@
+name: Draw.io Tools
+
+on:
+  pull_request:
+    paths:
+      - ".agents/plugins/marketplace.json"
+      - ".github/dependabot.yml"
+      - ".github/workflows/drawio-tools.yml"
+      - "README.md"
+      - "config/codex/AGENTS.global.md"
+      - "plugins/diagram-tools/**"
+      - "plugins/drawio-tools/**"
+      - "plugins/paper-figure-tools/**"
+      - "scripts/check-codex-toolbox-setup.py"
+      - "scripts/setup-codex-toolbox.sh"
+      - "scripts/setup-drawio-tools.sh"
+      - "tests/test_drawio_tools.py"
+      - "tests/test_instruction_readability.py"
+  push:
+    branches: [main]
+    paths:
+      - ".agents/plugins/marketplace.json"
+      - ".github/dependabot.yml"
+      - ".github/workflows/drawio-tools.yml"
+      - "README.md"
+      - "config/codex/AGENTS.global.md"
+      - "plugins/diagram-tools/**"
+      - "plugins/drawio-tools/**"
+      - "plugins/paper-figure-tools/**"
+      - "scripts/check-codex-toolbox-setup.py"
+      - "scripts/setup-codex-toolbox.sh"
+      - "scripts/setup-drawio-tools.sh"
+      - "tests/test_drawio_tools.py"
+      - "tests/test_instruction_readability.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conformance:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: plugins/drawio-tools/runtime/bootstrap/package-lock.json
+      - name: Validate toolbox integration
+        run: python3 scripts/check-codex-toolbox-setup.py
+      - name: Run focused contract tests
+        run: python3 -m unittest tests.test_drawio_tools tests.test_instruction_readability
+      - name: Install verified Draw.io MCP runtime
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: scripts/setup-drawio-tools.sh --install
+      - name: Verify offline runtime and MCP operations
+        env:
+          CODEX_HOME: ${{ runner.temp }}/codex-home
+        run: |
+          scripts/setup-drawio-tools.sh --check
+          node plugins/drawio-tools/tests/mcp-smoke.mjs
+      - name: Scan current tree for private paths and secrets
+        run: scripts/privacy-audit.sh current

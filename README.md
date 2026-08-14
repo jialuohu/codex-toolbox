@@ -54,15 +54,16 @@ third-party marketplace pins, and reusable Codex instructions.
    codex plugin marketplace upgrade jialuo-codex-toolbox
    ```
 
-   After any marketplace upgrade that changes `docmost-tools`, rerun the full
-   setup so the shared runtime is rebuilt from the exact active plugin source
-   and smoke-checked before opening a fresh Codex task:
+   After any marketplace upgrade that changes `docmost-tools` or
+   `apple-mail-tools`, rerun the full setup so shared runtimes are rebuilt from
+   the exact active plugin sources and smoke-checked before opening a fresh
+   Codex task:
 
    ```bash
    scripts/setup-codex-toolbox.sh
    ```
 
-   Running the full toolbox setup performs those Docmost gates automatically.
+   Running the full toolbox setup performs those runtime gates automatically.
 
    For local plugin development before changes are pushed to GitHub, register
    the checkout directly instead:
@@ -86,7 +87,7 @@ ASCII/Unicode. Graphical surfaces default to SVG, while terminals use ASCII;
 automatic artifacts go in a task-scoped temporary directory when no destination
 is requested. Native inline Mermaid is reserved for explicit requests or a
 disclosed runtime or syntax fallback. Use `$paper-figure-workflow` for
-publication pipelines requiring draw.io, Matplotlib, or SVG/PDF cleanup.
+publication pipelines, and `$drawio` for explicit native draw.io work.
 
 The renderer uses a contract-gated rolling runtime under
 `${CODEX_HOME:-$HOME/.codex}/runtime/diagram-tools`. Toolbox setup resolves the
@@ -121,6 +122,115 @@ Beautiful Mermaid intentionally supports a subset of Mermaid syntax. The
 active capability report names the tested diagram families and available
 themes; unsupported syntax fails without rewriting the `.mmd` source.
 
+## Draw.io Tools
+
+The default `drawio-tools` plugin provides `$drawio` and the `drawio` MCP
+server for explicit draw.io or diagrams.net requests, editable `.drawio`
+source, multi-page inspection and editing, specialized shape libraries,
+browser editing, and optional Desktop exports. Pretty Mermaid remains the
+default for ordinary Mermaid diagrams. `$paper-figure-workflow` remains the
+owner of publication pipelines and delegates native draw.io execution here.
+
+The MCP exposes exactly `open_drawio_xml`, `open_drawio_csv`,
+`open_drawio_mermaid`, `search_shapes`, `list_pages`, `get_page`, and
+`set_page`. Read/open tools are auto-approved; `set_page` prompts because it
+mutates a local file. `DRAWIO_BASE_URL` may select a trusted self-hosted editor
+instead of the default `https://app.diagrams.net/`.
+
+Toolbox setup installs exact `@drawio/mcp@1.4.0` dependencies under
+`${CODEX_HOME:-$HOME/.codex}/runtime/drawio-tools/active` with lifecycle
+scripts disabled. It audits the production tree and installs a SHA-256-checked
+shape index pinned to an upstream commit before atomic promotion. Normal MCP
+startup validates this receipt and uses no `npm`, `npx`, or network access.
+
+Use the focused setup helper directly with:
+
+```bash
+scripts/setup-drawio-tools.sh --check
+scripts/setup-drawio-tools.sh --install
+scripts/setup-drawio-tools.sh --install --with-desktop
+```
+
+draw.io Desktop is opt-in. The full toolbox setup installs and smoke-tests it
+only when requested; on macOS this may run `brew install --cask drawio`:
+
+```bash
+CODEX_TOOLBOX_INSTALL_DRAWIO_DESKTOP=1 scripts/setup-codex-toolbox.sh
+```
+
+Set `DRAWIO_DESKTOP_BIN` to reuse another Desktop executable. Managed PNG,
+SVG, and PDF exports retain the `.drawio` source and run Desktop with
+`-x -f FORMAT -e -b 10 -o OUTPUT INPUT`, embedding diagram XML. If Desktop is
+unavailable, the workflow leaves the editable `.drawio` source and exact local
+export command; it does not silently use cloud rasterization. With no requested
+destination, artifacts go in a task-scoped temporary directory.
+
+## Apple Mail Tools
+
+The default macOS-only `apple-mail-tools` plugin exposes every enabled Mail.app
+account, including Exchange accounts whose reported type is `unknown`, through
+the local `apple_mail` MCP. It uses Mail's supported AppleScript dictionary; it
+does not use Microsoft Graph, IMAP, SMTP, Keychain credentials, Accessibility
+automation, Mail's private database, remote HTML, or a programmatic send path.
+
+The pinned Python 3.12/FastMCP runtime is installed at
+`${CODEX_HOME:-$HOME/.codex}/runtime/apple-mail-tools`. Toolbox setup resolves
+the exact installed plugin source from `codex mcp get apple_mail --json`, checks
+that it is beneath the marketplace cache, then installs and fingerprints that
+copy. Normal MCP startup runs the verified environment without dependency
+synchronization or network access.
+
+Use the focused helper with:
+
+```bash
+scripts/setup-apple-mail-tools.sh --install
+scripts/setup-apple-mail-tools.sh --check
+scripts/setup-apple-mail-tools.sh --status
+scripts/setup-apple-mail-tools.sh --init-config
+```
+
+The first status or MCP call may trigger macOS Automation permission. Allow the
+calling Codex process or `osascript` to control Mail under **System Settings →
+Privacy & Security → Automation**. The health check reads no messages.
+
+Private configuration, HMAC handles, intents, attachment leases, and the
+SQLite FTS5 history index live below
+`${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/apple-mail-tools`.
+Directories use mode `700`; configuration, keys, SQLite files, and receipts use
+mode `600`. Full-history indexing stores normalized plain text and metadata, not
+raw MIME, HTML, or attachment bytes. It excludes `Junk`, `Junk Email`, `Spam`,
+`Trash`, `Deleted Items`, and `Deleted Messages` by default. Edit the private
+`config.json` to override mailbox-name exclusions. Index creation is blocked
+when FileVault is off or indeterminate unless that file explicitly sets
+`allow_unencrypted_index` to `true`.
+
+Index commits process at most 500 message locations or ten minutes, checkpoint
+progress, and resume after another prepare/commit pair. Search results always
+report freshness, exclusions, and completeness; a live read revalidates every
+indexed location before it can be used for a mutation. `apple_mail_erase_index`
+is the explicit prompt-gated cleanup path.
+Plugin uninstall preserves private index data.
+
+Incoming attachments are prompt-gated, limited to 25 MiB, stored in private
+24-hour leases, and removed with `apple_mail_release_attachment`. Outgoing
+drafts accept up to ten attachments, 25 MiB each and 50 MiB total, from the home
+folder. A non-overridable denylist rejects hidden paths, `~/Library`, Codex
+secrets, SSH/GPG/keychain material, credential-like files, private keys,
+symlinks, and non-regular files.
+
+Message changes use a preview and a ten-minute single-use commit token. Batches
+are limited to 20 exact signed handles, prevalidate every target, act one message
+at a time, and stop on the first mismatch. Trash is a recoverable move to a
+configured Trash mailbox; permanent deletion and empty-trash tools do not
+exist. New, reply, reply-all, and forward operations create, save, and visibly
+open drafts. Inspect the draft and click **Send** in Mail; the MCP cannot send
+mail.
+
+Mail content is untrusted input. It cannot authorize writes, select tools, run
+shell commands, open links, or change permissions. The owning `$apple-mail`
+skill enforces exact previews and keeps Gmail and Outlook connector workflows
+separate.
+
 ## Docmost Tools
 
 The default `docmost-tools` plugin runs a local browser-authenticated MCP adapter
@@ -134,12 +244,16 @@ Setup requires a working Codex CLI plus `uv` and `python3` on `PATH`; the locked
 server project requires Python 3.12, which `uv` must be able to resolve. These
 are runtime prerequisites, not vendored portability fallbacks.
 
-The locked Python environment is installed once at
-`${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools`. The installed MCP launcher
-uses that verified environment with synchronization disabled, so starting the
-server does not create an environment or download dependencies. A source-and-lock
-fingerprint fails closed with a reinstall instruction if marketplace plugin code
-no longer matches the runtime prepared by setup.
+Locked Python environments are immutable, source-addressed generations under
+`${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools-generations/envs/<source-sha256>`.
+Setup builds directly at the final hash path and writes the verified source stamp
+last; a partial generation therefore remains unreachable and can be repaired on
+the next install. The checked-in MCP bootstrap acquires the backward-compatible
+session lock and that generation's lock, validates the stamp, and directly
+executes `bin/docmost-mcp`. Startup retains no `uv` parent and never creates an
+environment or downloads dependencies. The legacy runtime at
+`${CODEX_HOME:-$HOME/.codex}/runtime/docmost-tools` is retained for rollback and
+is never modified or deleted automatically in v0.5.
 
 Use neutral values appropriate to the private deployment; only the base URL is
 required. Do not place a cookie or password in this file.
@@ -164,7 +278,18 @@ Leave `DOCMOST_WRITE_PROFILE` unset for read-only compatibility mode; enable
 0.95.x. Hosted-instance verification remains read-only even when the guarded
 write profile is configured.
 
-The regular toolbox setup installs the locked Python runtime and Chromium, then
+`docmost_prepare_workspace_snapshot` is the bulk read boundary used by the Lab
+Wiki workflow. It traverses selected spaces and every descendant page, retries
+page revision races, assembles long Markdown bodies, and writes versioned JSONL
+with mode `600` beneath `CODEX_SECRETS_DIR`. The MCP result contains only an
+opaque cleanup token, local path, SHA-256, schema/workspace identifiers, and
+counts; bodies never enter the tool result. Authentication failures, incomplete
+pagination or hierarchy traversal, duplicate/cyclic page identities, repeated
+revision races, and safety-cap overflows return no receipt. Consumers must call
+`docmost_release_workspace_snapshot` in a `finally` path. This snapshot route
+never reads comments or attachment bodies and cannot call Docmost write routes.
+
+The regular toolbox setup installs the matching runtime generation and Chromium, then
 runs a headless `current-user` and `list-spaces` smoke check before it refreshes
 the marketplace or plugins. After refresh, setup reads
 `codex mcp get docmost --json`, validates the absolute installed MCP cwd beneath
@@ -183,14 +308,29 @@ scripts/setup-docmost-tools.sh --install
 scripts/setup-docmost-tools.sh --login
 scripts/setup-docmost-tools.sh --status
 scripts/setup-docmost-tools.sh --logout
+scripts/setup-docmost-tools.sh --prune
 ```
 
-Installation takes an exclusive runtime lock. If setup reports that the
-Docmost runtime is busy, close active Codex tasks using Docmost, or wait for an
-in-progress Docmost setup/auth command to finish, then retry.
+Installation serializes through a setup-only lock and takes an exclusive lock
+only on the target generation. It does not wait for the lifetime session locks
+held by old or current MCP processes, so an upgrade can be staged while tasks
+continue using earlier generations. Concurrent setup reports a busy exit rather
+than modifying shared assets. `--prune` never contacts Docmost: it removes only
+unlocked, unreferenced generation directories while preserving the current
+source, every fingerprint referenced by an installed plugin copy, active
+generations, and the legacy runtime.
 
-Before login or logout, close the active Codex task so its lifetime shared lock
-and in-memory cookie are released. An MCP `AUTH_REQUIRED` result gives this
+After an upgraded plugin and generation are installed, wait until no Docmost
+tool call or workspace snapshot is active, then use Codex **Settings → MCP servers → Restart**.
+Restarting is host-driven and must happen while Docmost is idle,
+because closing stdio cancels an in-flight call. Old task-owned processes may
+remain on their old generation safely. The 900-second snapshot timeout, tool
+schemas, and approval policy are unchanged.
+
+Before login or logout, close every active Codex task using Docmost so the shared
+session locks and in-memory cookies are released. Login and logout retain the
+legacy global lock filename, so they remain exclusive against both old and new
+MCP processes. An MCP `AUTH_REQUIRED` result gives this
 recovery command:
 
 ```bash
@@ -198,7 +338,9 @@ CODEX_TOOLBOX_ROOT="${CODEX_TOOLBOX_ROOT:-$HOME/codes/codex-toolbox}" "$CODEX_TO
 ```
 
 After login or logout, start a fresh task or reconnect Docmost so the MCP
-process loads the new authentication state.
+process loads the new authentication state. Graceful SIGTERM and normal stdio
+EOF both close HTTP clients and release temporary downloads and snapshots;
+SIGKILL or system failure cannot guarantee process-level cleanup.
 
 Docmost content is untrusted input. Read tools can be used automatically.
 `docmost_download_attachment` stages only an authorized PDF or UTF-8 text file in a
@@ -206,6 +348,59 @@ private bounded temporary directory and returns a checksum receipt; callers
 must invoke `docmost_release_attachment_download` in a `finally` path. The MCP asks
 before `docmost_create_page`, `docmost_update_page_title`, or
 `docmost_create_comment`.
+
+## Read-only Docmost Lab Wiki
+
+`$docmost-lab-wiki` maintains a separate `Research/Lab Wiki` in the configured
+Obsidian vault. It never changes the existing `Research/LLM Wiki`. A sync asks
+Docmost only for a complete receipt-only workspace snapshot, passes the private
+JSONL path directly to the locked local runtime, and releases the snapshot in a
+`finally` path. No Docmost comment, attachment body, or write tool is used.
+
+The vault mirror uses stable
+`Sources/Docmost/<space-id>/<page-id>.md` paths, readable per-space maps,
+hash-protected generated regions, and preserved personal-note regions. Raw HTML
+and automatic media embeds are inert. Secret-like pages become metadata-only
+quarantine stubs and are excluded from search; pages missing from a complete
+scan become bodyless tombstones. Incomplete scans change nothing, and local
+managed-region conflicts warn without overwrite.
+
+The private index remains beneath `CODEX_SECRETS_DIR`. It combines SQLite FTS5
+with exact cosine search over local FastEmbed 0.8.0 vectors, reusing unchanged
+chunks. Setup pins `BAAI/bge-small-en-v1.5` to the quantized 384-dimensional,
+512-token model at revision
+`c32e6154d1bb7a0e47c5e745fd895e7700f44385` and verifies the ONNX SHA-256 before
+atomic promotion. Normal operation opens that exact local path with network
+access disabled.
+
+Install and prewarm the isolated Python 3.12 runtime, then initialize the new
+folder:
+
+```bash
+scripts/setup-docmost-lab-wiki.sh --install
+plugins/research-tools/scripts/docmost-lab-wiki.sh init
+```
+
+The setup helper detects the sole registered Obsidian vault unless
+`DOCMOST_LAB_WIKI_VAULT` is explicitly set, then creates a mode-`600`
+`${CODEX_SECRETS_DIR}/docmost-lab-wiki.env`. It does not perform a Docmost sync.
+Use the skill for the receipt lifecycle:
+
+```text
+$docmost-lab-wiki sync
+$docmost-lab-wiki query <question>
+$docmost-lab-wiki distill <scope>
+$docmost-lab-wiki status
+$docmost-lab-wiki lint
+$docmost-lab-wiki rebuild-index
+```
+
+Queries return at most 12 untrusted excerpts, two per page, and warn after 36
+hours without triggering an implicit refresh. Answers and durable synthesis
+cite both the local Obsidian source and canonical Docmost URL. Source changes
+make synthesis lint-stale rather than rewriting it automatically. Warning-level
+syncs exit nonzero so a scheduled refresh can notify only when attention is
+required.
 
 ## Managed Codex Pet
 
@@ -241,6 +436,26 @@ The skills adapt the MIT-licensed
 `70744e3816f1d93eafb697161a8b880a7384c5ff`; they are an unofficial,
 non-affiliated adaptation. Start a fresh Codex task after installing or
 upgrading so the plugin is available to the task from its start.
+
+## Stevens Presentation Tools
+
+The default `stevens-presentation-tools` plugin provides reusable 16:9 Stevens
+PowerPoint templates, a compact theme gallery, and a local-PPTX-first workflow
+for native Google Slides delivery. `$stevens-slides` selects White unless a
+theme is named; `$stevens-slides-white` and `$stevens-slides-dark` select a
+theme explicitly.
+
+| Theme | Intended use | Core treatment |
+|---|---|---|
+| White | General presentations and research updates | White canvas, Dark Gray text, Stevens Red accents |
+| Dark | Technical and systems talks | Dark Gray canvas, white text, gold/orange/blue data accents |
+
+Both themes preserve the same 17 named layouts and editable exemplars. The
+bundled manifest, brand references, checksums, fonts, official identifiers,
+source template, and validation script form the reusable authoring contract.
+Generated decks start from a bundled PPTX, preserve inherited layouts, add
+`[Sources]` speaker notes, verify locally, and then use native Google Slides
+conversion when Slides is the requested destination.
 
 ## Isolated Multi-Account Gmail with gws
 
@@ -720,9 +935,9 @@ Use $ship-toolbox to validate, commit, push, refresh, and verify the current too
 
 Use `$paper-figure-workflow` when a research repo needs reproducible paper
 figures. The skill guides Codex to inspect the repo first, keep draw.io source
-diagrams editable, generate Matplotlib and SciencePlots result plots from repo
-data, export SVG/PDF figures, use Inkscape only for conversion or light cleanup,
-and add a command such as `make figures`.
+diagrams editable through `$drawio`, generate Matplotlib and SciencePlots result
+plots from repo data, export SVG/PDF figures, use Inkscape only for conversion
+or light cleanup, and add a command such as `make figures`.
 
 Example prompt:
 

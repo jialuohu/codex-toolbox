@@ -1,0 +1,6 @@
+interface:
+  display_name: "Stevens Slides"
+  short_description: "Create Stevens-branded slide presentations"
+  default_prompt: "Use $stevens-slides to create a Stevens-branded Google Slides presentation."
+policy:
+  allow_implicit_invocation: true

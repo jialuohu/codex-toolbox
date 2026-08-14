@@ -1,0 +1,33 @@
+{
+  "name": "apple-mail-tools",
+  "version": "0.1.0",
+  "description": "Guarded local Apple Mail MCP for search, drafts, attachments, and inbox management.",
+  "author": {
+    "name": "Codex Toolbox Contributors"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Apple Mail Tools",
+    "shortDescription": "Use Mail.app through a guarded local MCP.",
+    "longDescription": "Search and manage every enabled Mail.app account locally, build a private full-history index, handle attachments, and create visible drafts without programmatic sending.",
+    "developerName": "Codex Toolbox Contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Triage my Apple Mail inbox.",
+      "Search my Apple Mail history.",
+      "Draft a reply in Mail for me to review."
+    ]
+  },
+  "keywords": [
+    "apple-mail",
+    "mail",
+    "mcp",
+    "email"
+  ]
+}

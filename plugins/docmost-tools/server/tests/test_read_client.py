@@ -636,10 +636,11 @@ def test_page_lists_normalize_camel_case_fields_and_ignore_upstream_url() -> Non
         assert page.url == "https://docs.example.test/s/my%20space/p/nested-opaque%2Fid"
 
 
-def test_page_info_without_content_is_unavailable_but_explicit_empty_markdown_is_valid() -> None:
+def test_page_info_without_content_is_unavailable_but_empty_markdown_is_valid() -> None:
     responses = [
         httpx.Response(200, json=envelope({"id": "missing", "slugId": "missing-id"})),
         httpx.Response(200, json=envelope({"id": "empty", "slugId": "empty-id", "content": ""})),
+        httpx.Response(200, json=envelope({"id": "null", "slugId": "null-id", "content": None})),
     ]
 
     def handler(_: httpx.Request) -> httpx.Response:
@@ -648,11 +649,14 @@ def test_page_info_without_content_is_unavailable_but_explicit_empty_markdown_is
     client = client_for(handler)
     missing = client.get_page("missing")
     empty = client.get_page("empty")
+    null = client.get_page("null")
 
     assert missing.ok is False and missing.error is not None
     assert missing.error.code is ErrorCode.PAGE_UNAVAILABLE
     assert empty.ok is True and empty.data is not None
     assert empty.data.markdown == ""
+    assert null.ok is True and null.data is not None
+    assert null.data.markdown == ""
 
 
 def test_ca_bundle_is_used_without_tls_disable(monkeypatch: pytest.MonkeyPatch) -> None:

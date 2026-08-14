@@ -44,6 +44,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
                 copied_root,
                 ignore=shutil.ignore_patterns(
                     ".git",
+                    ".tmp",
                     ".venv",
                     ".pytest_cache",
                     ".ruff_cache",

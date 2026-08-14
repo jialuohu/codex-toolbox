@@ -33,6 +33,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 ".git",
                 ".superpowers",
                 ".worktrees",
+                ".tmp",
                 ".venv",
                 ".pytest_cache",
                 ".ruff_cache",

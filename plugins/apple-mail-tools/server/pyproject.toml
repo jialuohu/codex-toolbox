@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "apple-mail-tools"
+version = "0.1.0"
+description = "Guarded local Apple Mail MCP server."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "mcp==1.29.0",
+]
+
+[project.scripts]
+apple-mail-mcp = "apple_mail_tools.server:main"
+apple-mail-runtime-stamp = "apple_mail_tools.runtime_stamp:main"
+
+[dependency-groups]
+dev = [
+  "pyright==1.1.408",
+  "pytest==9.1.1",
+  "ruff==0.14.10",
+]
+
+[tool.pytest.ini_options]
+addopts = ["-ra", "--strict-config"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+
+[tool.hatch.build.targets.wheel.force-include]
+"scripts/mail_bridge.applescript" = "apple_mail_tools/mail_bridge.applescript"

@@ -1,0 +1,11 @@
+interface:
+  display_name: "Docmost Lab Wiki"
+  short_description: "Sync and search a private lab wiki"
+  default_prompt: "Use $docmost-lab-wiki to synchronize my read-only Docmost mirror and query it with citations."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "docmost"
+      description: "Read-only complete Docmost snapshots with guaranteed local cleanup"
+policy:
+  allow_implicit_invocation: true

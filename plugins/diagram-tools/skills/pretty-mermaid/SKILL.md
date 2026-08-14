@@ -30,7 +30,8 @@ Use this skill whenever Mermaid is the chosen visual format. Save Mermaid source
 
 - Use this skill by default whenever Mermaid is selected, including quick explanations.
 - Use native inline Mermaid only when the user explicitly requests it or when the runtime is unavailable or rejects the syntax. Briefly disclose automatic fallback, reuse the exact source, and do not silently change semantics.
-- Use `$paper-figure-workflow` for publication figures requiring draw.io, Matplotlib, SVG/PDF cleanup, or a reproducible paper pipeline.
+- Use `$drawio` for explicit draw.io or diagrams.net requests, editable `.drawio` source, multi-page files, specialized shapes, browser editing, or draw.io Desktop exports.
+- Use `$paper-figure-workflow` for reproducible publication figure pipelines; it delegates native draw.io execution to `$drawio`.
 - Beautiful Mermaid implements a Mermaid subset. Run `capabilities` when syntax support is uncertain. If rendering rejects a diagram family, preserve the `.mmd`, fall back to native inline Mermaid, and report the limitation.
 
 ## Commands

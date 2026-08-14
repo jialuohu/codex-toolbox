@@ -1,0 +1,13 @@
+{
+  "name": "drawio-tools-runtime-bootstrap",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Approved offline runtime receipt for the drawio-tools plugin.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@drawio/mcp": "1.4.0"
+  }
+}

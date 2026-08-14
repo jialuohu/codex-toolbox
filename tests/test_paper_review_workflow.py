@@ -110,7 +110,7 @@ class PaperReviewWorkflowTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json").read_text()
         )
-        self.assertEqual(manifest["version"], "0.7.1")
+        self.assertEqual(manifest["version"], "0.8.0")
         self.assertTrue(
             any(
                 "$paper-review-sync" in prompt

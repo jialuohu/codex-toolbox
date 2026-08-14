@@ -30,13 +30,16 @@ DEFAULT_PLUGINS=(
   "workflow-tools"
   "coder-tools"
   "diagram-tools"
+  "drawio-tools"
   "paper-figure-tools"
   "productivity-tools"
   "trading-tools"
   "vibe-trading-tools"
   "chronicle-tools"
   "google-workspace-tools"
+  "stevens-presentation-tools"
   "docmost-tools"
+  "apple-mail-tools"
 )
 THIRD_PARTY_DEFAULT_PLUGINS=(
   "ui-ux-pro-max"
@@ -61,6 +64,8 @@ MANAGED_MCP_SERVERS=(
   "vibe_trading"
   "zotero"
   "docmost"
+  "apple_mail"
+  "drawio"
 )
 python3 "$PREREQUISITES" legacy-skills --install
 python3 "$PREREQUISITES" ensure-rg --install
@@ -338,7 +343,7 @@ import sys
 from pathlib import Path
 
 marketplace_name = sys.argv[1]
-approved_launcher_sha256 = "1e3f754036aaa5d33b1aa21e31f6aeaba068bcbd2b8432335621766bb7f50c8c"
+approved_launcher_sha256 = "9d67581f0bf57fd92ba4cf1cf8d8612dde1a82c3ec09bc4d3dddeaea8ad05125"
 
 
 def fail(message: str) -> None:
@@ -355,7 +360,7 @@ if not isinstance(data, dict) or data.get("name") != "docmost" or data.get("enab
 transport = data.get("transport")
 if not isinstance(transport, dict):
     fail("Installed Docmost MCP transport is unexpected")
-if transport.get("type") != "stdio" or transport.get("command") != "/bin/zsh":
+if transport.get("type") != "stdio" or transport.get("command") != "/bin/bash":
     fail("Installed Docmost MCP transport is unexpected")
 
 raw_cwd = transport.get("cwd")
@@ -401,6 +406,8 @@ required_files = (
     plugin_root / ".codex-plugin" / "plugin.json",
     server / "pyproject.toml",
     server / "uv.lock",
+    server / "scripts" / "docmost-auth",
+    server / "scripts" / "docmost-mcp",
     server / "src" / "docmost_tools" / "server.py",
     server / "src" / "docmost_tools" / "runtime_lock.py",
     server / "src" / "docmost_tools" / "runtime_stamp.py",
@@ -409,6 +416,7 @@ required_directories = (
     plugin_root,
     plugin_root / ".codex-plugin",
     server,
+    server / "scripts",
     server / "src",
     server / "src" / "docmost_tools",
 )
@@ -436,6 +444,7 @@ if (
     fail("Installed Docmost plugin layout is invalid")
 if (
     configured.get("command") != transport.get("command")
+    or configured.get("command") != "/bin/bash"
     or configured.get("cwd") != "."
     or configured.get("env_vars") != transport.get("env_vars")
 ):
@@ -444,12 +453,10 @@ configured_args = configured.get("args")
 transport_args = transport.get("args")
 if (
     not isinstance(configured_args, list)
-    or len(configured_args) != 2
-    or configured_args[0] != "-lc"
-    or not isinstance(configured_args[1], str)
-    or not configured_args[1]
-    or hashlib.sha256(configured_args[1].encode()).hexdigest()
-    != approved_launcher_sha256
+    or configured_args != ["server/scripts/docmost-mcp"]
+    or hashlib.sha256(
+        (server / "scripts" / "docmost-mcp").read_bytes()
+    ).hexdigest() != approved_launcher_sha256
     or not isinstance(transport_args, list)
     or transport_args != configured_args
 ):
@@ -459,11 +466,12 @@ expected_writes = {
     "docmost_update_page_title",
     "docmost_create_comment",
 }
+
 write_tools = configured.get("tools")
 if (
     configured.get("default_tools_approval_mode") != "auto"
     or configured.get("env_vars")
-    != ["CODEX_SECRETS_DIR", "CODEX_HOME", "CODEX_LOCAL_BIN_DIR"]
+    != ["CODEX_SECRETS_DIR", "CODEX_HOME"]
     or not isinstance(write_tools, dict)
     or set(write_tools) != expected_writes
     or any(
@@ -474,6 +482,144 @@ if (
 ):
     fail("Installed Docmost MCP policy is unexpected")
 
+print(server.resolve(strict=True))
+PY
+}
+
+APPLE_MAIL_SETUP="$ROOT/scripts/setup-apple-mail-tools.sh"
+installed_apple_mail_server_dir() {
+  local mcp_json
+  if ! mcp_json="$("$CODEX_BIN" mcp get apple_mail --json)"; then
+    echo "Installed Apple Mail MCP entry is unavailable" >&2
+    return 1
+  fi
+  APPLE_MAIL_MCP_JSON="$mcp_json" \
+    APPLE_MAIL_CODEX_HOME="${CODEX_HOME:-$HOME/.codex}" \
+    python3 - "$MARKETPLACE_NAME" <<'PY'
+import hashlib
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+marketplace_name = sys.argv[1]
+approved_launcher_sha256 = "41cd449f224e6f12614b53bf15f2f9e1f180787e7518b68cb5f29e29cf1e71f5"
+
+
+def fail(message: str) -> None:
+    raise SystemExit(message)
+
+
+try:
+    data = json.loads(os.environ["APPLE_MAIL_MCP_JSON"])
+except (KeyError, json.JSONDecodeError):
+    fail("Installed Apple Mail MCP entry is unavailable")
+if not isinstance(data, dict) or data.get("name") != "apple_mail" or data.get("enabled") is not True:
+    fail("Installed Apple Mail MCP entry is unavailable")
+transport = data.get("transport")
+if not isinstance(transport, dict) or transport.get("type") != "stdio":
+    fail("Installed Apple Mail MCP transport is unexpected")
+if transport.get("command") != "/bin/zsh":
+    fail("Installed Apple Mail MCP transport is unexpected")
+raw_cwd = transport.get("cwd")
+if (
+    not isinstance(raw_cwd, str)
+    or not raw_cwd
+    or "\n" in raw_cwd
+    or "\x00" in raw_cwd
+    or not Path(raw_cwd).is_absolute()
+):
+    fail("Installed Apple Mail MCP cwd is invalid")
+try:
+    raw_plugin_root = Path(raw_cwd)
+    raw_metadata = raw_plugin_root.lstat()
+    codex_home = Path(os.environ["APPLE_MAIL_CODEX_HOME"]).expanduser().resolve(strict=True)
+    plugin_root = raw_plugin_root.resolve(strict=True)
+except (KeyError, OSError):
+    fail("Installed Apple Mail plugin layout is invalid")
+if stat.S_ISLNK(raw_metadata.st_mode) or not stat.S_ISDIR(raw_metadata.st_mode):
+    fail("Installed Apple Mail plugin layout is invalid")
+try:
+    relative = plugin_root.relative_to(codex_home)
+except ValueError:
+    fail("Installed Apple Mail MCP cwd escapes CODEX_HOME")
+parts = relative.parts
+if (
+    len(parts) != 5
+    or parts[:4] != ("plugins", "cache", marketplace_name, "apple-mail-tools")
+    or not parts[4]
+):
+    fail("Installed Apple Mail plugin layout is invalid")
+version = parts[4]
+server = plugin_root / "server"
+required_files = (
+    plugin_root / ".mcp.json",
+    plugin_root / ".codex-plugin" / "plugin.json",
+    server / "pyproject.toml",
+    server / "uv.lock",
+    server / "scripts" / "mail_bridge.applescript",
+    server / "src" / "apple_mail_tools" / "server.py",
+    server / "src" / "apple_mail_tools" / "runtime_lock.py",
+    server / "src" / "apple_mail_tools" / "runtime_stamp.py",
+)
+required_directories = (
+    plugin_root,
+    plugin_root / ".codex-plugin",
+    server,
+    server / "src",
+    server / "src" / "apple_mail_tools",
+)
+if any(not path.is_dir() or path.is_symlink() for path in required_directories):
+    fail("Installed Apple Mail plugin layout is invalid")
+if any(not path.is_file() or path.is_symlink() for path in required_files):
+    fail("Installed Apple Mail plugin layout is invalid")
+try:
+    plugin = json.loads((plugin_root / ".codex-plugin" / "plugin.json").read_text())
+    mcp = json.loads((plugin_root / ".mcp.json").read_text())
+except (OSError, json.JSONDecodeError):
+    fail("Installed Apple Mail plugin layout is invalid")
+servers = mcp.get("mcpServers") if isinstance(mcp, dict) else None
+configured = servers.get("apple_mail") if isinstance(servers, dict) else None
+if (
+    not isinstance(plugin, dict)
+    or plugin.get("name") != "apple-mail-tools"
+    or plugin.get("version") != version
+    or plugin.get("mcpServers") != "./.mcp.json"
+    or not isinstance(servers, dict)
+    or set(servers) != {"apple_mail"}
+    or not isinstance(configured, dict)
+):
+    fail("Installed Apple Mail plugin layout is invalid")
+configured_args = configured.get("args")
+if (
+    configured.get("command") != transport.get("command")
+    or configured.get("cwd") != "."
+    or configured.get("env_vars") != ["CODEX_HOME", "CODEX_SECRETS_DIR"]
+    or configured.get("env_vars") != transport.get("env_vars")
+    or not isinstance(configured_args, list)
+    or len(configured_args) != 2
+    or configured_args[0] != "-lc"
+    or not isinstance(configured_args[1], str)
+    or hashlib.sha256(configured_args[1].encode()).hexdigest() != approved_launcher_sha256
+    or transport.get("args") != configured_args
+):
+    fail("Installed Apple Mail MCP transport is unexpected")
+expected_prompts = {
+    "apple_mail_commit_index_sync",
+    "apple_mail_erase_index",
+    "apple_mail_fetch_attachment",
+    "apple_mail_create_draft",
+    "apple_mail_commit_mutation",
+}
+tools = configured.get("tools")
+if (
+    configured.get("default_tools_approval_mode") != "auto"
+    or not isinstance(tools, dict)
+    or set(tools) != expected_prompts
+    or any(tools[name] != {"approval_mode": "prompt"} for name in expected_prompts)
+):
+    fail("Installed Apple Mail MCP policy is unexpected")
 print(server.resolve(strict=True))
 PY
 }
@@ -613,6 +759,22 @@ done
 DOCMOST_INSTALLED_SERVER_DIR="$(installed_docmost_server_dir)"
 readonly DOCMOST_INSTALLED_SERVER_DIR
 ensure_docmost_ready "$DOCMOST_INSTALLED_SERVER_DIR"
+
+APPLE_MAIL_INSTALLED_SERVER_DIR="$(installed_apple_mail_server_dir)"
+readonly APPLE_MAIL_INSTALLED_SERVER_DIR
+APPLE_MAIL_SERVER_DIR="$APPLE_MAIL_INSTALLED_SERVER_DIR" "$APPLE_MAIL_SETUP" --install
+APPLE_MAIL_SERVER_DIR="$APPLE_MAIL_INSTALLED_SERVER_DIR" "$APPLE_MAIL_SETUP" --status
+
+DRAWIO_SETUP_ARGS=(--install)
+case "${CODEX_TOOLBOX_INSTALL_DRAWIO_DESKTOP:-0}" in
+  0|"") ;;
+  1) DRAWIO_SETUP_ARGS+=(--with-desktop) ;;
+  *)
+    echo "CODEX_TOOLBOX_INSTALL_DRAWIO_DESKTOP must be 0 or 1" >&2
+    exit 2
+    ;;
+esac
+"$ROOT/scripts/setup-drawio-tools.sh" "${DRAWIO_SETUP_ARGS[@]}"
 
 ensure_ui_ux_marketplace
 for plugin in "${THIRD_PARTY_DEFAULT_PLUGINS[@]}"; do

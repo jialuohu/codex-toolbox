@@ -1,10 +1,11 @@
-"""Cross-process shared/exclusive lock for the mutable Docmost runtime."""
+"""Cross-process locks for Docmost sessions, setup, and runtime generations."""
 
 from __future__ import annotations
 
 import argparse
 import fcntl
 import os
+import re
 import stat
 import sys
 from collections.abc import Sequence
@@ -12,15 +13,26 @@ from pathlib import Path
 from typing import Literal
 
 LockMode = Literal["shared", "exclusive"]
+LockKind = Literal["session", "setup", "generation"]
 
+# Keep this legacy filename so pre-0.5 MCP processes and new authentication
+# commands continue to coordinate until every old process has exited.
 LOCK_NAME = ".docmost-tools-runtime.lock"
+SETUP_LOCK_NAME = ".setup.lock"
 LOCK_FD_ENV = "DOCMOST_RUNTIME_LOCK_FD"
 LOCK_MODE_ENV = "DOCMOST_RUNTIME_LOCK_MODE"
+SETUP_LOCK_FD_ENV = "DOCMOST_SETUP_LOCK_FD"
+SETUP_LOCK_MODE_ENV = "DOCMOST_SETUP_LOCK_MODE"
+GENERATION_LOCK_FD_ENV = "DOCMOST_GENERATION_LOCK_FD"
+GENERATION_LOCK_MODE_ENV = "DOCMOST_GENERATION_LOCK_MODE"
+GENERATION_ID_ENV = "DOCMOST_GENERATION_ID"
 BUSY_EXIT = 75
+
+_GENERATION_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 
 
 class RuntimeLockError(RuntimeError):
-    """Raised when the runtime or its lock cannot be trusted."""
+    """Raised when a runtime lock cannot be trusted."""
 
 
 def _validated_root(root: Path) -> Path:
@@ -28,15 +40,43 @@ def _validated_root(root: Path) -> Path:
         metadata = root.lstat()
     except OSError as error:
         raise RuntimeLockError("Docmost runtime lock configuration is invalid") from error
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+    ):
         raise RuntimeLockError("Docmost runtime lock configuration is invalid")
     return root.absolute()
 
 
-def open_runtime_lock(root: Path) -> int:
-    """Open and validate the private lock file below ``root``."""
+def _validated_generation(value: str | None) -> str:
+    if value is None or _GENERATION_PATTERN.fullmatch(value) is None:
+        raise RuntimeLockError("Docmost runtime generation is invalid")
+    return value
 
-    lock_path = _validated_root(root) / LOCK_NAME
+
+def _lock_path(root: Path, kind: LockKind, generation: str | None = None) -> Path:
+    validated_root = _validated_root(root)
+    if kind == "session":
+        return validated_root / LOCK_NAME
+    if kind == "setup":
+        return validated_root / SETUP_LOCK_NAME
+    generation_id = _validated_generation(generation)
+    locks = validated_root / "locks"
+    try:
+        metadata = locks.lstat()
+    except OSError as error:
+        raise RuntimeLockError("Docmost runtime lock configuration is invalid") from error
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+    ):
+        raise RuntimeLockError("Docmost runtime lock configuration is invalid")
+    return locks / f"{generation_id}.lock"
+
+
+def _open_lock_path(lock_path: Path) -> int:
     flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     descriptor: int | None = None
     try:
@@ -63,13 +103,31 @@ def open_runtime_lock(root: Path) -> int:
     return descriptor
 
 
+def open_runtime_lock(root: Path) -> int:
+    """Open the backward-compatible Docmost session lock."""
+
+    return _open_lock_path(_lock_path(root, "session"))
+
+
+def open_generation_lock(root: Path, generation: str) -> int:
+    """Open one immutable runtime generation's usage lock."""
+
+    return _open_lock_path(_lock_path(root, "generation", generation))
+
+
+def open_setup_lock(root: Path) -> int:
+    """Open the setup-only serialization lock."""
+
+    return _open_lock_path(_lock_path(root, "setup"))
+
+
 def _operation(mode: LockMode, *, nonblocking: bool = True) -> int:
     operation = fcntl.LOCK_SH if mode == "shared" else fcntl.LOCK_EX
     return operation | (fcntl.LOCK_NB if nonblocking else 0)
 
 
 def _probe_lock(lock_path: Path, operation: int) -> bool:
-    """Return whether a separately opened descriptor can acquire ``operation``."""
+    """Return whether a separately opened descriptor can acquire an operation."""
 
     flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(lock_path, flags)
@@ -84,11 +142,8 @@ def _probe_lock(lock_path: Path, operation: int) -> bool:
         os.close(descriptor)
 
 
-def validate_inherited_lock(root: Path, mode: LockMode, descriptor: int) -> bool:
-    """Verify that ``descriptor`` is the expected live lock for ``root``."""
-
+def _validate_inherited_path(lock_path: Path, mode: LockMode, descriptor: int) -> bool:
     try:
-        lock_path = _validated_root(root) / LOCK_NAME
         inherited = os.fstat(descriptor)
         current = lock_path.lstat()
         if (
@@ -110,8 +165,8 @@ def validate_inherited_lock(root: Path, mode: LockMode, descriptor: int) -> bool
         if not expected_probe_state:
             return False
         # Probe state alone is insufficient: an unlocked descriptor can see a
-        # lock held elsewhere. Reaffirming on this descriptor proves that the
-        # child itself will retain the requested lock while it acts.
+        # lock held elsewhere. Reaffirming on this descriptor proves that this
+        # process itself retains the requested lock while it acts.
         fcntl.flock(descriptor, _operation(mode))
         shared_probe_succeeds = _probe_lock(lock_path, fcntl.LOCK_SH)
         exclusive_probe_succeeds = _probe_lock(lock_path, fcntl.LOCK_EX)
@@ -123,32 +178,99 @@ def validate_inherited_lock(root: Path, mode: LockMode, descriptor: int) -> bool
     return shared_probe_succeeds and not exclusive_probe_succeeds
 
 
-def run_locked(root: Path, mode: LockMode, command: Sequence[str]) -> int:
-    """Acquire the requested lock and replace this process with ``command``."""
+def validate_inherited_lock(root: Path, mode: LockMode, descriptor: int) -> bool:
+    """Verify the inherited backward-compatible session lock."""
+
+    try:
+        path = _lock_path(root, "session")
+    except RuntimeLockError:
+        return False
+    return _validate_inherited_path(path, mode, descriptor)
+
+
+def validate_inherited_generation_lock(
+    root: Path,
+    generation: str,
+    mode: LockMode,
+    descriptor: int,
+) -> bool:
+    """Verify one inherited runtime-generation lock."""
+
+    try:
+        path = _lock_path(root, "generation", generation)
+    except RuntimeLockError:
+        return False
+    return _validate_inherited_path(path, mode, descriptor)
+
+
+def validate_inherited_setup_lock(root: Path, mode: LockMode, descriptor: int) -> bool:
+    """Verify the inherited setup serialization lock."""
+
+    try:
+        path = _lock_path(root, "setup")
+    except RuntimeLockError:
+        return False
+    return _validate_inherited_path(path, mode, descriptor)
+
+
+def _lock_environment(kind: LockKind) -> tuple[str, str]:
+    if kind == "session":
+        return LOCK_FD_ENV, LOCK_MODE_ENV
+    if kind == "setup":
+        return SETUP_LOCK_FD_ENV, SETUP_LOCK_MODE_ENV
+    return GENERATION_LOCK_FD_ENV, GENERATION_LOCK_MODE_ENV
+
+
+def _busy_message(kind: LockKind) -> str:
+    if kind == "session":
+        return (
+            "Docmost session is busy; close active Codex tasks using Docmost, "
+            "or wait for an authentication command, then retry"
+        )
+    if kind == "setup":
+        return "Docmost runtime setup is busy; wait for the in-progress setup command, then retry"
+    return "Docmost runtime generation is busy; reconnect or close its active task, then retry"
+
+
+def run_kind_locked(
+    root: Path,
+    kind: LockKind,
+    mode: LockMode,
+    command: Sequence[str],
+    *,
+    generation: str | None = None,
+) -> int:
+    """Acquire one requested lock and replace this process with the command."""
 
     if not command:
         raise RuntimeLockError("Docmost runtime lock command is missing")
-    descriptor = open_runtime_lock(root)
+    lock_path = _lock_path(root, kind, generation)
+    descriptor = _open_lock_path(lock_path)
     try:
         try:
             fcntl.flock(descriptor, _operation(mode))
         except BlockingIOError:
-            print(
-                "Docmost runtime is busy; close any active Codex task using Docmost, "
-                "or wait for an in-progress Docmost setup or auth command, then retry",
-                file=sys.stderr,
-            )
+            print(_busy_message(kind), file=sys.stderr)
             return BUSY_EXIT
         os.set_inheritable(descriptor, True)
         environment = os.environ.copy()
-        environment[LOCK_FD_ENV] = str(descriptor)
-        environment[LOCK_MODE_ENV] = mode
+        descriptor_env, mode_env = _lock_environment(kind)
+        environment[descriptor_env] = str(descriptor)
+        environment[mode_env] = mode
+        if kind == "generation":
+            environment[GENERATION_ID_ENV] = _validated_generation(generation)
         os.execvpe(command[0], list(command), environment)
     except OSError as error:
         raise RuntimeLockError("Unable to start the locked Docmost runtime command") from error
     finally:
         os.close(descriptor)
     return 1
+
+
+def run_locked(root: Path, mode: LockMode, command: Sequence[str]) -> int:
+    """Backward-compatible wrapper that acquires the session lock."""
+
+    return run_kind_locked(root, "session", mode, command)
 
 
 def _parse_descriptor(value: str | None) -> int | None:
@@ -158,28 +280,70 @@ def _parse_descriptor(value: str | None) -> int | None:
     return descriptor if descriptor > 2 else None
 
 
+def _validate_from_environment(
+    root: Path,
+    kind: LockKind,
+    mode: LockMode,
+    generation: str | None,
+) -> bool:
+    descriptor_env, _ = _lock_environment(kind)
+    descriptor = _parse_descriptor(os.environ.get(descriptor_env))
+    if descriptor is None:
+        return False
+    if kind == "session":
+        return validate_inherited_lock(root, mode, descriptor)
+    if kind == "setup":
+        return validate_inherited_setup_lock(root, mode, descriptor)
+    generation_id = _validated_generation(generation)
+    if os.environ.get(GENERATION_ID_ENV) != generation_id:
+        return False
+    return validate_inherited_generation_lock(root, generation_id, mode, descriptor)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run a command under a lock, or validate an inherited lock descriptor."""
+    """Run a command under one lock, or validate an inherited descriptor."""
 
     parser = argparse.ArgumentParser(prog="docmost-runtime-lock")
+    parser.add_argument("--kind", choices=("session", "setup", "generation"), default="session")
     parser.add_argument("--mode", choices=("shared", "exclusive"))
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--generation")
     parser.add_argument("--validate-fd", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     arguments = parser.parse_args(argv)
+    kind = arguments.kind
     try:
+        if kind == "generation":
+            _validated_generation(arguments.generation)
+        elif arguments.generation is not None:
+            parser.error("--generation is valid only with --kind generation")
         if arguments.validate_fd:
-            mode = arguments.mode or os.environ.get(LOCK_MODE_ENV)
-            descriptor = _parse_descriptor(os.environ.get(LOCK_FD_ENV))
-            if mode not in ("shared", "exclusive") or descriptor is None:
+            _, mode_env = _lock_environment(kind)
+            mode = arguments.mode or os.environ.get(mode_env)
+            if mode not in ("shared", "exclusive"):
                 return 1
-            return 0 if validate_inherited_lock(arguments.root, mode, descriptor) else 1
+            return (
+                0
+                if _validate_from_environment(
+                    arguments.root,
+                    kind,
+                    mode,
+                    arguments.generation,
+                )
+                else 1
+            )
         if arguments.mode is None:
             parser.error("--mode is required unless --validate-fd is used")
         command = list(arguments.command)
         if command[:1] == ["--"]:
             command = command[1:]
-        return run_locked(arguments.root, arguments.mode, command)
+        return run_kind_locked(
+            arguments.root,
+            kind,
+            arguments.mode,
+            command,
+            generation=arguments.generation,
+        )
     except RuntimeLockError as error:
         print(str(error), file=sys.stderr)
         return 1

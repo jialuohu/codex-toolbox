@@ -1,6 +1,6 @@
 {
   "name": "diagram-tools",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Default, polished offline Mermaid rendering with editable source and a contract-gated runtime.",
   "author": {
     "name": "Jialuo Hu",
@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "Diagram Tools",
     "shortDescription": "Render Mermaid diagrams by default.",
-    "longDescription": "Diagram Tools is the default Mermaid renderer, preserving editable source and producing self-contained SVG, real PNG, or terminal-friendly ASCII through a tested offline runtime.",
+    "longDescription": "Diagram Tools is the default Mermaid renderer, preserving editable source and producing self-contained SVG, real PNG, or terminal-friendly ASCII through a tested offline runtime while routing advanced native draw.io work separately.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [

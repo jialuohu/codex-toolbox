@@ -33,8 +33,11 @@ from docmost_tools.models import (
     SearchResults,
     Space,
     VersionInfo,
+    WorkspaceSnapshotReceipt,
+    WorkspaceSnapshotRelease,
 )
 from docmost_tools.recovery import AUTH_REQUIRED_SENTENCE
+from docmost_tools.workspace_snapshot import WorkspaceSnapshotBuilder, WorkspaceSnapshotStore
 
 AUTH_REQUIRED_MESSAGE = AUTH_REQUIRED_SENTENCE
 PAGE_UNAVAILABLE_MESSAGE = "PAGE_UNAVAILABLE"
@@ -91,6 +94,7 @@ class DocmostReadClient:
         transport: httpx.BaseTransport | None = None,
         sleeper: Callable[[float], None] = time.sleep,
         max_retries: int = 2,
+        snapshot_store: WorkspaceSnapshotStore | None = None,
     ) -> None:
         if not session_cookie:
             raise ValueError("A non-empty Docmost session cookie is required")
@@ -109,6 +113,11 @@ class DocmostReadClient:
             timeout=httpx.Timeout(connect=5.0, read=20.0, write=20.0, pool=5.0),
         )
         self._downloads = AttachmentDownloadStore(max_bytes=_MAX_ATTACHMENT_BYTES)
+        self._workspace_snapshot_store = snapshot_store or WorkspaceSnapshotStore()
+        self._workspace_snapshots = WorkspaceSnapshotBuilder(
+            self,
+            self._workspace_snapshot_store,
+        )
         self._version_result: OperationResult[VersionInfo] | None = None
 
     def __repr__(self) -> str:
@@ -127,9 +136,12 @@ class DocmostReadClient:
         """Deterministically release the underlying pooled HTTP resources."""
 
         try:
-            self._downloads.close()
+            self._workspace_snapshot_store.close()
         finally:
-            self._http.close()
+            try:
+                self._downloads.close()
+            finally:
+                self._http.close()
 
     @property
     def read_profile(self) -> Literal["v0_95", "generic"]:
@@ -404,6 +416,31 @@ class DocmostReadClient:
         return OperationResult[AttachmentRelease].success(
             AttachmentRelease(released=self._downloads.release(download_token))
         )
+
+    def prepare_workspace_snapshot(
+        self,
+        *,
+        all_spaces: bool,
+        space_ids: list[str] | None,
+        max_pages: int,
+        max_page_chars: int,
+    ) -> OperationResult[WorkspaceSnapshotReceipt]:
+        """Build one complete snapshot using only the crawler's read protocol."""
+
+        return self._workspace_snapshots.prepare(
+            all_spaces=all_spaces,
+            space_ids=space_ids,
+            max_pages=max_pages,
+            max_page_chars=max_page_chars,
+        )
+
+    def release_workspace_snapshot(
+        self,
+        snapshot_token: str,
+    ) -> OperationResult[WorkspaceSnapshotRelease]:
+        """Release one private snapshot; repeated cleanup is safe."""
+
+        return self._workspace_snapshots.release(snapshot_token)
 
     def create_page(
         self,
@@ -879,7 +916,9 @@ class DocmostReadClient:
             content = page_data["content"]
         else:
             raise ValueError("page response must include Markdown content")
-        if not isinstance(content, str):
+        if content is None:
+            content = ""
+        elif not isinstance(content, str):
             raise ValueError("page content must be Markdown text")
         page_id = page_data.get("id")
         if not isinstance(page_id, str) or not page_id:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import signal
 from collections.abc import Callable
+from types import FrameType
 from typing import Annotated, Any, Protocol, cast
 
 from mcp.server.fastmcp import FastMCP
@@ -117,6 +119,9 @@ StandardLimit = Annotated[int, Field(ge=1, le=100)]
 SearchLimit = Annotated[int, Field(ge=1, le=50)]
 Offset = Annotated[int, Field(ge=0)]
 MaxChars = Annotated[int, Field(ge=1, le=100_000)]
+SnapshotMaxPages = Annotated[int, Field(ge=1, le=5_000)]
+SnapshotMaxPageChars = Annotated[int, Field(ge=1, le=2_000_000)]
+SpaceIds = Annotated[list[Identifier] | None, Field(min_length=1, max_length=1_000)]
 Title = Annotated[
     str,
     Field(min_length=1, max_length=250, pattern=_NO_CONTROL_PATTERN),
@@ -137,6 +142,7 @@ DownloadToken = Annotated[
     str,
     Field(min_length=32, max_length=128, pattern=r"^[A-Za-z0-9_-]{32,128}$"),
 ]
+SnapshotToken = DownloadToken
 
 
 class ToolResult(BaseModel):
@@ -197,6 +203,17 @@ class _Operations(Protocol):
     ) -> OperationResult[Any]: ...
 
     def release_attachment_download(self, download_token: str) -> OperationResult[Any]: ...
+
+    def prepare_workspace_snapshot(
+        self,
+        *,
+        all_spaces: bool,
+        space_ids: list[str] | None,
+        max_pages: int,
+        max_page_chars: int,
+    ) -> OperationResult[Any]: ...
+
+    def release_workspace_snapshot(self, snapshot_token: str) -> OperationResult[Any]: ...
 
     def create_page(
         self,
@@ -348,6 +365,40 @@ def create_server(
             lambda read_client: read_client.release_attachment_download(download_token)
         )
 
+    @server.tool(
+        name="docmost_prepare_workspace_snapshot",
+        annotations=_DOWNLOAD_ANNOTATIONS,
+    )
+    def prepare_workspace_snapshot(  # pyright: ignore[reportUnusedFunction]
+        all_spaces: bool = True,
+        space_ids: SpaceIds = None,
+        max_pages: SnapshotMaxPages = 5_000,
+        max_page_chars: SnapshotMaxPageChars = 2_000_000,
+    ) -> ToolResult:
+        """Stage a complete read-only page-body snapshot and return only its receipt."""
+
+        return execute(
+            lambda read_client: read_client.prepare_workspace_snapshot(
+                all_spaces=all_spaces,
+                space_ids=space_ids,
+                max_pages=max_pages,
+                max_page_chars=max_page_chars,
+            )
+        )
+
+    @server.tool(
+        name="docmost_release_workspace_snapshot",
+        annotations=_RELEASE_ANNOTATIONS,
+    )
+    def release_workspace_snapshot(  # pyright: ignore[reportUnusedFunction]
+        snapshot_token: SnapshotToken,
+    ) -> ToolResult:
+        """Delete one managed workspace snapshot; repeated release is safe."""
+
+        return execute(
+            lambda read_client: read_client.release_workspace_snapshot(snapshot_token)
+        )
+
     @server.tool(name="docmost_create_page", annotations=_WRITE_ANNOTATIONS)
     def create_page(  # pyright: ignore[reportUnusedFunction]
         space_id: Identifier,
@@ -409,17 +460,31 @@ def _runtime_from_environment() -> RuntimeState:
     return bootstrap_runtime(settings, paths)
 
 
+class _GracefulTermination(BaseException):
+    """Unwind the stdio server after the host asks the process to terminate."""
+
+
+def _terminate_on_sigterm(_signum: int, _frame: FrameType | None) -> None:
+    raise _GracefulTermination
+
+
 def main() -> int:
     """Bootstrap once, then serve stdio until the client disconnects."""
 
-    runtime = _runtime_from_environment()
+    previous_sigterm = signal.signal(signal.SIGTERM, _terminate_on_sigterm)
+    runtime: RuntimeState | None = None
     try:
+        runtime = _runtime_from_environment()
         create_server(
             client=cast(_Operations | None, runtime.client),
             startup_error=runtime.startup_error,
         ).run(transport="stdio")
+    except _GracefulTermination:
+        return 0
     finally:
-        runtime.close()
+        signal.signal(signal.SIGTERM, previous_sigterm)
+        if runtime is not None:
+            runtime.close()
     return 0
 
 

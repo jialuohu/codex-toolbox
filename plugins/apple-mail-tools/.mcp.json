@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "apple_mail": {
+      "command": "/bin/zsh",
+      "args": [
+        "-lc",
+        "set -euo pipefail; APPLE_MAIL_CODEX_ROOT=\"${CODEX_HOME:-$HOME/.codex}\"; APPLE_MAIL_RUNTIME_PARENT=\"$APPLE_MAIL_CODEX_ROOT/runtime\"; APPLE_MAIL_RUNTIME=\"$APPLE_MAIL_RUNTIME_PARENT/apple-mail-tools\"; APPLE_MAIL_PROJECT=\"$PWD/server\"; APPLE_MAIL_STAMP=\"$APPLE_MAIL_RUNTIME/.apple-mail-tools-source.sha256\"; APPLE_MAIL_LOCK=\"$APPLE_MAIL_RUNTIME/libexec/runtime_lock.py\"; APPLE_MAIL_PYTHON=\"$(command -v python3 || true)\"; if [ -z \"$APPLE_MAIL_PYTHON\" ] || [ ! -d \"$APPLE_MAIL_RUNTIME_PARENT\" ] || [ -L \"$APPLE_MAIL_RUNTIME_PARENT\" ] || [ ! -d \"$APPLE_MAIL_RUNTIME\" ] || [ -L \"$APPLE_MAIL_RUNTIME\" ] || [ ! -d \"$APPLE_MAIL_PROJECT\" ] || [ -L \"$APPLE_MAIL_PROJECT\" ] || [ ! -f \"$APPLE_MAIL_LOCK\" ] || [ -L \"$APPLE_MAIL_LOCK\" ] || [ ! -x \"$APPLE_MAIL_RUNTIME/bin/apple-mail-mcp\" ] || [ ! -x \"$APPLE_MAIL_RUNTIME/bin/apple-mail-runtime-stamp\" ]; then echo \"Apple Mail runtime is missing or unsafe; rerun scripts/setup-codex-toolbox.sh\" >&2; exit 1; fi; export APPLE_MAIL_RUNTIME_PARENT APPLE_MAIL_RUNTIME APPLE_MAIL_PROJECT APPLE_MAIL_STAMP APPLE_MAIL_LOCK APPLE_MAIL_PYTHON; exec \"$APPLE_MAIL_PYTHON\" \"$APPLE_MAIL_LOCK\" --mode shared --root \"$APPLE_MAIL_RUNTIME_PARENT\" -- /bin/zsh -lc 'set -euo pipefail; if ! \"$APPLE_MAIL_PYTHON\" \"$APPLE_MAIL_LOCK\" --validate-fd --mode shared --root \"$APPLE_MAIL_RUNTIME_PARENT\"; then echo \"Apple Mail runtime lock validation failed\" >&2; exit 1; fi; if ! \"$APPLE_MAIL_RUNTIME/bin/apple-mail-runtime-stamp\" check \"$APPLE_MAIL_PROJECT\" \"$APPLE_MAIL_STAMP\" >/dev/null 2>&1; then echo \"Apple Mail runtime is stale; rerun scripts/setup-codex-toolbox.sh\" >&2; exit 1; fi; exec \"$APPLE_MAIL_RUNTIME/bin/apple-mail-mcp\"'"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "CODEX_HOME",
+        "CODEX_SECRETS_DIR"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 900,
+      "default_tools_approval_mode": "auto",
+      "tools": {
+        "apple_mail_commit_index_sync": {
+          "approval_mode": "prompt"
+        },
+        "apple_mail_erase_index": {
+          "approval_mode": "prompt"
+        },
+        "apple_mail_fetch_attachment": {
+          "approval_mode": "prompt"
+        },
+        "apple_mail_create_draft": {
+          "approval_mode": "prompt"
+        },
+        "apple_mail_commit_mutation": {
+          "approval_mode": "prompt"
+        }
+      }
+    }
+  }
+}

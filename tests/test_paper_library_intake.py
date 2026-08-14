@@ -987,7 +987,7 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
     def test_research_plugin_version_and_prompts_expose_intake_and_paperread(self) -> None:
         manifest = json.loads(RESEARCH_PLUGIN.read_text())
 
-        self.assertEqual(manifest["version"], "0.7.1")
+        self.assertEqual(manifest["version"], "0.8.0")
         default_prompts = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(default_prompts), 3)
         self.assertTrue(all(len(prompt) <= 128 for prompt in default_prompts))

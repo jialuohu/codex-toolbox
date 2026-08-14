@@ -23,10 +23,11 @@ Prefer the repo's conventions when they are clear. Otherwise use `figures_src/` 
 
 Use draw.io or diagrams.net for AI/ML/system pipeline and architecture diagrams.
 
+- Use `$drawio` for native `.drawio` creation, page-level MCP inspection or edits, browser opening, specialized shape search, and Desktop export. This skill remains responsible for the publication directory layout, regeneration command, and cross-figure quality bar.
 - Keep `.drawio` source files under the chosen source directory.
 - Use clean vector shapes, consistent alignment, limited color, readable labels, and publication-scale spacing.
 - Export final diagrams as both SVG and PDF under the generated figure directory.
-- Use the draw.io CLI when available; manual export is acceptable when the repo documents it.
+- Use the `$drawio` Desktop helper when available; manual export is acceptable when the repo documents it.
 - Use Inkscape for conversion, validation, or light cleanup when useful.
 - Do not rasterize unless the user explicitly asks or a specific source asset requires it.
 

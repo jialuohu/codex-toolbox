@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "files": [
+    { "path": "assets/brand/Stevens-Star-CMYK_BLK.eps", "bytes": 1634558, "sha256": "fdf5c06ecd77efac6ae9d99e7615bd68e0158142a3856188993f20f06c02ec57" },
+    { "path": "assets/brand/Stevens-Star-CMYK_GLD.eps", "bytes": 1634538, "sha256": "99879d4da147f1de076d34b514e702d4e9a94be19291933eff2c8a78931f8d11" },
+    { "path": "assets/brand/Stevens-Star-CMYK_RED.eps", "bytes": 1634554, "sha256": "bf2b8c7c0ff9e168e0960beb9c1a307e8172978a1e453da70e4fff921306b923" },
+    { "path": "assets/brand/Stevens-Star-CMYK_WHT.eps", "bytes": 1633614, "sha256": "def3325e22c06615716f7a89e37b078ce6c48efd22f5f1b4e73ed9cbf0cc768a" },
+    { "path": "assets/brand/campus-view.png", "bytes": 3609171, "sha256": "38f48217aa35995f8a99047a2e86572e4da4cbb321f9b1fda2ef9e2f68d0f6c2" },
+    { "path": "assets/brand/stevens-identifier-negative.png", "bytes": 12012, "sha256": "2178c7d4e0673c3c9de7c12401bc947389bdb9a76d421158bb95057f284f75f8" },
+    { "path": "assets/brand/stevens-identifier-positive.png", "bytes": 16724, "sha256": "070d4ddf452a668d3daa314a0142a26951d2aebb9c81a82276ada1db0cca269b" },
+    { "path": "assets/brand/stevens-star-gold.png", "bytes": 8881, "sha256": "3300b98cfc0e863ad99e1f45c8a80ad858d1198b3de175510ff294c21a779fc5" },
+    { "path": "assets/fonts/IBMPlexSans-Bold.ttf", "bytes": 175712, "sha256": "856c41d7d47bba74b107e526ef8f49968fb2a3a129cdc3c5ef5899ba3c2dc181" },
+    { "path": "assets/fonts/IBMPlexSans-Italic.ttf", "bytes": 184020, "sha256": "21effb0b8dabbbd6548db1c581c68c6335f6ffaabd6946a6a73ade24dec050eb" },
+    { "path": "assets/fonts/IBMPlexSans-Medium.ttf", "bytes": 177104, "sha256": "11ddde88c29ef7e51f5c03da7fde285085469879139d006f631a62dba9bbd069" },
+    { "path": "assets/fonts/IBMPlexSans-Regular.ttf", "bytes": 175748, "sha256": "852def7e24f7b71bab6e8a5c9b02b203e45b0ef59697feaf116e7e8091ad7a2a" },
+    { "path": "assets/fonts/IBMPlexSans-SemiBold.ttf", "bytes": 177272, "sha256": "c8ba79a3dddf6c41f4c0e982bb1be4cb5014bda1d2b6fb1e030221b4e1aef185" },
+    { "path": "assets/fonts/SairaCondensed-Bold.ttf", "bytes": 82752, "sha256": "213c88f20da7e3ae2e260caff91f9a03bc472dc5734e1bafc65b171bad93a2cc" },
+    { "path": "assets/fonts/SairaCondensed-Regular.ttf", "bytes": 82880, "sha256": "b5e92a286d1ebe5d9439507165e322453932401c33a0794f6e30a5521b22a3ea" },
+    { "path": "assets/fonts/SairaCondensed-SemiBold.ttf", "bytes": 82804, "sha256": "b2a69d91ce2729c2665fede12042c9fca9b31c00241d28f70d6af82afbcca106" },
+    { "path": "assets/licenses/IBM-Plex-OFL.txt", "bytes": 4362, "sha256": "d741e57d5f865e294df801f96b7b5161a88b211df65887e4358d271c9fc5fb4f" },
+    { "path": "assets/licenses/Saira-OFL.txt", "bytes": 4385, "sha256": "8499ab510b386d6d09b83e356d435dd46692d4261b18d7fc0a6162815fcc491f" },
+    { "path": "assets/source/Stevens-PPT-TPL-2022-INSTRUCT.pptx", "bytes": 208963, "sha256": "a5b4b9cd07c38be501dbb06aceed38225d05237bfada62fee12f30cd0cbf86ef" },
+    { "path": "assets/templates/Stevens-Presentation-Template-Dark.pptx", "bytes": 14889807, "sha256": "0b41519732f7c72b769d310accc2c1991a5cad385a56afb719fe49df15d5c90f" },
+    { "path": "assets/templates/Stevens-Presentation-Template-White.pptx", "bytes": 14907997, "sha256": "4062d140c0741d41b77a7c72917c5c2d270eb804063b51eff219bb6712a9d1dd" },
+    { "path": "assets/templates/Stevens-Presentation-Themes-Gallery.pptx", "bytes": 273297, "sha256": "45daf486212c0d0d4185c011abf48bf6b7ca789424f59aab9592e0b54363d877" }
+  ]
+}

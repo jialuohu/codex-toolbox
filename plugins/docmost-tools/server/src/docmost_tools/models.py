@@ -24,6 +24,9 @@ class ErrorCode(StrEnum):
     ATTACHMENT_UNAVAILABLE = "attachment_unavailable"
     UNSUPPORTED_ATTACHMENT = "unsupported_attachment"
     ATTACHMENT_TOO_LARGE = "attachment_too_large"
+    SNAPSHOT_INCOMPLETE = "snapshot_incomplete"
+    SNAPSHOT_CONFLICT = "snapshot_conflict"
+    SNAPSHOT_SAFETY_CAP = "snapshot_safety_cap"
     UPSTREAM_ERROR = "upstream_error"
     INTERNAL_ERROR = "internal_error"
 
@@ -228,6 +231,38 @@ class AttachmentDownload(BaseModel):
 
 class AttachmentRelease(BaseModel):
     """Idempotent cleanup result for one temporary download token."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    released: bool
+
+
+class WorkspaceSnapshotReceipt(BaseModel):
+    """Receipt for a complete private workspace snapshot.
+
+    Page bodies are deliberately absent from this model and remain only in the
+    referenced mode-``0600`` JSONL file.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    snapshot_token: str = Field(
+        min_length=32,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    local_path: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    schema_version: Literal["docmost.workspace-snapshot.v1"]
+    workspace_id: str = Field(min_length=1, max_length=512)
+    space_count: int = Field(ge=1)
+    page_count: int = Field(ge=0)
+    markdown_chars: int = Field(ge=0)
+    size_bytes: int = Field(ge=1)
+
+
+class WorkspaceSnapshotRelease(BaseModel):
+    """Idempotent cleanup result for one private workspace snapshot."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

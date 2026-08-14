@@ -77,6 +77,27 @@ class FakeReadClient:
     ) -> OperationResult[dict[str, object]]:
         return self._result("release_attachment_download", download_token)
 
+    def prepare_workspace_snapshot(
+        self,
+        *,
+        all_spaces: bool,
+        space_ids: list[str] | None,
+        max_pages: int,
+        max_page_chars: int,
+    ) -> OperationResult[dict[str, object]]:
+        return self._result(
+            "prepare_workspace_snapshot",
+            all_spaces=all_spaces,
+            space_ids=space_ids,
+            max_pages=max_pages,
+            max_page_chars=max_page_chars,
+        )
+
+    def release_workspace_snapshot(
+        self, snapshot_token: str
+    ) -> OperationResult[dict[str, object]]:
+        return self._result("release_workspace_snapshot", snapshot_token)
+
     def create_page(
         self,
         space_id: str,
@@ -129,6 +150,8 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "docmost_get_comments",
             "docmost_download_attachment",
             "docmost_release_attachment_download",
+            "docmost_prepare_workspace_snapshot",
+            "docmost_release_workspace_snapshot",
             "docmost_create_page",
             "docmost_update_page_title",
             "docmost_create_comment",
@@ -164,7 +187,9 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             assert tool.annotations is not None
             expected_annotations = {
                 "docmost_download_attachment": download_annotations,
+                "docmost_prepare_workspace_snapshot": download_annotations,
                 "docmost_release_attachment_download": release_annotations,
+                "docmost_release_workspace_snapshot": release_annotations,
                 "docmost_create_page": write_annotations,
                 "docmost_create_comment": write_annotations,
                 "docmost_update_page_title": replacement_annotations,
@@ -230,6 +255,15 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "title": "Download Token",
             "type": "string",
         }
+        assert by_name["docmost_prepare_workspace_snapshot"].inputSchema["properties"][
+            "max_pages"
+        ]["maximum"] == 5_000
+        assert by_name["docmost_prepare_workspace_snapshot"].inputSchema["properties"][
+            "max_page_chars"
+        ]["maximum"] == 2_000_000
+        assert by_name["docmost_release_workspace_snapshot"].inputSchema["properties"][
+            "snapshot_token"
+        ]["pattern"] == "^[A-Za-z0-9_-]{32,128}$"
 
     anyio.run(exercise)
 
@@ -267,6 +301,8 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
                     {"page_id": "page-1", "attachment_id": "attachment-1"},
                 ),
                 ("docmost_release_attachment_download", {"download_token": "A" * 32}),
+                ("docmost_prepare_workspace_snapshot", {}),
+                ("docmost_release_workspace_snapshot", {"snapshot_token": "B" * 32}),
                 (
                     "docmost_create_page",
                     {"space_id": "space-1", "title": "Page", "markdown": "Body"},
@@ -303,6 +339,17 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
             ("list_comments", ("page-1",), {"limit": 50, "cursor": None}),
             ("download_attachment", ("page-1", "attachment-1"), {}),
             ("release_attachment_download", ("A" * 32,), {}),
+            (
+                "prepare_workspace_snapshot",
+                (),
+                {
+                    "all_spaces": True,
+                    "space_ids": None,
+                    "max_pages": 5_000,
+                    "max_page_chars": 2_000_000,
+                },
+            ),
+            ("release_workspace_snapshot", ("B" * 32,), {}),
             (
                 "create_page",
                 ("space-1", "Page", "Body"),
@@ -479,6 +526,12 @@ def test_protocol_rejects_invalid_tool_arguments_before_operation_results() -> N
             (
                 "docmost_release_attachment_download",
                 {"download_token": "contains spaces and is invalid"},
+            ),
+            ("docmost_prepare_workspace_snapshot", {"max_pages": 0}),
+            ("docmost_prepare_workspace_snapshot", {"max_page_chars": 2_000_001}),
+            (
+                "docmost_release_workspace_snapshot",
+                {"snapshot_token": "contains spaces and is invalid"},
             ),
         ]
         async with create_connected_server_and_client_session(

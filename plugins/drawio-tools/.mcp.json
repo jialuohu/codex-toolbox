@@ -1,0 +1,34 @@
+{
+  "mcpServers": {
+    "drawio": {
+      "enabled": true,
+      "command": "/bin/zsh",
+      "args": [
+        "scripts/run-drawio-mcp.sh"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "CODEX_HOME",
+        "CODEX_LOCAL_BIN_DIR",
+        "DRAWIO_BASE_URL"
+      ],
+      "startup_timeout_sec": 60,
+      "tool_timeout_sec": 180,
+      "enabled_tools": [
+        "open_drawio_xml",
+        "open_drawio_csv",
+        "open_drawio_mermaid",
+        "search_shapes",
+        "list_pages",
+        "get_page",
+        "set_page"
+      ],
+      "default_tools_approval_mode": "auto",
+      "tools": {
+        "set_page": {
+          "approval_mode": "prompt"
+        }
+      }
+    }
+  }
+}

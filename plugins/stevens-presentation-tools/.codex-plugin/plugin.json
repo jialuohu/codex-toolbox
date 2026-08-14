@@ -1,0 +1,25 @@
+{
+  "name": "stevens-presentation-tools",
+  "version": "0.2.0",
+  "description": "Reusable Stevens Institute of Technology presentation themes and Google Slides workflows.",
+  "author": {
+    "name": "Jialuo Hu",
+    "email": "hjlnobugs@gmail.com"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Stevens Presentation Tools",
+    "shortDescription": "Build Stevens-branded slides in two themes.",
+    "longDescription": "Stevens Presentation Tools provides White and Dark 16:9 templates, editable archetype exemplars, brand references, and a local-PPTX-first workflow for native Google Slides delivery.",
+    "developerName": "Jialuo Hu",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use $stevens-slides to create a Stevens-branded Google Slides presentation.",
+      "Use $stevens-slides-dark to build a technical presentation in the Stevens Dark theme."
+    ]
+  }
+}

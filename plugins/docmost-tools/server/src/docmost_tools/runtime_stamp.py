@@ -5,14 +5,20 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import stat
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-_FORMAT_MARKER = b"docmost-tools-runtime-stamp-v1\0"
+_FORMAT_MARKER = b"docmost-tools-runtime-stamp-v2\0"
 
 
 def _project_inputs(project: Path) -> Iterator[Path]:
-    for name in ("pyproject.toml", "uv.lock", "scripts/docmost-auth"):
+    for name in (
+        "pyproject.toml",
+        "uv.lock",
+        "scripts/docmost-auth",
+        "scripts/docmost-mcp",
+    ):
         path = project / name
         if not path.is_file() or path.is_symlink():
             raise ValueError("Docmost runtime source inputs are incomplete")
@@ -50,6 +56,16 @@ def _remove_existing_stamp(stamp: Path) -> None:
         raise ValueError("Docmost runtime stamp must be a regular file")
 
 
+def _validate_stamp_parent(stamp: Path) -> None:
+    metadata = stamp.parent.lstat()
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+    ):
+        raise ValueError("Docmost runtime stamp directory is unsafe")
+
+
 def write_stamp(project: Path, stamp: Path, *, expected: str) -> None:
     """Atomically record the project fingerprint in the installed runtime."""
 
@@ -58,13 +74,30 @@ def write_stamp(project: Path, stamp: Path, *, expected: str) -> None:
     if value != expected:
         raise ValueError("Docmost source changed during runtime installation")
     stamp.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    _validate_stamp_parent(stamp)
     temporary = stamp.with_name(f".{stamp.name}.{os.getpid()}.tmp")
+    descriptor: int | None = None
+    created = False
     try:
-        temporary.write_text(f"{value}\n")
-        temporary.chmod(0o600)
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        created = True
+        with os.fdopen(descriptor, "w") as stream:
+            descriptor = None
+            stream.write(f"{value}\n")
+            stream.flush()
+            os.fsync(stream.fileno())
         temporary.replace(stamp)
     finally:
-        if temporary.exists():
+        if descriptor is not None:
+            os.close(descriptor)
+        if created and temporary.is_file() and not temporary.is_symlink():
             temporary.unlink()
 
 
@@ -72,7 +105,15 @@ def check_stamp(project: Path, stamp: Path) -> bool:
     """Return whether a regular stamp exactly matches current project inputs."""
 
     try:
-        if not stamp.is_file() or stamp.is_symlink():
+        _validate_stamp_parent(stamp)
+        metadata = stamp.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_ISLNK(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_nlink != 1
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
             return False
         recorded = stamp.read_text().strip()
         invalid_character = any(

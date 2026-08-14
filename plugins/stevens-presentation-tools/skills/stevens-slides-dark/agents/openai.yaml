@@ -1,0 +1,6 @@
+interface:
+  display_name: "Stevens Slides — Dark"
+  short_description: "Create Stevens slides in the Dark theme"
+  default_prompt: "Use $stevens-slides-dark to create a Stevens presentation in the Dark theme."
+policy:
+  allow_implicit_invocation: true
