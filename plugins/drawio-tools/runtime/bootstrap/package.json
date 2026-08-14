@@ -8,6 +8,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@drawio/mcp": "1.4.0"
+    "@drawio/mcp": "1.5.0"
   }
 }
