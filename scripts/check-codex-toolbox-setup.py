@@ -2539,7 +2539,7 @@ def validate_drawio_tools_contract(
 
     plugin = json.loads(DRAWIO_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "drawio-tools", "drawio-tools manifest name must be exact")
-    require(plugin.get("version") == "0.1.0", "drawio-tools manifest version must be 0.1.0")
+    require(plugin.get("version") == "0.1.1", "drawio-tools manifest version must be 0.1.1")
     require(plugin.get("skills") == "./skills/", "drawio-tools must expose its skill")
     require(plugin.get("mcpServers") == "./.mcp.json", "drawio-tools must expose its MCP config")
     require(plugin.get("license") == "MIT", "drawio-tools must declare its toolbox license")
@@ -2579,7 +2579,7 @@ def validate_drawio_tools_contract(
     ]
     require(
         server.get("enabled") is True
-        and server.get("command") == "/bin/zsh"
+        and server.get("command") == "/bin/sh"
         and server.get("args") == ["scripts/run-drawio-mcp.sh"]
         and server.get("cwd") == ".",
         "drawio MCP must launch the bundled verified runtime wrapper",

@@ -34,7 +34,7 @@ await writeFile(
 );
 
 const transport = new StdioClientTransport({
-  command: "/bin/zsh",
+  command: "/bin/sh",
   args: [join(pluginRoot, "scripts", "run-drawio-mcp.sh")],
   cwd: pluginRoot,
   env: {

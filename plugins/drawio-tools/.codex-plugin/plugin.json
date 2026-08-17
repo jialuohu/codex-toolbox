@@ -1,6 +1,6 @@
 {
   "name": "drawio-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Create, inspect, edit, open, and export editable draw.io diagrams through a pinned official MCP runtime.",
   "author": {
     "name": "Jialuo Hu",

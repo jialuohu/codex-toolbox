@@ -2,7 +2,7 @@
   "mcpServers": {
     "drawio": {
       "enabled": true,
-      "command": "/bin/zsh",
+      "command": "/bin/sh",
       "args": [
         "scripts/run-drawio-mcp.sh"
       ],

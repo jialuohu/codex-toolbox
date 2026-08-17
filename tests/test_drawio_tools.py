@@ -20,9 +20,11 @@ class DrawioToolsContractTests(unittest.TestCase):
         lock = json.loads((PLUGIN / "runtime" / "bootstrap" / "package-lock.json").read_text())
 
         self.assertEqual(manifest["name"], "drawio-tools")
-        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["version"], "0.1.1")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         server = mcp["mcpServers"]["drawio"]
+        self.assertEqual(server["command"], "/bin/sh")
+        self.assertEqual(server["args"], ["scripts/run-drawio-mcp.sh"])
         self.assertEqual(
             server["enabled_tools"],
             [
