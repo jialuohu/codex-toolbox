@@ -7,7 +7,7 @@ import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .models import AppleMailError, ErrorCode
 
@@ -92,13 +92,18 @@ class RuntimePaths:
             raise AppleMailError(
                 ErrorCode.CONFIGURATION_INVALID, "Apple Mail configuration is invalid"
             ) from error
-        if not isinstance(raw, dict) or raw.get("version") != 1:
+        if not isinstance(raw, dict):
             raise AppleMailError(
                 ErrorCode.CONFIGURATION_INVALID, "Apple Mail configuration version is invalid"
             )
-        allow = raw.get("allow_unencrypted_index", False)
-        excluded = raw.get("excluded_mailbox_names", list(DEFAULT_EXCLUSIONS))
-        trash = raw.get("trash_mailbox_names", list(DEFAULT_TRASH_NAMES))
+        config = cast(dict[str, Any], raw)
+        if config.get("version") != 1:
+            raise AppleMailError(
+                ErrorCode.CONFIGURATION_INVALID, "Apple Mail configuration version is invalid"
+            )
+        allow = config.get("allow_unencrypted_index", False)
+        excluded = config.get("excluded_mailbox_names", list(DEFAULT_EXCLUSIONS))
+        trash = config.get("trash_mailbox_names", list(DEFAULT_TRASH_NAMES))
         if not isinstance(allow, bool):
             raise AppleMailError(
                 ErrorCode.CONFIGURATION_INVALID, "allow_unencrypted_index must be boolean"
@@ -111,19 +116,22 @@ class RuntimePaths:
 
 
 def _validated_names(value: Any, field: str) -> tuple[str, ...]:
-    if (
-        not isinstance(value, list)
-        or len(value) > 100
-        or any(
+    if not isinstance(value, list):
+        raise AppleMailError(ErrorCode.CONFIGURATION_INVALID, f"{field} is invalid")
+    items = cast(list[Any], value)
+    if len(items) > 100:
+        raise AppleMailError(ErrorCode.CONFIGURATION_INVALID, f"{field} is invalid")
+    names: list[str] = []
+    for item in items:
+        if (
             not isinstance(item, str)
             or not item.strip()
             or len(item) > 200
             or any(ord(character) < 32 for character in item)
-            for item in value
-        )
-    ):
-        raise AppleMailError(ErrorCode.CONFIGURATION_INVALID, f"{field} is invalid")
-    return tuple(dict.fromkeys(item.strip() for item in value))
+        ):
+            raise AppleMailError(ErrorCode.CONFIGURATION_INVALID, f"{field} is invalid")
+        names.append(item.strip())
+    return tuple(dict.fromkeys(names))
 
 
 def _ensure_private_directory(path: Path) -> None:

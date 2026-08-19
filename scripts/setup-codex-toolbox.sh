@@ -338,6 +338,7 @@ installed_docmost_server_dir() {
 import hashlib
 import json
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -409,6 +410,8 @@ required_files = (
     server / "scripts" / "docmost-auth",
     server / "scripts" / "docmost-mcp",
     server / "src" / "docmost_tools" / "server.py",
+    server / "src" / "docmost_tools" / "page_content.py",
+    server / "src" / "docmost_tools" / "__init__.py",
     server / "src" / "docmost_tools" / "runtime_lock.py",
     server / "src" / "docmost_tools" / "runtime_stamp.py",
 )
@@ -429,6 +432,24 @@ try:
     plugin = json.loads((plugin_root / ".codex-plugin" / "plugin.json").read_text())
     mcp = json.loads((plugin_root / ".mcp.json").read_text())
 except (OSError, json.JSONDecodeError):
+    fail("Installed Docmost plugin layout is invalid")
+try:
+    project_text = (server / "pyproject.toml").read_text()
+    lock_text = (server / "uv.lock").read_text()
+    package_init = (server / "src" / "docmost_tools" / "__init__.py").read_text()
+except OSError:
+    fail("Installed Docmost plugin layout is invalid")
+if (
+    re.search(rf'(?m)^version = "{re.escape(version)}"$', project_text) is None
+    or re.search(
+        rf'(?ms)^name = "docmost-tools"\nversion = "{re.escape(version)}"$',
+        lock_text,
+    )
+    is None
+    or re.search(rf'(?m)^__version__ = "{re.escape(version)}"$', package_init) is None
+    or '"jsonpatch==1.33"' not in project_text
+    or 'name = "jsonpatch"\nversion = "1.33"' not in lock_text
+):
     fail("Installed Docmost plugin layout is invalid")
 servers = mcp.get("mcpServers") if isinstance(mcp, dict) else None
 configured = servers.get("docmost") if isinstance(servers, dict) else None
@@ -465,6 +486,7 @@ expected_writes = {
     "docmost_create_page",
     "docmost_update_page_title",
     "docmost_edit_page_text",
+    "docmost_patch_page_content",
     "docmost_create_comment",
 }
 
@@ -505,7 +527,7 @@ import sys
 from pathlib import Path
 
 marketplace_name = sys.argv[1]
-approved_launcher_sha256 = "41cd449f224e6f12614b53bf15f2f9e1f180787e7518b68cb5f29e29cf1e71f5"
+approved_launcher_sha256 = "9671ef5b3df9959856f6c058f1b0e690dedd7a62574d5e1eb8e7a09b3f5d0b47"
 
 
 def fail(message: str) -> None:
@@ -521,7 +543,7 @@ if not isinstance(data, dict) or data.get("name") != "apple_mail" or data.get("e
 transport = data.get("transport")
 if not isinstance(transport, dict) or transport.get("type") != "stdio":
     fail("Installed Apple Mail MCP transport is unexpected")
-if transport.get("command") != "/bin/zsh":
+if transport.get("command") != "/bin/bash":
     fail("Installed Apple Mail MCP transport is unexpected")
 raw_cwd = transport.get("cwd")
 if (
@@ -559,6 +581,7 @@ required_files = (
     plugin_root / ".codex-plugin" / "plugin.json",
     server / "pyproject.toml",
     server / "uv.lock",
+    server / "scripts" / "apple-mail-mcp",
     server / "scripts" / "mail_bridge.applescript",
     server / "src" / "apple_mail_tools" / "server.py",
     server / "src" / "apple_mail_tools" / "runtime_lock.py",
@@ -599,10 +622,10 @@ if (
     or configured.get("env_vars") != ["CODEX_HOME", "CODEX_SECRETS_DIR"]
     or configured.get("env_vars") != transport.get("env_vars")
     or not isinstance(configured_args, list)
-    or len(configured_args) != 2
-    or configured_args[0] != "-lc"
-    or not isinstance(configured_args[1], str)
-    or hashlib.sha256(configured_args[1].encode()).hexdigest() != approved_launcher_sha256
+    or configured_args != ["server/scripts/apple-mail-mcp"]
+    or hashlib.sha256(
+        (server / "scripts" / "apple-mail-mcp").read_bytes()
+    ).hexdigest() != approved_launcher_sha256
     or transport.get("args") != configured_args
 ):
     fail("Installed Apple Mail MCP transport is unexpected")

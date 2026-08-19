@@ -14,7 +14,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue
 from pydantic import ValidationError as PydanticValidationError
 
 from docmost_tools.config import DocmostSettings
-from docmost_tools.models import ErrorCode, OperationError, OperationResult
+from docmost_tools.models import ErrorCode, JsonPatchOperation, OperationError, OperationResult
 from docmost_tools.profile import ProfilePathError, profile_paths
 from docmost_tools.runtime import CONFIGURATION_INVALID_MESSAGE, RuntimeState, bootstrap_runtime
 
@@ -152,6 +152,11 @@ ExpectedUpdatedAt = Annotated[
     Field(min_length=1, max_length=128, pattern=r"^[^\x00-\x1f\x7f]{1,128}$"),
     AfterValidator(_validated_timestamp),
 ]
+ExpectedContentSha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+JsonPatchOperations = Annotated[
+    list[JsonPatchOperation],
+    Field(min_length=1, max_length=100),
+]
 OldText = Annotated[
     str,
     Field(min_length=1, max_length=100_000, pattern=_EDIT_TEXT_PATTERN),
@@ -210,6 +215,8 @@ class _Operations(Protocol):
 
     def get_page(self, page_id: str, *, offset: int, max_chars: int) -> OperationResult[Any]: ...
 
+    def get_page_content(self, page_id: str) -> OperationResult[Any]: ...
+
     def list_pages(
         self, space_id: str, *, limit: int, cursor: str | None = None
     ) -> OperationResult[Any]: ...
@@ -258,6 +265,14 @@ class _Operations(Protocol):
         old_text: str,
         new_text: str,
         expected_updated_at: str,
+    ) -> OperationResult[Any]: ...
+
+    def patch_page_content(
+        self,
+        page_id: str,
+        patch: list[JsonPatchOperation],
+        expected_updated_at: str,
+        expected_content_sha256: str,
     ) -> OperationResult[Any]: ...
 
     def create_comment(self, page_id: str, markdown: str) -> OperationResult[Any]: ...
@@ -336,6 +351,12 @@ def create_server(
         return execute(
             lambda read_client: read_client.get_page(page_id, offset=offset, max_chars=max_chars)
         )
+
+    @server.tool(name="docmost_get_page_content", annotations=_READ_ONLY_ANNOTATIONS)
+    def get_page_content(page_id: Identifier) -> ToolResult:  # pyright: ignore[reportUnusedFunction]
+        """Get one complete bounded, untrusted ProseMirror document and its canonical SHA-256."""
+
+        return execute(lambda read_client: read_client.get_page_content(page_id))
 
     @server.tool(name="docmost_list_pages", annotations=_READ_ONLY_ANNOTATIONS)
     def list_pages(  # pyright: ignore[reportUnusedFunction]
@@ -484,6 +505,28 @@ def create_server(
                 old_text,
                 new_text,
                 expected_updated_at,
+            )
+        )
+
+    @server.tool(name="docmost_patch_page_content", annotations=_REPLACEMENT_WRITE_ANNOTATIONS)
+    def patch_page_content(  # pyright: ignore[reportUnusedFunction]
+        page_id: Identifier,
+        patch: JsonPatchOperations,
+        expected_updated_at: ExpectedUpdatedAt,
+        expected_content_sha256: ExpectedContentSha256,
+    ) -> ToolResult:
+        """Apply a body-scoped RFC 6902 patch after revision and content-hash checks.
+
+        This prompt-gated tool preserves every untouched ProseMirror value. Ambiguous
+        write outcomes must be read before any later retry.
+        """
+
+        return execute(
+            lambda write_client: write_client.patch_page_content(
+                page_id,
+                patch,
+                expected_updated_at,
+                expected_content_sha256,
             )
         )
 

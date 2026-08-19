@@ -1,18 +1,24 @@
-"""Fail-closed fingerprint for the installed Apple Mail runtime."""
+"""Fail-closed fingerprint for an immutable Apple Mail runtime generation."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import os
+import stat
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-_FORMAT_MARKER = b"apple-mail-tools-runtime-stamp-v1\0"
+_FORMAT_MARKER = b"apple-mail-tools-runtime-stamp-v2\0"
 
 
 def _project_inputs(project: Path) -> Iterator[Path]:
-    for name in ("pyproject.toml", "uv.lock", "scripts/mail_bridge.applescript"):
+    for name in (
+        "pyproject.toml",
+        "uv.lock",
+        "scripts/apple-mail-mcp",
+        "scripts/mail_bridge.applescript",
+    ):
         path = project / name
         if not path.is_file() or path.is_symlink():
             raise ValueError("Apple Mail runtime source inputs are incomplete")
@@ -27,6 +33,8 @@ def _project_inputs(project: Path) -> Iterator[Path]:
 
 
 def fingerprint(project: Path) -> str:
+    """Hash the dependency lock, launcher, bridge, and package source."""
+
     resolved = project.resolve(strict=True)
     digest = hashlib.sha256(_FORMAT_MARKER)
     for path in _project_inputs(resolved):
@@ -39,31 +47,75 @@ def fingerprint(project: Path) -> str:
     return digest.hexdigest()
 
 
-def write_stamp(project: Path, stamp: Path, *, expected: str) -> None:
+def _validate_stamp_parent(stamp: Path) -> None:
+    metadata = stamp.parent.lstat()
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+    ):
+        raise ValueError("Apple Mail runtime stamp directory is unsafe")
+
+
+def _remove_existing_stamp(stamp: Path) -> None:
     if stamp.is_symlink() or stamp.is_file():
         stamp.unlink()
     elif stamp.exists():
-        raise ValueError("Apple Mail runtime stamp is unsafe")
+        raise ValueError("Apple Mail runtime stamp must be a regular file")
+
+
+def write_stamp(project: Path, stamp: Path, *, expected: str) -> None:
+    """Atomically record the source fingerprint after installation."""
+
+    _remove_existing_stamp(stamp)
     value = fingerprint(project)
     if value != expected:
         raise ValueError("Apple Mail source changed during installation")
+    stamp.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    _validate_stamp_parent(stamp)
     temporary = stamp.with_name(f".{stamp.name}.{os.getpid()}.tmp")
+    descriptor: int | None = None
+    created = False
     try:
-        temporary.write_text(f"{value}\n")
-        temporary.chmod(0o600)
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        created = True
+        with os.fdopen(descriptor, "w") as stream:
+            descriptor = None
+            stream.write(f"{value}\n")
+            stream.flush()
+            os.fsync(stream.fileno())
         temporary.replace(stamp)
     finally:
-        if temporary.exists():
+        if descriptor is not None:
+            os.close(descriptor)
+        if created and temporary.is_file() and not temporary.is_symlink():
             temporary.unlink()
 
 
 def check_stamp(project: Path, stamp: Path) -> bool:
+    """Return whether a private regular stamp matches the current source."""
+
     try:
+        _validate_stamp_parent(stamp)
+        metadata = stamp.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_ISLNK(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_nlink != 1
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+        ):
+            return False
         recorded = stamp.read_text().strip()
         return (
-            stamp.is_file()
-            and not stamp.is_symlink()
-            and len(recorded) == 64
+            len(recorded) == 64
             and all(character in "0123456789abcdef" for character in recorded)
             and recorded == fingerprint(project)
         )

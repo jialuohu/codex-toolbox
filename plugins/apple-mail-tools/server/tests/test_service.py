@@ -32,8 +32,11 @@ def test_live_reads_use_signed_handles_and_body_windows(service: AppleMailServic
     body = service.get_message(message_handles[0], offset=0, max_chars=10).data
     assert body["body"] == "Alpha body"
     assert body["truncated"] is True
+    replacement = "A" if message_handles[0][-1] != "A" else "B"
     with pytest.raises(AppleMailError) as tampered:
-        service.get_message(f"{message_handles[0][:-1]}A", offset=0, max_chars=10)
+        service.get_message(
+            f"{message_handles[0][:-1]}{replacement}", offset=0, max_chars=10
+        )
     assert tampered.value.code is ErrorCode.INVALID_HANDLE
 
 
@@ -81,7 +84,7 @@ def test_history_sync_stops_at_500_and_resumes(
 ) -> None:
     monkeypatch.setattr("apple_mail_tools.service.filevault_status", lambda: "on")
     template = fake_bridge.messages[("account-1", ("Inbox",))][0]
-    rows = []
+    rows: list[dict[str, Any]] = []
     for native_id in range(1, 521):
         row = dict(template)
         row.update(

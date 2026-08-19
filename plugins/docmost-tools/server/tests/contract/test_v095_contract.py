@@ -9,6 +9,7 @@ import socket
 import subprocess
 import time
 from collections.abc import Iterator
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -18,6 +19,7 @@ import pytest
 
 from docmost_tools.client import DocmostReadClient
 from docmost_tools.config import DocmostSettings
+from docmost_tools.page_content import validate_patch_operations
 
 pytestmark = pytest.mark.contract
 _COMPOSE_FILE = Path(__file__).with_name("docker-compose.yml")
@@ -230,10 +232,52 @@ def test_v095_reads_and_safe_writes(contract_instance: ContractInstance) -> None
         assert edited_readback.ok is True and edited_readback.data is not None
         assert edited_readback.data.markdown == f"Root **text {unique}**"
 
+        raw_content = client.get_page_content(root.data.page.id)
+        assert raw_content.ok is True and raw_content.data is not None
+        assert raw_content.data.page.updated_at is not None
+        expected_document = cast(dict[str, object], deepcopy(raw_content.data.content))
+        expected_blocks = expected_document.get("content")
+        assert isinstance(expected_blocks, list)
+        first_block = cast(list[object], expected_blocks)[0]
+        assert isinstance(first_block, dict)
+        first_block_content = cast(dict[str, object], first_block).get("content")
+        assert isinstance(first_block_content, list)
+        red_text: dict[str, object] = {
+            "type": "text",
+            "text": f" Red review {unique}",
+            "marks": [
+                {"type": "textStyle", "attrs": {"color": "#ff0000"}}
+            ],
+        }
+        cast(list[object], first_block_content).append(red_text)
+        raw_patch: list[object] = [
+            {"op": "add", "path": "/content/0/content/-", "value": red_text}
+        ]
+        rich_patch = client.patch_page_content(
+            root.data.page.id,
+            validate_patch_operations(raw_patch),
+            raw_content.data.page.updated_at,
+            raw_content.data.content_sha256,
+        )
+        if not rich_patch.ok:
+            ambiguous_readback = client.get_page_content(root.data.page.id)
+            pytest.fail(
+                "rich patch outcome was ambiguous; "
+                f"error={rich_patch.error!r}, expected={expected_document!r}, "
+                f"readback={ambiguous_readback!r}"
+            )
+        assert rich_patch.data is not None
+        assert rich_patch.data.operations_applied == 1
+        rich_readback = client.get_page_content(root.data.page.id)
+        assert rich_readback.ok is True and rich_readback.data is not None
+        assert rich_readback.data.content == expected_document
+        assert rich_readback.data.content_sha256 == rich_patch.data.content_sha256
+
+        assert rich_patch.data.page.updated_at is not None
         renamed = client.update_page_title(
             root.data.page.id,
             f"Renamed Root {unique}",
-            edited.data.page.updated_at,
+            rich_patch.data.page.updated_at,
         )
         assert renamed.ok is True and renamed.data is not None
         assert renamed.data.title == f"Renamed Root {unique}"

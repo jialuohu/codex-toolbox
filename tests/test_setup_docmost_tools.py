@@ -1330,6 +1330,35 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
 
+    def test_global_setup_rejects_installed_version_or_dependency_drift(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.create_private_browser_profile()
+        project = self.installed_plugin_root / "server" / "pyproject.toml"
+        value = project.read_text()
+        self.assertIn(f'version = "{self.plugin_version}"', value)
+        self.assertIn('"jsonpatch==1.33"', value)
+        project.write_text(
+            value.replace(
+                f'version = "{self.plugin_version}"',
+                'version = "9.9.9"',
+                1,
+            ).replace('"jsonpatch==1.33"', '"jsonpatch>=1.33"', 1)
+        )
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh")],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Docmost plugin layout is invalid", result.stderr)
+
     def test_global_setup_rejects_a_symlink_within_the_installed_layout(self) -> None:
         self.install_fake_uv()
         self.install_fake_codex()
@@ -1410,7 +1439,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.create_private_browser_profile()
         mcp_path = self.installed_plugin_root / ".mcp.json"
         mcp = json.loads(mcp_path.read_text())
-        mcp["mcpServers"]["docmost"]["tools"]["docmost_create_page"][
+        mcp["mcpServers"]["docmost"]["tools"]["docmost_patch_page_content"][
             "approval_mode"
         ] = "auto"
         mcp_path.write_text(json.dumps(mcp, indent=2) + "\n")

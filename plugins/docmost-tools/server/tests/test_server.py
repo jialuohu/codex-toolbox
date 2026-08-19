@@ -8,7 +8,7 @@ from jsonschema import Draft202012Validator
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from docmost_tools import server as server_module
-from docmost_tools.models import ErrorCode, OperationResult
+from docmost_tools.models import ErrorCode, JsonPatchOperation, OperationResult
 from docmost_tools.server import create_server
 
 
@@ -51,6 +51,9 @@ class FakeReadClient:
         self, page_id: str, *, offset: int, max_chars: int
     ) -> OperationResult[dict[str, object]]:
         return self._result("get_page", page_id, offset=offset, max_chars=max_chars)
+
+    def get_page_content(self, page_id: str) -> OperationResult[dict[str, object]]:
+        return self._result("get_page_content", page_id)
 
     def list_pages(
         self, space_id: str, *, limit: int, cursor: str | None = None
@@ -134,6 +137,24 @@ class FakeReadClient:
             expected_updated_at,
         )
 
+    def patch_page_content(
+        self,
+        page_id: str,
+        patch: list[JsonPatchOperation],
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> OperationResult[dict[str, object]]:
+        serialized_patch = [
+            operation.model_dump(mode="json", by_alias=True) for operation in patch
+        ]
+        return self._result(
+            "patch_page_content",
+            page_id,
+            serialized_patch,
+            expected_updated_at,
+            expected_content_sha256,
+        )
+
     def create_comment(
         self, page_id: str, markdown: str
     ) -> OperationResult[dict[str, object]]:
@@ -160,6 +181,7 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "docmost_get_space",
             "docmost_search_pages",
             "docmost_get_page",
+            "docmost_get_page_content",
             "docmost_list_pages",
             "docmost_list_child_pages",
             "docmost_get_comments",
@@ -170,6 +192,7 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "docmost_create_page",
             "docmost_update_page_title",
             "docmost_edit_page_text",
+            "docmost_patch_page_content",
             "docmost_create_comment",
         ]
         read_annotations = {
@@ -210,6 +233,7 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
                 "docmost_create_comment": write_annotations,
                 "docmost_update_page_title": replacement_annotations,
                 "docmost_edit_page_text": replacement_annotations,
+                "docmost_patch_page_content": replacement_annotations,
             }.get(tool.name, read_annotations)
             assert (
                 tool.annotations.model_dump(by_alias=True, exclude_none=True)
@@ -283,6 +307,44 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "expected_updated_at",
         }
         assert "approved" not in by_name["docmost_edit_page_text"].inputSchema["properties"]
+        patch_schema = by_name["docmost_patch_page_content"].inputSchema
+        assert set(patch_schema["required"]) == {
+            "page_id",
+            "patch",
+            "expected_updated_at",
+            "expected_content_sha256",
+        }
+        assert patch_schema["properties"]["patch"]["minItems"] == 1
+        assert patch_schema["properties"]["patch"]["maxItems"] == 100
+        patch_items = patch_schema["properties"]["patch"]["items"]
+        assert set(patch_items["discriminator"]["mapping"]) == {
+            "add",
+            "remove",
+            "replace",
+            "move",
+            "copy",
+            "test",
+        }
+        assert len(patch_items["oneOf"]) == 6
+        for operation_name in (
+            "JsonPatchAdd",
+            "JsonPatchRemove",
+            "JsonPatchReplace",
+            "JsonPatchMove",
+            "JsonPatchCopy",
+            "JsonPatchTest",
+        ):
+            operation_schema = patch_schema["$defs"][operation_name]
+            assert operation_schema["additionalProperties"] is False
+            assert operation_schema["properties"]["path"]["maxLength"] == 2_048
+        for operation_name in ("JsonPatchMove", "JsonPatchCopy"):
+            assert patch_schema["$defs"][operation_name]["properties"]["from"][
+                "maxLength"
+            ] == 2_048
+        assert patch_schema["properties"]["expected_content_sha256"]["pattern"] == (
+            "^[0-9a-f]{64}$"
+        )
+        assert "approved" not in patch_schema["properties"]
         assert by_name["docmost_release_attachment_download"].inputSchema["properties"][
             "download_token"
         ] == {
@@ -330,6 +392,7 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
                 ("docmost_get_space", {"space_id": "space-1"}),
                 ("docmost_search_pages", {"query": "flow matching"}),
                 ("docmost_get_page", {"page_id": "page-1"}),
+                ("docmost_get_page_content", {"page_id": "page-1"}),
                 ("docmost_list_pages", {"space_id": "space-1"}),
                 ("docmost_list_child_pages", {"page_id": "page-1"}),
                 ("docmost_get_comments", {"page_id": "page-1"}),
@@ -361,6 +424,21 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
                         "expected_updated_at": "2026-01-01T00:00:00Z",
                     },
                 ),
+                (
+                    "docmost_patch_page_content",
+                    {
+                        "page_id": "page-1",
+                        "patch": [
+                            {
+                                "op": "replace",
+                                "path": "/content/0/content/0/text",
+                                "value": "new",
+                            }
+                        ],
+                        "expected_updated_at": "2026-01-01T00:00:00Z",
+                        "expected_content_sha256": "a" * 64,
+                    },
+                ),
                 ("docmost_create_comment", {"page_id": "page-1", "markdown": "A note"}),
             ]
             for name, arguments in calls:
@@ -380,6 +458,7 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
             ("get_space", ("space-1",), {}),
             ("search", ("flow matching",), {"space_id": None, "limit": 20, "cursor": None}),
             ("get_page", ("page-1",), {"offset": 0, "max_chars": 50000}),
+            ("get_page_content", ("page-1",), {}),
             ("list_pages", ("space-1",), {"limit": 50, "cursor": None}),
             ("list_child_pages", ("page-1",), {"limit": 50, "cursor": None}),
             ("list_comments", ("page-1",), {"limit": 50, "cursor": None}),
@@ -409,6 +488,22 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
             (
                 "edit_page_text",
                 ("page-1", "old", "new", "2026-01-01T00:00:00Z"),
+                {},
+            ),
+            (
+                "patch_page_content",
+                (
+                    "page-1",
+                    [
+                        {
+                            "op": "replace",
+                            "path": "/content/0/content/0/text",
+                            "value": "new",
+                        }
+                    ],
+                    "2026-01-01T00:00:00Z",
+                    "a" * 64,
+                ),
                 {},
             ),
             ("create_comment", ("page-1", "A note"), {}),
@@ -579,6 +674,33 @@ def test_protocol_rejects_invalid_tool_arguments_before_operation_results() -> N
                     "old_text": "",
                     "new_text": "new",
                     "expected_updated_at": "same",
+                },
+            ),
+            (
+                "docmost_patch_page_content",
+                {
+                    "page_id": "page-1",
+                    "patch": [],
+                    "expected_updated_at": "same",
+                    "expected_content_sha256": "a" * 64,
+                },
+            ),
+            (
+                "docmost_patch_page_content",
+                {
+                    "page_id": "page-1",
+                    "patch": [{"op": "remove", "path": "/type"}],
+                    "expected_updated_at": "same",
+                    "expected_content_sha256": "a" * 64,
+                },
+            ),
+            (
+                "docmost_patch_page_content",
+                {
+                    "page_id": "page-1",
+                    "patch": [{"op": "remove", "path": "/content/0"}],
+                    "expected_updated_at": "same",
+                    "expected_content_sha256": "not-a-hash",
                 },
             ),
             (

@@ -217,6 +217,11 @@ PRODUCTIVITY_MCP = ROOT / "plugins" / "productivity-tools" / ".mcp.json"
 DOCMOST_DIR = ROOT / "plugins" / "docmost-tools"
 DOCMOST_PLUGIN = DOCMOST_DIR / ".codex-plugin" / "plugin.json"
 DOCMOST_MCP = DOCMOST_DIR / ".mcp.json"
+DOCMOST_SERVER = DOCMOST_DIR / "server"
+DOCMOST_PYPROJECT = DOCMOST_SERVER / "pyproject.toml"
+DOCMOST_UV_LOCK = DOCMOST_SERVER / "uv.lock"
+DOCMOST_PACKAGE_INIT = DOCMOST_SERVER / "src" / "docmost_tools" / "__init__.py"
+DOCMOST_PAGE_CONTENT = DOCMOST_SERVER / "src" / "docmost_tools" / "page_content.py"
 DOCMOST_APPROVED_LAUNCHER_SHA256 = (
     "9d67581f0bf57fd92ba4cf1cf8d8612dde1a82c3ec09bc4d3dddeaea8ad05125"
 )
@@ -236,10 +241,20 @@ APPLE_MAIL_MCP = APPLE_MAIL_DIR / ".mcp.json"
 APPLE_MAIL_SKILL = APPLE_MAIL_DIR / "skills" / "apple-mail" / "SKILL.md"
 APPLE_MAIL_SERVER = APPLE_MAIL_DIR / "server"
 APPLE_MAIL_BRIDGE = APPLE_MAIL_SERVER / "scripts" / "mail_bridge.applescript"
+APPLE_MAIL_MCP_WRAPPER = APPLE_MAIL_SERVER / "scripts" / "apple-mail-mcp"
 APPLE_MAIL_SERVER_SOURCE = APPLE_MAIL_SERVER / "src" / "apple_mail_tools" / "server.py"
+APPLE_MAIL_PYPROJECT = APPLE_MAIL_SERVER / "pyproject.toml"
+APPLE_MAIL_UV_LOCK = APPLE_MAIL_SERVER / "uv.lock"
+APPLE_MAIL_PACKAGE_INIT = APPLE_MAIL_SERVER / "src" / "apple_mail_tools" / "__init__.py"
+APPLE_MAIL_RUNTIME_LOCK = (
+    APPLE_MAIL_SERVER / "src" / "apple_mail_tools" / "runtime_lock.py"
+)
+APPLE_MAIL_RUNTIME_STAMP = (
+    APPLE_MAIL_SERVER / "src" / "apple_mail_tools" / "runtime_stamp.py"
+)
 APPLE_MAIL_SETUP = ROOT / "scripts" / "setup-apple-mail-tools.sh"
 APPLE_MAIL_APPROVED_LAUNCHER_SHA256 = (
-    "41cd449f224e6f12614b53bf15f2f9e1f180787e7518b68cb5f29e29cf1e71f5"
+    "9671ef5b3df9959856f6c058f1b0e690dedd7a62574d5e1eb8e7a09b3f5d0b47"
 )
 DESIGN_ENGINEERING_DIR = ROOT / "plugins" / "design-engineering-tools"
 DESIGN_ENGINEERING_PLUGIN = DESIGN_ENGINEERING_DIR / ".codex-plugin" / "plugin.json"
@@ -1856,14 +1871,29 @@ def validate_apple_mail_tools_contract(
         (APPLE_MAIL_MCP, "apple-mail-tools must define an MCP config"),
         (APPLE_MAIL_SKILL, "apple-mail-tools must include its owning skill"),
         (APPLE_MAIL_BRIDGE, "apple-mail-tools must include its fixed bridge"),
+        (APPLE_MAIL_MCP_WRAPPER, "apple-mail-tools must include its checked-in launcher"),
         (APPLE_MAIL_SERVER_SOURCE, "apple-mail-tools must include its FastMCP server"),
+        (APPLE_MAIL_PYPROJECT, "apple-mail-tools must include its package metadata"),
+        (APPLE_MAIL_UV_LOCK, "apple-mail-tools must include its dependency lock"),
+        (APPLE_MAIL_PACKAGE_INIT, "apple-mail-tools must include its version module"),
+        (APPLE_MAIL_RUNTIME_LOCK, "apple-mail-tools must include its runtime lock helper"),
+        (APPLE_MAIL_RUNTIME_STAMP, "apple-mail-tools must include its runtime stamp helper"),
         (APPLE_MAIL_SETUP, "toolbox must include the Apple Mail setup helper"),
     ):
         require(path.exists(), message)
     plugin = json.loads(APPLE_MAIL_PLUGIN.read_text())
     mcp = json.loads(APPLE_MAIL_MCP.read_text())
     require(plugin.get("name") == "apple-mail-tools", "Apple Mail plugin name must be exact")
-    require(plugin.get("version") == "0.1.0", "apple-mail-tools must use version 0.1.0")
+    require(plugin.get("version") == "0.2.0", "apple-mail-tools must use version 0.2.0")
+    for path, pattern in (
+        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.0"$'),
+        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.0"$'),
+        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.0"$'),
+    ):
+        require(
+            re.search(pattern, path.read_text()) is not None,
+            f"Apple Mail version metadata must be synchronized in {path.name}",
+        )
     require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "Apple Mail manifest must use neutral publisher metadata",
@@ -1884,19 +1914,15 @@ def validate_apple_mail_tools_contract(
     )
     server = servers["apple_mail"]
     require(isinstance(server, dict), "Apple Mail MCP definition must be an object")
-    require(server.get("command") == "/bin/zsh", "Apple Mail MCP must use its strict launcher")
+    require(server.get("command") == "/bin/bash", "Apple Mail MCP must use its strict launcher")
     arguments = server.get("args")
     require(
-        isinstance(arguments, list)
-        and len(arguments) == 2
-        and arguments[0] == "-lc"
-        and isinstance(arguments[1], str)
-        and bool(arguments[1]),
-        "Apple Mail MCP must use exactly one nonempty zsh launcher",
+        arguments == ["server/scripts/apple-mail-mcp"],
+        "Apple Mail MCP must use its checked-in launcher",
     )
-    launcher = arguments[1]
+    launcher = APPLE_MAIL_MCP_WRAPPER.read_text()
     require(
-        hashlib.sha256(launcher.encode()).hexdigest()
+        hashlib.sha256(APPLE_MAIL_MCP_WRAPPER.read_bytes()).hexdigest()
         == APPLE_MAIL_APPROVED_LAUNCHER_SHA256,
         "Apple Mail MCP launcher must match the approved fingerprint",
     )
@@ -1926,16 +1952,18 @@ def validate_apple_mail_tools_contract(
         "Every Apple Mail write boundary must require approval",
     )
     for expected in (
-        'APPLE_MAIL_RUNTIME_PARENT="$APPLE_MAIL_CODEX_ROOT/runtime"',
-        'APPLE_MAIL_RUNTIME="$APPLE_MAIL_RUNTIME_PARENT/apple-mail-tools"',
-        'APPLE_MAIL_PROJECT="$PWD/server"',
-        'APPLE_MAIL_LOCK="$APPLE_MAIL_RUNTIME/libexec/runtime_lock.py"',
-        "--mode shared",
-        "--validate-fd --mode shared",
-        "apple-mail-runtime-stamp\" check",
-        'exec "$APPLE_MAIL_RUNTIME/bin/apple-mail-mcp"',
+        'GENERATION_ROOT="$RUNTIME_PARENT/apple-mail-tools-generations"',
+        'GENERATION_ENVS="$GENERATION_ROOT/envs"',
+        "--kind generation --mode shared",
+        "--validate-fd",
+        'check "$SERVER_DIR" "$RUNTIME_STAMP"',
+        'exec "$MCP_EXECUTABLE"',
     ):
         require(expected in launcher, f"Apple Mail MCP launcher must include {expected}")
+    require(
+        APPLE_MAIL_MCP_WRAPPER.stat().st_mode & 0o111,
+        "Apple Mail MCP launcher must be executable",
+    )
     marketplace_entry = next(
         (entry for entry in marketplace.get("plugins", []) if entry.get("name") == "apple-mail-tools"),
         None,
@@ -1959,13 +1987,31 @@ def validate_apple_mail_tools_contract(
     helper = APPLE_MAIL_SETUP.read_text()
     require(APPLE_MAIL_SETUP.stat().st_mode & 0o111, "Apple Mail setup helper must be executable")
     for expected in (
-        "--check", "--install", "--status", "--init-config",
-        "--reinstall-package apple-mail-tools", "uv sync --python 3.12 --frozen",
-        "run_locked exclusive --install-locked", "run_locked shared --check-locked",
-        "run_locked shared --status-locked", "RuntimePaths.from_environment().ensure()",
-        "apple-mail-runtime-stamp", "mail_bridge.applescript",
+        "--check", "--install", "--status", "--init-config", "--prune",
+        "--reinstall-package apple-mail-tools", "--python 3.12 --frozen --no-dev",
+        "run_setup_locked --install-setup-locked",
+        "run_generation_locked shared --check-locked",
+        "run_generation_locked shared --status-locked",
+        "RuntimePaths.from_environment().ensure()",
+        "apple-mail-tools-generations", "LEGACY_RUNTIME",
+        "runtime_stamp.py", "mail_bridge.applescript",
     ):
         require(expected in helper, f"Apple Mail setup helper must include {expected}")
+    runtime_lock = APPLE_MAIL_RUNTIME_LOCK.read_text()
+    for expected in (
+        'SETUP_LOCK_NAME = ".setup.lock"',
+        'GENERATION_LOCK_FD_ENV = "APPLE_MAIL_GENERATION_LOCK_FD"',
+        'GENERATION_ID_ENV = "APPLE_MAIL_GENERATION_ID"',
+        'return "Apple Mail runtime generation is busy;',
+    ):
+        require(expected in runtime_lock, f"Apple Mail runtime lock must include {expected}")
+    runtime_stamp = APPLE_MAIL_RUNTIME_STAMP.read_text()
+    for expected in (
+        'b"apple-mail-tools-runtime-stamp-v2\\0"',
+        '"scripts/apple-mail-mcp"',
+        '"scripts/mail_bridge.applescript"',
+    ):
+        require(expected in runtime_stamp, f"Apple Mail runtime stamp must include {expected}")
     installed_blocks = shell_function_blocks(script, "installed_apple_mail_server_dir")
     require(
         len(installed_blocks) == 1
@@ -1974,9 +2020,11 @@ def validate_apple_mail_tools_contract(
             for expected in (
                 '"$CODEX_BIN" mcp get apple_mail --json',
                 '("plugins", "cache", marketplace_name, "apple-mail-tools")',
+                'server / "scripts" / "apple-mail-mcp"',
                 'server / "scripts" / "mail_bridge.applescript"',
                 f'approved_launcher_sha256 = "{APPLE_MAIL_APPROVED_LAUNCHER_SHA256}"',
-                "hashlib.sha256(configured_args[1].encode()).hexdigest()",
+                '(server / "scripts" / "apple-mail-mcp").read_bytes()',
+                'configured_args != ["server/scripts/apple-mail-mcp"]',
                 "transport.get(\"args\") != configured_args",
             )
         ),
@@ -1990,6 +2038,10 @@ def validate_apple_mail_tools_contract(
         and 'APPLE_MAIL_SERVER_DIR="$APPLE_MAIL_INSTALLED_SERVER_DIR" "$APPLE_MAIL_SETUP" --status'
         in script,
         "toolbox setup must install and health-check Apple Mail from the active plugin",
+    )
+    require(
+        '"$APPLE_MAIL_SETUP" --prune' not in script,
+        "full toolbox setup must never prune Apple Mail runtime generations",
     )
     server_source = APPLE_MAIL_SERVER_SOURCE.read_text()
     expected_tool_names = {
@@ -2025,6 +2077,7 @@ def validate_apple_mail_tools_contract(
         "## Apple Mail Tools", "setup-apple-mail-tools.sh --install", "FileVault",
         "SQLite FTS5", "24-hour leases", "click **Send** in Mail",
         "permanent deletion", "Plugin uninstall preserves private index data",
+        "apple-mail-tools-generations", "--prune", "Existing tasks keep",
     ):
         require(expected in readme_text, f"README must document Apple Mail {expected}")
     require(
@@ -2052,6 +2105,10 @@ def validate_docmost_tools_contract(
         DOCMOST_SMOKE,
         DOCMOST_RUNTIME_LOCK,
         DOCMOST_RUNTIME_STAMP,
+        DOCMOST_PYPROJECT,
+        DOCMOST_UV_LOCK,
+        DOCMOST_PACKAGE_INIT,
+        DOCMOST_PAGE_CONTENT,
     )
     for path in required_paths:
         require(path.is_file() and not path.is_symlink(), f"Docmost file is missing or unsafe: {path.name}")
@@ -2075,7 +2132,21 @@ def validate_docmost_tools_contract(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
-    require(plugin.get("version") == "0.6.0", "docmost-tools must use version 0.6.0")
+    require(plugin.get("version") == "0.7.0", "docmost-tools must use version 0.7.0")
+    for path, pattern in (
+        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.7\.0"$'),
+        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.7\.0"$'),
+        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.7\.0"$'),
+    ):
+        require(
+            re.search(pattern, path.read_text()) is not None,
+            f"Docmost version metadata must be synchronized in {path.name}",
+        )
+    require(
+        '"jsonpatch==1.33"' in DOCMOST_PYPROJECT.read_text()
+        and 'name = "jsonpatch"\nversion = "1.33"' in DOCMOST_UV_LOCK.read_text(),
+        "Docmost must pin jsonpatch 1.33 in project and lock metadata",
+    )
     require(
         plugin.get("interface", {}).get("capabilities") == ["Read", "Write", "Interactive"],
         "docmost manifest must keep Read, Write, and Interactive capabilities",
@@ -2100,6 +2171,7 @@ def validate_docmost_tools_contract(
         "docmost_create_page",
         "docmost_update_page_title",
         "docmost_edit_page_text",
+        "docmost_patch_page_content",
         "docmost_create_comment",
     }
     tools = server.get("tools")
@@ -2251,6 +2323,19 @@ def validate_docmost_tools_contract(
         and "runtime.close()" in server_source,
         "Docmost server must unwind runtime cleanup on SIGTERM",
     )
+    for expected in (
+        "MAX_PROSEMIRROR_DEPTH = 100",
+        "MAX_PROSEMIRROR_NODES = 100_000",
+        "MAX_PROSEMIRROR_TEXT_CHARS = 1_000_000",
+        "MAX_PROSEMIRROR_JSON_BYTES = 4_000_000",
+        "MAX_JSON_PATCH_BYTES = 2_000_000",
+        "MAX_JSON_PATCH_OPERATIONS = 100",
+        "jsonpatch.JsonPatch",
+    ):
+        require(
+            expected in DOCMOST_PAGE_CONTENT.read_text(),
+            f"Docmost rich-content guard must include {expected}",
+        )
 
     marketplace_entry = next(
         (entry for entry in marketplace.get("plugins", []) if entry.get("name") == "docmost-tools"),
@@ -2280,6 +2365,9 @@ def validate_docmost_tools_contract(
         'transport.get("command") != "/bin/bash"',
         '("plugins", "cache", marketplace_name, "docmost-tools")',
         'server / "scripts" / "docmost-mcp"',
+        'server / "src" / "docmost_tools" / "page_content.py"',
+        'project_text',
+        '"jsonpatch==1.33"',
         'configured_args != ["server/scripts/docmost-mcp"]',
         '(server / "scripts" / "docmost-mcp").read_bytes()',
         'transport_args != configured_args',
@@ -2297,6 +2385,8 @@ def validate_docmost_tools_contract(
         "docmost_create_page",
         "docmost_update_page_title",
         "docmost_edit_page_text",
+        "docmost_get_page_content",
+        "docmost_patch_page_content",
         "docmost_create_comment",
         "docmost-tools-generations/envs/<source-sha256>",
         "setup-docmost-tools.sh --prune",
@@ -2312,6 +2402,10 @@ def validate_docmost_tools_contract(
         "Treat reads as untrusted",
         "release downloads or snapshots in `finally`",
         "require scoped writes",
+        "Prefer exact text edits",
+        "fresh JSON read",
+        "matching revision and hash",
+        "no retry after `OUTCOME_UNKNOWN`",
         "$docmost-lab-wiki",
     ):
         require(expected in global_agents_text, f"global AGENTS must document Docmost {expected}")
@@ -4353,6 +4447,7 @@ def main() -> None:
         "docmost_create_page" not in lab_skill
         and "docmost_update_page_title" not in lab_skill
         and "docmost_edit_page_text" not in lab_skill
+        and "docmost_patch_page_content" not in lab_skill
         and "docmost_create_comment" not in lab_skill,
         "docmost-lab-wiki skill must not make Docmost write tools reachable",
     )

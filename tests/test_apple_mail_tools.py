@@ -12,11 +12,15 @@ MANIFEST = PLUGIN / ".codex-plugin" / "plugin.json"
 MCP = PLUGIN / ".mcp.json"
 SKILL = PLUGIN / "skills" / "apple-mail" / "SKILL.md"
 BRIDGE = PLUGIN / "server" / "scripts" / "mail_bridge.applescript"
+LAUNCHER = PLUGIN / "server" / "scripts" / "apple-mail-mcp"
 SERVER = PLUGIN / "server" / "src" / "apple_mail_tools" / "server.py"
+PYPROJECT = PLUGIN / "server" / "pyproject.toml"
+UV_LOCK = PLUGIN / "server" / "uv.lock"
+PACKAGE_INIT = PLUGIN / "server" / "src" / "apple_mail_tools" / "__init__.py"
 SETUP = ROOT / "scripts" / "setup-apple-mail-tools.sh"
 TOOLBOX_SETUP = ROOT / "scripts" / "setup-codex-toolbox.sh"
 MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
-APPROVED_LAUNCHER_SHA256 = "41cd449f224e6f12614b53bf15f2f9e1f180787e7518b68cb5f29e29cf1e71f5"
+APPROVED_LAUNCHER_SHA256 = "9671ef5b3df9959856f6c058f1b0e690dedd7a62574d5e1eb8e7a09b3f5d0b47"
 
 
 class AppleMailToolsContractTests(unittest.TestCase):
@@ -26,7 +30,12 @@ class AppleMailToolsContractTests(unittest.TestCase):
         setup = TOOLBOX_SETUP.read_text()
 
         self.assertEqual(manifest["name"], "apple-mail-tools")
-        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["version"], "0.2.0")
+        self.assertIn('version = "0.2.0"', PYPROJECT.read_text())
+        self.assertRegex(
+            UV_LOCK.read_text(), r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.0"$'
+        )
+        self.assertIn('__version__ = "0.2.0"', PACKAGE_INIT.read_text())
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         entry = next(item for item in marketplace["plugins"] if item["name"] == manifest["name"])
@@ -53,14 +62,17 @@ class AppleMailToolsContractTests(unittest.TestCase):
         self.assertTrue(
             all(server["tools"][name] == {"approval_mode": "prompt"} for name in expected_prompts)
         )
-        self.assertEqual(server["command"], "/bin/zsh")
-        self.assertEqual(server["args"][0], "-lc")
+        self.assertEqual(server["command"], "/bin/bash")
+        self.assertEqual(server["args"], ["server/scripts/apple-mail-mcp"])
         self.assertEqual(
-            hashlib.sha256(server["args"][1].encode()).hexdigest(),
+            hashlib.sha256(LAUNCHER.read_bytes()).hexdigest(),
             APPROVED_LAUNCHER_SHA256,
         )
-        self.assertNotIn("uv sync", server["args"][1])
-        self.assertIn("apple-mail-runtime-stamp", server["args"][1])
+        launcher = LAUNCHER.read_text()
+        self.assertNotIn("uv sync", launcher)
+        self.assertIn("apple-mail-tools-generations", launcher)
+        self.assertIn("--kind generation --mode shared", launcher)
+        self.assertTrue(LAUNCHER.stat().st_mode & 0o111)
 
     def test_tool_surface_and_static_no_send_guards(self) -> None:
         server_source = SERVER.read_text()
@@ -86,10 +98,13 @@ class AppleMailToolsContractTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
         helper = SETUP.read_text()
-        for option in ("--check", "--install", "--status", "--init-config"):
+        for option in ("--check", "--install", "--status", "--init-config", "--prune"):
             self.assertIn(option, helper)
         self.assertIn("--reinstall-package apple-mail-tools", helper)
-        self.assertIn("run_locked exclusive --install-locked", helper)
+        self.assertIn("run_setup_locked --install-setup-locked", helper)
+        self.assertIn("run_generation_locked exclusive --install-generation-locked", helper)
+        self.assertIn("LEGACY_RUNTIME", helper)
+        self.assertNotIn('"$APPLE_MAIL_SETUP" --prune', TOOLBOX_SETUP.read_text())
 
 
 if __name__ == "__main__":

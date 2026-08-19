@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .models import AppleMailError, ErrorCode
 
@@ -37,10 +37,13 @@ class HandleSigner:
             expected = _encode(hmac.digest(self._key, encoded.encode(), "sha256"))
             if prefix != _PREFIX or not hmac.compare_digest(supplied, expected):
                 raise ValueError
-            value = json.loads(_decode(encoded))
+            raw_value: Any = json.loads(_decode(encoded))
         except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as error:
             raise AppleMailError(ErrorCode.INVALID_HANDLE, "Handle is invalid") from error
-        if not isinstance(value, dict) or value.get("v") != 1 or value.get("kind") != kind:
+        if not isinstance(raw_value, dict):
+            raise AppleMailError(ErrorCode.INVALID_HANDLE, "Handle kind is invalid")
+        value = cast(dict[str, Any], raw_value)
+        if value.get("v") != 1 or value.get("kind") != kind:
             raise AppleMailError(ErrorCode.INVALID_HANDLE, "Handle kind is invalid")
         return value
 

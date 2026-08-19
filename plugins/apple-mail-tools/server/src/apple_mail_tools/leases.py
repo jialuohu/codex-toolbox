@@ -10,7 +10,7 @@ import shutil
 import stat
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .models import AppleMailError, ErrorCode
 
@@ -91,8 +91,9 @@ class LeaseStore:
             receipt = entry / "lease.json"
             expires_at = 0.0
             try:
-                raw = json.loads(receipt.read_text())
-                expires_at = float(raw.get("expires_at", 0)) if isinstance(raw, dict) else 0.0
+                raw: Any = json.loads(receipt.read_text())
+                data = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+                expires_at = float(data.get("expires_at", 0))
             except (OSError, ValueError, json.JSONDecodeError):
                 expires_at = 0.0
             if expires_at <= now:

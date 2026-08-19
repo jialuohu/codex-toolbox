@@ -4,12 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docmost-tools"
-version = "0.6.0"
+version = "0.7.0"
 description = "Local package for a private Docmost MCP integration."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "httpx==0.28.1",
+  "jsonpatch==1.33",
   "mcp==1.29.0",
   "playwright==1.61.0",
   "pydantic-settings==2.14.2",

@@ -17,25 +17,40 @@ for its exact generation, validates the stamp, then directly execs the environme
 is not removed by setup or `--prune`.
 
 `scripts/setup-docmost-tools.sh --prune` is local-only and preserves the current source fingerprint,
-installed-plugin fingerprints, and every generation whose lock is busy. Runtime upgrades do not alter
-the 16 MCP tool names, prompt-gated writes, read-only snapshot protocol, or 900-second tool timeout.
+installed-plugin fingerprints, and every generation whose lock is busy. The server exposes 18 MCP
+tools while retaining the read-only snapshot protocol and 900-second tool timeout.
 
-The eight ordinary reads tolerate additive response fields. The private attachment download/release
+The nine ordinary reads tolerate additive response fields. `docmost_get_page_content` returns one
+complete bounded ProseMirror document as untrusted data with `docmost.page-content.v1`, page metadata,
+and a SHA-256 of canonical UTF-8 JSON. It rejects documents above 100,000 nodes, depth 100, 1,000,000
+text characters, or 4,000,000 serialized bytes. The private attachment download/release
 pair validates page association, accepts only bounded PDF or UTF-8 text files, stages mode-`0600`
 snapshots under a mode-`0700` temporary root, and removes them by opaque token or server shutdown.
 The workspace snapshot/release pair traverses every selected page through a read-only protocol,
 assembles long Markdown pages consistently, retries revision races twice, and emits versioned JSONL
 beneath `CODEX_SECRETS_DIR`. Only a receipt containing an opaque token, private path, checksum,
 schema, workspace ID, and counts crosses the MCP boundary; incomplete scans create no receipt.
-The four prompt-gated writes require an explicit
+The five prompt-gated writes require an explicit
 `DOCMOST_WRITE_PROFILE=v0_95`: page creation uses Markdown import, optional nesting is a separate
 non-retried move, title changes use a disclosed non-atomic timestamp precondition, and comments use
 a conservative Markdown-to-Tiptap converter. Exact page-text edits use a required, non-atomic
 timestamp precondition and replace one unique literal occurrence inside one ProseMirror text node.
 They send the preserved JSON document back with `operation=replace`; Markdown syntax remains literal,
-and formatting or structural edits are unsupported. Ambiguous write outcomes are never retried. If a
+and remain the preferred tool for simple replacements.
+
+`docmost_patch_page_content` accepts 1–100 typed RFC 6902 operations (`add`, `remove`, `replace`,
+`move`, `copy`, and `test`) under `/content` only. Paths are limited to 2,048 characters and the
+serialized patch to 2,000,000 bytes. Each prompt-gated call requires a fresh raw JSON read plus the
+matching `updated_at` and `content_sha256`, applies the patch to a copy, rejects no-ops or unsafe final
+documents, and requires an exact JSON readback from the update response. It preserves every untouched
+node, mark, comment, ID, attachment, and unknown valid rich block. Red text uses a `textStyle` mark such
+as `{"type":"textStyle","attrs":{"color":"#ff0000"}}`. Page metadata and the root `doc` type are
+outside this patch tool. Ambiguous write outcomes return `outcome_unknown` and are never retried. If a
 nesting move has an ambiguous outcome, the created page is returned with
 `placement_status="unknown"` and an explicit read-before-retry warning.
+Malformed operations, prohibited paths, unsafe final documents, and no-ops use `invalid_patch`;
+stale guards, failed `test` operations, missing targets, and other non-applicable paths use
+`conflict`.
 
 `docmost-smoke` is a setup-only, bounded headless check. It obtains the existing isolated browser
 session once, verifies `current_user`, and lists one page of spaces. It does not expose the cookie,

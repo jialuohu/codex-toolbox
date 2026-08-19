@@ -85,6 +85,7 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
             "docmost_get_space",
             "docmost_search_pages",
             "docmost_get_page",
+            "docmost_get_page_content",
             "docmost_list_pages",
             "docmost_list_child_pages",
             "docmost_get_comments",
@@ -95,6 +96,7 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
             "docmost_create_page",
             "docmost_update_page_title",
             "docmost_edit_page_text",
+            "docmost_patch_page_content",
             "docmost_create_comment",
         }
 
@@ -257,14 +259,14 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         tools_list = next(response for response in responses if response.get("id") == 2)
         self.assertEqual(initialize["result"]["serverInfo"]["name"], "docmost")
         listed_tools = {tool["name"] for tool in tools_list["result"]["tools"]}
-        self.assertEqual(len(tools_list["result"]["tools"]), 16)
+        self.assertEqual(len(tools_list["result"]["tools"]), 18)
         self.assertEqual(listed_tools, expected_tools)
 
     def test_checker_rejects_write_policy_and_transport_regressions(self) -> None:
         def mutate_write(root: Path) -> None:
             path = root / "plugins" / "docmost-tools" / ".mcp.json"
             value = json.loads(path.read_text())
-            value["mcpServers"]["docmost"]["tools"]["docmost_create_page"][
+            value["mcpServers"]["docmost"]["tools"]["docmost_patch_page_content"][
                 "approval_mode"
             ] = "auto"
             path.write_text(json.dumps(value, indent=2) + "\n")
@@ -295,6 +297,26 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
             path.write_text(path.read_text() + "\ntrue\n")
 
         self.assert_checker_rejects(mutate, "bootstrap hash must be intentionally approved")
+
+    def test_checker_rejects_version_or_jsonpatch_pin_drift(self) -> None:
+        def mutate_version(root: Path) -> None:
+            path = root / "plugins" / "docmost-tools" / "server" / "pyproject.toml"
+            value = path.read_text()
+            self.assertIn('version = "0.7.0"', value)
+            path.write_text(value.replace('version = "0.7.0"', 'version = "0.7.1"', 1))
+
+        def mutate_jsonpatch(root: Path) -> None:
+            path = root / "plugins" / "docmost-tools" / "server" / "pyproject.toml"
+            value = path.read_text()
+            self.assertIn('"jsonpatch==1.33"', value)
+            path.write_text(value.replace('"jsonpatch==1.33"', '"jsonpatch>=1.33"', 1))
+
+        for mutate, message in (
+            (mutate_version, "Docmost version metadata must be synchronized"),
+            (mutate_jsonpatch, "Docmost must pin jsonpatch 1.33"),
+        ):
+            with self.subTest(mutate=mutate.__name__):
+                self.assert_checker_rejects(mutate, message)
 
     def test_checker_rejects_generation_install_and_lock_regressions(self) -> None:
         def remove_stamp_publication(root: Path) -> None:

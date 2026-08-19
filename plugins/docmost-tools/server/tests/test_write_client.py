@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from typing import cast
 
 import httpx
 import pytest
 
 from docmost_tools.client import DocmostReadClient
 from docmost_tools.config import DocmostSettings
-from docmost_tools.models import ErrorCode
+from docmost_tools.models import ErrorCode, JsonPatchOperation
+from docmost_tools.page_content import inspect_page_content, validate_patch_operations
 
 
 def settings(*, writes: bool = True) -> DocmostSettings:
@@ -42,7 +44,13 @@ def request_json(request: httpx.Request) -> dict[str, object]:
 
 @pytest.mark.parametrize(
     "operation_name",
-    ["create_page", "update_page_title", "edit_page_text", "create_comment"],
+    [
+        "create_page",
+        "update_page_title",
+        "edit_page_text",
+        "patch_page_content",
+        "create_comment",
+    ],
 )
 def test_writes_require_an_explicit_v095_profile_without_a_request(
     operation_name: str,
@@ -59,6 +67,21 @@ def test_writes_require_an_explicit_v095_profile_without_a_request(
             "new",
             "2026-01-01T00:00:00Z",
         )
+    elif operation_name == "patch_page_content":
+        result = client.patch_page_content(
+            "page-1",
+            validate_patch_operations(
+                [
+                    {
+                        "op": "add",
+                        "path": "/content/-",
+                        "value": {"type": "paragraph"},
+                    }
+                ]
+            ),
+            "2026-01-01T00:00:00Z",
+            "a" * 64,
+        )
     else:
         result = client.create_comment("page-1", "Comment")
 
@@ -66,6 +89,420 @@ def test_writes_require_an_explicit_v095_profile_without_a_request(
     assert result.error is not None
     assert result.error.code is ErrorCode.WRITE_COMPATIBILITY_BLOCKED
     assert result.error.retryable is False
+
+
+def test_patch_page_content_preserves_unmodified_rich_structure_and_adds_red_text() -> None:
+    seen: list[httpx.Request] = []
+    original_blocks: list[object] = [
+        {
+            "type": "heading",
+            "attrs": {"id": "summary", "level": 2},
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Summary",
+                    "marks": [
+                        {"type": "comment", "attrs": {"commentId": "comment-1"}}
+                    ],
+                }
+            ],
+        },
+        {"type": "paragraph", "attrs": {"id": "summary-body"}, "content": []},
+        {
+            "type": "heading",
+            "attrs": {"id": "strengths", "level": 2},
+            "content": [{"type": "text", "text": "Strengths"}],
+        },
+        {"type": "paragraph", "attrs": {"id": "strengths-body"}, "content": []},
+        {
+            "type": "heading",
+            "attrs": {"id": "weaknesses", "level": 2},
+            "content": [{"type": "text", "text": "Weaknesses"}],
+        },
+        {"type": "paragraph", "attrs": {"id": "weaknesses-body"}, "content": []},
+        {
+            "type": "heading",
+            "attrs": {"id": "comments", "level": 2},
+            "content": [{"type": "text", "text": "Comments"}],
+        },
+        {"type": "paragraph", "attrs": {"id": "comments-body"}, "content": []},
+        {
+            "type": "drawio",
+            "attrs": {"attachmentId": "attachment-1", "width": 640, "height": 480},
+        },
+    ]
+    original_document: dict[str, object] = {
+        "type": "doc",
+        "content": original_blocks,
+    }
+    original_hash = inspect_page_content(original_document).content_sha256
+    empty_content: list[object] = []
+    raw_patch: list[object] = []
+    section_text = {
+        1: "Summary body",
+        3: "Strengths body",
+        5: "Weaknesses body",
+        7: "AI-assisted review",
+    }
+    for index, text in section_text.items():
+        red_marks: list[object] = [
+            {"type": "textStyle", "attrs": {"color": "#ff0000"}}
+        ]
+        red_text: dict[str, object] = {
+            "type": "text",
+            "text": text,
+            "marks": red_marks,
+        }
+        raw_patch.extend(
+            [
+                {
+                    "op": "test",
+                    "path": f"/content/{index}/content",
+                    "value": empty_content,
+                },
+                {
+                    "op": "add",
+                    "path": f"/content/{index}/content/-",
+                    "value": red_text,
+                },
+            ]
+        )
+    patch = validate_patch_operations(raw_patch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-canonical",
+                        "slugId": "page-slug",
+                        "title": "Review",
+                        "spaceId": "space-1",
+                        "updatedAt": "same",
+                        "content": original_document,
+                    }
+                ),
+            )
+        payload = request_json(request)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-canonical",
+                    "slugId": "page-slug",
+                    "title": "Review",
+                    "spaceId": "space-1",
+                    "updatedAt": "newer",
+                    "content": payload["content"],
+                }
+            ),
+        )
+
+    result = client_for(handler).patch_page_content(
+        "page-input",
+        patch,
+        "same",
+        original_hash,
+    )
+
+    assert result.ok is True and result.data is not None
+    assert result.data.page.id == "page-canonical"
+    assert result.data.page.updated_at == "newer"
+    assert result.data.operations_applied == 8
+    assert result.data.page.markdown is None
+    assert [request.url.path for request in seen] == [
+        "/api/pages/info",
+        "/api/pages/update",
+    ]
+    assert request_json(seen[0]) == {"pageId": "page-input", "format": "json"}
+    payload = request_json(seen[1])
+    assert payload["pageId"] == "page-canonical"
+    assert payload["format"] == "json"
+    assert payload["operation"] == "replace"
+    patched_content = payload["content"]
+    assert isinstance(patched_content, dict)
+    patched_document = cast(dict[str, object], patched_content)
+    patched_blocks = patched_document["content"]
+    assert isinstance(patched_blocks, list)
+    for untouched_index in (0, 2, 4, 6, 8):
+        assert patched_blocks[untouched_index] == original_blocks[untouched_index]
+    for index, text in section_text.items():
+        expected_block = cast(dict[str, object], original_blocks[index]).copy()
+        expected_block["content"] = [
+            {
+                "type": "text",
+                "text": text,
+                "marks": [{"type": "textStyle", "attrs": {"color": "#ff0000"}}],
+            }
+        ]
+        assert patched_blocks[index] == expected_block
+    assert result.data.content_sha256 == inspect_page_content(
+        patched_document
+    ).content_sha256
+
+
+@pytest.mark.parametrize(
+    ("expected_updated_at", "expected_sha256"),
+    [("older", "CURRENT"), ("same", "a" * 64)],
+)
+def test_patch_page_content_stale_revision_or_hash_stops_before_patch_and_write(
+    expected_updated_at: str,
+    expected_sha256: str,
+) -> None:
+    paths: list[str] = []
+    document: dict[str, object] = {
+        "type": "doc",
+        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "old"}]}],
+    }
+    current_hash = inspect_page_content(document).content_sha256
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-1",
+                    "slugId": "page-slug",
+                    "updatedAt": "same",
+                    "content": document,
+                }
+            ),
+        )
+
+    result = client_for(handler).patch_page_content(
+        "page-1",
+        validate_patch_operations(
+            [{"op": "replace", "path": "/content/0/content/0/text", "value": "new"}]
+        ),
+        expected_updated_at,
+        current_hash if expected_sha256 == "CURRENT" else expected_sha256,
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.CONFLICT
+    assert paths == ["/api/pages/info"]
+
+
+@pytest.mark.parametrize(
+    "raw_patch",
+    [
+        [{"op": "replace", "path": "/type", "value": "paragraph"}],
+        [{"op": "test", "path": "/content", "value": []}],
+        [{"op": "remove", "path": "/content", "value": "extra"}],
+    ],
+)
+def test_patch_page_content_rejects_invalid_patch_before_any_request(
+    raw_patch: object,
+) -> None:
+    result = client_for(lambda _: pytest.fail("request must not be sent")).patch_page_content(
+        "page-1",
+        cast(list[JsonPatchOperation], raw_patch),
+        "same",
+        "a" * 64,
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.INVALID_PATCH
+
+
+@pytest.mark.parametrize(
+    ("raw_patch", "expected_code"),
+    [
+        (
+            [
+                {"op": "test", "path": "/content/0/type", "value": "heading"},
+                {"op": "remove", "path": "/content/0"},
+            ],
+            ErrorCode.CONFLICT,
+        ),
+        ([{"op": "remove", "path": "/content/99"}], ErrorCode.CONFLICT),
+        ([{"op": "remove", "path": "/content/not-an-index"}], ErrorCode.CONFLICT),
+        (
+            [{"op": "replace", "path": "/content/0/content/0/text", "value": "old"}],
+            ErrorCode.INVALID_PATCH,
+        ),
+        (
+            [{"op": "replace", "path": "/content", "value": "invalid"}],
+            ErrorCode.INVALID_PATCH,
+        ),
+    ],
+)
+def test_patch_page_content_rejects_conflicting_invalid_or_noop_results_before_write(
+    raw_patch: object,
+    expected_code: ErrorCode,
+) -> None:
+    paths: list[str] = []
+    document: dict[str, object] = {
+        "type": "doc",
+        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "old"}]}],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-1",
+                    "slugId": "page-slug",
+                    "updatedAt": "same",
+                    "content": document,
+                }
+            ),
+        )
+
+    result = client_for(handler).patch_page_content(
+        "page-1",
+        validate_patch_operations(raw_patch),
+        "same",
+        inspect_page_content(document).content_sha256,
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is expected_code
+    assert paths == ["/api/pages/info"]
+
+
+def test_patch_page_content_rejects_invalid_hash_before_any_request() -> None:
+    result = client_for(lambda _: pytest.fail("request must not be sent")).patch_page_content(
+        "page-1",
+        validate_patch_operations(
+            [{"op": "add", "path": "/content/-", "value": {"type": "paragraph"}}]
+        ),
+        "same",
+        "not-a-sha256",
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.CONFIGURATION_INVALID
+
+
+def test_patch_page_content_transport_failure_is_outcome_unknown_without_retry() -> None:
+    paths: list[str] = []
+    document: dict[str, object] = {"type": "doc", "content": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-1",
+                        "slugId": "page-slug",
+                        "updatedAt": "same",
+                        "content": document,
+                    }
+                ),
+            )
+        raise httpx.ReadTimeout("ambiguous")
+
+    result = client_for(handler).patch_page_content(
+        "page-1",
+        validate_patch_operations(
+            [{"op": "add", "path": "/content/-", "value": {"type": "paragraph"}}]
+        ),
+        "same",
+        inspect_page_content(document).content_sha256,
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.OUTCOME_UNKNOWN
+    assert result.error.retryable is False
+    assert paths == ["/api/pages/info", "/api/pages/update"]
+
+
+def test_patch_page_content_mismatched_success_body_is_outcome_unknown() -> None:
+    paths: list[str] = []
+    document: dict[str, object] = {"type": "doc", "content": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-1",
+                        "slugId": "page-slug",
+                        "updatedAt": "same",
+                        "content": document,
+                    }
+                ),
+            )
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-1",
+                    "slugId": "page-slug",
+                    "updatedAt": "newer",
+                    "content": document,
+                }
+            ),
+        )
+
+    result = client_for(handler).patch_page_content(
+        "page-1",
+        validate_patch_operations(
+            [{"op": "add", "path": "/content/-", "value": {"type": "paragraph"}}]
+        ),
+        "same",
+        inspect_page_content(document).content_sha256,
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.OUTCOME_UNKNOWN
+    assert paths == ["/api/pages/info", "/api/pages/update"]
+
+
+@pytest.mark.parametrize("response_kind", ["missing_content", "wrong_page"])
+def test_patch_page_content_malformed_or_wrong_page_success_is_outcome_unknown(
+    response_kind: str,
+) -> None:
+    paths: list[str] = []
+    document: dict[str, object] = {"type": "doc", "content": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-1",
+                        "slugId": "page-slug",
+                        "updatedAt": "same",
+                        "content": document,
+                    }
+                ),
+            )
+        payload = request_json(request)
+        response: dict[str, object] = {
+            "id": "other-page" if response_kind == "wrong_page" else "page-1",
+            "slugId": "page-slug",
+            "updatedAt": "newer",
+        }
+        if response_kind == "wrong_page":
+            response["content"] = payload["content"]
+        return httpx.Response(200, json=envelope(response))
+
+    result = client_for(handler).patch_page_content(
+        "page-1",
+        validate_patch_operations(
+            [{"op": "add", "path": "/content/-", "value": {"type": "paragraph"}}]
+        ),
+        "same",
+        inspect_page_content(document).content_sha256,
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.OUTCOME_UNKNOWN
+    assert result.error.retryable is False
+    assert paths == ["/api/pages/info", "/api/pages/update"]
 
 
 def test_create_page_imports_markdown_once_and_returns_the_created_root() -> None:

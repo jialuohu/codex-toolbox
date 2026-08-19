@@ -10,7 +10,7 @@ import tempfile
 import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .config import RuntimePaths
 from .models import AppleMailError, ErrorCode
@@ -101,15 +101,19 @@ class AppleScriptRunner:
         if len(result.stdout) > _MAX_RESPONSE_BYTES:
             raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mail returned too much data")
         try:
-            response = json.loads(result.stdout)
+            raw_response: Any = json.loads(result.stdout)
         except (json.JSONDecodeError, UnicodeDecodeError) as error:
             raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mail returned malformed data") from error
-        if not isinstance(response, dict) or not isinstance(response.get("ok"), bool):
+        if not isinstance(raw_response, dict):
+            raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mail returned malformed data")
+        response = cast(dict[str, Any], raw_response)
+        if not isinstance(response.get("ok"), bool):
             raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mail returned malformed data")
         if response["ok"] is not True:
             raw_error = response.get("error")
-            code = raw_error.get("code") if isinstance(raw_error, dict) else None
-            message = raw_error.get("message") if isinstance(raw_error, dict) else None
+            error_data = cast(dict[str, Any], raw_error) if isinstance(raw_error, dict) else {}
+            code = error_data.get("code")
+            message = error_data.get("message")
             mapping = {
                 "permission_required": ErrorCode.PERMISSION_REQUIRED,
                 "not_found": ErrorCode.NOT_FOUND,
@@ -125,7 +129,7 @@ class AppleScriptRunner:
         data = response.get("data")
         if not isinstance(data, dict):
             raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mail returned malformed data")
-        return data
+        return cast(dict[str, Any], data)
 
 
 def _process_failure(stderr: bytes) -> AppleMailError:

@@ -1,7 +1,7 @@
 {
   "name": "docmost-tools",
-  "version": "0.6.0",
-  "description": "Browser-authenticated MCP with private snapshots and prompt-gated writes.",
+  "version": "0.7.0",
+  "description": "Browser-authenticated MCP with private snapshots and guarded rich-page writes.",
   "mcpServers": "./.mcp.json",
   "author": {
     "name": "Codex Toolbox Contributors"
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Docmost Tools",
     "shortDescription": "Use a private Docmost instance through MCP.",
-    "longDescription": "Guarded reads, private receipt-only workspace snapshots, and prompt-gated writes for a private Docmost instance with isolated browser authentication.",
+    "longDescription": "Guarded reads, bounded ProseMirror JSON, private receipt-only workspace snapshots, and prompt-gated writes for a private Docmost instance with isolated browser authentication.",
     "developerName": "Codex Toolbox Contributors",
     "category": "Productivity",
     "capabilities": [

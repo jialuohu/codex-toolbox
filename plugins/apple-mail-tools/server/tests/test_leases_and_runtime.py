@@ -30,6 +30,7 @@ def test_runtime_stamp_covers_fixed_bridge(tmp_path: Path) -> None:
     (project / "src" / "package").mkdir(parents=True)
     (project / "pyproject.toml").write_text("[project]\nname='fixture'\n")
     (project / "uv.lock").write_text("version = 1\n")
+    (project / "scripts" / "apple-mail-mcp").write_text("#!/bin/sh\nexit 0\n")
     bridge = project / "scripts" / "mail_bridge.applescript"
     bridge.write_text("return true\n")
     (project / "src" / "package" / "module.py").write_text("VALUE = 1\n")

@@ -7,7 +7,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 from .bridge import AppleScriptRunner
 from .config import RuntimePaths, Settings
@@ -84,7 +84,7 @@ class AppleMailService:
         )
 
     def list_accounts(self) -> ServiceOutput:
-        rows = []
+        rows: list[dict[str, Any]] = []
         for account in self._raw_accounts():
             rows.append(
                 {
@@ -98,7 +98,7 @@ class AppleMailService:
 
     def list_mailboxes(self, account_handle: str) -> ServiceOutput:
         account_id = self._account_id(account_handle)
-        rows = []
+        rows: list[dict[str, Any]] = []
         for mailbox in self._raw_mailboxes(account_id):
             path = _mailbox_path(mailbox)
             rows.append(
@@ -220,7 +220,7 @@ class AppleMailService:
             "list_attachments", self._message_bridge_params(payload), timeout=60
         )
         self._validate_live_message(payload, _dict(response.get("message")))
-        attachments = []
+        attachments: list[dict[str, Any]] = []
         for raw in _dict_list(response.get("attachments")):
             attachment_id = _required_text(raw, "attachment_id")
             name = _clean(raw.get("name")) or "attachment"
@@ -633,21 +633,22 @@ class AppleMailService:
                     ErrorCode.VALIDATION_ERROR,
                     "Mutation destination is already the source mailbox",
                 )
-            target = {
+            preview: dict[str, Any] = {
+                "account_handle": self.signer.sign("account", {"account_id": account_id}),
+                "mailbox_path": list(payload["mailbox_path"]),
+                "sender": _clean(raw.get("sender")),
+                "subject": _clean(raw.get("subject")),
+                "date_received": _clean(raw.get("date_received")),
+                "action": action,
+                "destination_path": destination_path,
+            }
+            target: dict[str, Any] = {
                 **self._message_identity(payload),
                 "destination_path": destination_path,
-                "preview": {
-                    "account_handle": self.signer.sign("account", {"account_id": account_id}),
-                    "mailbox_path": list(payload["mailbox_path"]),
-                    "sender": _clean(raw.get("sender")),
-                    "subject": _clean(raw.get("subject")),
-                    "date_received": _clean(raw.get("date_received")),
-                    "action": action,
-                    "destination_path": destination_path,
-                },
+                "preview": preview,
             }
             targets.append(target)
-            previews.append(target["preview"])
+            previews.append(preview)
         if (
             len(targets) > 1
             and action in {"move", "trash"}
@@ -690,7 +691,7 @@ class AppleMailService:
         for index, target in enumerate(targets):
             try:
                 self._resolve_message(target, include_body=False)
-                params = {
+                params: dict[str, Any] = {
                     **self._message_bridge_params(target),
                     "mutation": action,
                     "destination_path": target.get("destination_path") or [],
@@ -1021,8 +1022,8 @@ class AppleMailService:
 
     def _public_index_status(self, raw_status: dict[str, Any]) -> dict[str, Any]:
         status = dict(raw_status)
-        scopes = status.pop("indexed_scopes", [])
-        indexed_mailboxes = []
+        scopes = cast(list[dict[str, Any]], status.pop("indexed_scopes", []))
+        indexed_mailboxes: list[dict[str, Any]] = []
         for scope in scopes:
             account_id = str(scope["account_id"])
             path = decode_path(str(scope["mailbox_path"]))
@@ -1096,7 +1097,7 @@ def _matches_recent(
 
 
 def _validated_addresses(values: list[str]) -> list[str]:
-    result = []
+    result: list[str] = []
     for value in values:
         cleaned = value.strip()
         if len(cleaned) > 320 or _EMAIL.fullmatch(cleaned) is None:
@@ -1106,7 +1107,7 @@ def _validated_addresses(values: list[str]) -> list[str]:
 
 
 def _values(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else [value]
+    return cast(list[Any], value) if isinstance(value, list) else [value]
 
 
 def _clean(value: Any) -> str | None:
@@ -1123,19 +1124,26 @@ def _clean_body(value: Any) -> str:
 def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [cleaned for item in value if (cleaned := _clean(item)) is not None]
+    return [
+        cleaned
+        for item in cast(list[Any], value)
+        if (cleaned := _clean(item)) is not None
+    ]
 
 
 def _dict(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mail returned malformed data")
-    return value
+    return cast(dict[str, Any], value)
 
 
 def _dict_list(value: Any) -> list[dict[str, Any]]:
-    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+    if not isinstance(value, list):
         raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mail returned malformed data")
-    return value
+    items = cast(list[Any], value)
+    if not all(isinstance(item, dict) for item in items):
+        raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mail returned malformed data")
+    return [cast(dict[str, Any], item) for item in items]
 
 
 def _scope_list(value: Any) -> list[dict[str, Any]]:
@@ -1170,14 +1178,16 @@ def _nonnegative_int(value: Any) -> int:
 
 
 def _path_value(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mailbox path is invalid")
+    items = cast(list[Any], value)
     if (
-        not isinstance(value, list)
-        or not value
-        or len(value) > 100
-        or any(not isinstance(item, str) or not item or len(item) > 500 for item in value)
+        not items
+        or len(items) > 100
+        or any(not isinstance(item, str) or not item or len(item) > 500 for item in items)
     ):
         raise AppleMailError(ErrorCode.BRIDGE_ERROR, "Mailbox path is invalid")
-    return list(value)
+    return [cast(str, item) for item in items]
 
 
 def _mailbox_path(value: dict[str, Any]) -> list[str]:

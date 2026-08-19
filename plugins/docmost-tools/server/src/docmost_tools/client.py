@@ -26,9 +26,12 @@ from docmost_tools.models import (
     CurrentUser,
     CursorPage,
     ErrorCode,
+    JsonPatchOperation,
     OperationError,
     OperationResult,
     Page,
+    PageContentPatchResult,
+    PageContentResult,
     PageList,
     PageTextEditResult,
     SearchResults,
@@ -36,6 +39,14 @@ from docmost_tools.models import (
     VersionInfo,
     WorkspaceSnapshotReceipt,
     WorkspaceSnapshotRelease,
+)
+from docmost_tools.page_content import (
+    InvalidPageContent,
+    InvalidPagePatch,
+    PagePatchConflict,
+    apply_page_patch,
+    inspect_page_content,
+    validate_patch_operations,
 )
 from docmost_tools.recovery import AUTH_REQUIRED_SENTENCE
 from docmost_tools.workspace_snapshot import WorkspaceSnapshotBuilder, WorkspaceSnapshotStore
@@ -67,6 +78,7 @@ _MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 _DOWNLOAD_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{32,128}\Z")
 _FILENAME_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 _EDIT_TEXT_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_CONTENT_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _OUTCOME_UNKNOWN_MESSAGE = "OUTCOME_UNKNOWN: search or read Docmost before retrying this write."
 _PARTIAL_CREATE_MESSAGE = (
     "Page was created at the space root, but nesting failed. "
@@ -276,6 +288,30 @@ class DocmostReadClient:
             ),
             page_scope=True,
         )
+
+    def get_page_content(self, page_id: str) -> OperationResult[PageContentResult]:
+        """Fetch one complete bounded ProseMirror document and its canonical hash."""
+
+        try:
+            identifier = self._identifier(page_id)
+        except ValueError as error:
+            return cast(OperationResult[PageContentResult], self._page_invalid(error))
+
+        def operation() -> PageContentResult:
+            data = self._post(
+                "/api/pages/info",
+                {"pageId": identifier, "format": "json"},
+                page_scope=True,
+            )
+            page, document = self._page_json_document_from_data(data)
+            inspected = inspect_page_content(document)
+            return PageContentResult(
+                page=page,
+                content=inspected.document,
+                content_sha256=inspected.content_sha256,
+            )
+
+        return self._run(operation, page_scope=True)
 
     def list_pages(
         self, space_id: str, *, limit: int = _DEFAULT_PAGE_SIZE, cursor: str | None = None
@@ -623,6 +659,86 @@ class DocmostReadClient:
             def parse_result() -> PageTextEditResult:
                 page, _ = self._page_json_document_from_data(updated)
                 return PageTextEditResult(page=page)
+
+            return self._parse_write_result(parse_result)
+
+        return self._run_write(operation)
+
+    def patch_page_content(
+        self,
+        page_id: str,
+        patch: list[JsonPatchOperation],
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> OperationResult[PageContentPatchResult]:
+        """Apply one bounded body-scoped RFC 6902 patch after dual preconditions."""
+
+        blocked = self.write_compatibility_error
+        if blocked is not None:
+            return OperationResult[PageContentPatchResult](ok=False, error=blocked)
+        try:
+            validated_page_id = self._identifier(page_id)
+            validated_patch = validate_patch_operations(patch)
+            validated_timestamp = self._timestamp(expected_updated_at)
+            validated_sha256 = self._content_sha256(expected_content_sha256)
+        except InvalidPagePatch as error:
+            return OperationResult[PageContentPatchResult].failure(
+                ErrorCode.INVALID_PATCH,
+                str(error),
+            )
+        except ValueError as error:
+            return cast(OperationResult[PageContentPatchResult], self._invalid(error))
+
+        def operation() -> PageContentPatchResult:
+            current_data = self._post(
+                "/api/pages/info",
+                {"pageId": validated_page_id, "format": "json"},
+                page_scope=True,
+            )
+            try:
+                current_page, current_document = self._page_json_document_from_data(current_data)
+                current = inspect_page_content(current_document)
+            except (InvalidPageContent, ValueError) as error:
+                raise _ClientFailure(
+                    ErrorCode.PAGE_UNAVAILABLE,
+                    PAGE_UNAVAILABLE_MESSAGE,
+                ) from error
+            if (
+                current_page.updated_at != validated_timestamp
+                or current.content_sha256 != validated_sha256
+            ):
+                raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+            try:
+                patched = apply_page_patch(current, validated_patch)
+            except PagePatchConflict as error:
+                raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT") from error
+            except InvalidPagePatch as error:
+                raise _ClientFailure(ErrorCode.INVALID_PATCH, str(error)) from error
+
+            updated = self._post_write_json(
+                "/api/pages/update",
+                {
+                    "pageId": current_page.id,
+                    "content": patched.document,
+                    "format": "json",
+                    "operation": "replace",
+                },
+                page_scope=True,
+            )
+
+            def parse_result() -> PageContentPatchResult:
+                page, response_document = self._page_json_document_from_data(updated)
+                response_content = inspect_page_content(response_document)
+                if (
+                    page.id != current_page.id
+                    or response_content.canonical_bytes != patched.canonical_bytes
+                ):
+                    raise ValueError("Docmost returned different page content")
+                return PageContentPatchResult(
+                    page=page,
+                    content_sha256=response_content.content_sha256,
+                    operations_applied=len(validated_patch),
+                )
 
             return self._parse_write_result(parse_result)
 
@@ -1313,6 +1429,12 @@ class DocmostReadClient:
     def _timestamp(value: str) -> str:
         if not value or len(value) > 128 or _TITLE_CONTROL_PATTERN.search(value):
             raise ValueError("expected_updated_at is invalid")
+        return value
+
+    @staticmethod
+    def _content_sha256(value: str) -> str:
+        if _CONTENT_SHA256_PATTERN.fullmatch(value) is None:
+            raise ValueError("expected_content_sha256 is invalid")
         return value
 
     @staticmethod

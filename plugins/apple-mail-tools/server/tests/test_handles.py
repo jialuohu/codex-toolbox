@@ -18,8 +18,9 @@ def test_handles_are_scoped_signed_and_tamper_evident(tmp_path: Path) -> None:
     with pytest.raises(AppleMailError) as wrong_kind:
         signer.verify(token, "message")
     assert wrong_kind.value.code is ErrorCode.INVALID_HANDLE
+    replacement = "A" if token[-1] != "A" else "B"
     with pytest.raises(AppleMailError) as tampered:
-        signer.verify(f"{token[:-1]}A", "mailbox")
+        signer.verify(f"{token[:-1]}{replacement}", "mailbox")
     assert tampered.value.code is ErrorCode.INVALID_HANDLE
 
 

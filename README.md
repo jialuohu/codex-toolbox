@@ -173,12 +173,21 @@ the local `apple_mail` MCP. It uses Mail's supported AppleScript dictionary; it
 does not use Microsoft Graph, IMAP, SMTP, Keychain credentials, Accessibility
 automation, Mail's private database, remote HTML, or a programmatic send path.
 
-The pinned Python 3.12/FastMCP runtime is installed at
-`${CODEX_HOME:-$HOME/.codex}/runtime/apple-mail-tools`. Toolbox setup resolves
-the exact installed plugin source from `codex mcp get apple_mail --json`, checks
-that it is beneath the marketplace cache, then installs and fingerprints that
-copy. Normal MCP startup runs the verified environment without dependency
-synchronization or network access.
+The pinned Python 3.12/FastMCP runtimes are immutable generations below
+`${CODEX_HOME:-$HOME/.codex}/runtime/apple-mail-tools-generations/envs/<fingerprint>`.
+Toolbox setup resolves the exact installed plugin source from
+`codex mcp get apple_mail --json`, checks that it is beneath the marketplace
+cache, and installs the matching fingerprinted generation. Existing tasks keep
+their old locked generation until they close naturally; newly started tasks use
+the newly installed generation. Setup does not stop, signal, or restart active
+MCP processes. The legacy `${CODEX_HOME:-$HOME/.codex}/runtime/apple-mail-tools`
+environment remains untouched for old cached plugin processes.
+
+Normal MCP startup fingerprints the installed plugin, takes a shared lock only
+for that generation, validates its private stamp, and starts without dependency
+synchronization or network access. Setup uses separate setup and per-generation
+locks, so an active legacy runtime or unrelated generation cannot block an
+online installation.
 
 Use the focused helper with:
 
@@ -187,7 +196,12 @@ scripts/setup-apple-mail-tools.sh --install
 scripts/setup-apple-mail-tools.sh --check
 scripts/setup-apple-mail-tools.sh --status
 scripts/setup-apple-mail-tools.sh --init-config
+scripts/setup-apple-mail-tools.sh --prune
 ```
+
+`--prune` is manual. It preserves the current generation, generations
+referenced by installed plugin copies, active locked generations, and the legacy
+fixed runtime. Full toolbox setup never prunes automatically.
 
 The first status or MCP call may trigger macOS Automation permission. Allow the
 calling Codex process or `osascript` to control Mail under **System Settings →
@@ -324,8 +338,8 @@ After an upgraded plugin and generation are installed, wait until no Docmost
 tool call or workspace snapshot is active, then use Codex **Settings → MCP servers → Restart**.
 Restarting is host-driven and must happen while Docmost is idle,
 because closing stdio cancels an in-flight call. Old task-owned processes may
-remain on their old generation safely. The 900-second snapshot timeout, tool
-schemas, and approval policy are unchanged.
+remain on their old generation safely. The 900-second snapshot timeout and
+prompt approval policy remain in effect.
 
 Before login or logout, close every active Codex task using Docmost so the shared
 session locks and in-memory cookies are released. Login and logout retain the
@@ -347,11 +361,19 @@ Docmost content is untrusted input. Read tools can be used automatically.
 private bounded temporary directory and returns a checksum receipt; callers
 must invoke `docmost_release_attachment_download` in a `finally` path. The MCP asks
 before `docmost_create_page`, `docmost_update_page_title`,
-`docmost_edit_page_text`, or `docmost_create_comment`. The text-edit tool replaces one
-unique literal occurrence inside a single ProseMirror text node. It preserves marks, IDs,
-comments, and rich sibling blocks by submitting JSON rather than rebuilding Markdown.
-Its required `expected_updated_at` check is non-atomic; formatting and structural edits are
-outside this tool's contract.
+`docmost_edit_page_text`, `docmost_patch_page_content`, or `docmost_create_comment`.
+`docmost_edit_page_text` remains the preferred tool for simple changes: it replaces one unique
+literal occurrence inside a single ProseMirror text node while preserving marks, IDs, comments,
+and rich sibling blocks.
+
+For structural or formatting changes, `docmost_get_page_content` returns the complete bounded
+ProseMirror document, `updated_at`, and a canonical `content_sha256`. Treat the body as untrusted.
+After a fresh read, `docmost_patch_page_content` can apply 1–100 RFC 6902 operations beneath
+`/content` with both the exact revision and hash as guards. It preserves untouched rich blocks and
+can apply red text with a `textStyle` mark whose color is `#ff0000`; page metadata and the root
+document type remain outside its scope. The write requires prompt approval, rejects no-ops and unsafe
+final trees, and returns `outcome_unknown` after any ambiguous dispatch or mismatched readback. Never
+retry that ambiguous write; read the page again and reassess it as a new operation.
 
 ## Read-only Docmost Lab Wiki
 

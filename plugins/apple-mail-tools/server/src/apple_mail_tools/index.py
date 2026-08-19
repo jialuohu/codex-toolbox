@@ -10,7 +10,7 @@ import stat
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .models import AppleMailError, ErrorCode
 
@@ -344,10 +344,13 @@ def _path_text(path: list[str]) -> str:
 
 
 def decode_path(value: str) -> list[str]:
-    result = json.loads(value)
-    if not isinstance(result, list) or not all(isinstance(item, str) for item in result):
+    raw_result: Any = json.loads(value)
+    if not isinstance(raw_result, list):
         raise AppleMailError(ErrorCode.INTERNAL_ERROR, "Indexed mailbox path is invalid")
-    return result
+    result = cast(list[Any], raw_result)
+    if not all(isinstance(item, str) for item in result):
+        raise AppleMailError(ErrorCode.INTERNAL_ERROR, "Indexed mailbox path is invalid")
+    return [cast(str, item) for item in result]
 
 
 def _location_key(account_id: str, path_text: str, native_id: int) -> str:

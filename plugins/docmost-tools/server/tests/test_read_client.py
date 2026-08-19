@@ -14,6 +14,7 @@ from docmost_tools import DocmostReadClient as ExportedReadClient
 from docmost_tools.client import AUTH_REQUIRED_MESSAGE, DocmostReadClient
 from docmost_tools.config import DocmostSettings
 from docmost_tools.models import ErrorCode
+from docmost_tools.page_content import inspect_page_content
 
 EXPECTED_AUTH_REQUIRED_MESSAGE = (
     "Authentication required. Close the active task, run "
@@ -356,6 +357,81 @@ def test_get_space_and_page_use_fixed_post_contract_and_browser_url() -> None:
         ("/api/spaces/info", {"spaceId": "s1"}),
         ("/api/pages/info", {"pageId": "intro", "format": "markdown"}),
     ]
+
+
+def test_get_page_content_returns_complete_validated_json_and_canonical_hash() -> None:
+    seen: list[httpx.Request] = []
+    document = {
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "attrs": {"id": "p-1"},
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "red review",
+                        "marks": [
+                            {"type": "textStyle", "attrs": {"color": "#ff0000"}}
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "p-uuid",
+                    "slugId": "review-id",
+                    "title": "Review",
+                    "space": {"id": "s1", "slug": "research"},
+                    "updatedAt": "2026-01-02T00:00:00Z",
+                    "content": document,
+                }
+            ),
+        )
+
+    result = client_for(handler).get_page_content("review-input")
+
+    assert result.ok is True and result.data is not None
+    assert result.data.schema_version == "docmost.page-content.v1"
+    assert result.data.page.id == "p-uuid"
+    assert result.data.page.updated_at == "2026-01-02T00:00:00Z"
+    assert result.data.page.markdown is None
+    assert result.data.content == document
+    assert result.data.content_sha256 == inspect_page_content(document).content_sha256
+    assert [(request.url.path, request_json(request)) for request in seen] == [
+        ("/api/pages/info", {"pageId": "review-input", "format": "json"})
+    ]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "markdown instead of JSON",
+        {"type": "paragraph", "content": []},
+        {"type": "doc", "content": [{"type": "text", "text": ""}]},
+    ],
+)
+def test_get_page_content_rejects_malformed_prosemirror_without_leaking_it(
+    content: object,
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=envelope({"id": "p1", "slugId": "p1", "content": content}),
+        )
+
+    result = client_for(handler).get_page_content("p1")
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.PAGE_UNAVAILABLE
+    assert result.error.message == "PAGE_UNAVAILABLE"
 
 
 def test_page_chunking_returns_a_bounded_markdown_window() -> None:

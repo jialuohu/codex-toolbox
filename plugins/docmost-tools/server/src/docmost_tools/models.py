@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 
 class ErrorCode(StrEnum):
@@ -18,6 +18,7 @@ class ErrorCode(StrEnum):
     FORBIDDEN = "forbidden"
     PAGE_UNAVAILABLE = "page_unavailable"
     CONFLICT = "conflict"
+    INVALID_PATCH = "invalid_patch"
     OUTCOME_UNKNOWN = "outcome_unknown"
     PARTIAL_SUCCESS = "partial_success"
     INVALID_MARKDOWN = "invalid_markdown"
@@ -182,6 +183,104 @@ class PageTextEditResult(BaseModel):
         if self.page.markdown is not None:
             raise ValueError("page text edit results must not include page content")
         return self
+
+
+class PageContentResult(BaseModel):
+    """A bounded raw ProseMirror document and its canonical concurrency token."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["docmost.page-content.v1"] = "docmost.page-content.v1"
+    page: Page
+    content: dict[str, JsonValue]
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def omit_markdown_projection(self) -> Self:
+        if self.page.markdown is not None:
+            raise ValueError("page content results must not include Markdown")
+        return self
+
+
+class PageContentPatchResult(BaseModel):
+    """A page summary and canonical hash after one guarded JSON Patch."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    page: Page
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operations_applied: int = Field(ge=1, le=100)
+
+    @model_validator(mode="after")
+    def omit_page_body(self) -> Self:
+        if self.page.markdown is not None:
+            raise ValueError("page patch results must not include page content")
+        return self
+
+
+def _validate_json_content_pointer(value: str) -> str:
+    if "~" in value.replace("~0", "").replace("~1", ""):
+        raise ValueError("JSON Pointer escape is invalid")
+    return value
+
+
+JsonContentPointer = Annotated[
+    str,
+    Field(
+        min_length=8,
+        max_length=2_048,
+        pattern=r"^/content(?:/[^\x00-\x1f\x7f]*)*$",
+    ),
+    AfterValidator(_validate_json_content_pointer),
+]
+
+
+class _JsonPatchOperation(BaseModel):
+    """Shared strict fields for an RFC 6902 operation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+
+    path: JsonContentPointer
+
+
+class JsonPatchAdd(_JsonPatchOperation):
+    op: Literal["add"]
+    value: JsonValue
+
+
+class JsonPatchRemove(_JsonPatchOperation):
+    op: Literal["remove"]
+
+
+class JsonPatchReplace(_JsonPatchOperation):
+    op: Literal["replace"]
+    value: JsonValue
+
+
+class JsonPatchMove(_JsonPatchOperation):
+    op: Literal["move"]
+    from_: JsonContentPointer = Field(alias="from")
+
+
+class JsonPatchCopy(_JsonPatchOperation):
+    op: Literal["copy"]
+    from_: JsonContentPointer = Field(alias="from")
+
+
+class JsonPatchTest(_JsonPatchOperation):
+    op: Literal["test"]
+    value: JsonValue
+
+
+JsonPatchOperation = Annotated[
+    JsonPatchAdd
+    | JsonPatchRemove
+    | JsonPatchReplace
+    | JsonPatchMove
+    | JsonPatchCopy
+    | JsonPatchTest,
+    Field(discriminator="op"),
+]
 
 
 class Comment(_DocmostModel):

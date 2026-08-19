@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Start Apple Mail from the immutable runtime matching this plugin source.
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+SERVER_DIR="$(cd "$SELF_DIR/.." && pwd)"
+SELF="$SELF_DIR/apple-mail-mcp"
+APPLE_MAIL_CODEX_ROOT="$(printenv CODEX_HOME 2>/dev/null || true)"
+if [ -z "$APPLE_MAIL_CODEX_ROOT" ]; then
+  APPLE_MAIL_CODEX_ROOT="$HOME/.codex"
+fi
+APPLE_MAIL_SECRETS_ROOT="$(printenv CODEX_SECRETS_DIR 2>/dev/null || true)"
+if [ -z "$APPLE_MAIL_SECRETS_ROOT" ]; then
+  APPLE_MAIL_SECRETS_ROOT="$APPLE_MAIL_CODEX_ROOT/secrets"
+fi
+RUNTIME_PARENT="$APPLE_MAIL_CODEX_ROOT/runtime"
+GENERATION_ROOT="$RUNTIME_PARENT/apple-mail-tools-generations"
+GENERATION_ENVS="$GENERATION_ROOT/envs"
+LOCK_SOURCE="$SERVER_DIR/src/apple_mail_tools/runtime_lock.py"
+STAMP_SOURCE="$SERVER_DIR/src/apple_mail_tools/runtime_stamp.py"
+SYSTEM_PYTHON="$(command -v python3 || true)"
+readonly SELF_DIR SERVER_DIR SELF APPLE_MAIL_CODEX_ROOT APPLE_MAIL_SECRETS_ROOT
+readonly RUNTIME_PARENT GENERATION_ROOT GENERATION_ENVS LOCK_SOURCE STAMP_SOURCE SYSTEM_PYTHON
+
+fail() {
+  echo "$*" >&2
+  exit 1
+}
+
+require_safe_source() {
+  [ -n "$SYSTEM_PYTHON" ] || fail "python3 is required for the Apple Mail runtime"
+  [ -d "$SERVER_DIR" ] && [ ! -L "$SERVER_DIR" ] || \
+    fail "Apple Mail plugin server directory is missing or unsafe"
+  for source in \
+    "$SELF" \
+    "$SERVER_DIR/pyproject.toml" \
+    "$SERVER_DIR/uv.lock" \
+    "$SERVER_DIR/scripts/mail_bridge.applescript" \
+    "$LOCK_SOURCE" \
+    "$STAMP_SOURCE"
+  do
+    [ -f "$source" ] && [ ! -L "$source" ] || \
+      fail "Apple Mail runtime source inputs are missing or unsafe"
+  done
+}
+
+require_safe_roots() {
+  [ -d "$RUNTIME_PARENT" ] && [ ! -L "$RUNTIME_PARENT" ] || \
+    fail "Apple Mail runtime is missing or unsafe; rerun scripts/setup-codex-toolbox.sh"
+  [ -d "$GENERATION_ROOT" ] && [ ! -L "$GENERATION_ROOT" ] || \
+    fail "Apple Mail runtime is missing or unsafe; rerun scripts/setup-codex-toolbox.sh"
+  [ -d "$GENERATION_ENVS" ] && [ ! -L "$GENERATION_ENVS" ] || \
+    fail "Apple Mail runtime is missing or unsafe; rerun scripts/setup-codex-toolbox.sh"
+  [ -d "$GENERATION_ROOT/locks" ] && [ ! -L "$GENERATION_ROOT/locks" ] || \
+    fail "Apple Mail runtime is missing or unsafe; rerun scripts/setup-codex-toolbox.sh"
+}
+
+source_fingerprint() {
+  local value
+  value="$("$SYSTEM_PYTHON" "$STAMP_SOURCE" fingerprint "$SERVER_DIR")" || \
+    fail "Apple Mail runtime fingerprint is unavailable; rerun scripts/setup-codex-toolbox.sh"
+  case "$value" in
+    (*[!0-9a-f]*|'') fail "Apple Mail runtime fingerprint is invalid" ;;
+  esac
+  [ "$(printf '%s' "$value" | wc -c | tr -d ' ')" = 64 ] || \
+    fail "Apple Mail runtime fingerprint is invalid"
+  printf '%s\n' "$value"
+}
+
+require_safe_source
+require_safe_roots
+
+if [ "$#" -eq 0 ]; then
+  FINGERPRINT="$(source_fingerprint)"
+  readonly FINGERPRINT
+  exec "$SYSTEM_PYTHON" "$LOCK_SOURCE" \
+    --kind generation --mode shared --root "$GENERATION_ROOT" \
+    --generation "$FINGERPRINT" -- \
+    /bin/bash "$SELF" --locked "$FINGERPRINT"
+fi
+
+[ "$#" -eq 2 ] && [ "$1" = "--locked" ] || \
+  fail "Apple Mail MCP launcher arguments are invalid"
+FINGERPRINT="$2"
+case "$FINGERPRINT" in
+  (*[!0-9a-f]*|'') fail "Apple Mail runtime fingerprint is invalid" ;;
+esac
+[ "$(printf '%s' "$FINGERPRINT" | wc -c | tr -d ' ')" = 64 ] || \
+  fail "Apple Mail runtime fingerprint is invalid"
+readonly FINGERPRINT
+
+[ "$(printenv APPLE_MAIL_GENERATION_LOCK_MODE 2>/dev/null || true)" = "shared" ] || \
+  fail "Apple Mail MCP requires the held shared generation lock"
+[ "$(printenv APPLE_MAIL_GENERATION_ID 2>/dev/null || true)" = "$FINGERPRINT" ] || \
+  fail "Apple Mail MCP generation lock does not match its source"
+"$SYSTEM_PYTHON" "$LOCK_SOURCE" --validate-fd \
+  --kind generation --mode shared --root "$GENERATION_ROOT" \
+  --generation "$FINGERPRINT" || \
+  fail "Apple Mail MCP generation lock validation failed"
+
+[ "$(source_fingerprint)" = "$FINGERPRINT" ] || \
+  fail "Apple Mail source changed during startup; start a new task"
+GENERATION_RUNTIME="$GENERATION_ENVS/$FINGERPRINT"
+RUNTIME_STAMP="$GENERATION_RUNTIME/.apple-mail-tools-source.sha256"
+MCP_EXECUTABLE="$GENERATION_RUNTIME/bin/apple-mail-mcp"
+readonly GENERATION_RUNTIME RUNTIME_STAMP MCP_EXECUTABLE
+[ -d "$GENERATION_RUNTIME" ] && [ ! -L "$GENERATION_RUNTIME" ] || \
+  fail "Apple Mail runtime is stale; rerun scripts/setup-codex-toolbox.sh"
+"$SYSTEM_PYTHON" "$STAMP_SOURCE" check "$SERVER_DIR" "$RUNTIME_STAMP" >/dev/null 2>&1 || \
+  fail "Apple Mail runtime is stale; rerun scripts/setup-codex-toolbox.sh"
+[ -x "$MCP_EXECUTABLE" ] && [ ! -L "$MCP_EXECUTABLE" ] || \
+  fail "Apple Mail runtime is incomplete; rerun scripts/setup-codex-toolbox.sh"
+
+CODEX_SECRETS_DIR="$APPLE_MAIL_SECRETS_ROOT"
+readonly CODEX_SECRETS_DIR
+export CODEX_SECRETS_DIR
+unset PYTHONPATH VIRTUAL_ENV
+exec "$MCP_EXECUTABLE"

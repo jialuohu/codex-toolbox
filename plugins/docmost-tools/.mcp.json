@@ -23,6 +23,9 @@
         "docmost_edit_page_text": {
           "approval_mode": "prompt"
         },
+        "docmost_patch_page_content": {
+          "approval_mode": "prompt"
+        },
         "docmost_create_comment": {
           "approval_mode": "prompt"
         }

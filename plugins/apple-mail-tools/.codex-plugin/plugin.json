@@ -1,6 +1,6 @@
 {
   "name": "apple-mail-tools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Guarded local Apple Mail MCP for search, drafts, attachments, and inbox management.",
   "author": {
     "name": "Codex Toolbox Contributors"

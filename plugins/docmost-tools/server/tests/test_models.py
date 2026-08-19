@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 
 from docmost_tools.models import (
     CurrentUser,
@@ -9,6 +11,8 @@ from docmost_tools.models import (
     OperationError,
     OperationResult,
     Page,
+    PageContentPatchResult,
+    PageContentResult,
     PageTextEditResult,
 )
 
@@ -56,6 +60,7 @@ def test_error_codes_are_stable_wire_values() -> None:
     assert ErrorCode.FORBIDDEN.value == "forbidden"
     assert ErrorCode.PAGE_UNAVAILABLE.value == "page_unavailable"
     assert ErrorCode.CONFLICT.value == "conflict"
+    assert ErrorCode.INVALID_PATCH.value == "invalid_patch"
     assert ErrorCode.OUTCOME_UNKNOWN.value == "outcome_unknown"
     assert ErrorCode.PARTIAL_SUCCESS.value == "partial_success"
     assert ErrorCode.INVALID_MARKDOWN.value == "invalid_markdown"
@@ -98,6 +103,42 @@ def test_page_text_edit_result_exposes_only_summary_and_replacement_count() -> N
 
     with pytest.raises(ValidationError, match="must not include page content"):
         PageTextEditResult(page=Page(id="p1", markdown="private body"))
+
+
+def test_page_content_models_expose_raw_reads_but_omit_write_response_bodies() -> None:
+    content = cast(
+        dict[str, JsonValue],
+        {"type": "doc", "content": [{"type": "paragraph"}]},
+    )
+    digest = "a" * 64
+    read_result = PageContentResult(
+        page=Page(id="p1", updated_at="same"),
+        content=content,
+        content_sha256=digest,
+    )
+    patch_result = PageContentPatchResult(
+        page=Page(id="p1", updated_at="newer"),
+        content_sha256="b" * 64,
+        operations_applied=2,
+    )
+
+    assert read_result.schema_version == "docmost.page-content.v1"
+    assert read_result.content == content
+    assert patch_result.operations_applied == 2
+    assert "content" not in patch_result.model_dump(mode="json")
+
+    with pytest.raises(ValidationError, match="must not include Markdown"):
+        PageContentResult(
+            page=Page(id="p1", markdown="private body"),
+            content=content,
+            content_sha256=digest,
+        )
+    with pytest.raises(ValidationError, match="must not include page content"):
+        PageContentPatchResult(
+            page=Page(id="p1", markdown="private body"),
+            content_sha256=digest,
+            operations_applied=1,
+        )
 
 
 def test_additive_upstream_fields_are_tolerated_but_not_returned_publicly() -> None:

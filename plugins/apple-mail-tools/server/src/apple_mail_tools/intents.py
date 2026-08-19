@@ -10,7 +10,7 @@ import sqlite3
 import stat
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .models import AppleMailError, ErrorCode
 
@@ -103,10 +103,10 @@ class IntentStore:
                 connection.execute("ROLLBACK")
                 raise AppleMailError(ErrorCode.INTENT_USED, "Intent token was already used")
             connection.execute("COMMIT")
-        payload = json.loads(row["payload"])
-        if not isinstance(payload, dict):
+        raw_payload: Any = json.loads(row["payload"])
+        if not isinstance(raw_payload, dict):
             raise AppleMailError(ErrorCode.INTERNAL_ERROR, "Stored intent is invalid")
-        return payload
+        return cast(dict[str, Any], raw_payload)
 
     def cancel(self, token: str, kind: str) -> bool:
         if not _valid_token(token):
