@@ -42,7 +42,7 @@ def request_json(request: httpx.Request) -> dict[str, object]:
 
 @pytest.mark.parametrize(
     "operation_name",
-    ["create_page", "update_page_title", "create_comment"],
+    ["create_page", "update_page_title", "edit_page_text", "create_comment"],
 )
 def test_writes_require_an_explicit_v095_profile_without_a_request(
     operation_name: str,
@@ -52,6 +52,13 @@ def test_writes_require_an_explicit_v095_profile_without_a_request(
         result = client.create_page("space-1", "Title", "Body")
     elif operation_name == "update_page_title":
         result = client.update_page_title("page-1", "Title", "2026-01-01T00:00:00Z")
+    elif operation_name == "edit_page_text":
+        result = client.edit_page_text(
+            "page-1",
+            "old",
+            "new",
+            "2026-01-01T00:00:00Z",
+        )
     else:
         result = client.create_comment("page-1", "Comment")
 
@@ -391,6 +398,516 @@ def test_update_page_title_success_envelope_with_invalid_page_is_outcome_unknown
         return httpx.Response(200, json=envelope({}))
 
     result = client_for(handler).update_page_title("page-1", "New", "same")
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.OUTCOME_UNKNOWN
+    assert result.error.retryable is False
+    assert "search or read" in result.error.message
+    assert paths == ["/api/pages/info", "/api/pages/update"]
+
+
+def test_edit_page_text_preserves_structure_and_posts_one_json_replacement() -> None:
+    seen: list[httpx.Request] = []
+    original_document = {
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "attrs": {"id": "paragraph-1", "textAlign": "center"},
+                "content": [
+                    {"type": "text", "text": "Keep "},
+                    {
+                        "type": "text",
+                        "text": "target",
+                        "marks": [
+                            {"type": "bold"},
+                            {
+                                "type": "comment",
+                                "attrs": {"commentId": "comment-1"},
+                            },
+                        ],
+                    },
+                    {"type": "text", "text": " unchanged"},
+                ],
+            },
+            {
+                "type": "drawio",
+                "attrs": {
+                    "attachmentId": "attachment-1",
+                    "width": 640,
+                    "height": 480,
+                },
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-canonical",
+                        "slugId": "page-slug",
+                        "title": "Page",
+                        "spaceId": "space-1",
+                        "updatedAt": "same",
+                        "content": original_document,
+                    }
+                ),
+            )
+        payload = request_json(request)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-canonical",
+                    "slugId": "page-slug",
+                    "title": "Page",
+                    "spaceId": "space-1",
+                    "updatedAt": "newer",
+                    "content": payload["content"],
+                }
+            ),
+        )
+
+    result = client_for(handler).edit_page_text(
+        "page-input",
+        "target",
+        "**literal**",
+        "same",
+    )
+
+    assert result.ok is True and result.data is not None
+    assert result.data.page.id == "page-canonical"
+    assert result.data.page.updated_at == "newer"
+    assert result.data.page.markdown is None
+    assert result.data.replacements == 1
+    assert [request.url.path for request in seen] == [
+        "/api/pages/info",
+        "/api/pages/update",
+    ]
+    assert request_json(seen[0]) == {"pageId": "page-input", "format": "json"}
+    payload = request_json(seen[1])
+    assert payload == {
+        "pageId": "page-canonical",
+        "content": {
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "attrs": {"id": "paragraph-1", "textAlign": "center"},
+                    "content": [
+                        {"type": "text", "text": "Keep "},
+                        {
+                            "type": "text",
+                            "text": "**literal**",
+                            "marks": [
+                                {"type": "bold"},
+                                {
+                                    "type": "comment",
+                                    "attrs": {"commentId": "comment-1"},
+                                },
+                            ],
+                        },
+                        {"type": "text", "text": " unchanged"},
+                    ],
+                },
+                {
+                    "type": "drawio",
+                    "attrs": {
+                        "attachmentId": "attachment-1",
+                        "width": 640,
+                        "height": 480,
+                    },
+                },
+            ],
+        },
+        "format": "json",
+        "operation": "replace",
+    }
+
+
+def test_edit_page_text_deletes_an_emptied_text_node_but_keeps_its_block() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-1",
+                        "slugId": "page-slug",
+                        "updatedAt": "same",
+                        "content": {
+                            "type": "doc",
+                            "content": [
+                                {
+                                    "type": "paragraph",
+                                    "attrs": {"id": "paragraph-1"},
+                                    "content": [{"type": "text", "text": "remove"}],
+                                }
+                            ],
+                        },
+                    }
+                ),
+            )
+        payload = request_json(request)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-1",
+                    "slugId": "page-slug",
+                    "updatedAt": "newer",
+                    "content": payload["content"],
+                }
+            ),
+        )
+
+    result = client_for(handler).edit_page_text("page-1", "remove", "", "same")
+
+    assert result.ok is True
+    assert request_json(seen[1])["content"] == {
+        "type": "doc",
+        "content": [
+            {
+                "type": "paragraph",
+                "attrs": {"id": "paragraph-1"},
+                "content": [],
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("document", "old_text"),
+    [
+        (
+            {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": "nothing here"}],
+                    }
+                ],
+            },
+            "missing",
+        ),
+        (
+            {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {"type": "text", "text": "repeat"},
+                            {"type": "text", "text": "repeat", "marks": [{"type": "bold"}]},
+                        ],
+                    }
+                ],
+            },
+            "repeat",
+        ),
+        (
+            {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": "aaa"}],
+                    }
+                ],
+            },
+            "aa",
+        ),
+        (
+            {
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [
+                            {"type": "text", "text": "flow "},
+                            {
+                                "type": "text",
+                                "text": "matching",
+                                "marks": [{"type": "bold"}],
+                            },
+                        ],
+                    }
+                ],
+            },
+            "flow matching",
+        ),
+    ],
+)
+def test_edit_page_text_rejects_non_unique_or_cross_node_matches_before_write(
+    document: dict[str, object], old_text: str
+) -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-1",
+                    "slugId": "page-slug",
+                    "updatedAt": "same",
+                    "content": document,
+                }
+            ),
+        )
+
+    result = client_for(handler).edit_page_text("page-1", old_text, "new", "same")
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.CONFLICT
+    assert result.error.retryable is False
+    assert paths == ["/api/pages/info"]
+
+
+def test_edit_page_text_stale_revision_stops_before_document_traversal_and_write() -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-1",
+                    "slugId": "page-slug",
+                    "updatedAt": "newer",
+                    "content": {"malformed": "ignored after conflict"},
+                }
+            ),
+        )
+
+    result = client_for(handler).edit_page_text("page-1", "old", "new", "older")
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.CONFLICT
+    assert paths == ["/api/pages/info"]
+
+
+@pytest.mark.parametrize(
+    ("old_text", "new_text"),
+    [
+        ("same", "same"),
+        ("old\x00", "new"),
+        ("old", "new\rtext"),
+        ("x" * 100_001, "new"),
+        ("old", "x" * 100_001),
+    ],
+)
+def test_edit_page_text_rejects_invalid_or_noop_inputs_without_a_request(
+    old_text: str, new_text: str
+) -> None:
+    result = client_for(lambda _: pytest.fail("request must not be sent")).edit_page_text(
+        "page-1",
+        old_text,
+        new_text,
+        "same",
+    )
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.CONFIGURATION_INVALID
+
+
+def test_edit_page_text_rejects_malformed_or_oversized_documents_without_write() -> None:
+    for content in (
+        {"type": "doc", "content": "not-a-list"},
+        {
+            "type": "doc",
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [{"type": "text", "text": "x" * 1_000_001}],
+                }
+            ],
+        },
+    ):
+        paths: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            paths.append(request.url.path)
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-1",
+                        "slugId": "page-slug",
+                        "updatedAt": "same",
+                        "content": content,
+                    }
+                ),
+            )
+
+        result = client_for(handler).edit_page_text("page-1", "x", "y", "same")
+
+        assert result.ok is False and result.error is not None
+        assert result.error.code is ErrorCode.PAGE_UNAVAILABLE
+        assert paths == ["/api/pages/info"]
+
+
+def test_edit_page_text_rejects_excessive_document_depth_without_write() -> None:
+    nested: dict[str, object] = {
+        "type": "paragraph",
+        "content": [{"type": "text", "text": "target"}],
+    }
+    for _ in range(101):
+        nested = {"type": "blockquote", "content": [nested]}
+    document = {"type": "doc", "content": [nested]}
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(
+            200,
+            json=envelope(
+                {
+                    "id": "page-1",
+                    "slugId": "page-slug",
+                    "updatedAt": "same",
+                    "content": document,
+                }
+            ),
+        )
+
+    result = client_for(handler).edit_page_text("page-1", "target", "new", "same")
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.PAGE_UNAVAILABLE
+    assert paths == ["/api/pages/info"]
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [
+        (401, ErrorCode.AUTH_REQUIRED),
+        (403, ErrorCode.PAGE_UNAVAILABLE),
+        (404, ErrorCode.PAGE_UNAVAILABLE),
+        (409, ErrorCode.CONFLICT),
+    ],
+)
+def test_edit_page_text_preserves_write_auth_permission_and_conflict_errors(
+    status: int, expected_code: ErrorCode
+) -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-1",
+                        "slugId": "page-slug",
+                        "updatedAt": "same",
+                        "content": {
+                            "type": "doc",
+                            "content": [
+                                {
+                                    "type": "paragraph",
+                                    "content": [{"type": "text", "text": "old"}],
+                                }
+                            ],
+                        },
+                    }
+                ),
+            )
+        return httpx.Response(status, json={"message": "write rejected"})
+
+    result = client_for(handler).edit_page_text("page-1", "old", "new", "same")
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is expected_code
+    assert result.error.retryable is False
+    assert paths == ["/api/pages/info", "/api/pages/update"]
+
+
+def test_edit_page_text_transport_failure_is_outcome_unknown_without_retry() -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-1",
+                        "slugId": "page-slug",
+                        "updatedAt": "same",
+                        "content": {
+                            "type": "doc",
+                            "content": [
+                                {
+                                    "type": "paragraph",
+                                    "content": [{"type": "text", "text": "old"}],
+                                }
+                            ],
+                        },
+                    }
+                ),
+            )
+        raise httpx.WriteTimeout("ambiguous")
+
+    result = client_for(handler).edit_page_text("page-1", "old", "new", "same")
+
+    assert result.ok is False and result.error is not None
+    assert result.error.code is ErrorCode.OUTCOME_UNKNOWN
+    assert result.error.retryable is False
+    assert paths == ["/api/pages/info", "/api/pages/update"]
+
+
+@pytest.mark.parametrize(
+    "write_response",
+    [
+        httpx.Response(408, json={"message": "ambiguous"}),
+        httpx.Response(503, json={"message": "ambiguous"}),
+        httpx.Response(200, content=b"not-json"),
+        httpx.Response(200, json=envelope({"id": "page-1", "updatedAt": "newer"})),
+    ],
+)
+def test_edit_page_text_ambiguous_write_response_is_not_retried(
+    write_response: httpx.Response,
+) -> None:
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        if request.url.path == "/api/pages/info":
+            return httpx.Response(
+                200,
+                json=envelope(
+                    {
+                        "id": "page-1",
+                        "slugId": "page-slug",
+                        "updatedAt": "same",
+                        "content": {
+                            "type": "doc",
+                            "content": [
+                                {
+                                    "type": "paragraph",
+                                    "content": [{"type": "text", "text": "old"}],
+                                }
+                            ],
+                        },
+                    }
+                ),
+            )
+        return write_response
+
+    result = client_for(handler).edit_page_text("page-1", "old", "new", "same")
 
     assert result.ok is False and result.error is not None
     assert result.error.code is ErrorCode.OUTCOME_UNKNOWN

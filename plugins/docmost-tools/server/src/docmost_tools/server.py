@@ -57,6 +57,8 @@ _ID_RUNTIME_PATTERN = re.compile(r"[^\x00-\x1f\x7f]{1,512}")
 _CURSOR_RUNTIME_PATTERN = re.compile(r"[A-Za-z0-9._~=-]{1,1024}")
 _NO_CONTROL_PATTERN = r"^[^\x00-\x1f\x7f]{1,250}$"
 _NO_CONTROL_RUNTIME_PATTERN = re.compile(r"[^\x00-\x1f\x7f]+")
+_EDIT_TEXT_PATTERN = r"^[^\x00-\x08\x0b-\x1f\x7f]*$"
+_EDIT_TEXT_RUNTIME_PATTERN = re.compile(r"[^\x00-\x08\x0b-\x1f\x7f]*")
 
 
 def _validated_string(value: str, pattern: re.Pattern[str], message: str) -> str:
@@ -99,6 +101,18 @@ def _validated_comment_markdown(value: str) -> str:
     return value
 
 
+def _validated_old_text(value: str) -> str:
+    if not value or _EDIT_TEXT_RUNTIME_PATTERN.fullmatch(value) is None:
+        raise ValueError("old_text is invalid")
+    return value
+
+
+def _validated_new_text(value: str) -> str:
+    if _EDIT_TEXT_RUNTIME_PATTERN.fullmatch(value) is None:
+        raise ValueError("new_text is invalid")
+    return value
+
+
 Identifier = Annotated[
     str,
     Field(min_length=1, max_length=512, pattern=_ID_PATTERN),
@@ -137,6 +151,16 @@ ExpectedUpdatedAt = Annotated[
     str,
     Field(min_length=1, max_length=128, pattern=r"^[^\x00-\x1f\x7f]{1,128}$"),
     AfterValidator(_validated_timestamp),
+]
+OldText = Annotated[
+    str,
+    Field(min_length=1, max_length=100_000, pattern=_EDIT_TEXT_PATTERN),
+    AfterValidator(_validated_old_text),
+]
+NewText = Annotated[
+    str,
+    Field(max_length=100_000, pattern=_EDIT_TEXT_PATTERN),
+    AfterValidator(_validated_new_text),
 ]
 DownloadToken = Annotated[
     str,
@@ -226,6 +250,14 @@ class _Operations(Protocol):
 
     def update_page_title(
         self, page_id: str, title: str, expected_updated_at: str
+    ) -> OperationResult[Any]: ...
+
+    def edit_page_text(
+        self,
+        page_id: str,
+        old_text: str,
+        new_text: str,
+        expected_updated_at: str,
     ) -> OperationResult[Any]: ...
 
     def create_comment(self, page_id: str, markdown: str) -> OperationResult[Any]: ...
@@ -429,6 +461,28 @@ def create_server(
             lambda write_client: write_client.update_page_title(
                 page_id,
                 title,
+                expected_updated_at,
+            )
+        )
+
+    @server.tool(name="docmost_edit_page_text", annotations=_REPLACEMENT_WRITE_ANNOTATIONS)
+    def edit_page_text(  # pyright: ignore[reportUnusedFunction]
+        page_id: Identifier,
+        old_text: OldText,
+        new_text: NewText,
+        expected_updated_at: ExpectedUpdatedAt,
+    ) -> ToolResult:
+        """Replace one unique literal occurrence inside one ProseMirror text node.
+
+        This prompt-gated tool preserves structure and treats Markdown syntax literally.
+        The required revision check is non-atomic.
+        """
+
+        return execute(
+            lambda write_client: write_client.edit_page_text(
+                page_id,
+                old_text,
+                new_text,
                 expected_updated_at,
             )
         )

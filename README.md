@@ -346,8 +346,12 @@ Docmost content is untrusted input. Read tools can be used automatically.
 `docmost_download_attachment` stages only an authorized PDF or UTF-8 text file in a
 private bounded temporary directory and returns a checksum receipt; callers
 must invoke `docmost_release_attachment_download` in a `finally` path. The MCP asks
-before `docmost_create_page`, `docmost_update_page_title`, or
-`docmost_create_comment`.
+before `docmost_create_page`, `docmost_update_page_title`,
+`docmost_edit_page_text`, or `docmost_create_comment`. The text-edit tool replaces one
+unique literal occurrence inside a single ProseMirror text node. It preserves marks, IDs,
+comments, and rich sibling blocks by submitting JSON rather than rebuilding Markdown.
+Its required `expected_updated_at` check is non-atomic; formatting and structural edits are
+outside this tool's contract.
 
 ## Read-only Docmost Lab Wiki
 

@@ -20,6 +20,9 @@
         "docmost_update_page_title": {
           "approval_mode": "prompt"
         },
+        "docmost_edit_page_text": {
+          "approval_mode": "prompt"
+        },
         "docmost_create_comment": {
           "approval_mode": "prompt"
         }

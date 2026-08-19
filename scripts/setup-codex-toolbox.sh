@@ -464,6 +464,7 @@ if (
 expected_writes = {
     "docmost_create_page",
     "docmost_update_page_title",
+    "docmost_edit_page_text",
     "docmost_create_comment",
 }
 

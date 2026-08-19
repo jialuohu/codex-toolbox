@@ -1,7 +1,7 @@
 {
   "name": "docmost-tools",
-  "version": "0.5.0",
-  "description": "Browser-authenticated MCP integration with private read-only workspace snapshots.",
+  "version": "0.6.0",
+  "description": "Browser-authenticated MCP with private snapshots and prompt-gated writes.",
   "mcpServers": "./.mcp.json",
   "author": {
     "name": "Codex Toolbox Contributors"

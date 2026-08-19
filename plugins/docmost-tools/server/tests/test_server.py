@@ -119,6 +119,21 @@ class FakeReadClient:
     ) -> OperationResult[dict[str, object]]:
         return self._result("update_page_title", page_id, title, expected_updated_at)
 
+    def edit_page_text(
+        self,
+        page_id: str,
+        old_text: str,
+        new_text: str,
+        expected_updated_at: str,
+    ) -> OperationResult[dict[str, object]]:
+        return self._result(
+            "edit_page_text",
+            page_id,
+            old_text,
+            new_text,
+            expected_updated_at,
+        )
+
     def create_comment(
         self, page_id: str, markdown: str
     ) -> OperationResult[dict[str, object]]:
@@ -154,6 +169,7 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "docmost_release_workspace_snapshot",
             "docmost_create_page",
             "docmost_update_page_title",
+            "docmost_edit_page_text",
             "docmost_create_comment",
         ]
         read_annotations = {
@@ -193,6 +209,7 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
                 "docmost_create_page": write_annotations,
                 "docmost_create_comment": write_annotations,
                 "docmost_update_page_title": replacement_annotations,
+                "docmost_edit_page_text": replacement_annotations,
             }.get(tool.name, read_annotations)
             assert (
                 tool.annotations.model_dump(by_alias=True, exclude_none=True)
@@ -246,6 +263,26 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             ]["maxLength"]
             == 128
         )
+        assert by_name["docmost_edit_page_text"].inputSchema["properties"]["old_text"] == {
+            "maxLength": 100_000,
+            "minLength": 1,
+            "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+            "title": "Old Text",
+            "type": "string",
+        }
+        assert by_name["docmost_edit_page_text"].inputSchema["properties"]["new_text"] == {
+            "maxLength": 100_000,
+            "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+            "title": "New Text",
+            "type": "string",
+        }
+        assert set(by_name["docmost_edit_page_text"].inputSchema["required"]) == {
+            "page_id",
+            "old_text",
+            "new_text",
+            "expected_updated_at",
+        }
+        assert "approved" not in by_name["docmost_edit_page_text"].inputSchema["properties"]
         assert by_name["docmost_release_attachment_download"].inputSchema["properties"][
             "download_token"
         ] == {
@@ -315,6 +352,15 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
                         "expected_updated_at": "2026-01-01T00:00:00Z",
                     },
                 ),
+                (
+                    "docmost_edit_page_text",
+                    {
+                        "page_id": "page-1",
+                        "old_text": "old",
+                        "new_text": "new",
+                        "expected_updated_at": "2026-01-01T00:00:00Z",
+                    },
+                ),
                 ("docmost_create_comment", {"page_id": "page-1", "markdown": "A note"}),
             ]
             for name, arguments in calls:
@@ -358,6 +404,11 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
             (
                 "update_page_title",
                 ("page-1", "Renamed", "2026-01-01T00:00:00Z"),
+                {},
+            ),
+            (
+                "edit_page_text",
+                ("page-1", "old", "new", "2026-01-01T00:00:00Z"),
                 {},
             ),
             ("create_comment", ("page-1", "A note"), {}),
@@ -520,6 +571,24 @@ def test_protocol_rejects_invalid_tool_arguments_before_operation_results() -> N
             (
                 "docmost_update_page_title",
                 {"page_id": "page-1", "title": "Renamed", "expected_updated_at": ""},
+            ),
+            (
+                "docmost_edit_page_text",
+                {
+                    "page_id": "page-1",
+                    "old_text": "",
+                    "new_text": "new",
+                    "expected_updated_at": "same",
+                },
+            ),
+            (
+                "docmost_edit_page_text",
+                {
+                    "page_id": "page-1",
+                    "old_text": "old",
+                    "new_text": "new\rtext",
+                    "expected_updated_at": "same",
+                },
             ),
             ("docmost_create_comment", {"page_id": "page-1", "markdown": ""}),
             ("docmost_create_comment", {"page_id": "page-1", "markdown": "x" * 20_001}),

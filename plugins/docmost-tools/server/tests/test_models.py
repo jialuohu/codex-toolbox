@@ -3,7 +3,14 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from docmost_tools.models import CurrentUser, ErrorCode, OperationError, OperationResult, Page
+from docmost_tools.models import (
+    CurrentUser,
+    ErrorCode,
+    OperationError,
+    OperationResult,
+    Page,
+    PageTextEditResult,
+)
 
 
 def test_success_result_contains_data_and_no_error() -> None:
@@ -63,6 +70,34 @@ def test_page_model_maps_v095_authoritative_slug_id() -> None:
     page = Page.model_validate({"id": "p1", "slugId": "authoritative"})
 
     assert page.slug_id == "authoritative"
+
+
+def test_page_text_edit_result_exposes_only_summary_and_replacement_count() -> None:
+    result = PageTextEditResult(page=Page(id="p1"))
+
+    assert result.replacements == 1
+    assert result.model_dump(mode="json") == {
+        "page": {
+            "id": "p1",
+            "title": None,
+            "slug_id": None,
+            "space_id": None,
+            "space_name": None,
+            "space_slug": None,
+            "parent": None,
+            "position": None,
+            "created_at": None,
+            "updated_at": None,
+            "url": None,
+            "markdown": None,
+            "truncated": False,
+            "next_offset": None,
+        },
+        "replacements": 1,
+    }
+
+    with pytest.raises(ValidationError, match="must not include page content"):
+        PageTextEditResult(page=Page(id="p1", markdown="private body"))
 
 
 def test_additive_upstream_fields_are_tolerated_but_not_returned_publicly() -> None:

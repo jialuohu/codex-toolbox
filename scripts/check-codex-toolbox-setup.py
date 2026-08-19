@@ -2075,7 +2075,7 @@ def validate_docmost_tools_contract(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
-    require(plugin.get("version") == "0.5.0", "docmost-tools must use version 0.5.0")
+    require(plugin.get("version") == "0.6.0", "docmost-tools must use version 0.6.0")
     require(
         plugin.get("interface", {}).get("capabilities") == ["Read", "Write", "Interactive"],
         "docmost manifest must keep Read, Write, and Interactive capabilities",
@@ -2099,6 +2099,7 @@ def validate_docmost_tools_contract(
     required_writes = {
         "docmost_create_page",
         "docmost_update_page_title",
+        "docmost_edit_page_text",
         "docmost_create_comment",
     }
     tools = server.get("tools")
@@ -2295,6 +2296,7 @@ def validate_docmost_tools_contract(
         "docmost_release_workspace_snapshot",
         "docmost_create_page",
         "docmost_update_page_title",
+        "docmost_edit_page_text",
         "docmost_create_comment",
         "docmost-tools-generations/envs/<source-sha256>",
         "setup-docmost-tools.sh --prune",
@@ -4350,6 +4352,7 @@ def main() -> None:
     require(
         "docmost_create_page" not in lab_skill
         and "docmost_update_page_title" not in lab_skill
+        and "docmost_edit_page_text" not in lab_skill
         and "docmost_create_comment" not in lab_skill,
         "docmost-lab-wiki skill must not make Docmost write tools reachable",
     )

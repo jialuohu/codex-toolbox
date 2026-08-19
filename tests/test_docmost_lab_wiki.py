@@ -31,6 +31,7 @@ class DocmostLabWikiContractTests(unittest.TestCase):
         self.assertIn("finally", text)
         self.assertNotIn("docmost_create_page", text)
         self.assertNotIn("docmost_update_page_title", text)
+        self.assertNotIn("docmost_edit_page_text", text)
         self.assertNotIn("docmost_create_comment", text)
         self.assertIn("Never open, print, parse, summarize", text)
 
@@ -81,7 +82,7 @@ class DocmostLabWikiContractTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "plugins" / "docmost-tools" / ".codex-plugin" / "plugin.json").read_text()
         )
-        self.assertEqual(manifest["version"], "0.5.0")
+        self.assertEqual(manifest["version"], "0.6.0")
         server = mcp["mcpServers"]["docmost"]
         self.assertEqual(server["tool_timeout_sec"], 900)
         self.assertEqual(server["command"], "/bin/bash")

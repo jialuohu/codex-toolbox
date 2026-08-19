@@ -169,6 +169,21 @@ class CreatePageResult(BaseModel):
         return self
 
 
+class PageTextEditResult(BaseModel):
+    """A page summary for one exact, structure-preserving text edit."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    page: Page
+    replacements: Literal[1] = 1
+
+    @model_validator(mode="after")
+    def omit_page_body(self) -> Self:
+        if self.page.markdown is not None:
+            raise ValueError("page text edit results must not include page content")
+        return self
+
+
 class Comment(_DocmostModel):
     """A Docmost page-comment projection."""
 

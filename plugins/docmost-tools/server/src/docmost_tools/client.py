@@ -30,6 +30,7 @@ from docmost_tools.models import (
     OperationResult,
     Page,
     PageList,
+    PageTextEditResult,
     SearchResults,
     Space,
     VersionInfo,
@@ -57,10 +58,15 @@ _TITLE_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
 _MARKDOWN_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _MAX_TITLE_CHARS = 250
 _MAX_PAGE_MARKDOWN_CHARS = 1_000_000
+_MAX_PAGE_EDIT_TEXT_CHARS = 100_000
+_MAX_PROSEMIRROR_DEPTH = 100
+_MAX_PROSEMIRROR_NODES = 100_000
+_MAX_PROSEMIRROR_TEXT_CHARS = 1_000_000
 _MAX_COMMENT_MARKDOWN_CHARS = 20_000
 _MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 _DOWNLOAD_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{32,128}\Z")
 _FILENAME_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f]")
+_EDIT_TEXT_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _OUTCOME_UNKNOWN_MESSAGE = "OUTCOME_UNKNOWN: search or read Docmost before retrying this write."
 _PARTIAL_CREATE_MESSAGE = (
     "Page was created at the space root, but nesting failed. "
@@ -552,6 +558,76 @@ class DocmostReadClient:
 
         return self._run_write(operation)
 
+    def edit_page_text(
+        self,
+        page_id: str,
+        old_text: str,
+        new_text: str,
+        expected_updated_at: str,
+    ) -> OperationResult[PageTextEditResult]:
+        """Replace one exact text-node occurrence after a non-atomic revision check."""
+
+        blocked = self.write_compatibility_error
+        if blocked is not None:
+            return OperationResult[PageTextEditResult](ok=False, error=blocked)
+        try:
+            validated_page_id = self._identifier(page_id)
+            validated_old_text = self._edit_text(old_text, allow_empty=False)
+            validated_new_text = self._edit_text(new_text, allow_empty=True)
+            validated_timestamp = self._timestamp(expected_updated_at)
+            if validated_old_text == validated_new_text:
+                raise ValueError("old_text and new_text must differ")
+        except ValueError as error:
+            return cast(OperationResult[PageTextEditResult], self._invalid(error))
+
+        def operation() -> PageTextEditResult:
+            current_data = self._post(
+                "/api/pages/info",
+                {"pageId": validated_page_id, "format": "json"},
+                page_scope=True,
+            )
+            try:
+                raw_page = current_data.get("page", current_data)
+                current = self._page_summary_from_data(raw_page)
+            except ValueError as error:
+                raise _ClientFailure(
+                    ErrorCode.PAGE_UNAVAILABLE,
+                    PAGE_UNAVAILABLE_MESSAGE,
+                ) from error
+            if current.updated_at != validated_timestamp:
+                raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+            try:
+                _, document = self._page_json_document_from_data(current_data)
+                self._replace_unique_text_node(
+                    document,
+                    validated_old_text,
+                    validated_new_text,
+                )
+            except ValueError as error:
+                raise _ClientFailure(
+                    ErrorCode.PAGE_UNAVAILABLE,
+                    PAGE_UNAVAILABLE_MESSAGE,
+                ) from error
+
+            updated = self._post_write_json(
+                "/api/pages/update",
+                {
+                    "pageId": current.id,
+                    "content": document,
+                    "format": "json",
+                    "operation": "replace",
+                },
+                page_scope=True,
+            )
+
+            def parse_result() -> PageTextEditResult:
+                page, _ = self._page_json_document_from_data(updated)
+                return PageTextEditResult(page=page)
+
+            return self._parse_write_result(parse_result)
+
+        return self._run_write(operation)
+
     def create_comment(self, page_id: str, markdown: str) -> OperationResult[Comment]:
         """Create a page comment from the conservative Markdown subset."""
 
@@ -972,6 +1048,151 @@ class DocmostReadClient:
             url=self._page_url(space_slug, title, slug_id),
         )
 
+    def _page_json_document_from_data(
+        self, data: dict[str, object]
+    ) -> tuple[Page, dict[str, object]]:
+        raw_page = data.get("page", data)
+        if not isinstance(raw_page, dict):
+            raise ValueError("page response must contain a page object")
+        page_data = cast(dict[str, object], raw_page)
+        page = self._page_summary_from_data(page_data)
+        content = data.get("content", page_data.get("content"))
+        if not isinstance(content, dict):
+            raise ValueError("page response must contain a ProseMirror document")
+        document = cast(dict[str, object], content)
+        if document.get("type") != "doc":
+            raise ValueError("page response must contain a ProseMirror document")
+        raw_children = document.get("content")
+        if raw_children is not None and not isinstance(raw_children, list):
+            raise ValueError("ProseMirror document content must be a list")
+        return page, document
+
+    @classmethod
+    def _replace_unique_text_node(
+        cls,
+        document: dict[str, object],
+        old_text: str,
+        new_text: str,
+    ) -> None:
+        """Mutate only one matching text node after bounded structural validation."""
+
+        match: tuple[list[object], int, dict[str, object], int] | None = None
+        node_count = 0
+        total_text_chars = 0
+        stack: list[tuple[dict[str, object], int, list[object] | None, int | None]] = [
+            (document, 0, None, None)
+        ]
+
+        while stack:
+            node, depth, parent, parent_index = stack.pop()
+            node_count += 1
+            if node_count > _MAX_PROSEMIRROR_NODES or depth > _MAX_PROSEMIRROR_DEPTH:
+                raise ValueError("page content exceeded edit safety bounds")
+
+            node_type = node.get("type")
+            if not isinstance(node_type, str) or not node_type:
+                raise ValueError("ProseMirror node type is invalid")
+            raw_children = node.get("content")
+            if raw_children is None:
+                children: list[object] | None = None
+            elif isinstance(raw_children, list):
+                children = cast(list[object], raw_children)
+            else:
+                raise ValueError("ProseMirror node content is invalid")
+
+            raw_text = node.get("text")
+            if node_type == "text":
+                if not isinstance(raw_text, str) or not raw_text or children is not None:
+                    raise ValueError("ProseMirror text node is invalid")
+                if parent is None or parent_index is None:
+                    raise ValueError("ProseMirror text node has no parent")
+                total_text_chars += len(raw_text)
+                if total_text_chars > _MAX_PROSEMIRROR_TEXT_CHARS:
+                    raise ValueError("page text exceeded edit safety bounds")
+                position = raw_text.find(old_text)
+                while position >= 0:
+                    if match is not None:
+                        raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+                    match = (parent, parent_index, node, position)
+                    position = raw_text.find(old_text, position + 1)
+            elif raw_text is not None:
+                raise ValueError("non-text ProseMirror node contained text")
+
+            if children is not None:
+                if len(children) > _MAX_PROSEMIRROR_NODES:
+                    raise ValueError("page content exceeded edit safety bounds")
+                if cls._contains_cross_node_match(children, old_text):
+                    raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+                for child_index in range(len(children) - 1, -1, -1):
+                    child = children[child_index]
+                    if not isinstance(child, dict):
+                        raise ValueError("ProseMirror child node is invalid")
+                    stack.append(
+                        (cast(dict[str, object], child), depth + 1, children, child_index)
+                    )
+
+        if match is None:
+            raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+        if total_text_chars - len(old_text) + len(new_text) > _MAX_PROSEMIRROR_TEXT_CHARS:
+            raise ValueError("edited page text exceeded edit safety bounds")
+
+        parent, index, node, position = match
+        current_text = cast(str, node["text"])
+        replacement = (
+            current_text[:position]
+            + new_text
+            + current_text[position + len(old_text) :]
+        )
+        if replacement:
+            node["text"] = replacement
+        else:
+            del parent[index]
+
+    @staticmethod
+    def _contains_cross_node_match(children: list[object], old_text: str) -> bool:
+        if len(old_text) < 2:
+            return False
+
+        run: list[str] = []
+        run_chars = 0
+
+        def run_has_cross_match(parts: list[str]) -> bool:
+            if len(parts) < 2:
+                return False
+            joined = "".join(parts)
+            boundaries: list[tuple[int, int]] = []
+            offset = 0
+            for part in parts:
+                boundaries.append((offset, offset + len(part)))
+                offset += len(part)
+            position = joined.find(old_text)
+            while position >= 0:
+                end = position + len(old_text)
+                if not any(start <= position and end <= stop for start, stop in boundaries):
+                    return True
+                position = joined.find(old_text, position + 1)
+            return False
+
+        for child in [*children, None]:
+            if isinstance(child, dict):
+                child_node = cast(dict[str, object], child)
+            else:
+                child_node = None
+            if child_node is not None and child_node.get("type") == "text":
+                text = child_node.get("text")
+                if not isinstance(text, str) or not text:
+                    raise ValueError("ProseMirror text node is invalid")
+                run_chars += len(text)
+                if run_chars > _MAX_PROSEMIRROR_TEXT_CHARS:
+                    raise ValueError("page text exceeded edit safety bounds")
+                run.append(text)
+                continue
+            if run_has_cross_match(run):
+                return True
+            run = []
+            run_chars = 0
+        return False
+
     @staticmethod
     def _page_id_from_data(data: dict[str, object]) -> str:
         raw_page = data.get("page", data)
@@ -1101,6 +1322,18 @@ class DocmostReadClient:
         if _MARKDOWN_CONTROL_PATTERN.search(value):
             raise ValueError("page Markdown contains unsupported control characters")
         return value.replace("\r\n", "\n").replace("\r", "\n")
+
+    @staticmethod
+    def _edit_text(value: str, *, allow_empty: bool) -> str:
+        if (not allow_empty and not value) or len(value) > _MAX_PAGE_EDIT_TEXT_CHARS:
+            minimum = 0 if allow_empty else 1
+            raise ValueError(
+                f"page edit text must be between {minimum} and "
+                f"{_MAX_PAGE_EDIT_TEXT_CHARS} characters"
+            )
+        if _EDIT_TEXT_CONTROL_PATTERN.search(value):
+            raise ValueError("page edit text contains unsupported control characters")
+        return value
 
     @staticmethod
     def _import_markdown(title: str, markdown: str) -> str:

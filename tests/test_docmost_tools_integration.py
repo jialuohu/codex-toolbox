@@ -94,6 +94,7 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
             "docmost_release_workspace_snapshot",
             "docmost_create_page",
             "docmost_update_page_title",
+            "docmost_edit_page_text",
             "docmost_create_comment",
         }
 
@@ -256,7 +257,7 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         tools_list = next(response for response in responses if response.get("id") == 2)
         self.assertEqual(initialize["result"]["serverInfo"]["name"], "docmost")
         listed_tools = {tool["name"] for tool in tools_list["result"]["tools"]}
-        self.assertEqual(len(tools_list["result"]["tools"]), 15)
+        self.assertEqual(len(tools_list["result"]["tools"]), 16)
         self.assertEqual(listed_tools, expected_tools)
 
     def test_checker_rejects_write_policy_and_transport_regressions(self) -> None:

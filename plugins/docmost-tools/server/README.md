@@ -18,7 +18,7 @@ is not removed by setup or `--prune`.
 
 `scripts/setup-docmost-tools.sh --prune` is local-only and preserves the current source fingerprint,
 installed-plugin fingerprints, and every generation whose lock is busy. Runtime upgrades do not alter
-the 15 MCP tool names, prompt-gated writes, read-only snapshot protocol, or 900-second tool timeout.
+the 16 MCP tool names, prompt-gated writes, read-only snapshot protocol, or 900-second tool timeout.
 
 The eight ordinary reads tolerate additive response fields. The private attachment download/release
 pair validates page association, accepts only bounded PDF or UTF-8 text files, stages mode-`0600`
@@ -27,10 +27,13 @@ The workspace snapshot/release pair traverses every selected page through a read
 assembles long Markdown pages consistently, retries revision races twice, and emits versioned JSONL
 beneath `CODEX_SECRETS_DIR`. Only a receipt containing an opaque token, private path, checksum,
 schema, workspace ID, and counts crosses the MCP boundary; incomplete scans create no receipt.
-The three prompt-gated writes require an explicit
+The four prompt-gated writes require an explicit
 `DOCMOST_WRITE_PROFILE=v0_95`: page creation uses Markdown import, optional nesting is a separate
 non-retried move, title changes use a disclosed non-atomic timestamp precondition, and comments use
-a conservative Markdown-to-Tiptap converter. Ambiguous write outcomes are never retried. If a
+a conservative Markdown-to-Tiptap converter. Exact page-text edits use a required, non-atomic
+timestamp precondition and replace one unique literal occurrence inside one ProseMirror text node.
+They send the preserved JSON document back with `operation=replace`; Markdown syntax remains literal,
+and formatting or structural edits are unsupported. Ambiguous write outcomes are never retried. If a
 nesting move has an ambiguous outcome, the created page is returned with
 `placement_status="unknown"` and an explicit read-before-retry warning.
 

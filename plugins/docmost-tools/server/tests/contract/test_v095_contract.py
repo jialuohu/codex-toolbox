@@ -186,13 +186,13 @@ def test_v095_reads_and_safe_writes(contract_instance: ContractInstance) -> None
         assert space_readback.ok is True and space_readback.data is not None
         assert space_readback.data.id == space.id
 
-        root = client.create_page(space.id, root_title, f"Root body {unique}")
+        root = client.create_page(space.id, root_title, f"Root **body {unique}**")
         assert root.ok is True and root.data is not None
         assert root.data.partial_success is False
         root_page = client.get_page(root.data.page.id)
         assert root_page.ok is True and root_page.data is not None
         assert root_page.data.title == root_title
-        assert root_page.data.markdown == f"Root body {unique}"
+        assert root_page.data.markdown == f"Root **body {unique}**"
 
         roots = client.list_pages(space.id)
         assert roots.ok is True and roots.data is not None
@@ -217,10 +217,23 @@ def test_v095_reads_and_safe_writes(contract_instance: ContractInstance) -> None
         assert child.data.page.id in {page.id for page in children.data.items}
 
         assert root_page.data.updated_at is not None
+        edited = client.edit_page_text(
+            root.data.page.id,
+            f"body {unique}",
+            f"text {unique}",
+            root_page.data.updated_at,
+        )
+        assert edited.ok is True and edited.data is not None
+        assert edited.data.replacements == 1
+        assert edited.data.page.updated_at is not None
+        edited_readback = client.get_page(root.data.page.id)
+        assert edited_readback.ok is True and edited_readback.data is not None
+        assert edited_readback.data.markdown == f"Root **text {unique}**"
+
         renamed = client.update_page_title(
             root.data.page.id,
             f"Renamed Root {unique}",
-            root_page.data.updated_at,
+            edited.data.page.updated_at,
         )
         assert renamed.ok is True and renamed.data is not None
         assert renamed.data.title == f"Renamed Root {unique}"
