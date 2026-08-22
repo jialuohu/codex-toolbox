@@ -97,6 +97,8 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
             "docmost_update_page_title",
             "docmost_edit_page_text",
             "docmost_patch_page_content",
+            "docmost_attach_pdf_to_page",
+            "docmost_link_uploaded_pdf",
             "docmost_create_comment",
         }
 
@@ -259,7 +261,7 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         tools_list = next(response for response in responses if response.get("id") == 2)
         self.assertEqual(initialize["result"]["serverInfo"]["name"], "docmost")
         listed_tools = {tool["name"] for tool in tools_list["result"]["tools"]}
-        self.assertEqual(len(tools_list["result"]["tools"]), 18)
+        self.assertEqual(len(tools_list["result"]["tools"]), 20)
         self.assertEqual(listed_tools, expected_tools)
 
     def test_checker_rejects_write_policy_and_transport_regressions(self) -> None:
@@ -302,8 +304,8 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         def mutate_version(root: Path) -> None:
             path = root / "plugins" / "docmost-tools" / "server" / "pyproject.toml"
             value = path.read_text()
-            self.assertIn('version = "0.7.0"', value)
-            path.write_text(value.replace('version = "0.7.0"', 'version = "0.7.1"', 1))
+            self.assertIn('version = "0.8.0"', value)
+            path.write_text(value.replace('version = "0.8.0"', 'version = "0.8.1"', 1))
 
         def mutate_jsonpatch(root: Path) -> None:
             path = root / "plugins" / "docmost-tools" / "server" / "pyproject.toml"

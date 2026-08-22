@@ -26,6 +26,12 @@
         "docmost_patch_page_content": {
           "approval_mode": "prompt"
         },
+        "docmost_attach_pdf_to_page": {
+          "approval_mode": "prompt"
+        },
+        "docmost_link_uploaded_pdf": {
+          "approval_mode": "prompt"
+        },
         "docmost_create_comment": {
           "approval_mode": "prompt"
         }

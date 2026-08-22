@@ -153,6 +153,15 @@ ExpectedUpdatedAt = Annotated[
     AfterValidator(_validated_timestamp),
 ]
 ExpectedContentSha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+ExpectedFileSha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+LocalPdfPath = Annotated[
+    str,
+    Field(
+        min_length=2,
+        max_length=4_096,
+        pattern=r"^/[^\x00-\x1f\x7f]{1,4095}$",
+    ),
+]
 JsonPatchOperations = Annotated[
     list[JsonPatchOperation],
     Field(min_length=1, max_length=100),
@@ -271,6 +280,24 @@ class _Operations(Protocol):
         self,
         page_id: str,
         patch: list[JsonPatchOperation],
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> OperationResult[Any]: ...
+
+    def attach_pdf_to_page(
+        self,
+        page_id: str,
+        local_path: str,
+        expected_file_sha256: str,
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> OperationResult[Any]: ...
+
+    def link_uploaded_pdf(
+        self,
+        page_id: str,
+        attachment_id: str,
+        expected_file_sha256: str,
         expected_updated_at: str,
         expected_content_sha256: str,
     ) -> OperationResult[Any]: ...
@@ -525,6 +552,61 @@ def create_server(
             lambda write_client: write_client.patch_page_content(
                 page_id,
                 patch,
+                expected_updated_at,
+                expected_content_sha256,
+            )
+        )
+
+    @server.tool(
+        name="docmost_attach_pdf_to_page",
+        annotations=_REPLACEMENT_WRITE_ANNOTATIONS,
+    )
+    def attach_pdf_to_page(  # pyright: ignore[reportUnusedFunction]
+        page_id: Identifier,
+        local_path: LocalPdfPath,
+        expected_file_sha256: ExpectedFileSha256,
+        expected_updated_at: ExpectedUpdatedAt,
+        expected_content_sha256: ExpectedContentSha256,
+    ) -> ToolResult:
+        """Verify, upload, and append one local PDF attachment to a guarded page.
+
+        This prompt-gated call exposes the exact local path and expected file hash.
+        Never retry an OUTCOME_UNKNOWN upload. A returned attachment ID can be
+        recovered with docmost_link_uploaded_pdf after a fresh page read.
+        """
+
+        return execute(
+            lambda write_client: write_client.attach_pdf_to_page(
+                page_id,
+                local_path,
+                expected_file_sha256,
+                expected_updated_at,
+                expected_content_sha256,
+            )
+        )
+
+    @server.tool(
+        name="docmost_link_uploaded_pdf",
+        annotations=_REPLACEMENT_WRITE_ANNOTATIONS,
+    )
+    def link_uploaded_pdf(  # pyright: ignore[reportUnusedFunction]
+        page_id: Identifier,
+        attachment_id: Identifier,
+        expected_file_sha256: ExpectedFileSha256,
+        expected_updated_at: ExpectedUpdatedAt,
+        expected_content_sha256: ExpectedContentSha256,
+    ) -> ToolResult:
+        """Verify and link one known uploaded PDF without uploading it again.
+
+        This prompt-gated recovery call requires fresh page revision and content
+        guards. Never retry an OUTCOME_UNKNOWN page update without readback.
+        """
+
+        return execute(
+            lambda write_client: write_client.link_uploaded_pdf(
+                page_id,
+                attachment_id,
+                expected_file_sha256,
                 expected_updated_at,
                 expected_content_sha256,
             )

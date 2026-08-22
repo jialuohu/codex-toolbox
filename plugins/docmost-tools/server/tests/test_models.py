@@ -14,6 +14,8 @@ from docmost_tools.models import (
     PageContentPatchResult,
     PageContentResult,
     PageTextEditResult,
+    PdfAttachmentResult,
+    UploadedPdf,
 )
 
 
@@ -67,8 +69,52 @@ def test_error_codes_are_stable_wire_values() -> None:
     assert ErrorCode.ATTACHMENT_UNAVAILABLE.value == "attachment_unavailable"
     assert ErrorCode.UNSUPPORTED_ATTACHMENT.value == "unsupported_attachment"
     assert ErrorCode.ATTACHMENT_TOO_LARGE.value == "attachment_too_large"
+    assert ErrorCode.FORBIDDEN_PATH.value == "forbidden_path"
     assert ErrorCode.UPSTREAM_ERROR.value == "upstream_error"
     assert ErrorCode.INTERNAL_ERROR.value == "internal_error"
+
+
+def test_pdf_attachment_result_enforces_verified_and_partial_states() -> None:
+    verified = UploadedPdf(
+        id="attachment-1",
+        page_id="page-1",
+        filename="report.pdf",
+        size_bytes=42,
+        sha256="a" * 64,
+        checksum_verified=True,
+        url="/api/files/attachment-1/report.pdf",
+    )
+    linked = PdfAttachmentResult(
+        page=Page(id="page-1"),
+        attachment=verified,
+        link_status="linked",
+        content_sha256="b" * 64,
+    )
+
+    assert linked.partial_success is False
+    assert linked.attachment.media_type == "application/pdf"
+
+    with pytest.raises(ValidationError, match="require verified"):
+        PdfAttachmentResult(
+            page=Page(id="page-1"),
+            attachment=verified.model_copy(update={"checksum_verified": False}),
+            link_status="already_linked",
+            content_sha256="b" * 64,
+        )
+    with pytest.raises(ValidationError, match="matching page identities"):
+        PdfAttachmentResult(
+            page=Page(id="another-page"),
+            attachment=verified,
+            link_status="linked",
+            content_sha256="b" * 64,
+        )
+    with pytest.raises(ValidationError, match="requires a partial-success warning"):
+        PdfAttachmentResult(
+            page=Page(id="page-1"),
+            attachment=verified,
+            link_status="uploaded_unlinked",
+            content_sha256="b" * 64,
+        )
 
 
 def test_page_model_maps_v095_authoritative_slug_id() -> None:

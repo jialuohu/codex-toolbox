@@ -222,6 +222,12 @@ DOCMOST_PYPROJECT = DOCMOST_SERVER / "pyproject.toml"
 DOCMOST_UV_LOCK = DOCMOST_SERVER / "uv.lock"
 DOCMOST_PACKAGE_INIT = DOCMOST_SERVER / "src" / "docmost_tools" / "__init__.py"
 DOCMOST_PAGE_CONTENT = DOCMOST_SERVER / "src" / "docmost_tools" / "page_content.py"
+DOCMOST_ATTACHMENT_UPLOAD = (
+    DOCMOST_SERVER / "src" / "docmost_tools" / "attachment_upload.py"
+)
+DOCMOST_ATTACHMENT_IMPORT_SKILL = (
+    DOCMOST_DIR / "skills" / "docmost-attachment-import" / "SKILL.md"
+)
 DOCMOST_APPROVED_LAUNCHER_SHA256 = (
     "9d67581f0bf57fd92ba4cf1cf8d8612dde1a82c3ec09bc4d3dddeaea8ad05125"
 )
@@ -2109,6 +2115,8 @@ def validate_docmost_tools_contract(
         DOCMOST_UV_LOCK,
         DOCMOST_PACKAGE_INIT,
         DOCMOST_PAGE_CONTENT,
+        DOCMOST_ATTACHMENT_UPLOAD,
+        DOCMOST_ATTACHMENT_IMPORT_SKILL,
     )
     for path in required_paths:
         require(path.is_file() and not path.is_symlink(), f"Docmost file is missing or unsafe: {path.name}")
@@ -2129,14 +2137,18 @@ def validate_docmost_tools_contract(
     require(isinstance(server, dict), "docmost MCP server definition must be an object")
     require(plugin.get("mcpServers") == "./.mcp.json", "docmost manifest must register its MCP config")
     require(
+        plugin.get("skills") == "./skills/",
+        "docmost manifest must register its attachment import skill",
+    )
+    require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
-    require(plugin.get("version") == "0.7.0", "docmost-tools must use version 0.7.0")
+    require(plugin.get("version") == "0.8.0", "docmost-tools must use version 0.8.0")
     for path, pattern in (
-        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.7\.0"$'),
-        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.7\.0"$'),
-        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.7\.0"$'),
+        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.8\.0"$'),
+        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.8\.0"$'),
+        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.8\.0"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2172,6 +2184,8 @@ def validate_docmost_tools_contract(
         "docmost_update_page_title",
         "docmost_edit_page_text",
         "docmost_patch_page_content",
+        "docmost_attach_pdf_to_page",
+        "docmost_link_uploaded_pdf",
         "docmost_create_comment",
     }
     tools = server.get("tools")
@@ -2323,6 +2337,35 @@ def validate_docmost_tools_contract(
         and "runtime.close()" in server_source,
         "Docmost server must unwind runtime cleanup on SIGTERM",
     )
+    expected_tool_names = {
+        "docmost_get_current_user",
+        "docmost_list_spaces",
+        "docmost_get_space",
+        "docmost_search_pages",
+        "docmost_get_page",
+        "docmost_get_page_content",
+        "docmost_list_pages",
+        "docmost_list_child_pages",
+        "docmost_get_comments",
+        "docmost_download_attachment",
+        "docmost_release_attachment_download",
+        "docmost_prepare_workspace_snapshot",
+        "docmost_release_workspace_snapshot",
+        "docmost_create_page",
+        "docmost_update_page_title",
+        "docmost_edit_page_text",
+        "docmost_patch_page_content",
+        "docmost_attach_pdf_to_page",
+        "docmost_link_uploaded_pdf",
+        "docmost_create_comment",
+    }
+    actual_tool_names = set(
+        re.findall(r'@server\.tool\(\s*name="([^"]+)"', server_source)
+    )
+    require(
+        actual_tool_names == expected_tool_names,
+        "Docmost MCP must expose exactly the approved 20-tool surface",
+    )
     for expected in (
         "MAX_PROSEMIRROR_DEPTH = 100",
         "MAX_PROSEMIRROR_NODES = 100_000",
@@ -2336,6 +2379,26 @@ def validate_docmost_tools_contract(
             expected in DOCMOST_PAGE_CONTENT.read_text(),
             f"Docmost rich-content guard must include {expected}",
         )
+    upload_source = DOCMOST_ATTACHMENT_UPLOAD.read_text()
+    for expected in (
+        "MAX_PDF_BYTES = 50 * 1024 * 1024",
+        "O_NOFOLLOW",
+        "before.st_nlink != 1",
+        "expected_sha256",
+        "assert_stable",
+    ):
+        require(expected in upload_source, f"Docmost PDF path guard must include {expected}")
+    import_skill = DOCMOST_ATTACHMENT_IMPORT_SKILL.read_text()
+    for expected in (
+        "docmost_attach_pdf_to_page",
+        "docmost_link_uploaded_pdf",
+        "OUTCOME_UNKNOWN",
+        "authenticated `gh` access",
+        "in-memory manifest",
+        "finally",
+        "six-file acceptance exercise",
+    ):
+        require(expected in import_skill, f"Docmost attachment skill must include {expected}")
 
     marketplace_entry = next(
         (entry for entry in marketplace.get("plugins", []) if entry.get("name") == "docmost-tools"),
@@ -2387,6 +2450,9 @@ def validate_docmost_tools_contract(
         "docmost_edit_page_text",
         "docmost_get_page_content",
         "docmost_patch_page_content",
+        "docmost_attach_pdf_to_page",
+        "docmost_link_uploaded_pdf",
+        "$docmost-attachment-import",
         "docmost_create_comment",
         "docmost-tools-generations/envs/<source-sha256>",
         "setup-docmost-tools.sh --prune",

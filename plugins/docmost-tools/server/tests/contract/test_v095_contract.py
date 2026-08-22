@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 import shutil
 import socket
 import subprocess
+import tempfile
 import time
 from collections.abc import Iterator
 from copy import deepcopy
@@ -171,7 +173,17 @@ def test_v095_reads_and_safe_writes(contract_instance: ContractInstance) -> None
     unique = secrets.token_hex(5)
     root_title = f"Contract Root {unique}"
     child_title = f"Contract Child {unique}"
-    with DocmostReadClient(settings, contract_instance.session_cookie) as client:
+    pdf_bytes = b"%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n"
+    pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+    with (
+        tempfile.TemporaryDirectory(
+            prefix="docmost-contract-",
+            dir=Path.home(),
+        ) as staging_directory,
+        DocmostReadClient(settings, contract_instance.session_cookie) as client,
+    ):
+        pdf_path = Path(staging_directory) / f"contract-{unique}.pdf"
+        pdf_path.write_bytes(pdf_bytes)
         version = client.version()
         assert version.ok is True and version.data is not None
         assert version.data.current_version == "0.95.0"
@@ -217,6 +229,49 @@ def test_v095_reads_and_safe_writes(contract_instance: ContractInstance) -> None
         children = client.list_child_pages(root.data.page.id)
         assert children.ok is True and children.data is not None
         assert child.data.page.id in {page.id for page in children.data.items}
+
+        child_content = client.get_page_content(child.data.page.id)
+        assert child_content.ok is True and child_content.data is not None
+        assert child_content.data.page.updated_at is not None
+        attached = client.attach_pdf_to_page(
+            child.data.page.id,
+            str(pdf_path),
+            pdf_sha256,
+            child_content.data.page.updated_at,
+            child_content.data.content_sha256,
+        )
+        assert attached.ok is True and attached.data is not None
+        assert attached.data.link_status == "linked"
+        assert attached.data.attachment.checksum_verified is True
+        assert attached.data.attachment.sha256 == pdf_sha256
+        assert attached.data.page.updated_at is not None
+        assert attached.data.content_sha256 is not None
+
+        repeated = client.attach_pdf_to_page(
+            child.data.page.id,
+            str(pdf_path),
+            pdf_sha256,
+            attached.data.page.updated_at,
+            attached.data.content_sha256,
+        )
+        assert repeated.ok is True and repeated.data is not None
+        assert repeated.data.link_status == "already_linked"
+        assert repeated.data.attachment.id == attached.data.attachment.id
+
+        downloaded = client.download_attachment(
+            child.data.page.id,
+            attached.data.attachment.id,
+        )
+        assert downloaded.ok is True and downloaded.data is not None
+        try:
+            assert downloaded.data.sha256 == pdf_sha256
+            assert Path(downloaded.data.local_path).read_bytes() == pdf_bytes
+        finally:
+            released = client.release_attachment_download(
+                downloaded.data.download_token,
+            )
+            assert released.ok is True and released.data is not None
+            assert released.data.released is True
 
         assert root_page.data.updated_at is not None
         edited = client.edit_page_text(

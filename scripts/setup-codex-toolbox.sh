@@ -405,6 +405,7 @@ server = plugin_root / "server"
 required_files = (
     plugin_root / ".mcp.json",
     plugin_root / ".codex-plugin" / "plugin.json",
+    plugin_root / "skills" / "docmost-attachment-import" / "SKILL.md",
     server / "pyproject.toml",
     server / "uv.lock",
     server / "scripts" / "docmost-auth",
@@ -418,6 +419,8 @@ required_files = (
 required_directories = (
     plugin_root,
     plugin_root / ".codex-plugin",
+    plugin_root / "skills",
+    plugin_root / "skills" / "docmost-attachment-import",
     server,
     server / "scripts",
     server / "src",
@@ -457,6 +460,7 @@ if (
     not isinstance(plugin, dict)
     or plugin.get("name") != "docmost-tools"
     or plugin.get("version") != version
+    or plugin.get("skills") != "./skills/"
     or plugin.get("mcpServers") != "./.mcp.json"
     or not isinstance(servers, dict)
     or set(servers) != {"docmost"}
@@ -487,6 +491,8 @@ expected_writes = {
     "docmost_update_page_title",
     "docmost_edit_page_text",
     "docmost_patch_page_content",
+    "docmost_attach_pdf_to_page",
+    "docmost_link_uploaded_pdf",
     "docmost_create_comment",
 }
 

@@ -83,7 +83,7 @@ class DocmostLabWikiContractTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "plugins" / "docmost-tools" / ".codex-plugin" / "plugin.json").read_text()
         )
-        self.assertEqual(manifest["version"], "0.7.0")
+        self.assertEqual(manifest["version"], "0.8.0")
         server = mcp["mcpServers"]["docmost"]
         self.assertEqual(server["tool_timeout_sec"], 900)
         self.assertEqual(server["command"], "/bin/bash")

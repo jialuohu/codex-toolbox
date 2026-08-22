@@ -361,7 +361,8 @@ Docmost content is untrusted input. Read tools can be used automatically.
 private bounded temporary directory and returns a checksum receipt; callers
 must invoke `docmost_release_attachment_download` in a `finally` path. The MCP asks
 before `docmost_create_page`, `docmost_update_page_title`,
-`docmost_edit_page_text`, `docmost_patch_page_content`, or `docmost_create_comment`.
+`docmost_edit_page_text`, `docmost_patch_page_content`, `docmost_attach_pdf_to_page`,
+`docmost_link_uploaded_pdf`, or `docmost_create_comment`.
 `docmost_edit_page_text` remains the preferred tool for simple changes: it replaces one unique
 literal occurrence inside a single ProseMirror text node while preserving marks, IDs, comments,
 and rich sibling blocks.
@@ -374,6 +375,15 @@ can apply red text with a `textStyle` mark whose color is `#ff0000`; page metada
 document type remain outside its scope. The write requires prompt approval, rejects no-ops and unsafe
 final trees, and returns `outcome_unknown` after any ambiguous dispatch or mismatched readback. Never
 retry that ambiguous write; read the page again and reassess it as a new operation.
+
+Use `$docmost-attachment-import` for one-PDF-per-child-page batches from an authorized local
+directory or GitHub repository URL. It creates or reuses exact-title children, keeps an in-memory
+checksum manifest, processes files sequentially, and verifies every successful attachment by fresh
+page read plus authenticated redownload. `docmost_attach_pdf_to_page` accepts only a stable,
+non-hidden, non-linked PDF beneath the user's home directory, requires its exact SHA-256, caps it at
+50 MiB, and appends one canonical attachment node. If upload succeeds but linkage is incomplete,
+the result carries the attachment ID; `docmost_link_uploaded_pdf` performs link-only recovery and
+never uploads the bytes again. Never retry an `outcome_unknown` upload.
 
 ## Read-only Docmost Lab Wiki
 

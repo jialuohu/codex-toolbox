@@ -8,6 +8,7 @@ import re
 import time
 import unicodedata
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Any, Literal, TypeVar, cast
 from urllib.parse import quote
 
@@ -15,6 +16,11 @@ import httpx
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from docmost_tools.attachment_download import AttachmentDownloadStore, AttachmentStageError
+from docmost_tools.attachment_upload import (
+    PdfUploadValidator,
+    PdfValidationError,
+    ValidatedPdf,
+)
 from docmost_tools.comment_markdown import MarkdownValidationError, markdown_to_tiptap
 from docmost_tools.config import DocmostSettings, WriteProfile
 from docmost_tools.models import (
@@ -34,13 +40,16 @@ from docmost_tools.models import (
     PageContentResult,
     PageList,
     PageTextEditResult,
+    PdfAttachmentResult,
     SearchResults,
     Space,
+    UploadedPdf,
     VersionInfo,
     WorkspaceSnapshotReceipt,
     WorkspaceSnapshotRelease,
 )
 from docmost_tools.page_content import (
+    InspectedPageContent,
     InvalidPageContent,
     InvalidPagePatch,
     PagePatchConflict,
@@ -88,6 +97,15 @@ _PARTIAL_CREATE_UNKNOWN_MESSAGE = (
     "Page was created, but the nesting outcome is unknown. "
     "Do not retry create_page; read the returned page before any manual move."
 )
+_PARTIAL_PDF_UNLINKED_MESSAGE = (
+    "The PDF exists in Docmost but is not linked in the page body. "
+    "Do not upload it again; use docmost_link_uploaded_pdf with a fresh page read."
+)
+_PARTIAL_PDF_UNKNOWN_MESSAGE = (
+    "The PDF exists in Docmost but its page-link outcome is unknown. "
+    "Do not retry the write; read the page and reconcile the returned attachment ID."
+)
+_PDF_UPLOAD_TIMEOUT = httpx.Timeout(connect=5.0, read=120.0, write=120.0, pool=5.0)
 ModelItem = TypeVar("ModelItem", bound=BaseModel)
 
 
@@ -113,6 +131,7 @@ class DocmostReadClient:
         sleeper: Callable[[float], None] = time.sleep,
         max_retries: int = 2,
         snapshot_store: WorkspaceSnapshotStore | None = None,
+        pdf_validator: PdfUploadValidator | None = None,
     ) -> None:
         if not session_cookie:
             raise ValueError("A non-empty Docmost session cookie is required")
@@ -131,6 +150,7 @@ class DocmostReadClient:
             timeout=httpx.Timeout(connect=5.0, read=20.0, write=20.0, pool=5.0),
         )
         self._downloads = AttachmentDownloadStore(max_bytes=_MAX_ATTACHMENT_BYTES)
+        self._pdf_validator = pdf_validator or PdfUploadValidator(max_bytes=_MAX_ATTACHMENT_BYTES)
         self._workspace_snapshot_store = snapshot_store or WorkspaceSnapshotStore()
         self._workspace_snapshots = WorkspaceSnapshotBuilder(
             self,
@@ -744,6 +764,183 @@ class DocmostReadClient:
 
         return self._run_write(operation)
 
+    def attach_pdf_to_page(
+        self,
+        page_id: str,
+        local_path: str,
+        expected_file_sha256: str,
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> OperationResult[PdfAttachmentResult]:
+        """Upload and append one guarded PDF attachment node to a page."""
+
+        blocked = self.write_compatibility_error
+        if blocked is not None:
+            return OperationResult[PdfAttachmentResult](ok=False, error=blocked)
+        try:
+            validated_page_id = self._identifier(page_id)
+            validated_file_sha256 = self._file_sha256(expected_file_sha256)
+            validated_timestamp = self._timestamp(expected_updated_at)
+            validated_content_sha256 = self._content_sha256(expected_content_sha256)
+        except ValueError as error:
+            return cast(OperationResult[PdfAttachmentResult], self._invalid(error))
+
+        def operation() -> PdfAttachmentResult:
+            page, document, current = self._guarded_page_content(
+                validated_page_id,
+                validated_timestamp,
+                validated_content_sha256,
+            )
+            try:
+                with self._pdf_validator.open(local_path, validated_file_sha256) as pdf:
+                    matching_nodes = self._attachment_nodes(document, filename=pdf.filename)
+                    if len(matching_nodes) > 1:
+                        raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+                    if matching_nodes:
+                        attrs = matching_nodes[0].get("attrs")
+                        typed_attrs = (
+                            cast(dict[str, object], attrs)
+                            if isinstance(attrs, dict)
+                            else {}
+                        )
+                        attachment_id = typed_attrs.get("attachmentId")
+                        if not isinstance(attachment_id, str) or not attachment_id:
+                            raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+                        existing = self._verify_pdf_attachment(
+                            page.id,
+                            attachment_id,
+                            validated_file_sha256,
+                        )
+                        pdf.assert_stable()
+                        if (
+                            existing.filename != pdf.filename
+                            or existing.size_bytes != pdf.size_bytes
+                            or len(
+                                self._root_attachment_nodes(
+                                    document,
+                                    attachment_id=existing.id,
+                                )
+                            )
+                            != 1
+                            or not self._pdf_node_matches(matching_nodes[0], existing)
+                        ):
+                            raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+                        return PdfAttachmentResult(
+                            page=page,
+                            attachment=existing,
+                            link_status="already_linked",
+                            content_sha256=current.content_sha256,
+                        )
+
+                    pdf.assert_stable()
+                    uploaded_info = self._post_pdf_upload(page.id, pdf)
+                    uploaded = self._uploaded_pdf_from_info(
+                        uploaded_info,
+                        validated_file_sha256,
+                        checksum_verified=False,
+                    )
+                    try:
+                        pdf.assert_stable()
+                    except PdfValidationError:
+                        return self._partial_pdf_result(
+                            page,
+                            current,
+                            uploaded,
+                            link_status="uploaded_unlinked",
+                            cause=ErrorCode.CONFLICT,
+                        )
+                    if not self._upload_metadata_matches(uploaded_info, page.id, pdf):
+                        return self._partial_pdf_result(
+                            page,
+                            current,
+                            uploaded,
+                            link_status="uploaded_unlinked",
+                            cause=ErrorCode.UPSTREAM_ERROR,
+                        )
+                    try:
+                        verified = self._verify_pdf_attachment(
+                            page.id,
+                            uploaded.id,
+                            validated_file_sha256,
+                        )
+                    except _ClientFailure as error:
+                        return self._partial_pdf_result(
+                            page,
+                            current,
+                            uploaded,
+                            link_status="uploaded_unlinked",
+                            cause=error.code,
+                        )
+
+                    try:
+                        latest_page, latest_document, latest = self._page_content_snapshot(page.id)
+                    except _ClientFailure as error:
+                        return self._partial_pdf_result(
+                            page,
+                            current,
+                            verified,
+                            link_status="uploaded_unlinked",
+                            cause=error.code,
+                        )
+                    if (
+                        latest_page.updated_at != validated_timestamp
+                        or latest.content_sha256 != validated_content_sha256
+                    ):
+                        return self._partial_pdf_result(
+                            latest_page,
+                            latest,
+                            verified,
+                            link_status="uploaded_unlinked",
+                            cause=ErrorCode.CONFLICT,
+                        )
+                    return self._link_verified_pdf(
+                        latest_page,
+                        latest_document,
+                        latest,
+                        verified,
+                    )
+            except PdfValidationError as error:
+                raise self._pdf_validation_failure(error) from error
+
+        return self._run_write(operation)
+
+    def link_uploaded_pdf(
+        self,
+        page_id: str,
+        attachment_id: str,
+        expected_file_sha256: str,
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> OperationResult[PdfAttachmentResult]:
+        """Verify and link an existing uploaded PDF without uploading it again."""
+
+        blocked = self.write_compatibility_error
+        if blocked is not None:
+            return OperationResult[PdfAttachmentResult](ok=False, error=blocked)
+        try:
+            validated_page_id = self._identifier(page_id)
+            validated_attachment_id = self._identifier(attachment_id)
+            validated_file_sha256 = self._file_sha256(expected_file_sha256)
+            validated_timestamp = self._timestamp(expected_updated_at)
+            validated_content_sha256 = self._content_sha256(expected_content_sha256)
+        except ValueError as error:
+            return cast(OperationResult[PdfAttachmentResult], self._invalid(error))
+
+        def operation() -> PdfAttachmentResult:
+            page, document, current = self._guarded_page_content(
+                validated_page_id,
+                validated_timestamp,
+                validated_content_sha256,
+            )
+            verified = self._verify_pdf_attachment(
+                page.id,
+                validated_attachment_id,
+                validated_file_sha256,
+            )
+            return self._link_verified_pdf(page, document, current, verified)
+
+        return self._run_write(operation)
+
     def create_comment(self, page_id: str, markdown: str) -> OperationResult[Comment]:
         """Create a page comment from the conservative Markdown subset."""
 
@@ -782,6 +979,383 @@ class DocmostReadClient:
             return self._parse_write_result(lambda: Comment.model_validate(created))
 
         return self._run_write(operation)
+
+    def _page_content_snapshot(
+        self, page_id: str
+    ) -> tuple[Page, dict[str, object], InspectedPageContent]:
+        data = self._post(
+            "/api/pages/info",
+            {"pageId": page_id, "format": "json"},
+            page_scope=True,
+        )
+        try:
+            page, document = self._page_json_document_from_data(data)
+            inspected = inspect_page_content(document)
+        except (InvalidPageContent, ValueError) as error:
+            raise _ClientFailure(
+                ErrorCode.PAGE_UNAVAILABLE,
+                PAGE_UNAVAILABLE_MESSAGE,
+            ) from error
+        return page, document, inspected
+
+    def _guarded_page_content(
+        self,
+        page_id: str,
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> tuple[Page, dict[str, object], InspectedPageContent]:
+        page, document, inspected = self._page_content_snapshot(page_id)
+        if (
+            page.updated_at != expected_updated_at
+            or inspected.content_sha256 != expected_content_sha256
+        ):
+            raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+        return page, document, inspected
+
+    def _verify_pdf_attachment(
+        self,
+        page_id: str,
+        attachment_id: str,
+        expected_sha256: str,
+    ) -> UploadedPdf:
+        try:
+            metadata = AttachmentInfo.model_validate(
+                self._post(
+                    "/api/files/info",
+                    {"attachmentId": attachment_id},
+                    page_scope=True,
+                )
+            )
+        except _ClientFailure as error:
+            if error.code in {ErrorCode.PAGE_UNAVAILABLE, ErrorCode.FORBIDDEN}:
+                raise _ClientFailure(
+                    ErrorCode.ATTACHMENT_UNAVAILABLE,
+                    "ATTACHMENT_UNAVAILABLE",
+                ) from error
+            raise
+        if (
+            metadata.id != attachment_id
+            or metadata.page_id != page_id
+            or metadata.type != "file"
+            or metadata.file_size > _MAX_ATTACHMENT_BYTES
+        ):
+            raise _ClientFailure(
+                ErrorCode.ATTACHMENT_UNAVAILABLE,
+                "ATTACHMENT_UNAVAILABLE",
+            )
+        filename, media_type = self._validated_attachment_metadata(metadata)
+        if media_type != "application/pdf":
+            raise _ClientFailure(
+                ErrorCode.UNSUPPORTED_ATTACHMENT,
+                "UNSUPPORTED_ATTACHMENT",
+            )
+        staged = self._download_and_stage(
+            metadata,
+            filename=filename,
+            media_type="application/pdf",
+        )
+        try:
+            if staged.sha256 != expected_sha256:
+                raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+            return UploadedPdf(
+                id=metadata.id,
+                page_id=metadata.page_id,
+                filename=filename,
+                size_bytes=metadata.file_size,
+                sha256=staged.sha256,
+                checksum_verified=True,
+                url=self._attachment_relative_url(metadata.id, filename),
+            )
+        finally:
+            self._downloads.release(staged.download_token)
+
+    def _link_verified_pdf(
+        self,
+        page: Page,
+        document: dict[str, object],
+        current: InspectedPageContent,
+        attachment: UploadedPdf,
+    ) -> PdfAttachmentResult:
+        id_nodes = self._attachment_nodes(document, attachment_id=attachment.id)
+        if id_nodes:
+            root_nodes = self._root_attachment_nodes(
+                document,
+                attachment_id=attachment.id,
+            )
+            if (
+                len(id_nodes) == 1
+                and len(root_nodes) == 1
+                and self._pdf_node_matches(id_nodes[0], attachment)
+            ):
+                return PdfAttachmentResult(
+                    page=page,
+                    attachment=attachment,
+                    link_status="already_linked",
+                    content_sha256=current.content_sha256,
+                )
+            raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+        if self._attachment_nodes(document, filename=attachment.filename):
+            raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+
+        patched_document = deepcopy(document)
+        raw_children = patched_document.get("content")
+        if raw_children is None:
+            children: list[object] = []
+            patched_document["content"] = children
+        elif isinstance(raw_children, list):
+            children = cast(list[object], raw_children)
+        else:
+            raise _ClientFailure(ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE)
+        children.append(self._pdf_attachment_node(attachment))
+        try:
+            patched = inspect_page_content(patched_document)
+        except InvalidPageContent as error:
+            raise _ClientFailure(ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE) from error
+
+        try:
+            updated = self._post_write_json(
+                "/api/pages/update",
+                {
+                    "pageId": page.id,
+                    "content": patched.document,
+                    "format": "json",
+                    "operation": "replace",
+                },
+                page_scope=True,
+            )
+        except _ClientFailure as error:
+            if error.code is ErrorCode.OUTCOME_UNKNOWN:
+                return self._reconcile_pdf_link(page, current, attachment)
+            return self._partial_pdf_result(
+                page,
+                current,
+                attachment,
+                link_status="uploaded_unlinked",
+                cause=error.code,
+            )
+
+        try:
+            updated_page, updated_document = self._page_json_document_from_data(updated)
+            updated_content = inspect_page_content(updated_document)
+            if (
+                updated_page.id != page.id
+                or updated_content.canonical_bytes != patched.canonical_bytes
+                or len(self._attachment_nodes(updated_document, attachment_id=attachment.id)) != 1
+                or len(
+                    self._root_attachment_nodes(
+                        updated_document,
+                        attachment_id=attachment.id,
+                    )
+                )
+                != 1
+            ):
+                return self._reconcile_pdf_link(page, current, attachment)
+        except (InvalidPageContent, ValueError):
+            return self._reconcile_pdf_link(page, current, attachment)
+        return PdfAttachmentResult(
+            page=updated_page,
+            attachment=attachment,
+            link_status="linked",
+            content_sha256=updated_content.content_sha256,
+        )
+
+    def _reconcile_pdf_link(
+        self,
+        fallback_page: Page,
+        fallback_content: InspectedPageContent,
+        attachment: UploadedPdf,
+    ) -> PdfAttachmentResult:
+        try:
+            page, document, content = self._page_content_snapshot(fallback_page.id)
+        except _ClientFailure:
+            return self._partial_pdf_result(
+                fallback_page,
+                fallback_content,
+                attachment,
+                link_status="link_unknown",
+                cause=ErrorCode.OUTCOME_UNKNOWN,
+            )
+        nodes = self._attachment_nodes(document, attachment_id=attachment.id)
+        root_nodes = self._root_attachment_nodes(
+            document,
+            attachment_id=attachment.id,
+        )
+        if (
+            len(nodes) == 1
+            and len(root_nodes) == 1
+            and self._pdf_node_matches(nodes[0], attachment)
+        ):
+            return PdfAttachmentResult(
+                page=page,
+                attachment=attachment,
+                link_status="linked",
+                content_sha256=content.content_sha256,
+            )
+        return self._partial_pdf_result(
+            page,
+            content,
+            attachment,
+            link_status="link_unknown",
+            cause=ErrorCode.OUTCOME_UNKNOWN,
+        )
+
+    @staticmethod
+    def _attachment_nodes(
+        document: dict[str, object],
+        *,
+        attachment_id: str | None = None,
+        filename: str | None = None,
+    ) -> list[dict[str, object]]:
+        matches: list[dict[str, object]] = []
+        stack: list[dict[str, object]] = [document]
+        while stack:
+            node = stack.pop()
+            if node.get("type") == "attachment":
+                attrs = node.get("attrs")
+                if isinstance(attrs, dict):
+                    typed_attrs = cast(dict[str, object], attrs)
+                    id_matches = (
+                        attachment_id is None
+                        or typed_attrs.get("attachmentId") == attachment_id
+                    )
+                    name_matches = filename is None or typed_attrs.get("name") == filename
+                    if id_matches and name_matches:
+                        matches.append(node)
+            raw_children = node.get("content")
+            if isinstance(raw_children, list):
+                for child in reversed(cast(list[object], raw_children)):
+                    if isinstance(child, dict):
+                        stack.append(cast(dict[str, object], child))
+        return matches
+
+    @staticmethod
+    def _root_attachment_nodes(
+        document: dict[str, object],
+        *,
+        attachment_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        raw_children = document.get("content")
+        if not isinstance(raw_children, list):
+            return []
+        matches: list[dict[str, object]] = []
+        for raw_node in cast(list[object], raw_children):
+            if not isinstance(raw_node, dict):
+                continue
+            node = cast(dict[str, object], raw_node)
+            if node.get("type") != "attachment":
+                continue
+            attrs = node.get("attrs")
+            typed_attrs = cast(dict[str, object], attrs) if isinstance(attrs, dict) else {}
+            if attachment_id is None or typed_attrs.get("attachmentId") == attachment_id:
+                matches.append(node)
+        return matches
+
+    @classmethod
+    def _pdf_node_matches(cls, node: dict[str, object], attachment: UploadedPdf) -> bool:
+        attrs = node.get("attrs")
+        if not isinstance(attrs, dict):
+            return False
+        typed_attrs = cast(dict[str, object], attrs)
+        raw_expected = cls._pdf_attachment_node(attachment)["attrs"]
+        assert isinstance(raw_expected, dict)
+        expected = cast(dict[str, object], raw_expected)
+        return all(typed_attrs.get(key) == value for key, value in expected.items())
+
+    @staticmethod
+    def _pdf_attachment_node(attachment: UploadedPdf) -> dict[str, object]:
+        return {
+            "type": "attachment",
+            "attrs": {
+                "url": attachment.url,
+                "name": attachment.filename,
+                "mime": attachment.media_type,
+                "size": attachment.size_bytes,
+                "attachmentId": attachment.id,
+            },
+        }
+
+    def _uploaded_pdf_from_info(
+        self,
+        metadata: AttachmentInfo,
+        expected_sha256: str,
+        *,
+        checksum_verified: bool,
+    ) -> UploadedPdf:
+        filename = self._safe_filename(metadata.file_name)
+        return UploadedPdf(
+            id=self._identifier(metadata.id),
+            page_id=self._identifier(metadata.page_id),
+            filename=filename,
+            size_bytes=metadata.file_size,
+            sha256=expected_sha256,
+            checksum_verified=checksum_verified,
+            url=self._attachment_relative_url(metadata.id, filename),
+        )
+
+    @classmethod
+    def _upload_metadata_matches(
+        cls,
+        metadata: AttachmentInfo,
+        page_id: str,
+        pdf: ValidatedPdf,
+    ) -> bool:
+        return (
+            metadata.page_id == page_id
+            and metadata.file_name == pdf.filename
+            and metadata.file_size == pdf.size_bytes
+            and metadata.type == "file"
+            and metadata.file_ext.lower() == ".pdf"
+            and cls._normalized_media_type(metadata.mime_type) == "application/pdf"
+        )
+
+    @staticmethod
+    def _partial_pdf_result(
+        page: Page,
+        content: InspectedPageContent,
+        attachment: UploadedPdf,
+        *,
+        link_status: Literal["uploaded_unlinked", "link_unknown"],
+        cause: ErrorCode,
+    ) -> PdfAttachmentResult:
+        message = (
+            _PARTIAL_PDF_UNKNOWN_MESSAGE
+            if link_status == "link_unknown"
+            else _PARTIAL_PDF_UNLINKED_MESSAGE
+        )
+        return PdfAttachmentResult(
+            page=page,
+            attachment=attachment,
+            link_status=link_status,
+            content_sha256=content.content_sha256,
+            partial_success=True,
+            warning=OperationError(
+                code=ErrorCode.PARTIAL_SUCCESS,
+                message=message,
+                retryable=False,
+                details={"cause": cause.value, "link_status": link_status},
+            ),
+        )
+
+    @staticmethod
+    def _pdf_validation_failure(error: PdfValidationError) -> _ClientFailure:
+        mapping: dict[str, tuple[ErrorCode, str]] = {
+            "forbidden_path": (ErrorCode.FORBIDDEN_PATH, "FORBIDDEN_PATH"),
+            "unsupported_attachment": (
+                ErrorCode.UNSUPPORTED_ATTACHMENT,
+                "UNSUPPORTED_ATTACHMENT",
+            ),
+            "attachment_too_large": (
+                ErrorCode.ATTACHMENT_TOO_LARGE,
+                "ATTACHMENT_TOO_LARGE",
+            ),
+            "conflict": (ErrorCode.CONFLICT, "CONFLICT"),
+        }
+        code, message = mapping[error.kind]
+        return _ClientFailure(code, message)
+
+    @staticmethod
+    def _attachment_relative_url(attachment_id: str, filename: str) -> str:
+        return f"/api/files/{quote(attachment_id, safe='')}/{quote(filename, safe='')}"
 
     def _post(
         self, path: str, body: dict[str, object], *, page_scope: bool = False
@@ -944,6 +1518,57 @@ class DocmostReadClient:
                 _OUTCOME_UNKNOWN_MESSAGE,
             ) from error
         return self._validate_write_response(response, page_scope=False)
+
+    def _post_pdf_upload(self, page_id: str, pdf: ValidatedPdf) -> AttachmentInfo:
+        """Upload one validated PDF through Docmost's raw v0.95 response contract."""
+
+        try:
+            pdf.stream.seek(0)
+            response = self._http.post(
+                self._endpoint("/api/files/upload"),
+                data={"pageId": page_id},
+                files={"file": (pdf.filename, pdf.stream, "application/pdf")},
+                headers=self._cookie_headers(),
+                timeout=_PDF_UPLOAD_TIMEOUT,
+            )
+        except (httpx.TimeoutException, httpx.TransportError, OSError) as error:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN,
+                _OUTCOME_UNKNOWN_MESSAGE,
+            ) from error
+
+        if response.status_code == 401:
+            raise _ClientFailure(ErrorCode.AUTH_REQUIRED, AUTH_REQUIRED_MESSAGE)
+        if response.status_code in {403, 404}:
+            raise _ClientFailure(ErrorCode.PAGE_UNAVAILABLE, PAGE_UNAVAILABLE_MESSAGE)
+        if response.status_code == 409:
+            raise _ClientFailure(ErrorCode.CONFLICT, "CONFLICT")
+        if response.status_code in _TRANSIENT_STATUS_CODES:
+            raise _ClientFailure(ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE)
+        if 300 <= response.status_code < 400:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN,
+                _OUTCOME_UNKNOWN_MESSAGE,
+            )
+        if 200 <= response.status_code < 300 and response.status_code not in {200, 201}:
+            raise _ClientFailure(ErrorCode.OUTCOME_UNKNOWN, _OUTCOME_UNKNOWN_MESSAGE)
+        if response.status_code not in {200, 201}:
+            raise _ClientFailure(ErrorCode.UPSTREAM_ERROR, "Docmost PDF upload failed")
+
+        try:
+            payload = cast(object, response.json())
+            if not isinstance(payload, dict):
+                raise ValueError("attachment upload response must be an object")
+            metadata = AttachmentInfo.model_validate(cast(dict[str, object], payload))
+            self._identifier(metadata.id)
+            self._identifier(metadata.page_id)
+            self._safe_filename(metadata.file_name)
+            return metadata
+        except (ValidationError, TypeError, ValueError) as error:
+            raise _ClientFailure(
+                ErrorCode.OUTCOME_UNKNOWN,
+                _OUTCOME_UNKNOWN_MESSAGE,
+            ) from error
 
     def _validate_response(
         self, response: httpx.Response, *, page_scope: bool
@@ -1394,6 +2019,7 @@ class DocmostReadClient:
             "/api/pages/sidebar-pages",
             "/api/comments",
             "/api/files/info",
+            "/api/files/upload",
             "/api/pages/import",
             "/api/pages/move",
             "/api/pages/update",
@@ -1435,6 +2061,12 @@ class DocmostReadClient:
     def _content_sha256(value: str) -> str:
         if _CONTENT_SHA256_PATTERN.fullmatch(value) is None:
             raise ValueError("expected_content_sha256 is invalid")
+        return value
+
+    @staticmethod
+    def _file_sha256(value: str) -> str:
+        if _CONTENT_SHA256_PATTERN.fullmatch(value) is None:
+            raise ValueError("expected_file_sha256 is invalid")
         return value
 
     @staticmethod

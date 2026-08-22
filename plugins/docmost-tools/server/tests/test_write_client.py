@@ -49,6 +49,8 @@ def request_json(request: httpx.Request) -> dict[str, object]:
         "update_page_title",
         "edit_page_text",
         "patch_page_content",
+        "attach_pdf_to_page",
+        "link_uploaded_pdf",
         "create_comment",
     ],
 )
@@ -79,6 +81,22 @@ def test_writes_require_an_explicit_v095_profile_without_a_request(
                     }
                 ]
             ),
+            "2026-01-01T00:00:00Z",
+            "a" * 64,
+        )
+    elif operation_name == "attach_pdf_to_page":
+        result = client.attach_pdf_to_page(
+            "page-1",
+            "/fixtures/report.pdf",
+            "b" * 64,
+            "2026-01-01T00:00:00Z",
+            "a" * 64,
+        )
+    elif operation_name == "link_uploaded_pdf":
+        result = client.link_uploaded_pdf(
+            "page-1",
+            "attachment-1",
+            "b" * 64,
             "2026-01-01T00:00:00Z",
             "a" * 64,
         )

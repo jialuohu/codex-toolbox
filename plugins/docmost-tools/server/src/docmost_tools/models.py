@@ -25,6 +25,7 @@ class ErrorCode(StrEnum):
     ATTACHMENT_UNAVAILABLE = "attachment_unavailable"
     UNSUPPORTED_ATTACHMENT = "unsupported_attachment"
     ATTACHMENT_TOO_LARGE = "attachment_too_large"
+    FORBIDDEN_PATH = "forbidden_path"
     SNAPSHOT_INCOMPLETE = "snapshot_incomplete"
     SNAPSHOT_CONFLICT = "snapshot_conflict"
     SNAPSHOT_SAFETY_CAP = "snapshot_safety_cap"
@@ -215,6 +216,62 @@ class PageContentPatchResult(BaseModel):
     def omit_page_body(self) -> Self:
         if self.page.markdown is not None:
             raise ValueError("page patch results must not include page content")
+        return self
+
+
+class UploadedPdf(BaseModel):
+    """Canonical metadata for one PDF associated with a Docmost page."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str = Field(min_length=1, max_length=512, pattern=r"^[^\x00-\x1f\x7f]{1,512}$")
+    page_id: str = Field(min_length=1, max_length=512, pattern=r"^[^\x00-\x1f\x7f]{1,512}$")
+    filename: str = Field(
+        min_length=1,
+        max_length=512,
+        pattern=r"^[^/\\\x00-\x1f\x7f]{1,512}$",
+    )
+    media_type: Literal["application/pdf"] = "application/pdf"
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    checksum_verified: bool
+    url: str = Field(min_length=1, max_length=16_384)
+
+
+class PdfAttachmentResult(BaseModel):
+    """A linked PDF or an explicit recoverable partial-success state."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    page: Page
+    attachment: UploadedPdf
+    link_status: Literal[
+        "linked",
+        "already_linked",
+        "uploaded_unlinked",
+        "link_unknown",
+    ]
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    partial_success: bool = False
+    warning: OperationError | None = None
+
+    @model_validator(mode="after")
+    def validate_status(self) -> Self:
+        linked = self.link_status in {"linked", "already_linked"}
+        if linked:
+            if self.partial_success or self.warning is not None:
+                raise ValueError("linked PDF results cannot include a partial-success warning")
+            if self.content_sha256 is None or not self.attachment.checksum_verified:
+                raise ValueError("linked PDF results require verified page and attachment hashes")
+            if self.page.id != self.attachment.page_id:
+                raise ValueError("linked PDF results require matching page identities")
+        else:
+            if not self.partial_success or self.warning is None:
+                raise ValueError("incomplete PDF linkage requires a partial-success warning")
+            if self.warning.code is not ErrorCode.PARTIAL_SUCCESS:
+                raise ValueError("PDF partial-success warnings must use partial_success")
+        if self.page.markdown is not None:
+            raise ValueError("PDF attachment results must not include page Markdown")
         return self
 
 

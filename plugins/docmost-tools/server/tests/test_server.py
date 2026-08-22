@@ -155,6 +155,40 @@ class FakeReadClient:
             expected_content_sha256,
         )
 
+    def attach_pdf_to_page(
+        self,
+        page_id: str,
+        local_path: str,
+        expected_file_sha256: str,
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> OperationResult[dict[str, object]]:
+        return self._result(
+            "attach_pdf_to_page",
+            page_id,
+            local_path,
+            expected_file_sha256,
+            expected_updated_at,
+            expected_content_sha256,
+        )
+
+    def link_uploaded_pdf(
+        self,
+        page_id: str,
+        attachment_id: str,
+        expected_file_sha256: str,
+        expected_updated_at: str,
+        expected_content_sha256: str,
+    ) -> OperationResult[dict[str, object]]:
+        return self._result(
+            "link_uploaded_pdf",
+            page_id,
+            attachment_id,
+            expected_file_sha256,
+            expected_updated_at,
+            expected_content_sha256,
+        )
+
     def create_comment(
         self, page_id: str, markdown: str
     ) -> OperationResult[dict[str, object]]:
@@ -193,6 +227,8 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "docmost_update_page_title",
             "docmost_edit_page_text",
             "docmost_patch_page_content",
+            "docmost_attach_pdf_to_page",
+            "docmost_link_uploaded_pdf",
             "docmost_create_comment",
         ]
         read_annotations = {
@@ -234,6 +270,8 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
                 "docmost_update_page_title": replacement_annotations,
                 "docmost_edit_page_text": replacement_annotations,
                 "docmost_patch_page_content": replacement_annotations,
+                "docmost_attach_pdf_to_page": replacement_annotations,
+                "docmost_link_uploaded_pdf": replacement_annotations,
             }.get(tool.name, read_annotations)
             assert (
                 tool.annotations.model_dump(by_alias=True, exclude_none=True)
@@ -345,6 +383,40 @@ def test_protocol_lists_exact_tools_with_constrained_schemas_and_annotations() -
             "^[0-9a-f]{64}$"
         )
         assert "approved" not in patch_schema["properties"]
+        attach_schema = by_name["docmost_attach_pdf_to_page"].inputSchema
+        assert set(attach_schema["required"]) == {
+            "page_id",
+            "local_path",
+            "expected_file_sha256",
+            "expected_updated_at",
+            "expected_content_sha256",
+        }
+        assert attach_schema["properties"]["local_path"] == {
+            "maxLength": 4_096,
+            "minLength": 2,
+            "pattern": "^/[^\\x00-\\x1f\\x7f]{1,4095}$",
+            "title": "Local Path",
+            "type": "string",
+        }
+        for schema_name in (
+            "docmost_attach_pdf_to_page",
+            "docmost_link_uploaded_pdf",
+        ):
+            schema = by_name[schema_name].inputSchema
+            assert schema["properties"]["expected_file_sha256"]["pattern"] == (
+                "^[0-9a-f]{64}$"
+            )
+            assert schema["properties"]["expected_content_sha256"]["pattern"] == (
+                "^[0-9a-f]{64}$"
+            )
+            assert "approved" not in schema["properties"]
+        assert set(by_name["docmost_link_uploaded_pdf"].inputSchema["required"]) == {
+            "page_id",
+            "attachment_id",
+            "expected_file_sha256",
+            "expected_updated_at",
+            "expected_content_sha256",
+        }
         assert by_name["docmost_release_attachment_download"].inputSchema["properties"][
             "download_token"
         ] == {
@@ -439,6 +511,26 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
                         "expected_content_sha256": "a" * 64,
                     },
                 ),
+                (
+                    "docmost_attach_pdf_to_page",
+                    {
+                        "page_id": "page-1",
+                        "local_path": "/fixtures/reports/report.pdf",
+                        "expected_file_sha256": "b" * 64,
+                        "expected_updated_at": "2026-01-01T00:00:00Z",
+                        "expected_content_sha256": "c" * 64,
+                    },
+                ),
+                (
+                    "docmost_link_uploaded_pdf",
+                    {
+                        "page_id": "page-1",
+                        "attachment_id": "attachment-1",
+                        "expected_file_sha256": "b" * 64,
+                        "expected_updated_at": "2026-01-01T00:00:00Z",
+                        "expected_content_sha256": "c" * 64,
+                    },
+                ),
                 ("docmost_create_comment", {"page_id": "page-1", "markdown": "A note"}),
             ]
             for name, arguments in calls:
@@ -503,6 +595,28 @@ def test_protocol_calls_every_tool_with_defaults_and_marks_content_untrusted() -
                     ],
                     "2026-01-01T00:00:00Z",
                     "a" * 64,
+                ),
+                {},
+            ),
+            (
+                "attach_pdf_to_page",
+                (
+                    "page-1",
+                    "/fixtures/reports/report.pdf",
+                    "b" * 64,
+                    "2026-01-01T00:00:00Z",
+                    "c" * 64,
+                ),
+                {},
+            ),
+            (
+                "link_uploaded_pdf",
+                (
+                    "page-1",
+                    "attachment-1",
+                    "b" * 64,
+                    "2026-01-01T00:00:00Z",
+                    "c" * 64,
                 ),
                 {},
             ),
@@ -710,6 +824,36 @@ def test_protocol_rejects_invalid_tool_arguments_before_operation_results() -> N
                     "old_text": "old",
                     "new_text": "new\rtext",
                     "expected_updated_at": "same",
+                },
+            ),
+            (
+                "docmost_attach_pdf_to_page",
+                {
+                    "page_id": "page-1",
+                    "local_path": "relative/report.pdf",
+                    "expected_file_sha256": "a" * 64,
+                    "expected_updated_at": "same",
+                    "expected_content_sha256": "b" * 64,
+                },
+            ),
+            (
+                "docmost_attach_pdf_to_page",
+                {
+                    "page_id": "page-1",
+                    "local_path": "/fixtures/report.pdf",
+                    "expected_file_sha256": "not-a-hash",
+                    "expected_updated_at": "same",
+                    "expected_content_sha256": "b" * 64,
+                },
+            ),
+            (
+                "docmost_link_uploaded_pdf",
+                {
+                    "page_id": "page-1",
+                    "attachment_id": "",
+                    "expected_file_sha256": "a" * 64,
+                    "expected_updated_at": "same",
+                    "expected_content_sha256": "b" * 64,
                 },
             ),
             ("docmost_create_comment", {"page_id": "page-1", "markdown": ""}),

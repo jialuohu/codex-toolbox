@@ -1,7 +1,8 @@
 {
   "name": "docmost-tools",
-  "version": "0.7.0",
-  "description": "Browser-authenticated MCP with private snapshots and guarded rich-page writes.",
+  "version": "0.8.0",
+  "description": "Browser-authenticated MCP with private snapshots, guarded rich-page writes, and verified PDF attachment imports.",
+  "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "author": {
     "name": "Codex Toolbox Contributors"
@@ -9,7 +10,7 @@
   "interface": {
     "displayName": "Docmost Tools",
     "shortDescription": "Use a private Docmost instance through MCP.",
-    "longDescription": "Guarded reads, bounded ProseMirror JSON, private receipt-only workspace snapshots, and prompt-gated writes for a private Docmost instance with isolated browser authentication.",
+    "longDescription": "Guarded reads, bounded ProseMirror JSON, private receipt-only workspace snapshots, prompt-gated rich-page writes, and checksum-verified PDF attachment imports for a private Docmost instance with isolated browser authentication.",
     "developerName": "Codex Toolbox Contributors",
     "category": "Productivity",
     "capabilities": [
@@ -18,12 +19,14 @@
       "Interactive"
     ],
     "defaultPrompt": [
-      "Use Docmost Tools to read, write, and interact with my private Docmost workspace."
+      "Use Docmost Tools to read, write, and interact with my private Docmost workspace.",
+      "Use $docmost-attachment-import to place PDF reports in matching Docmost child pages."
     ]
   },
   "keywords": [
     "docmost",
     "mcp",
-    "knowledge-base"
+    "knowledge-base",
+    "pdf"
   ]
 }

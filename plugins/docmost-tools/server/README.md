@@ -17,7 +17,7 @@ for its exact generation, validates the stamp, then directly execs the environme
 is not removed by setup or `--prune`.
 
 `scripts/setup-docmost-tools.sh --prune` is local-only and preserves the current source fingerprint,
-installed-plugin fingerprints, and every generation whose lock is busy. The server exposes 18 MCP
+installed-plugin fingerprints, and every generation whose lock is busy. The server exposes 20 MCP
 tools while retaining the read-only snapshot protocol and 900-second tool timeout.
 
 The nine ordinary reads tolerate additive response fields. `docmost_get_page_content` returns one
@@ -30,7 +30,7 @@ The workspace snapshot/release pair traverses every selected page through a read
 assembles long Markdown pages consistently, retries revision races twice, and emits versioned JSONL
 beneath `CODEX_SECRETS_DIR`. Only a receipt containing an opaque token, private path, checksum,
 schema, workspace ID, and counts crosses the MCP boundary; incomplete scans create no receipt.
-The five prompt-gated writes require an explicit
+The seven prompt-gated writes require an explicit
 `DOCMOST_WRITE_PROFILE=v0_95`: page creation uses Markdown import, optional nesting is a separate
 non-retried move, title changes use a disclosed non-atomic timestamp precondition, and comments use
 a conservative Markdown-to-Tiptap converter. Exact page-text edits use a required, non-atomic
@@ -51,6 +51,17 @@ nesting move has an ambiguous outcome, the created page is returned with
 Malformed operations, prohibited paths, unsafe final documents, and no-ops use `invalid_patch`;
 stale guards, failed `test` operations, missing targets, and other non-applicable paths use
 `conflict`.
+
+`docmost_attach_pdf_to_page` accepts one absolute, non-hidden path beneath the user's home directory
+and an exact caller-provided SHA-256. It rejects symlinks, hard links, secret or credential-like
+paths, non-PDF signatures, empty files, files above 50 MiB, and metadata races before upload. The
+v0.95 `/api/files/upload` route has a dedicated raw-object parser; existing write-envelope validation
+is unchanged. A successful upload is redownloaded with authentication and checksum-verified before
+one canonical root-level attachment node is appended under fresh revision and content guards.
+Upload ambiguity returns `outcome_unknown` without a link attempt. Known uploads whose link is
+incomplete return the attachment ID and an explicit partial-success state. The prompt-gated
+`docmost_link_uploaded_pdf` recovery tool verifies and links that exact ID without reuploading it.
+`$docmost-attachment-import` applies these contracts sequentially to one-PDF-per-child-page batches.
 
 `docmost-smoke` is a setup-only, bounded headless check. It obtains the existing isolated browser
 session once, verifies `current_user`, and lists one page of spaces. It does not expose the cookie,
