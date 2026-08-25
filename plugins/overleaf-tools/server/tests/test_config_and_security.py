@@ -123,6 +123,67 @@ def test_windows_acl_path_uses_stdin_not_command(
     assert commands and str(path) not in commands[0]
 
 
+def test_windows_hardening_removes_unapproved_and_deny_acl_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    current_sid = "S-1-5-21-123"
+    administrator_sid = "S-1-5-32-544"
+    commands: list[list[str]] = []
+
+    def fake_current_sid() -> str:
+        return current_sid
+
+    def fake_run(
+        command: list[str], *, input_text: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        if command[0] == "powershell.exe":
+            assert input_text == str(tmp_path)
+            stdout = json.dumps(
+                [
+                    {"sid": current_sid, "type": "Allow", "inherited": False},
+                    {"sid": current_sid, "type": "Deny", "inherited": False},
+                    {"sid": "S-1-5-18", "type": "Allow", "inherited": False},
+                    {
+                        "sid": administrator_sid,
+                        "type": "Allow",
+                        "inherited": False,
+                    },
+                ]
+            )
+            return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+        assert input_text is None
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(permissions, "_windows_current_sid", fake_current_sid)
+    monkeypatch.setattr(permissions, "_run_private", fake_run)
+
+    permissions._harden_windows_path(  # pyright: ignore[reportPrivateUsage]
+        tmp_path, directory=True
+    )
+
+    assert commands[0] == [
+        "icacls.exe",
+        str(tmp_path),
+        "/inheritance:r",
+        "/grant:r",
+        f"*{current_sid}:(OI)(CI)F",
+        "*S-1-5-18:(OI)(CI)F",
+    ]
+    assert commands[2] == [
+        "icacls.exe",
+        str(tmp_path),
+        "/remove",
+        f"*{administrator_sid}",
+    ]
+    assert commands[3] == [
+        "icacls.exe",
+        str(tmp_path),
+        "/remove:d",
+        f"*{current_sid}",
+    ]
+
+
 def test_insecure_config_mode_and_link_are_rejected(tmp_path: Path) -> None:
     if os.name == "nt":
         pytest.skip("POSIX mode and symlink contract")

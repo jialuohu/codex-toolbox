@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -13,6 +14,13 @@ from overleaf_tools.errors import ErrorCode, OverleafError
 
 _SYSTEM_SID = "S-1-5-18"
 _REPARSE_POINT = 0x400
+
+
+@dataclass(frozen=True)
+class _WindowsAclEntry:
+    sid: str
+    access_type: str
+    inherited: bool
 
 
 def is_link_like(path: Path) -> bool:
@@ -79,13 +87,9 @@ def _windows_current_sid() -> str:
     return sid
 
 
-def harden_path(path: Path, *, directory: bool) -> None:
-    """Restrict a newly created path to the current account and SYSTEM."""
-
-    if os.name != "nt":
-        path.chmod(0o700 if directory else 0o600)
-        return
+def _harden_windows_path(path: Path, *, directory: bool) -> None:
     sid = _windows_current_sid()
+    allowed = {sid, _SYSTEM_SID}
     inheritance = "(OI)(CI)F" if directory else "F"
     process = _run_private(
         [
@@ -103,8 +107,47 @@ def harden_path(path: Path, *, directory: bool) -> None:
             "Unable to restrict private Overleaf storage on Windows.",
         )
 
+    entries = _windows_acl_entries(path)
+    unexpected = sorted({entry.sid for entry in entries} - allowed)
+    denied_allowed = sorted(
+        {
+            entry.sid
+            for entry in entries
+            if entry.sid in allowed and entry.access_type != "Allow"
+        }
+    )
+    for unexpected_sid in unexpected:
+        process = _run_private(
+            ["icacls.exe", str(path), "/remove", f"*{unexpected_sid}"]
+        )
+        if process.returncode != 0:
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to remove unrelated Windows ACL entries from private "
+                "Overleaf storage.",
+            )
+    for denied_sid in denied_allowed:
+        process = _run_private(
+            ["icacls.exe", str(path), "/remove:d", f"*{denied_sid}"]
+        )
+        if process.returncode != 0:
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to remove Windows deny ACL entries from private Overleaf "
+                "storage.",
+            )
 
-def _windows_acl_sids(path: Path) -> set[str]:
+
+def harden_path(path: Path, *, directory: bool) -> None:
+    """Restrict a newly created path to the current account and SYSTEM."""
+
+    if os.name != "nt":
+        path.chmod(0o700 if directory else 0o600)
+        return
+    _harden_windows_path(path, directory=directory)
+
+
+def _windows_acl_entries(path: Path) -> tuple[_WindowsAclEntry, ...]:
     script = (
         "$p=[Console]::In.ReadToEnd();"
         "$a=(Get-Acl -LiteralPath $p).Access | ForEach-Object {"
@@ -124,27 +167,56 @@ def _windows_acl_sids(path: Path) -> set[str]:
         )
     raw = process.stdout.strip()
     parsed: object = [] if not raw else json.loads(raw)
+    raw_entries: list[object]
     if isinstance(parsed, dict):
-        entries = [cast(dict[str, object], parsed)]
+        raw_entries = [parsed]
     elif isinstance(parsed, list):
-        items = cast(list[object], parsed)
-        if not all(isinstance(item, dict) for item in items):
-            raise OverleafError(
-                ErrorCode.CONFIGURATION_INVALID,
-                "Unable to parse private Overleaf ACLs on Windows.",
-            )
-        entries = cast(list[dict[str, object]], items)
+        raw_entries = cast(list[object], parsed)
     else:
         raise OverleafError(
             ErrorCode.CONFIGURATION_INVALID,
             "Unable to parse private Overleaf ACLs on Windows.",
         )
-    if any(entry.get("type") != "Allow" or entry.get("inherited") for entry in entries):
+    entries: list[_WindowsAclEntry] = []
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, dict):
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to parse private Overleaf ACLs on Windows.",
+            )
+        entry = cast(dict[str, object], raw_entry)
+        raw_sid = entry.get("sid")
+        raw_type = entry.get("type")
+        raw_inherited = entry.get("inherited")
+        if (
+            not isinstance(raw_sid, str)
+            or not raw_sid.startswith("S-")
+            or not isinstance(raw_type, str)
+            or raw_type not in {"Allow", "Deny"}
+            or not isinstance(raw_inherited, bool)
+        ):
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to parse private Overleaf ACLs on Windows.",
+            )
+        entries.append(
+            _WindowsAclEntry(
+                sid=raw_sid,
+                access_type=raw_type,
+                inherited=raw_inherited,
+            )
+        )
+    return tuple(entries)
+
+
+def _windows_acl_sids(path: Path) -> set[str]:
+    entries = _windows_acl_entries(path)
+    if any(entry.access_type != "Allow" or entry.inherited for entry in entries):
         raise OverleafError(
             ErrorCode.CONFIGURATION_INVALID,
             "Overleaf secret ACLs must contain explicit allow entries only.",
         )
-    return {str(entry.get("sid")) for entry in entries}
+    return {entry.sid for entry in entries}
 
 
 def assert_private(path: Path, *, directory: bool) -> None:
