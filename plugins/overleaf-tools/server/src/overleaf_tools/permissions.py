@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import stat
 import subprocess
@@ -29,6 +28,14 @@ class _WindowsAcl(Protocol):
         self, revision: int, flags: int, access_mask: int, sid: object
     ) -> None: ...
 
+    def GetAce(self, index: int) -> object: ...
+
+    def GetAceCount(self) -> int: ...
+
+
+class _WindowsSecurityDescriptor(Protocol):
+    def GetSecurityDescriptorDacl(self) -> _WindowsAcl | None: ...
+
 
 class _WindowsSecurity(Protocol):
     ACL_REVISION_DS: int
@@ -39,6 +46,12 @@ class _WindowsSecurity(Protocol):
     def ACL(self) -> _WindowsAcl: ...
 
     def GetBinarySid(self, sid: str) -> object: ...
+
+    def ConvertSidToStringSid(self, sid: object) -> str: ...
+
+    def GetNamedSecurityInfo(
+        self, object_name: str, object_type: int, security_info: int
+    ) -> _WindowsSecurityDescriptor: ...
 
     def SetNamedSecurityInfo(
         self,
@@ -53,8 +66,11 @@ class _WindowsSecurity(Protocol):
 
 
 class _WindowsSecurityConstants(Protocol):
+    ACCESS_ALLOWED_ACE_TYPE: int
+    ACCESS_DENIED_ACE_TYPE: int
     CONTAINER_INHERIT_ACE: int
     FILE_ALL_ACCESS: int
+    INHERITED_ACE: int
     OBJECT_INHERIT_ACE: int
 
 
@@ -178,62 +194,90 @@ def harden_path(path: Path, *, directory: bool) -> None:
 
 
 def _windows_acl_entries(path: Path) -> tuple[_WindowsAclEntry, ...]:
-    script = (
-        "$p=[Console]::In.ReadToEnd();"
-        "$a=(Get-Acl -LiteralPath $p).Access | ForEach-Object {"
-        "[pscustomobject]@{sid=$_.IdentityReference.Translate("
-        "[System.Security.Principal.SecurityIdentifier]).Value;"
-        "type=$_.AccessControlType.ToString();inherited=$_.IsInherited}};"
-        "$a | ConvertTo-Json -Compress"
-    )
-    process = _run_private(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-        input_text=str(path),
-    )
-    if process.returncode != 0:
+    try:
+        security, constants = _load_windows_security_modules()
+        descriptor = security.GetNamedSecurityInfo(
+            str(path),
+            security.SE_FILE_OBJECT,
+            security.DACL_SECURITY_INFORMATION,
+        )
+        acl = descriptor.GetSecurityDescriptorDacl()
+    except Exception as error:
         raise OverleafError(
             ErrorCode.CONFIGURATION_INVALID,
             "Unable to validate private Overleaf storage on Windows.",
-        )
-    raw = process.stdout.strip()
-    parsed: object = [] if not raw else json.loads(raw)
-    raw_entries: list[object]
-    if isinstance(parsed, dict):
-        raw_entries = [parsed]
-    elif isinstance(parsed, list):
-        raw_entries = cast(list[object], parsed)
-    else:
+        ) from error
+    if acl is None:
         raise OverleafError(
             ErrorCode.CONFIGURATION_INVALID,
-            "Unable to parse private Overleaf ACLs on Windows.",
+            "Private Overleaf storage must not use a null Windows DACL.",
         )
     entries: list[_WindowsAclEntry] = []
+    try:
+        ace_count = acl.GetAceCount()
+        raw_entries = [acl.GetAce(index) for index in range(ace_count)]
+    except Exception as error:
+        raise OverleafError(
+            ErrorCode.CONFIGURATION_INVALID,
+            "Unable to validate private Overleaf storage on Windows.",
+        ) from error
     for raw_entry in raw_entries:
-        if not isinstance(raw_entry, dict):
+        if not isinstance(raw_entry, tuple):
             raise OverleafError(
                 ErrorCode.CONFIGURATION_INVALID,
                 "Unable to parse private Overleaf ACLs on Windows.",
             )
-        entry = cast(dict[str, object], raw_entry)
-        raw_sid = entry.get("sid")
-        raw_type = entry.get("type")
-        raw_inherited = entry.get("inherited")
-        if (
-            not isinstance(raw_sid, str)
-            or not raw_sid.startswith("S-")
-            or not isinstance(raw_type, str)
-            or raw_type not in {"Allow", "Deny"}
-            or not isinstance(raw_inherited, bool)
-        ):
+        entry = cast(tuple[object, ...], raw_entry)
+        if len(entry) < 3:
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to parse private Overleaf ACLs on Windows.",
+            )
+        header = entry[0]
+        if not isinstance(header, tuple):
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to parse private Overleaf ACLs on Windows.",
+            )
+        typed_header = cast(tuple[object, ...], header)
+        if len(typed_header) < 2:
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to parse private Overleaf ACLs on Windows.",
+            )
+        raw_type = typed_header[0]
+        raw_flags = typed_header[1]
+        if not isinstance(raw_type, int) or not isinstance(raw_flags, int):
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to parse private Overleaf ACLs on Windows.",
+            )
+        if raw_type == constants.ACCESS_ALLOWED_ACE_TYPE:
+            access_type = "Allow"
+        elif raw_type == constants.ACCESS_DENIED_ACE_TYPE:
+            access_type = "Deny"
+        else:
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Private Overleaf ACLs contain an unsupported Windows ACE type.",
+            )
+        try:
+            sid = security.ConvertSidToStringSid(entry[2])
+        except Exception as error:
+            raise OverleafError(
+                ErrorCode.CONFIGURATION_INVALID,
+                "Unable to parse private Overleaf ACLs on Windows.",
+            ) from error
+        if not sid.startswith("S-"):
             raise OverleafError(
                 ErrorCode.CONFIGURATION_INVALID,
                 "Unable to parse private Overleaf ACLs on Windows.",
             )
         entries.append(
             _WindowsAclEntry(
-                sid=raw_sid,
-                access_type=raw_type,
-                inherited=raw_inherited,
+                sid=sid,
+                access_type=access_type,
+                inherited=bool(raw_flags & constants.INHERITED_ACE),
             )
         )
     return tuple(entries)

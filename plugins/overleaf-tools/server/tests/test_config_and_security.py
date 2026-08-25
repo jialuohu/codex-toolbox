@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import stat
-import subprocess
 import sys
 from pathlib import Path
 
@@ -94,33 +93,51 @@ def test_config_is_private_and_never_embeds_token(tmp_path: Path) -> None:
         assert stat.S_IMODE(token_path.stat().st_mode) == 0o600
 
 
-def test_windows_acl_path_uses_stdin_not_command(
+def test_windows_acl_readback_uses_native_api(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    commands: list[list[str]] = []
-    inputs: list[str | None] = []
+    requested: list[tuple[str, int, int]] = []
 
-    def fake_run(
-        command: list[str], *, input_text: str | None = None
-    ) -> subprocess.CompletedProcess[str]:
-        commands.append(command)
-        inputs.append(input_text)
-        stdout = json.dumps(
-            [
-                {"sid": "S-1-5-18", "type": "Allow", "inherited": False},
-                {"sid": "S-1-5-21-123", "type": "Allow", "inherited": False},
-            ]
-        )
-        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+    class FakeAcl:
+        def GetAceCount(self) -> int:
+            return 2
 
-    monkeypatch.setattr(permissions, "_run_private", fake_run)
+        def GetAce(self, index: int) -> object:
+            return ((0, 0), 0x1F01FF, ("S-1-5-18", "S-1-5-21-123")[index])
+
+    class FakeDescriptor:
+        def GetSecurityDescriptorDacl(self) -> FakeAcl:
+            return FakeAcl()
+
+    class FakeSecurity:
+        DACL_SECURITY_INFORMATION = 4
+        SE_FILE_OBJECT = 1
+
+        def GetNamedSecurityInfo(
+            self, object_name: str, object_type: int, security_info: int
+        ) -> FakeDescriptor:
+            requested.append((object_name, object_type, security_info))
+            return FakeDescriptor()
+
+        def ConvertSidToStringSid(self, sid: object) -> str:
+            assert isinstance(sid, str)
+            return sid
+
+    class FakeConstants:
+        ACCESS_ALLOWED_ACE_TYPE = 0
+        ACCESS_DENIED_ACE_TYPE = 1
+        INHERITED_ACE = 0x10
+
+    def fake_modules() -> tuple[FakeSecurity, FakeConstants]:
+        return FakeSecurity(), FakeConstants()
+
+    monkeypatch.setattr(permissions, "_load_windows_security_modules", fake_modules)
     path = tmp_path / "private path with 'quotes'"
 
     actual = permissions._windows_acl_sids(path)  # pyright: ignore[reportPrivateUsage]
 
     assert actual == {"S-1-5-18", "S-1-5-21-123"}
-    assert inputs == [str(path)]
-    assert commands and str(path) not in commands[0]
+    assert requested == [(str(path), 1, 4)]
 
 
 def test_windows_hardening_applies_exact_protected_dacl(
