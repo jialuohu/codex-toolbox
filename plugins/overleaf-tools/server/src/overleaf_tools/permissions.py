@@ -89,53 +89,45 @@ def _windows_current_sid() -> str:
 
 def _harden_windows_path(path: Path, *, directory: bool) -> None:
     sid = _windows_current_sid()
-    allowed = {sid, _SYSTEM_SID}
-    inheritance = "(OI)(CI)F" if directory else "F"
+    script = (
+        "$i=[Console]::In.ReadToEnd() | ConvertFrom-Json;"
+        "$acl=Get-Acl -LiteralPath ([string]$i.path);"
+        "$acl.SetAccessRuleProtection($true,$false);"
+        "@($acl.Access) | ForEach-Object {"
+        "$null=$acl.RemoveAccessRuleSpecific($_)};"
+        "if([bool]$i.directory){"
+        "$inheritance=[System.Security.AccessControl.InheritanceFlags]("
+        "[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor "
+        "[System.Security.AccessControl.InheritanceFlags]::ObjectInherit)"
+        "}else{$inheritance=[System.Security.AccessControl.InheritanceFlags]::None};"
+        "$rights=[System.Security.AccessControl.FileSystemRights]::FullControl;"
+        "$propagation=[System.Security.AccessControl.PropagationFlags]::None;"
+        "$type=[System.Security.AccessControl.AccessControlType]::Allow;"
+        "foreach($rawSid in @($i.sids)){"
+        "$identity=[System.Security.Principal.SecurityIdentifier]::new("
+        "[string]$rawSid);"
+        "$rule=[System.Security.AccessControl.FileSystemAccessRule]::new("
+        "$identity,$rights,$inheritance,$propagation,$type);"
+        "$null=$acl.AddAccessRule($rule)};"
+        "Set-Acl -LiteralPath ([string]$i.path) -AclObject $acl"
+    )
+    payload = json.dumps(
+        {
+            "path": str(path),
+            "directory": directory,
+            "sids": [sid, _SYSTEM_SID],
+        },
+        separators=(",", ":"),
+    )
     process = _run_private(
-        [
-            "icacls.exe",
-            str(path),
-            "/inheritance:r",
-            "/grant:r",
-            f"*{sid}:{inheritance}",
-            f"*{_SYSTEM_SID}:{inheritance}",
-        ]
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        input_text=payload,
     )
     if process.returncode != 0:
         raise OverleafError(
             ErrorCode.CONFIGURATION_INVALID,
             "Unable to restrict private Overleaf storage on Windows.",
         )
-
-    entries = _windows_acl_entries(path)
-    unexpected = sorted({entry.sid for entry in entries} - allowed)
-    denied_allowed = sorted(
-        {
-            entry.sid
-            for entry in entries
-            if entry.sid in allowed and entry.access_type != "Allow"
-        }
-    )
-    for unexpected_sid in unexpected:
-        process = _run_private(
-            ["icacls.exe", str(path), "/remove", f"*{unexpected_sid}"]
-        )
-        if process.returncode != 0:
-            raise OverleafError(
-                ErrorCode.CONFIGURATION_INVALID,
-                "Unable to remove unrelated Windows ACL entries from private "
-                "Overleaf storage.",
-            )
-    for denied_sid in denied_allowed:
-        process = _run_private(
-            ["icacls.exe", str(path), "/remove:d", f"*{denied_sid}"]
-        )
-        if process.returncode != 0:
-            raise OverleafError(
-                ErrorCode.CONFIGURATION_INVALID,
-                "Unable to remove Windows deny ACL entries from private Overleaf "
-                "storage.",
-            )
 
 
 def harden_path(path: Path, *, directory: bool) -> None:
@@ -236,9 +228,13 @@ def assert_private(path: Path, *, directory: bool) -> None:
         allowed = {_windows_current_sid(), _SYSTEM_SID}
         actual = _windows_acl_sids(path)
         if actual != allowed:
+            missing_count = len(allowed - actual)
+            unexpected_count = len(actual - allowed)
             raise OverleafError(
                 ErrorCode.CONFIGURATION_INVALID,
-                "Overleaf secret ACLs must allow only the current account and SYSTEM.",
+                "Overleaf secret ACLs must allow only the current account and SYSTEM. "
+                f"Missing allowed identities: {missing_count}; unexpected identities: "
+                f"{unexpected_count}.",
             )
         return
     if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) & 0o077:
