@@ -40,6 +40,7 @@ class _WindowsSecurityDescriptor(Protocol):
 class _WindowsSecurity(Protocol):
     ACL_REVISION_DS: int
     DACL_SECURITY_INFORMATION: int
+    INHERITED_ACE: int
     PROTECTED_DACL_SECURITY_INFORMATION: int
     SE_FILE_OBJECT: int
 
@@ -70,7 +71,6 @@ class _WindowsSecurityConstants(Protocol):
     ACCESS_DENIED_ACE_TYPE: int
     CONTAINER_INHERIT_ACE: int
     FILE_ALL_ACCESS: int
-    INHERITED_ACE: int
     OBJECT_INHERIT_ACE: int
 
 
@@ -277,7 +277,7 @@ def _windows_acl_entries(path: Path) -> tuple[_WindowsAclEntry, ...]:
             _WindowsAclEntry(
                 sid=sid,
                 access_type=access_type,
-                inherited=bool(raw_flags & constants.INHERITED_ACE),
+                inherited=bool(raw_flags & security.INHERITED_ACE),
             )
         )
     return tuple(entries)

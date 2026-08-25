@@ -111,6 +111,7 @@ def test_windows_acl_readback_uses_native_api(
 
     class FakeSecurity:
         DACL_SECURITY_INFORMATION = 4
+        INHERITED_ACE = 0x10
         SE_FILE_OBJECT = 1
 
         def GetNamedSecurityInfo(
@@ -126,7 +127,6 @@ def test_windows_acl_readback_uses_native_api(
     class FakeConstants:
         ACCESS_ALLOWED_ACE_TYPE = 0
         ACCESS_DENIED_ACE_TYPE = 1
-        INHERITED_ACE = 0x10
 
     def fake_modules() -> tuple[FakeSecurity, FakeConstants]:
         return FakeSecurity(), FakeConstants()
