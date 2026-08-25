@@ -1,0 +1,6 @@
+interface:
+  display_name: "Overleaf"
+  short_description: "Guarded Git-backed Overleaf project operations."
+  default_prompt: "Use $overleaf to inspect or safely update one configured Overleaf project through its guarded MCP."
+policy:
+  allow_implicit_invocation: true

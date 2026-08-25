@@ -241,6 +241,21 @@ DOCMOST_RUNTIME_LOCK = (
 DOCMOST_RUNTIME_STAMP = (
     DOCMOST_DIR / "server" / "src" / "docmost_tools" / "runtime_stamp.py"
 )
+OVERLEAF_DIR = ROOT / "plugins" / "overleaf-tools"
+OVERLEAF_PLUGIN = OVERLEAF_DIR / ".codex-plugin" / "plugin.json"
+OVERLEAF_MCP = OVERLEAF_DIR / ".mcp.json"
+OVERLEAF_SKILL = OVERLEAF_DIR / "skills" / "overleaf" / "SKILL.md"
+OVERLEAF_SKILL_METADATA = OVERLEAF_SKILL.parent / "agents" / "openai.yaml"
+OVERLEAF_PROVENANCE = OVERLEAF_DIR / "PROVENANCE.md"
+OVERLEAF_SERVER = OVERLEAF_DIR / "server"
+OVERLEAF_PYPROJECT = OVERLEAF_SERVER / "pyproject.toml"
+OVERLEAF_UV_LOCK = OVERLEAF_SERVER / "uv.lock"
+OVERLEAF_PACKAGE_INIT = OVERLEAF_SERVER / "src" / "overleaf_tools" / "__init__.py"
+OVERLEAF_SERVER_SOURCE = OVERLEAF_SERVER / "src" / "overleaf_tools" / "server.py"
+OVERLEAF_GIT_CLIENT = OVERLEAF_SERVER / "src" / "overleaf_tools" / "git_client.py"
+OVERLEAF_CONFIG = OVERLEAF_SERVER / "src" / "overleaf_tools" / "config.py"
+OVERLEAF_ASKPASS = OVERLEAF_SERVER / "src" / "overleaf_tools" / "askpass.py"
+OVERLEAF_WORKFLOW = ROOT / ".github" / "workflows" / "overleaf-tools.yml"
 APPLE_MAIL_DIR = ROOT / "plugins" / "apple-mail-tools"
 APPLE_MAIL_PLUGIN = APPLE_MAIL_DIR / ".codex-plugin" / "plugin.json"
 APPLE_MAIL_MCP = APPLE_MAIL_DIR / ".mcp.json"
@@ -1863,6 +1878,170 @@ def validate_google_workspace_tools_contract(
         require(expected in gws_readme_normalized, message)
 
 
+def validate_overleaf_tools_contract(
+    marketplace: dict,
+    readme_text: str,
+    default_plugins: list[str],
+    managed_mcp_servers: list[str],
+) -> None:
+    """Keep the unofficial Git bridge opt-in, private, and revision-guarded."""
+    required = (
+        OVERLEAF_PLUGIN,
+        OVERLEAF_MCP,
+        OVERLEAF_SKILL,
+        OVERLEAF_SKILL_METADATA,
+        OVERLEAF_PROVENANCE,
+        OVERLEAF_PYPROJECT,
+        OVERLEAF_UV_LOCK,
+        OVERLEAF_PACKAGE_INIT,
+        OVERLEAF_SERVER_SOURCE,
+        OVERLEAF_GIT_CLIENT,
+        OVERLEAF_CONFIG,
+        OVERLEAF_ASKPASS,
+        OVERLEAF_WORKFLOW,
+    )
+    for path in required:
+        require(
+            path.is_file() and not path.is_symlink(),
+            f"Overleaf Tools file is missing or unsafe: {path.name}",
+        )
+
+    plugin = json.loads(OVERLEAF_PLUGIN.read_text())
+    mcp = json.loads(OVERLEAF_MCP.read_text())
+    require(plugin.get("name") == "overleaf-tools", "Overleaf plugin name must be exact")
+    require(plugin.get("version") == "0.1.1", "overleaf-tools must use version 0.1.1")
+    require(
+        plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
+        "Overleaf manifest must use neutral publisher metadata",
+    )
+    require(plugin.get("skills") == "./skills/", "Overleaf manifest must expose its skill")
+    require(
+        plugin.get("mcpServers") == "./.mcp.json",
+        "Overleaf manifest must register its MCP config",
+    )
+    for path, pattern in (
+        (OVERLEAF_PYPROJECT, r'(?m)^version = "0\.1\.1"$'),
+        (OVERLEAF_UV_LOCK, r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.1"$'),
+        (OVERLEAF_PACKAGE_INIT, r'(?m)^__version__ = "0\.1\.1"$'),
+    ):
+        require(
+            re.search(pattern, path.read_text()) is not None,
+            f"Overleaf version metadata must be synchronized in {path.name}",
+        )
+
+    servers = mcp.get("mcpServers") if isinstance(mcp, dict) else None
+    require(
+        isinstance(servers, dict) and set(servers) == {"overleaf"},
+        "overleaf-tools must define exactly one MCP server named overleaf",
+    )
+    server = servers["overleaf"]
+    require(
+        server.get("command") == "uv"
+        and server.get("args")
+        == [
+            "run",
+            "--frozen",
+            "--no-dev",
+            "--no-editable",
+            "--no-env-file",
+            "--project",
+            "server",
+            "overleaf-mcp",
+        ]
+        and server.get("cwd") == ".",
+        "Overleaf MCP must use the portable frozen uv launcher",
+    )
+    require(
+        set(server.get("env_vars", [])) == {"CODEX_HOME", "CODEX_SECRETS_DIR"},
+        "Overleaf MCP must forward only Codex path variables",
+    )
+    require(
+        server.get("default_tools_approval_mode") == "auto",
+        "Overleaf reads must remain automatic",
+    )
+    write_tools = {
+        "overleaf_edit_text_file",
+        "overleaf_write_text_file",
+        "overleaf_import_file",
+        "overleaf_move_file",
+        "overleaf_delete_file",
+    }
+    require(
+        set(server.get("tools", {})) == write_tools
+        and all(server["tools"][name] == {"approval_mode": "prompt"} for name in write_tools),
+        "Every and only Overleaf mutation tool must prompt",
+    )
+
+    source = OVERLEAF_SERVER_SOURCE.read_text()
+    tool_names = re.findall(r'@server\.tool\(name="([^"]+)"', source)
+    require(len(tool_names) == 12 and len(set(tool_names)) == 12, "Overleaf must expose 12 tools")
+    git_source = OVERLEAF_GIT_CLIENT.read_text()
+    askpass_source = OVERLEAF_ASKPASS.read_text()
+    for expected in (
+        "HEAD:refs/heads/{branch}",
+        '_ALLOWED_REMOTE_BRANCHES = {"main", "master"}',
+        "GIT_ASKPASS_REQUIRE",
+        "GIT_CONFIG_GLOBAL",
+        "credential.helper=",
+        "expected_blob_sha",
+        "OUTCOME_UNKNOWN",
+        "--is-ancestor",
+        "FileLock",
+        "50 * 1024 * 1024",
+        "2 * 1024 * 1024",
+    ):
+        require(expected in git_source, f"Overleaf Git boundary must preserve {expected}")
+    for forbidden in ("shell=True", "https://git:", "@git.overleaf.com"):
+        require(
+            forbidden not in git_source + askpass_source,
+            f"Overleaf source must not contain unsafe credential transport: {forbidden}",
+        )
+    require(
+        "OVERLEAF_TOKEN_FILE" in askpass_source and "assert_private" in askpass_source,
+        "Overleaf askpass must read only the validated private token file",
+    )
+    require(
+        'Path.home() / ".codex"' in OVERLEAF_CONFIG.read_text(),
+        "Overleaf config must fall back to the standard user Codex home",
+    )
+
+    marketplace_entry = next(
+        (entry for entry in marketplace.get("plugins", []) if entry.get("name") == "overleaf-tools"),
+        None,
+    )
+    require(marketplace_entry is not None, "marketplace must include overleaf-tools")
+    require(
+        marketplace_entry.get("source")
+        == {"source": "local", "path": "./plugins/overleaf-tools"}
+        and marketplace_entry.get("policy")
+        == {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+        "Overleaf marketplace metadata must remain local and opt-in",
+    )
+    require(
+        "overleaf-tools" not in default_plugins,
+        "Overleaf Tools must remain opt-in rather than installed by default",
+    )
+    require(
+        "overleaf" not in managed_mcp_servers,
+        "normal setup must not manage an unconfigured Overleaf MCP",
+    )
+    skill = OVERLEAF_SKILL.read_text()
+    for expected in (
+        "Never retry an `OUTCOME_UNKNOWN` mutation",
+        "exact remote revision",
+        "active Overleaf comments or Track Changes",
+        "Do not use browser automation or raw Git",
+    ):
+        require(expected in skill, f"Overleaf skill must preserve {expected}")
+    for expected in (
+        "## Overleaf Tools",
+        "overleaf_reconcile_commit",
+        "Development and local tests do not require a paid Overleaf plan",
+        "$CODEX_SECRETS_DIR/overleaf-tools",
+    ):
+        require(expected in readme_text, f"README must document Overleaf {expected}")
+
+
 def validate_apple_mail_tools_contract(
     marketplace: dict,
     script: str,
@@ -3372,6 +3551,12 @@ def main() -> None:
         script,
         readme_text,
         global_agents_text,
+        default_plugin_entries,
+        managed_mcp_server_entries,
+    )
+    validate_overleaf_tools_contract(
+        marketplace,
+        readme_text,
         default_plugin_entries,
         managed_mcp_server_entries,
     )

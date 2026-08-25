@@ -1,0 +1,31 @@
+{
+  "name": "overleaf-tools",
+  "version": "0.1.1",
+  "description": "Guarded Git-backed Overleaf project management through MCP.",
+  "author": {
+    "name": "Codex Toolbox Contributors"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Overleaf Tools (Unofficial)",
+    "shortDescription": "Manage Overleaf project files through guarded Git operations.",
+    "longDescription": "Read and update configured Overleaf projects with exact revision and blob checks, prompt-gated writes, private token files, and one Git commit per successful mutation.",
+    "developerName": "Codex Toolbox Contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Use Overleaf Tools to inspect or safely update one of my configured Overleaf projects."
+    ]
+  },
+  "keywords": [
+    "overleaf",
+    "latex",
+    "git",
+    "mcp"
+  ]
+}

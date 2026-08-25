@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "overleaf-tools"
+version = "0.1.1"
+description = "Guarded Git-backed MCP integration for Overleaf projects."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "filelock==3.20.3",
+  "mcp==1.29.0",
+]
+
+[project.scripts]
+overleaf-askpass = "overleaf_tools.askpass:main"
+overleaf-config = "overleaf_tools.cli:main"
+overleaf-mcp = "overleaf_tools.server:main"
+
+[dependency-groups]
+dev = [
+  "jsonschema==4.26.0",
+  "pyright==1.1.408",
+  "pytest==9.1.1",
+  "ruff==0.14.10",
+]
+
+[tool.pytest.ini_options]
+addopts = ["-ra", "--strict-config"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
