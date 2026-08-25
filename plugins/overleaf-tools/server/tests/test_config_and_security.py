@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import os
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from overleaf_tools import cli
+from overleaf_tools import cli, permissions
 from overleaf_tools.config import ConfigStore
 from overleaf_tools.errors import ErrorCode, OverleafError
 from overleaf_tools.git_client import validate_commit_message, validate_project_path
@@ -91,6 +92,35 @@ def test_config_is_private_and_never_embeds_token(tmp_path: Path) -> None:
         assert stat.S_IMODE(store.root.stat().st_mode) == 0o700
         assert stat.S_IMODE(store.config_path.stat().st_mode) == 0o600
         assert stat.S_IMODE(token_path.stat().st_mode) == 0o600
+
+
+def test_windows_acl_path_uses_stdin_not_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commands: list[list[str]] = []
+    inputs: list[str | None] = []
+
+    def fake_run(
+        command: list[str], *, input_text: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        commands.append(command)
+        inputs.append(input_text)
+        stdout = json.dumps(
+            [
+                {"sid": "S-1-5-18", "type": "Allow", "inherited": False},
+                {"sid": "S-1-5-21-123", "type": "Allow", "inherited": False},
+            ]
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(permissions, "_run_private", fake_run)
+    path = tmp_path / "private path with 'quotes'"
+
+    actual = permissions._windows_acl_sids(path)  # pyright: ignore[reportPrivateUsage]
+
+    assert actual == {"S-1-5-18", "S-1-5-21-123"}
+    assert inputs == [str(path)]
+    assert commands and str(path) not in commands[0]
 
 
 def test_insecure_config_mode_and_link_are_rejected(tmp_path: Path) -> None:

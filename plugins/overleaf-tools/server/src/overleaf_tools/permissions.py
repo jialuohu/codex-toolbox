@@ -47,11 +47,14 @@ def reject_link_components(path: Path, *, stop_at: Path | None = None) -> None:
         current = current.parent
 
 
-def _run_private(command: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_private(
+    command: list[str], *, input_text: str | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         check=False,
         capture_output=True,
+        input=input_text,
         text=True,
         timeout=30,
     )
@@ -103,7 +106,7 @@ def harden_path(path: Path, *, directory: bool) -> None:
 
 def _windows_acl_sids(path: Path) -> set[str]:
     script = (
-        "$p=$args[0];"
+        "$p=[Console]::In.ReadToEnd();"
         "$a=(Get-Acl -LiteralPath $p).Access | ForEach-Object {"
         "[pscustomobject]@{sid=$_.IdentityReference.Translate("
         "[System.Security.Principal.SecurityIdentifier]).Value;"
@@ -111,7 +114,8 @@ def _windows_acl_sids(path: Path) -> set[str]:
         "$a | ConvertTo-Json -Compress"
     )
     process = _run_private(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script, str(path)]
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        input_text=str(path),
     )
     if process.returncode != 0:
         raise OverleafError(
