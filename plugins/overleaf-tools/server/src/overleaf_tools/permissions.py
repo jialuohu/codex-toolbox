@@ -7,8 +7,9 @@ import os
 import stat
 import subprocess
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 
 from overleaf_tools.errors import ErrorCode, OverleafError
 
@@ -21,6 +22,52 @@ class _WindowsAclEntry:
     sid: str
     access_type: str
     inherited: bool
+
+
+class _WindowsAcl(Protocol):
+    def AddAccessAllowedAceEx(
+        self, revision: int, flags: int, access_mask: int, sid: object
+    ) -> None: ...
+
+
+class _WindowsSecurity(Protocol):
+    ACL_REVISION_DS: int
+    DACL_SECURITY_INFORMATION: int
+    PROTECTED_DACL_SECURITY_INFORMATION: int
+    SE_FILE_OBJECT: int
+
+    def ACL(self) -> _WindowsAcl: ...
+
+    def GetBinarySid(self, sid: str) -> object: ...
+
+    def SetNamedSecurityInfo(
+        self,
+        object_name: str,
+        object_type: int,
+        security_info: int,
+        owner: object | None,
+        group: object | None,
+        dacl: _WindowsAcl,
+        sacl: object | None,
+    ) -> None: ...
+
+
+class _WindowsSecurityConstants(Protocol):
+    CONTAINER_INHERIT_ACE: int
+    FILE_ALL_ACCESS: int
+    OBJECT_INHERIT_ACE: int
+
+
+def _load_windows_security_modules() -> tuple[
+    _WindowsSecurity, _WindowsSecurityConstants
+]:
+    security = cast(
+        _WindowsSecurity, cast(object, import_module("win32security"))
+    )
+    constants = cast(
+        _WindowsSecurityConstants, cast(object, import_module("ntsecuritycon"))
+    )
+    return security, constants
 
 
 def is_link_like(path: Path) -> bool:
@@ -89,45 +136,36 @@ def _windows_current_sid() -> str:
 
 def _harden_windows_path(path: Path, *, directory: bool) -> None:
     sid = _windows_current_sid()
-    script = (
-        "$i=[Console]::In.ReadToEnd() | ConvertFrom-Json;"
-        "$acl=Get-Acl -LiteralPath ([string]$i.path);"
-        "$acl.SetAccessRuleProtection($true,$false);"
-        "@($acl.Access) | ForEach-Object {"
-        "$null=$acl.RemoveAccessRuleSpecific($_)};"
-        "if([bool]$i.directory){"
-        "$inheritance=[System.Security.AccessControl.InheritanceFlags]("
-        "[System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor "
-        "[System.Security.AccessControl.InheritanceFlags]::ObjectInherit)"
-        "}else{$inheritance=[System.Security.AccessControl.InheritanceFlags]::None};"
-        "$rights=[System.Security.AccessControl.FileSystemRights]::FullControl;"
-        "$propagation=[System.Security.AccessControl.PropagationFlags]::None;"
-        "$type=[System.Security.AccessControl.AccessControlType]::Allow;"
-        "foreach($rawSid in @($i.sids)){"
-        "$identity=[System.Security.Principal.SecurityIdentifier]::new("
-        "[string]$rawSid);"
-        "$rule=[System.Security.AccessControl.FileSystemAccessRule]::new("
-        "$identity,$rights,$inheritance,$propagation,$type);"
-        "$null=$acl.AddAccessRule($rule)};"
-        "Set-Acl -LiteralPath ([string]$i.path) -AclObject $acl"
-    )
-    payload = json.dumps(
-        {
-            "path": str(path),
-            "directory": directory,
-            "sids": [sid, _SYSTEM_SID],
-        },
-        separators=(",", ":"),
-    )
-    process = _run_private(
-        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
-        input_text=payload,
-    )
-    if process.returncode != 0:
+    try:
+        security, constants = _load_windows_security_modules()
+        acl = security.ACL()
+        flags = (
+            constants.CONTAINER_INHERIT_ACE | constants.OBJECT_INHERIT_ACE
+            if directory
+            else 0
+        )
+        for allowed_sid in (sid, _SYSTEM_SID):
+            acl.AddAccessAllowedAceEx(
+                security.ACL_REVISION_DS,
+                flags,
+                constants.FILE_ALL_ACCESS,
+                security.GetBinarySid(allowed_sid),
+            )
+        security.SetNamedSecurityInfo(
+            str(path),
+            security.SE_FILE_OBJECT,
+            security.DACL_SECURITY_INFORMATION
+            | security.PROTECTED_DACL_SECURITY_INFORMATION,
+            None,
+            None,
+            acl,
+            None,
+        )
+    except Exception as error:
         raise OverleafError(
             ErrorCode.CONFIGURATION_INVALID,
             "Unable to restrict private Overleaf storage on Windows.",
-        )
+        ) from error
 
 
 def harden_path(path: Path, *, directory: bool) -> None:

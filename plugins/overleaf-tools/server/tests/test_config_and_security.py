@@ -123,47 +123,72 @@ def test_windows_acl_path_uses_stdin_not_command(
     assert commands and str(path) not in commands[0]
 
 
-def test_windows_hardening_replaces_acl_using_stdin_payload(
+def test_windows_hardening_applies_exact_protected_dacl(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     current_sid = "S-1-5-21-123"
-    commands: list[list[str]] = []
-    inputs: list[str | None] = []
+    applied: list[tuple[object, ...]] = []
+
+    class FakeAcl:
+        def __init__(self) -> None:
+            self.entries: list[tuple[int, int, int, object]] = []
+
+        def AddAccessAllowedAceEx(
+            self, revision: int, flags: int, access_mask: int, sid: object
+        ) -> None:
+            self.entries.append((revision, flags, access_mask, sid))
+
+    acl = FakeAcl()
+
+    class FakeSecurity:
+        ACL_REVISION_DS = 4
+        DACL_SECURITY_INFORMATION = 4
+        PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
+        SE_FILE_OBJECT = 1
+
+        def ACL(self) -> FakeAcl:
+            return acl
+
+        def GetBinarySid(self, sid: str) -> object:
+            return f"binary:{sid}"
+
+        def SetNamedSecurityInfo(
+            self,
+            object_name: str,
+            object_type: int,
+            security_info: int,
+            owner: object | None,
+            group: object | None,
+            dacl: FakeAcl,
+            sacl: object | None,
+        ) -> None:
+            applied.append(
+                (object_name, object_type, security_info, owner, group, dacl, sacl)
+            )
+
+    class FakeConstants:
+        CONTAINER_INHERIT_ACE = 2
+        FILE_ALL_ACCESS = 0x1F01FF
+        OBJECT_INHERIT_ACE = 1
 
     def fake_current_sid() -> str:
         return current_sid
 
-    def fake_run(
-        command: list[str], *, input_text: str | None = None
-    ) -> subprocess.CompletedProcess[str]:
-        commands.append(command)
-        inputs.append(input_text)
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+    def fake_modules() -> tuple[FakeSecurity, FakeConstants]:
+        return FakeSecurity(), FakeConstants()
 
     monkeypatch.setattr(permissions, "_windows_current_sid", fake_current_sid)
-    monkeypatch.setattr(permissions, "_run_private", fake_run)
+    monkeypatch.setattr(permissions, "_load_windows_security_modules", fake_modules)
 
     permissions._harden_windows_path(  # pyright: ignore[reportPrivateUsage]
         tmp_path, directory=True
     )
 
-    assert len(commands) == 1
-    assert commands[0][:4] == [
-        "powershell.exe",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
+    assert acl.entries == [
+        (4, 3, 0x1F01FF, f"binary:{current_sid}"),
+        (4, 3, 0x1F01FF, "binary:S-1-5-18"),
     ]
-    assert str(tmp_path) not in commands[0]
-    assert "SetAccessRuleProtection($true,$false)" in commands[0][-1]
-    assert "RemoveAccessRuleSpecific" in commands[0][-1]
-    assert "AddAccessRule" in commands[0][-1]
-    assert inputs[0] is not None
-    assert json.loads(inputs[0]) == {
-        "path": str(tmp_path),
-        "directory": True,
-        "sids": [current_sid, "S-1-5-18"],
-    }
+    assert applied == [(str(tmp_path), 1, 0x80000004, None, None, acl, None)]
 
 
 def test_insecure_config_mode_and_link_are_rejected(tmp_path: Path) -> None:
