@@ -757,17 +757,26 @@ $paper-review-sync repair <paper-number>
 ```
 
 `check` is strictly read-only. `sync` and `repair` reconcile only active rows
-assigned exactly to Jialuo Hu with blank Review Comments. The orchestrator uses
+assigned to the confirmed exact aliases Jialuo Hu or Jialuo with blank Word Count. The orchestrator uses
 `$paper-review-library-intake` to store private PDFs under
 `Research/PaperReview`, `$paper-review-page` to create exact-Paper-Number pages
-under `Jialuo Hu/Paper Review`, and one Todoist surface for tasks in
+under the matching conference edition in `Review Dojo/Review Comments`, and one Todoist surface for tasks in
 `Paper Reviews/Assigned` with `paper-review` and `deep-work` labels. Todoist
 links use the Zotero parent key for `select` and PDF attachment key for
-`open-pdf`.
+`open-pdf`. After page and task readback, the sync adds one native Docmost page
+mention to the row's blank `Review Comments` cell. A linked row remains active
+until `Word Count` is filled. Docmost page bodies preserve the authoritative
+conference review form, including venue-provided AI-disclosure fields and
+instructions. The reviewer is rendered as `Hao Wang ` followed by a
+`hwang9@stevens.edu` link to `mailto:hwang9@stevens.edu`; status, selections,
+and filled responses are blanked.
+Managed identity and cross-links remain in Todoist and Zotero.
 
 Private submissions, titles, forms, and review text never go to Paper Search,
-web search, or Firecrawl. Same-venue pages supply structure only; substantive
-peer review content is discarded. Partial runs keep the Todoist assignment and
+web search, or Firecrawl. Same-edition pages supply structure only; substantive
+peer review content is discarded. The workflow never invents an `AI-involved`
+tag or font-color markup, but it does not remove either fixed instructions or
+formatting supplied by the authoritative form. Partial runs keep the Todoist assignment and
 mark missing managed links for a later repair. Repeated runs are idempotent
 snapshots, not continuous monitoring.
 

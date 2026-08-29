@@ -19,7 +19,7 @@ class DocmostLabWikiContractTests(unittest.TestCase):
         manifest = json.loads((RESEARCH / ".codex-plugin" / "plugin.json").read_text())
         prompts = manifest["interface"]["defaultPrompt"]
 
-        self.assertEqual(manifest["version"], "0.8.0")
+        self.assertEqual(manifest["version"], "0.8.1")
         self.assertIn("$docmost-lab-wiki", " ".join(prompts))
         self.assertIn("Research LLM Wiki", manifest["interface"]["longDescription"])
         self.assertIn("separate read-only Docmost-to-Obsidian Lab Wiki", manifest["interface"]["longDescription"])

@@ -4623,21 +4623,31 @@ def main() -> None:
     paper_review_page_text = PAPER_REVIEW_PAGE_SKILL.read_text()
     for expected in (
         "name: paper-review-page",
-        "Jialuo Hu/Paper Review",
+        "Review Dojo/Review Comments/<conference>/<edition>",
         "Paper Number exactly",
         "Assignment form",
-        "Same venue and year",
+        "Same conference edition",
         "Fallback asset",
         "template_structure.py",
+        "resolve-edition-folder",
+        "AI-involved",
+        "Proper Use of AI",
+        "mailto:hwang9@stevens.edu",
+        "font-color markup",
         "Remove names, paper-specific summaries",
         "Never copy an entire peer page",
-        "Paper Review ID:",
+        "authoritative assignment form",
+        "only the variable data listed above may be blanked",
         "docmost_create_page",
+        "slug_id",
+        "does not edit `Review Assignments`",
     ):
         require(expected in paper_review_page_text, f"paper-review-page must mention {expected}")
+    for forbidden in ("> Paper Review ID:", "> Assignment:", "> Confidential review workspace"):
+        require(forbidden not in paper_review_page_text, f"paper-review-page must omit {forbidden}")
     require(
         paper_review_page_text.index("**Assignment form:**")
-        < paper_review_page_text.index("**Same venue and year:**")
+        < paper_review_page_text.index("**Same conference edition:**")
         < paper_review_page_text.index("**Fallback asset:**"),
         "paper-review-page must prefer assignment form, then venue structure, then fallback",
     )
@@ -4668,6 +4678,10 @@ def main() -> None:
         "$paper-review-page",
         "not continuous synchronization",
         "paper_review_contract.py",
+        "review-comments-link",
+        "docmost_patch_page_content",
+        "OUTCOME_UNKNOWN",
+        "serializer normalization",
     ):
         require(expected in paper_review_sync_text, f"paper-review-sync must mention {expected}")
     require(
@@ -4676,8 +4690,8 @@ def main() -> None:
     )
 
     require(
-        research_plugin.get("version") == "0.8.0",
-        "research-tools must use the current Lab Wiki workflow version",
+        research_plugin.get("version") == "0.8.1",
+        "research-tools must use the current plugin release version",
     )
     lab_skill = DOCMOST_LAB_WIKI_SKILL.read_text()
     for expected in (
