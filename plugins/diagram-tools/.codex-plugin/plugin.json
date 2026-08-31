@@ -1,7 +1,7 @@
 {
   "name": "diagram-tools",
-  "version": "0.3.0",
-  "description": "Default, polished offline Mermaid rendering with editable source and a contract-gated runtime.",
+  "version": "0.4.0",
+  "description": "Validated interactive Archify system maps plus polished Mermaid rendering with editable source.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -9,6 +9,10 @@
   "license": "MIT",
   "repository": "https://github.com/jialuohu/codex-toolbox",
   "keywords": [
+    "archify",
+    "architecture",
+    "workflow",
+    "interactive",
     "mermaid",
     "diagram",
     "svg",
@@ -18,8 +22,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Diagram Tools",
-    "shortDescription": "Render Mermaid diagrams by default.",
-    "longDescription": "Diagram Tools is the default Mermaid renderer, preserving editable source and producing self-contained SVG, real PNG, or terminal-friendly ASCII through a tested offline runtime while routing advanced native draw.io work separately.",
+    "shortDescription": "Create interactive system maps and Mermaid diagrams.",
+    "longDescription": "Diagram Tools makes Archify the graphical default for validated interactive architecture and workflow maps while preserving Pretty Mermaid for explicit Mermaid, compact static diagrams, and terminal ASCII. Both lanes retain editable source and use guarded local runtimes.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -27,7 +31,8 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use $pretty-mermaid by default for Mermaid diagrams and export editable source with polished SVG or PNG.",
+      "Use $archify to create a validated interactive architecture or workflow map with retained typed JSON source.",
+      "Use $pretty-mermaid for explicit Mermaid, compact static diagrams, or terminal ASCII.",
       "Render these Mermaid sources as terminal-friendly ASCII."
     ]
   }

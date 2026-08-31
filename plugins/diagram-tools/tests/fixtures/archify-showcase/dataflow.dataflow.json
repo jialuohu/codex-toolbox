@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Product Event Pipeline",
+    "viewBox": [1080, 480],
+    "quality_profile": "showcase"
+  },
+  "stages": [
+    { "label": "Sources" },
+    { "label": "Ingest" },
+    { "label": "Process" },
+    { "label": "Store" },
+    { "label": "Consume" }
+  ],
+  "nodes": [
+    { "id": "web", "type": "frontend", "label": "Web App", "sublabel": "browser events", "stage": 0, "row": 0, "tag": "source" },
+    { "id": "mobile", "type": "frontend", "label": "Mobile App", "sublabel": "device events", "stage": 0, "row": 2, "yOffset": -24, "tag": "source" },
+    { "id": "collector", "type": "cloud", "label": "Event API", "sublabel": "validated ingest", "stage": 1, "row": 1, "tag": "TLS" },
+    { "id": "stream", "type": "messagebus", "label": "Event Stream", "sublabel": "ordered events", "stage": 2, "row": 1, "tag": "durable" },
+    { "id": "warehouse", "type": "database", "label": "Warehouse", "sublabel": "curated facts", "stage": 3, "row": 1, "tag": "SQL" },
+    { "id": "dashboard", "type": "backend", "label": "Dashboards", "sublabel": "product metrics", "stage": 4, "row": 0, "tag": "read" },
+    { "id": "model", "type": "backend", "label": "ML Features", "sublabel": "daily batch", "stage": 4, "row": 2, "yOffset": -24, "tag": "derived" }
+  ],
+  "flows": [
+    { "id": "web-events", "from": "web", "to": "collector", "label": "clickstream", "classification": "user events", "variant": "emphasis" },
+    { "id": "mobile-events", "from": "mobile", "to": "collector", "label": "app events", "classification": "device events", "variant": "default" },
+    { "id": "accepted-events", "from": "collector", "to": "stream", "label": "accepted events", "classification": "append-only", "variant": "emphasis" },
+    { "id": "normalized-facts", "from": "stream", "to": "warehouse", "label": "normalized facts", "classification": "curated", "variant": "emphasis" },
+    { "id": "metrics-query", "from": "warehouse", "to": "dashboard", "label": "metrics SQL", "classification": "read-only", "variant": "default" },
+    { "id": "feature-batch", "from": "warehouse", "to": "model", "label": "feature batch", "classification": "derived", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Ordered Core Path",
+      "items": [
+        "Client events become a durable ordered stream before transformation",
+        "The warehouse holds curated facts for every downstream consumer"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Separate Consumers",
+      "items": [
+        "Dashboards use read-only metric queries",
+        "ML features are produced by a distinct derived batch"
+      ]
+    }
+  ]
+}

@@ -80,25 +80,66 @@ third-party marketplace pins, and reusable Codex instructions.
 
 ## Diagram Tools
 
-The default `diagram-tools` plugin makes `$pretty-mermaid` the default renderer
-whenever Mermaid is the chosen visual format. It preserves editable `.mmd`
-source and exports self-contained SVG, real PNG through Resvg, or plain
-ASCII/Unicode. Graphical surfaces default to SVG, while terminals use ASCII;
-automatic artifacts go in a task-scoped temporary directory when no destination
-is requested. Native inline Mermaid is reserved for explicit requests or a
-disclosed runtime or syntax fallback. Use `$paper-figure-workflow` for
-publication pipelines, and `$drawio` for explicit native draw.io work.
+The default `diagram-tools` plugin provides two bounded rendering lanes.
+`$archify` is the graphical default for architecture and workflow maps and for
+polished interactive sequence, data-flow, or lifecycle artifacts.
+`$pretty-mermaid` owns explicit Mermaid or `.mmd`, terminal ASCII, and compact
+static diagrams. `$drawio` remains the owner of explicit native draw.io,
+multi-page, WYSIWYG, specialized-shape, and Desktop export work;
+`$paper-figure-workflow` owns publication pipelines; bundled Visualize owns
+adjustable, inspectable spatial views in the conversation.
 
-The renderer uses a contract-gated rolling runtime under
-`${CODEX_HOME:-$HOME/.codex}/runtime/diagram-tools`. Toolbox setup resolves the
-newest stable `beautiful-mermaid` release, installs it into an isolated
-candidate with lifecycle scripts disabled, verifies package integrity and
-production audit results, renders the compatibility fixtures, and promotes it
-atomically. A rejected release cannot replace the working runtime. Fresh
-installations fall back to the lockfile-approved release; Dependabot proposes
-updates to that fallback separately.
+Archify retains editable `<name>.<type>.json` beside a validated standalone
+`<name>.html`. New workflows use schema v2; architecture, sequence, data-flow,
+and lifecycle sources use schema v1. Showcase delivery validates every source,
+commits the HTML atomically, then captures light/dark containment evidence at
+1440×900, 1600×1000, 1920×1080, and 2048×1320. Static presentation is the
+default; trace motion is enabled only for a requested demo or presentation.
+Without a requested destination, artifacts go in a task-scoped temporary
+directory.
 
-Normal rendering is offline. Check, update, or roll back the runtime with:
+The immutable Archify runtime is pinned to upstream `v2.16.0` `archify.zip`
+(SHA-256
+`4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46`)
+under `${CODEX_HOME:-$HOME/.codex}/runtime/diagram-tools/archify`. Installation
+validates the archive, upstream license, runtime paths, `doctor`, and fixtures
+before atomic promotion; rollback retains the last good generation. The
+collision-safe launcher passes through the upstream CLI and adds runtime
+inspection:
+
+```bash
+archify runtime-info --json
+archify validate architecture system.architecture.json --quality showcase --json
+archify deliver architecture system.architecture.json system.html --quality showcase --json
+archify visual-check system.html --json
+
+scripts/setup-archify-tools.sh --check
+scripts/setup-archify-tools.sh --install
+scripts/setup-archify-tools.sh --rollback
+```
+
+Archify preserves upstream's notification-only update checker. It may request
+the fixed manifest at
+`https://tt-a1i.github.io/archify/skill-updates/archify/stable.json`, but never
+downloads or installs an update. Generated HTML may load JetBrains Mono from
+`fonts.googleapis.com` and `fonts.gstatic.com`; local/system monospace fallback
+keeps the artifact usable when those requests fail. URL-based brand capture is
+explicit-only and never runs during rendering or validation.
+
+Pretty Mermaid preserves editable `.mmd` and exports self-contained SVG, real
+PNG through Resvg, or plain ASCII/Unicode. Graphical surfaces default to SVG,
+while terminals use ASCII. Use native inline Mermaid only for explicit requests
+or a disclosed runtime or syntax fallback. Its contract-gated rolling
+runtime lives under `${CODEX_HOME:-$HOME/.codex}/runtime/diagram-tools`.
+Toolbox setup resolves the newest stable `beautiful-mermaid` release, installs
+it into an isolated candidate with lifecycle scripts disabled, verifies package
+integrity and production audit results, renders compatibility fixtures, and
+promotes it atomically. A rejected release cannot replace the working runtime.
+Fresh installations fall back to the lockfile-approved release; Dependabot
+proposes updates separately.
+
+Normal Pretty Mermaid rendering is offline. Check, update, or roll back its
+runtime with:
 
 ```bash
 scripts/setup-diagram-tools.sh --check
@@ -107,8 +148,8 @@ scripts/setup-diagram-tools.sh --update --strict
 scripts/setup-diagram-tools.sh --rollback
 ```
 
-Toolbox setup installs the stable CLI in `CODEX_LOCAL_BIN_DIR`, defaulting to
-`~/.local/bin`:
+Toolbox setup installs both stable launchers in `CODEX_LOCAL_BIN_DIR`, defaulting
+to `~/.local/bin`. Pretty Mermaid commands include:
 
 ```bash
 pretty-mermaid themes
@@ -127,9 +168,11 @@ themes; unsupported syntax fails without rewriting the `.mmd` source.
 The default `drawio-tools` plugin provides `$drawio` and the `drawio` MCP
 server for explicit draw.io or diagrams.net requests, editable `.drawio`
 source, multi-page inspection and editing, specialized shape libraries,
-browser editing, and optional Desktop exports. Pretty Mermaid remains the
-default for ordinary Mermaid diagrams. `$paper-figure-workflow` remains the
-owner of publication pipelines and delegates native draw.io execution here.
+browser editing, and optional Desktop exports. Archify remains the graphical
+default for architecture/workflow maps and polished interactive
+sequence/data-flow/lifecycle artifacts; Pretty Mermaid owns explicit Mermaid,
+terminal ASCII, and compact static diagrams. `$paper-figure-workflow` remains
+the owner of publication pipelines and delegates native draw.io execution here.
 
 The MCP exposes exactly `open_drawio_xml`, `open_drawio_csv`,
 `open_drawio_mermaid`, `search_shapes`, `list_pages`, `get_page`, and
@@ -979,11 +1022,12 @@ walkthrough needs a clear mental model and concrete example. It leads with the
 direct answer, uses one accurate example by default, and adds only the mechanism
 or caveat needed to avoid a misleading simplification. It also chooses the
 smallest useful format: prose for simple results, a table for repeated
-comparisons, `$pretty-mermaid` by default for static relationships, and bundled
-Visualize for spatial or interactive explanations. Pretty Mermaid saves `.mmd`
-source and renders SVG or terminal ASCII; native inline Mermaid is an explicit
-choice or disclosed renderer fallback. Exact data and legal state are validated
-before rendering; ambiguous
+comparisons, `$archify` for graphical architecture/workflow maps or polished
+interactive sequence/data-flow/lifecycle artifacts, `$pretty-mermaid` for
+explicit Mermaid, terminal ASCII, or compact static diagrams, and bundled
+Visualize for adjustable spatial explanations in the conversation. Native
+inline Mermaid is an explicit choice or disclosed renderer fallback. Exact data
+and legal state are validated before rendering; ambiguous
 chess positions are reported rather than invented, and CLI or IDE tasks receive
 text, table, Mermaid, ASCII, or coordinate fallbacks.
 

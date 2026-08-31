@@ -10,6 +10,8 @@ README = ROOT / "README.md"
 PRETTY_SKILL = (
     ROOT / "plugins" / "diagram-tools" / "skills" / "pretty-mermaid" / "SKILL.md"
 )
+ARCHIFY_SKILL = ROOT / "plugins" / "diagram-tools" / "skills" / "archify" / "SKILL.md"
+ARCHIFY_OPENAI = ARCHIFY_SKILL.parent / "agents" / "openai.yaml"
 DIAGRAM_PLUGIN = ROOT / "plugins" / "diagram-tools" / ".codex-plugin" / "plugin.json"
 DRAWIO_SKILL = ROOT / "plugins" / "drawio-tools" / "skills" / "drawio" / "SKILL.md"
 PAPER_FIGURE_SKILL = (
@@ -52,14 +54,14 @@ class ReadabilityContractTests(unittest.TestCase):
         text = GLOBAL_AGENTS.read_text(encoding="utf-8")
 
         for expected in (
-            "One conclusion or simple procedure",
-            "Three or more comparable entities",
-            "`$pretty-mermaid` by default",
-            "native inline Mermaid only",
-            "task-scoped temporary directory",
+            "One conclusion/simple procedure",
+            "Three or more comparable entities/repeated fields",
+            "$archify",
+            "$pretty-mermaid",
+            "task-scoped temporary output",
             "$drawio",
-            "bundled Visualize",
-            "standalone or hosted application",
+            "Visualize",
+            "Standalone or hosted application",
             "not inline Visualize",
             "A visual is presentation, not evidence",
             "side to move",
@@ -76,7 +78,8 @@ class ReadabilityContractTests(unittest.TestCase):
         for expected in (
             "Choose the Smallest Useful Format",
             "Markdown table for three or more comparable entities",
-            "`$pretty-mermaid` by default",
+            "$archify",
+            "$pretty-mermaid",
             "native inline Mermaid only",
             "editable `.mmd` source",
             "SVG on graphical surfaces",
@@ -111,7 +114,8 @@ class ReadabilityContractTests(unittest.TestCase):
 
         for text in (global_text, explain_text, readme_text):
             self.assertIn("$pretty-mermaid", text)
-            self.assertIn("default", text)
+
+        for text in (skill_text, explain_text, readme_text):
             self.assertIn("native inline Mermaid", text)
 
         for retired in (
@@ -130,12 +134,47 @@ class ReadabilityContractTests(unittest.TestCase):
         drawio_text = DRAWIO_SKILL.read_text(encoding="utf-8")
         paper_text = PAPER_FIGURE_SKILL.read_text(encoding="utf-8")
 
-        self.assertIn("$pretty-mermaid` by default", global_text)
-        self.assertIn("Use `$drawio` for explicit editable, multi-page, browser, or exported draw.io work", global_text)
+        self.assertIn("$pretty-mermaid` for explicit Mermaid/`.mmd`, terminal ASCII", global_text)
+        self.assertIn("$drawio` owns explicit native, multi-page, WYSIWYG", global_text)
         self.assertIn("Use `$drawio` for explicit draw.io", pretty_text)
-        self.assertIn("Keep Pretty Mermaid as the default", drawio_text)
+        self.assertIn("$pretty-mermaid` owns explicit", drawio_text)
         self.assertIn("$paper-figure-workflow", drawio_text)
         self.assertIn("Use `$drawio` for native `.drawio` creation", paper_text)
+
+    def test_archify_owns_graphical_maps_without_erasing_format_boundaries(self) -> None:
+        global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
+        explain_text = EXPLAIN_SKILL.read_text(encoding="utf-8")
+        readme_text = README.read_text(encoding="utf-8")
+        archify_text = ARCHIFY_SKILL.read_text(encoding="utf-8")
+        archify_openai = ARCHIFY_OPENAI.read_text(encoding="utf-8")
+        pretty_text = PRETTY_SKILL.read_text(encoding="utf-8")
+        drawio_text = DRAWIO_SKILL.read_text(encoding="utf-8")
+        paper_text = PAPER_FIGURE_SKILL.read_text(encoding="utf-8")
+
+        for text in (global_text, explain_text, readme_text, archify_text):
+            self.assertIn("$archify", text)
+
+        for expected in (
+            "architecture",
+            "workflow",
+            "sequence",
+            "dataflow",
+            "lifecycle",
+            "$pretty-mermaid",
+            "$drawio",
+            "$paper-figure-workflow",
+            "Visualize",
+        ):
+            self.assertIn(expected, archify_text)
+
+        self.assertIn("allow_implicit_invocation: true", archify_openai)
+        self.assertIn("$archify", archify_openai)
+        self.assertIn("$archify", pretty_text)
+        self.assertIn("$archify", drawio_text)
+        self.assertIn("publication", paper_text)
+        self.assertIn("Visualize", global_text)
+        self.assertIn("terminal", pretty_text)
+        self.assertIn("multi-page", drawio_text)
 
     def test_plugin_versions_bumped_without_implicit_ship_toolbox(self) -> None:
         workflow_manifest = json.loads(WORKFLOW_PLUGIN.read_text(encoding="utf-8"))
@@ -143,7 +182,7 @@ class ReadabilityContractTests(unittest.TestCase):
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
         self.assertEqual(workflow_manifest["version"], "0.5.0")
-        self.assertEqual(diagram_manifest["version"], "0.3.0")
+        self.assertEqual(diagram_manifest["version"], "0.4.0")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
 

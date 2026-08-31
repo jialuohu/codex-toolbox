@@ -35,14 +35,19 @@ explicitly requests brevity, the Direct answer may be the complete response.
 Add a visual only when it makes an important relationship materially easier to
 understand. Use concise prose or a short list for one conclusion or a simple
 procedure; a Markdown table for three or more comparable entities or repeated
-fields; `$pretty-mermaid` by default for a static relationship, hierarchy, or
-sequence; and bundled Visualize for spatial, changing, adjustable, or
-inspectable information on a supported desktop, web, or mobile surface. Pretty
-Mermaid saves editable `.mmd` source and renders SVG on graphical surfaces or
-ASCII in a terminal. Use native inline Mermaid only when explicitly requested
-or as a disclosed fallback for an unavailable renderer or rejected syntax.
-Build project files or use Sites for a standalone or hosted application rather
-than putting it in inline Visualize.
+fields; `$archify` for architecture or workflow maps on graphical surfaces and
+polished interactive sequence, data-flow, or lifecycle artifacts;
+`$pretty-mermaid` for explicit Mermaid/`.mmd`, terminal ASCII, compact static
+relationships, hierarchies, or sequences; and bundled Visualize for spatial,
+changing, adjustable, or inspectable information in the conversation on a
+supported desktop, web, or mobile surface. Use `$pretty-mermaid` by default
+whenever that lane applies; it retains editable `.mmd` source and renders SVG on graphical surfaces or ASCII in a terminal.
+Use native inline Mermaid only when explicitly requested or as a
+disclosed fallback for an unavailable renderer or rejected syntax. Use
+`$drawio` for explicit native draw.io/WYSIWYG work and
+`$paper-figure-workflow` for publication figures. Build project files or use
+Sites for a standalone or hosted application rather than putting it in inline
+Visualize.
 
 Lead with the result, show the smallest useful representation, and add only the
 essential caveat. Do not narrate every element already visible in a diagram or

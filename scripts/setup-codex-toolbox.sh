@@ -785,6 +785,7 @@ for plugin in "${DEFAULT_PLUGINS[@]}"; do
 done
 
 "$ROOT/scripts/setup-diagram-tools.sh" --update
+"$ROOT/scripts/setup-archify-tools.sh" --install
 
 DOCMOST_INSTALLED_SERVER_DIR="$(installed_docmost_server_dir)"
 readonly DOCMOST_INSTALLED_SERVER_DIR

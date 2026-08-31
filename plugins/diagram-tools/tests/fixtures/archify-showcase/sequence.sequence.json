@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Async Job Execution",
+    "viewBox": [1060, 480],
+    "column_fit": "spread",
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    { "id": "client", "type": "external", "label": "Client", "sublabel": "requester" },
+    { "id": "api", "type": "backend", "label": "Jobs API", "sublabel": "accepts work" },
+    { "id": "queue", "type": "messagebus", "label": "Queue", "sublabel": "durable handoff" },
+    { "id": "worker", "type": "backend", "label": "Worker", "sublabel": "executes job" },
+    { "id": "store", "type": "database", "label": "Job Store", "sublabel": "final status" }
+  ],
+  "segments": [
+    { "from": 150, "to": 262, "label": "Accept" },
+    { "from": 278, "to": 430, "label": "Execute and observe" }
+  ],
+  "messages": [
+    { "id": "submit-job", "from": "client", "to": "api", "y": 176, "label": "POST /jobs", "variant": "emphasis" },
+    { "id": "enqueue-job", "from": "api", "to": "queue", "y": 216, "label": "enqueue job", "variant": "emphasis" },
+    { "id": "accept-job", "from": "api", "to": "client", "y": 256, "label": "202 + job id", "variant": "return" },
+    { "id": "claim-job", "from": "queue", "to": "worker", "y": 300, "label": "claim work", "variant": "default" },
+    { "id": "persist-result", "from": "worker", "to": "store", "y": 336, "label": "persist result", "variant": "emphasis" },
+    { "id": "poll-status", "from": "client", "to": "api", "y": 372, "label": "GET /jobs/:id", "variant": "default" },
+    { "id": "read-status", "from": "api", "to": "store", "y": 396, "label": "read completed status", "variant": "default" }
+  ],
+  "activations": [
+    { "participant": "api", "from": 170, "to": 264, "type": "backend" },
+    { "participant": "queue", "from": 210, "to": 308, "type": "messagebus" },
+    { "participant": "worker", "from": 294, "to": 344, "type": "backend" },
+    { "participant": "store", "from": 330, "to": 404, "type": "database" },
+    { "participant": "api", "from": 366, "to": 404, "type": "backend" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Durable Acceptance",
+      "items": [
+        "The API returns a job id after the queue accepts ownership",
+        "Execution continues without holding the client connection open"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Consistent Observation",
+      "items": [
+        "The worker persists the result before status is exposed",
+        "Polling reads the same durable final state"
+      ]
+    }
+  ]
+}

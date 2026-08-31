@@ -9,9 +9,14 @@ on:
       - "README.md"
       - "config/codex/AGENTS.global.md"
       - "plugins/diagram-tools/**"
+      - "plugins/drawio-tools/skills/drawio/**"
+      - "plugins/paper-figure-tools/skills/paper-figure-workflow/**"
+      - "plugins/workflow-tools/skills/explain-clearly/**"
       - "scripts/check-codex-toolbox-setup.py"
       - "scripts/setup-codex-toolbox.sh"
+      - "scripts/setup-archify-tools.sh"
       - "scripts/setup-diagram-tools.sh"
+      - "tests/test_instruction_readability.py"
   push:
     branches: [main]
     paths:
@@ -21,9 +26,14 @@ on:
       - "README.md"
       - "config/codex/AGENTS.global.md"
       - "plugins/diagram-tools/**"
+      - "plugins/drawio-tools/skills/drawio/**"
+      - "plugins/paper-figure-tools/skills/paper-figure-workflow/**"
+      - "plugins/workflow-tools/skills/explain-clearly/**"
       - "scripts/check-codex-toolbox-setup.py"
       - "scripts/setup-codex-toolbox.sh"
+      - "scripts/setup-archify-tools.sh"
       - "scripts/setup-diagram-tools.sh"
+      - "tests/test_instruction_readability.py"
   workflow_dispatch:
 
 permissions:
@@ -33,13 +43,16 @@ jobs:
   conformance:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         node: [20, 22]
     env:
+      ARCHIFY_RUNTIME_ROOT: ${{ github.workspace }}/.tmp/archify-runtime
+      CODEX_HOME: ${{ github.workspace }}/.tmp/codex-home
+      CODEX_LOCAL_BIN_DIR: ${{ github.workspace }}/.tmp/bin
       PRETTY_MERMAID_RUNTIME_ROOT: ${{ github.workspace }}/.tmp/pretty-mermaid-runtime
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +69,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: Validate toolbox integration
         run: python3 scripts/check-codex-toolbox-setup.py
+      - name: Validate visual routing instructions
+        run: python3 -m unittest tests.test_instruction_readability
       - name: Scan current tree for private paths and secrets
         run: scripts/privacy-audit.sh current
       - name: Run unit tests
@@ -64,8 +79,60 @@ jobs:
       - name: Verify approved fallback contract
         working-directory: plugins/diagram-tools
         run: npm run test:contract
+      - name: Exercise isolated Archify runtime manager
+        working-directory: plugins/diagram-tools
+        run: npm run test:archify:integration
       - name: Stage and verify newest stable renderer
         run: scripts/setup-diagram-tools.sh --update --strict
+      - name: Install and check pinned Archify runtime
+        run: |
+          scripts/setup-archify-tools.sh --install
+          scripts/setup-archify-tools.sh --check
+      - name: Smoke all Archify diagram modes
+        shell: bash
+        run: |
+          artifact_dir="${{ runner.temp }}/archify-artifacts"
+          runtime_info="$artifact_dir/runtime-info.json"
+          showcase_fixture_dir="$GITHUB_WORKSPACE/plugins/diagram-tools/tests/fixtures/archify-showcase"
+          mkdir -p "$artifact_dir"
+          "$CODEX_LOCAL_BIN_DIR/archify" runtime-info --json > "$runtime_info"
+          "$CODEX_LOCAL_BIN_DIR/archify" doctor
+
+          for diagram_type in architecture workflow sequence dataflow lifecycle; do
+            case "$diagram_type" in
+              sequence|dataflow|lifecycle)
+                example_path="$showcase_fixture_dir/$diagram_type.$diagram_type.json"
+                ;;
+              *)
+                example_path="$(node -e '
+                  const fs = require("node:fs");
+                  const info = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                  const example = info.examplePaths?.[process.argv[2]];
+                  if (typeof example !== "string" || example.length === 0) {
+                    throw new Error(`Missing examplePaths.${process.argv[2]}`);
+                  }
+                  process.stdout.write(example);
+                ' "$runtime_info" "$diagram_type")"
+                ;;
+            esac
+            output_path="$artifact_dir/$diagram_type.html"
+            "$CODEX_LOCAL_BIN_DIR/archify" validate \
+              "$diagram_type" "$example_path" --json --quality showcase
+            "$CODEX_LOCAL_BIN_DIR/archify" deliver \
+              "$diagram_type" "$example_path" "$output_path" --json --quality showcase
+          done
+      - name: Gate Archify artifacts with upstream visual-check
+        shell: bash
+        run: |
+          artifact_dir="${{ runner.temp }}/archify-artifacts"
+          for output_path in "$artifact_dir"/{architecture,workflow,sequence,dataflow,lifecycle}.html; do
+            "$CODEX_LOCAL_BIN_DIR/archify" visual-check "$output_path" --json
+          done
+      - name: Capture complete Archify theme and viewport matrix
+        run: >-
+          node plugins/diagram-tools/tests/archify-visual-evidence.mjs
+          "${{ runner.temp }}/archify-artifacts/runtime-info.json"
+          "${{ runner.temp }}/archify-artifacts"
       - name: Render SVG and PNG contact sheets
         run: >-
           node plugins/diagram-tools/skills/pretty-mermaid/scripts/contact-sheet.mjs
@@ -73,7 +140,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: diagram-tools-${{ matrix.os }}-node-${{ matrix.node }}
-          path: ${{ runner.temp }}/diagram-artifacts
+          path: |
+            ${{ runner.temp }}/diagram-artifacts
+            ${{ runner.temp }}/archify-artifacts
           if-no-files-found: error
 
   runtime-manager:

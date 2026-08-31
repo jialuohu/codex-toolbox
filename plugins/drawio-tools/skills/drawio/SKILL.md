@@ -5,7 +5,15 @@ description: Use when the user explicitly requests draw.io or diagrams.net, or n
 
 # Draw.io
 
-Use the `drawio` MCP server for editable draw.io work. Keep Pretty Mermaid as the default for ordinary Mermaid diagrams; this skill owns explicit draw.io requests and advanced editable, multi-page, specialized-shape, browser, or export workflows. For publication figure repositories, `$paper-figure-workflow` owns the overall pipeline and delegates draw.io execution here.
+Use the `drawio` MCP server for editable draw.io work. This skill owns explicit
+draw.io requests and native `.drawio`, multi-page, WYSIWYG,
+specialized-shape, browser, or Desktop export workflows. Keep Pretty Mermaid as
+the default whenever Mermaid is the chosen format; `$pretty-mermaid` owns explicit
+Mermaid/`.mmd`, terminal ASCII, and compact static diagrams. `$archify` is the
+graphical default for architecture and workflow maps and polished interactive
+sequence, data-flow, or lifecycle artifacts. For publication
+figure repositories, `$paper-figure-workflow` owns the overall pipeline and
+delegates draw.io execution here.
 
 ## Workflow
 

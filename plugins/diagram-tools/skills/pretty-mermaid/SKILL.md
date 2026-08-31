@@ -1,11 +1,14 @@
 ---
 name: pretty-mermaid
-description: Default renderer for Mermaid diagrams. Preserve editable .mmd source and export self-contained SVG, genuine PNG, or ASCII for explanations, architecture, workflows, file conversion, themed output, or batch rendering.
+description: Render explicit Mermaid or .mmd requests, terminal ASCII, and compact static diagrams. Preserve editable .mmd source and export self-contained SVG, genuine PNG, or ASCII; use Archify instead for graphical architecture/workflow maps or polished interactive sequence, data-flow, and lifecycle artifacts.
 ---
 
 # Pretty Mermaid
 
-Use this skill whenever Mermaid is the chosen visual format. Save Mermaid source before rendering. Keep an existing `.mmd` file unchanged unless the user asks to edit it, and place new source beside its export.
+Use this skill whenever Mermaid is the chosen format, including explicit
+Mermaid or `.mmd`, terminal ASCII, and compact static diagrams. Save Mermaid
+source before rendering. Keep an existing `.mmd` file unchanged unless the
+user asks to edit it, and place new source beside its export.
 
 ## Workflow
 
@@ -28,10 +31,16 @@ Use this skill whenever Mermaid is the chosen visual format. Save Mermaid source
 
 ## Selection Rules
 
-- Use this skill by default whenever Mermaid is selected, including quick explanations.
+- Use this skill by default whenever Mermaid is selected, including quick explanations,
+  compact static relationships, and architecture or workflow content that the
+  user explicitly wants in Mermaid.
+- Use `$archify` as the graphical default for architecture and workflow maps,
+  and for polished interactive sequence, data-flow, or lifecycle artifacts.
 - Use native inline Mermaid only when the user explicitly requests it or when the runtime is unavailable or rejects the syntax. Briefly disclose automatic fallback, reuse the exact source, and do not silently change semantics.
 - Use `$drawio` for explicit draw.io or diagrams.net requests, editable `.drawio` source, multi-page files, specialized shapes, browser editing, or draw.io Desktop exports.
 - Use `$paper-figure-workflow` for reproducible publication figure pipelines; it delegates native draw.io execution to `$drawio`.
+- Use bundled Visualize for adjustable, inspectable, in-conversation spatial
+  views rather than a standalone static export.
 - Beautiful Mermaid implements a Mermaid subset. Run `capabilities` when syntax support is uncertain. If rendering rejects a diagram family, preserve the `.mmd`, fall back to native inline Mermaid, and report the limitation.
 
 ## Commands

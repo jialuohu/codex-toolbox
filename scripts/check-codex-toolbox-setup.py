@@ -188,6 +188,7 @@ PAPER_FIGURE_REFERENCE = (
 )
 DIAGRAM_TOOLS_DIR = ROOT / "plugins" / "diagram-tools"
 DIAGRAM_TOOLS_PLUGIN = DIAGRAM_TOOLS_DIR / ".codex-plugin" / "plugin.json"
+DIAGRAM_TOOLS_PACKAGE = DIAGRAM_TOOLS_DIR / "package.json"
 PRETTY_MERMAID_DIR = DIAGRAM_TOOLS_DIR / "skills" / "pretty-mermaid"
 PRETTY_MERMAID_SKILL = PRETTY_MERMAID_DIR / "SKILL.md"
 PRETTY_MERMAID_OPENAI = PRETTY_MERMAID_DIR / "agents" / "openai.yaml"
@@ -195,6 +196,20 @@ PRETTY_MERMAID_CLI = PRETTY_MERMAID_DIR / "scripts" / "pretty-mermaid.mjs"
 PRETTY_MERMAID_FIXTURES = PRETTY_MERMAID_DIR / "assets" / "fixtures"
 DIAGRAM_BOOTSTRAP = DIAGRAM_TOOLS_DIR / "runtime" / "bootstrap"
 DIAGRAM_SETUP = ROOT / "scripts" / "setup-diagram-tools.sh"
+ARCHIFY_DIR = DIAGRAM_TOOLS_DIR / "skills" / "archify"
+ARCHIFY_SKILL = ARCHIFY_DIR / "SKILL.md"
+ARCHIFY_OPENAI = ARCHIFY_DIR / "agents" / "openai.yaml"
+ARCHIFY_REFERENCE = ARCHIFY_DIR / "references" / "cli.md"
+ARCHIFY_WRAPPER = ARCHIFY_DIR / "scripts" / "archify.mjs"
+ARCHIFY_RUNTIME_MANAGER = ARCHIFY_DIR / "scripts" / "runtime-manager.mjs"
+ARCHIFY_RELEASE_MANIFEST = DIAGRAM_TOOLS_DIR / "runtime" / "archify" / "release.json"
+ARCHIFY_VISUAL_EVIDENCE = DIAGRAM_TOOLS_DIR / "tests" / "archify-visual-evidence.mjs"
+ARCHIFY_SHOWCASE_FIXTURES = (
+    DIAGRAM_TOOLS_DIR / "tests" / "fixtures" / "archify-showcase"
+)
+ARCHIFY_SETUP = ROOT / "scripts" / "setup-archify-tools.sh"
+ARCHIFY_VERSION = "2.16.0"
+ARCHIFY_SHA256 = "4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46"
 DIAGRAM_WORKFLOW = ROOT / ".github" / "workflows" / "diagram-tools.yml"
 DRAWIO_TOOLS_DIR = ROOT / "plugins" / "drawio-tools"
 DRAWIO_TOOLS_PLUGIN = DRAWIO_TOOLS_DIR / ".codex-plugin" / "plugin.json"
@@ -2664,9 +2679,10 @@ def validate_diagram_tools_contract(
     default_plugins: list[str],
     managed_mcp_servers: list[str],
 ) -> None:
-    """Validate the rolling, offline, skill-only Mermaid renderer."""
+    """Validate the skill-only Mermaid and pinned Archify renderers."""
     required_files = (
         DIAGRAM_TOOLS_PLUGIN,
+        DIAGRAM_TOOLS_PACKAGE,
         PRETTY_MERMAID_SKILL,
         PRETTY_MERMAID_OPENAI,
         PRETTY_MERMAID_CLI,
@@ -2674,11 +2690,22 @@ def validate_diagram_tools_contract(
         PRETTY_MERMAID_DIR / "scripts" / "runtime-manager.mjs",
         PRETTY_MERMAID_DIR / "scripts" / "contract-cli.mjs",
         PRETTY_MERMAID_DIR / "references" / "cli.md",
+        ARCHIFY_SKILL,
+        ARCHIFY_OPENAI,
+        ARCHIFY_REFERENCE,
+        ARCHIFY_WRAPPER,
+        ARCHIFY_RUNTIME_MANAGER,
+        ARCHIFY_RELEASE_MANIFEST,
+        ARCHIFY_VISUAL_EVIDENCE,
+        ARCHIFY_SHOWCASE_FIXTURES / "sequence.sequence.json",
+        ARCHIFY_SHOWCASE_FIXTURES / "dataflow.dataflow.json",
+        ARCHIFY_SHOWCASE_FIXTURES / "lifecycle.lifecycle.json",
         DIAGRAM_TOOLS_DIR / "LICENSE",
         DIAGRAM_TOOLS_DIR / "PROVENANCE.md",
         DIAGRAM_TOOLS_DIR / "THIRD_PARTY_NOTICES.md",
         DIAGRAM_BOOTSTRAP / "package.json",
         DIAGRAM_BOOTSTRAP / "package-lock.json",
+        ARCHIFY_SETUP,
         DIAGRAM_SETUP,
         DIAGRAM_WORKFLOW,
         DEPENDABOT,
@@ -2687,7 +2714,7 @@ def validate_diagram_tools_contract(
 
     plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
-    require(plugin.get("version") == "0.3.0", "diagram-tools manifest version must be 0.3.0")
+    require(plugin.get("version") == "0.4.0", "diagram-tools manifest version must be 0.4.0")
     require(plugin.get("skills") == "./skills/", "diagram-tools must expose its skills directory")
     require(plugin.get("license") == "MIT", "diagram-tools manifest must declare MIT")
     require("mcpServers" not in plugin, "diagram-tools must remain skill-only")
@@ -2715,6 +2742,16 @@ def validate_diagram_tools_contract(
         '"$ROOT/scripts/setup-diagram-tools.sh" --update' in setup_text,
         "full toolbox setup must update the contract-gated diagram runtime",
     )
+    archify_setup_call = '"$ROOT/scripts/setup-archify-tools.sh" --install'
+    require(
+        archify_setup_call in setup_text,
+        "full toolbox setup must install the pinned Archify runtime",
+    )
+    require(
+        setup_text.index(archify_setup_call)
+        > setup_text.index('"$ROOT/scripts/setup-diagram-tools.sh" --update'),
+        "full toolbox setup must install Archify after Diagram Tools",
+    )
     require(DIAGRAM_SETUP.stat().st_mode & 0o111, "diagram setup helper must be executable")
     diagram_setup_text = DIAGRAM_SETUP.read_text()
     for expected in (
@@ -2724,6 +2761,50 @@ def validate_diagram_tools_contract(
         "NODE_MAJOR",
     ):
         require(expected in diagram_setup_text, f"diagram setup launcher must preserve {expected}")
+
+    require(ARCHIFY_SETUP.stat().st_mode & 0o111, "Archify setup helper must be executable")
+    archify_setup_text = ARCHIFY_SETUP.read_text()
+    for expected in (
+        "--check",
+        "--install",
+        "--rollback",
+        "CODEX_LOCAL_BIN_DIR",
+        "Refusing to replace non-symlink launcher",
+        "Refusing to replace launcher not owned by diagram-tools",
+        "NODE_MAJOR",
+    ):
+        require(expected in archify_setup_text, f"Archify setup helper must preserve {expected}")
+
+    archify_release = json.loads(ARCHIFY_RELEASE_MANIFEST.read_text())
+    require(
+        archify_release.get("schemaVersion") == 1
+        and archify_release.get("name") == "archify"
+        and archify_release.get("version") == ARCHIFY_VERSION
+        and archify_release.get("tag") == f"v{ARCHIFY_VERSION}",
+        "Archify release manifest must pin the approved release identity",
+    )
+    archify_archive = archify_release.get("archive", {})
+    require(
+        archify_archive.get("name") == "archify.zip"
+        and archify_archive.get("sha256") == ARCHIFY_SHA256
+        and archify_archive.get("url")
+        == f"https://github.com/tt-a1i/archify/releases/download/v{ARCHIFY_VERSION}/archify.zip",
+        "Archify archive must pin the approved URL and SHA-256",
+    )
+    require(
+        all(
+            isinstance(archify_archive.get(key), int) and archify_archive[key] > 0
+            for key in ("bytes", "maxBytes", "maxExpandedBytes", "maxEntries")
+        )
+        and archify_archive["bytes"] <= archify_archive["maxBytes"]
+        and archify_archive["maxBytes"] <= archify_archive["maxExpandedBytes"],
+        "Archify archive limits must be explicit and internally consistent",
+    )
+    require(
+        archify_release.get("updateManifestUrl")
+        == "https://tt-a1i.github.io/archify/skill-updates/archify/stable.json",
+        "Archify update awareness must use the approved notification manifest",
+    )
 
     skill_text = PRETTY_MERMAID_SKILL.read_text()
     require("[TODO:" not in skill_text, "pretty-mermaid skill must not contain placeholders")
@@ -2748,6 +2829,149 @@ def validate_diagram_tools_contract(
         "pretty-mermaid OpenAI metadata must match the skill",
     )
 
+    archify_skill_text = ARCHIFY_SKILL.read_text()
+    require("[TODO:" not in archify_skill_text, "Archify skill must not contain placeholders")
+    for expected in (
+        "name: archify",
+        "runtime-info --json",
+        "visual-check",
+        "showcase",
+        "Static presentation is the default",
+        "New workflows use `schema_version: 2`",
+        "other four types use `schema_version: 1`",
+        "architecture",
+        "workflow",
+        "sequence",
+        "dataflow",
+        "lifecycle",
+        "$pretty-mermaid",
+        "$drawio",
+        "$paper-figure-workflow",
+        "Visualize",
+        "notification-only update checker",
+        "fonts.googleapis.com",
+        "fonts.gstatic.com",
+        "brands capture <url>",
+    ):
+        require(expected in archify_skill_text, f"Archify skill must mention {expected}")
+    archify_openai_text = ARCHIFY_OPENAI.read_text()
+    require(
+        'display_name: "Archify"' in archify_openai_text
+        and "allow_implicit_invocation: true" in archify_openai_text
+        and "$archify" in archify_openai_text,
+        "Archify OpenAI metadata must enable its graphical default",
+    )
+    archify_reference_text = ARCHIFY_REFERENCE.read_text()
+    for expected in (
+        "runtime-info --json",
+        "validate",
+        "deliver",
+        "visual-check",
+        "architecture",
+        "workflow",
+        "sequence",
+        "dataflow",
+        "lifecycle",
+    ):
+        require(expected in archify_reference_text, f"Archify CLI reference must mention {expected}")
+
+    archify_script_text = "\n".join(path.read_text() for path in ARCHIFY_DIR.rglob("*.mjs"))
+    for expected in (
+        "runtime-info",
+        "ok",
+        "status",
+        "version",
+        "releaseDirectory",
+        "sha256",
+        "cliPath",
+        "skillPath",
+        "commonSchemaPath",
+        "typeSchemaPaths",
+        "examplePaths",
+        "updateCheckerPath",
+        "updateManifestUrl",
+        "ARCHIFY_RUNTIME_ROOT",
+        "CODEX_HOME",
+        "state.json",
+        "schemaVersion",
+        "active",
+        "previous",
+        "updatedAt",
+    ):
+        require(expected in archify_script_text, f"Archify wrapper must expose {expected}")
+    require(
+        "active.json" not in archify_script_text
+        and "previous.json" not in archify_script_text,
+        "Archify runtime must use one atomic state receipt, not split active/previous files",
+    )
+
+    archify_visual_evidence_text = ARCHIFY_VISUAL_EVIDENCE.read_text()
+    for expected in (
+        "ChromeVisualBrowser",
+        "findChrome",
+        "1440, height: 900",
+        "1600, height: 1000",
+        "1920, height: 1080",
+        "2048, height: 1320",
+        "['light', 'dark']",
+        "['architecture', 'workflow', 'sequence', 'dataflow', 'lifecycle']",
+        "EXPECTED_CAPTURE_COUNT",
+        "pngReceipt",
+        "resolvedTheme",
+        "containmentFailures",
+        "overflowX",
+        "overflowY",
+        "visualReview: 'pending'",
+        "deliveredArtifactsBefore",
+        "beforeSha256",
+        "afterSha256",
+        "unchanged",
+        "manifest.json",
+        "index.html",
+        ARCHIFY_VERSION,
+        ARCHIFY_SHA256,
+    ):
+        require(expected in archify_visual_evidence_text, f"Archify CI evidence must preserve {expected}")
+
+    archify_provenance_text = normalized(
+        (DIAGRAM_TOOLS_DIR / "PROVENANCE.md").read_text()
+    )
+    for expected in (
+        "CI-only evidence harness",
+        "internal `bin/visual-check.mjs`",
+        "not a product or runtime API",
+        "version, archive digest, expected exports, and exact",
+        "upstream `archify visual-check` CLI remains the acceptance gate",
+        "hashes each delivered HTML artifact before and after capture",
+        'visualReview: "pending"',
+        "atomically replace one `state.json` containing both the active and previous receipts",
+        "a crash cannot split rollback history",
+    ):
+        require(expected in archify_provenance_text, f"Archify provenance must document {expected}")
+
+    expected_archify_showcase_fixtures = {
+        "sequence.sequence.json": "sequence",
+        "dataflow.dataflow.json": "dataflow",
+        "lifecycle.lifecycle.json": "lifecycle",
+    }
+    require(
+        {path.name for path in ARCHIFY_SHOWCASE_FIXTURES.glob("*.json")}
+        == set(expected_archify_showcase_fixtures),
+        "Archify compact showcase fixture inventory must be exact",
+    )
+    for fixture_name, diagram_type in expected_archify_showcase_fixtures.items():
+        fixture = json.loads((ARCHIFY_SHOWCASE_FIXTURES / fixture_name).read_text())
+        meta = fixture.get("meta", {})
+        require(
+            fixture.get("schema_version") == 1
+            and fixture.get("diagram_type") == diagram_type
+            and meta.get("quality_profile") == "showcase"
+            and isinstance(meta.get("viewBox"), list)
+            and len(meta["viewBox"]) == 2
+            and all(isinstance(value, (int, float)) for value in meta["viewBox"]),
+            f"Archify {diagram_type} CI fixture must pin schema v1 and showcase geometry",
+        )
+
     fixture_manifest = json.loads((PRETTY_MERMAID_FIXTURES / "manifest.json").read_text())
     expected_fixtures = {"flowchart.mmd", "state.mmd", "sequence.mmd", "class.mmd", "er.mmd", "xy.mmd"}
     actual_fixtures = {item.get("file") for item in fixture_manifest.get("fixtures", [])}
@@ -2759,6 +2983,17 @@ def validate_diagram_tools_contract(
 
     bootstrap_package = json.loads((DIAGRAM_BOOTSTRAP / "package.json").read_text())
     bootstrap_lock = json.loads((DIAGRAM_BOOTSTRAP / "package-lock.json").read_text())
+    diagram_package = json.loads(DIAGRAM_TOOLS_PACKAGE.read_text())
+    require(
+        diagram_package.get("version") == "0.4.0",
+        "Diagram Tools test package must track plugin version 0.4.0",
+    )
+    diagram_scripts = diagram_package.get("scripts", {})
+    require(
+        "archify" in diagram_scripts.get("test:archify", "")
+        and "archify" in diagram_scripts.get("test:archify:integration", ""),
+        "Diagram Tools must expose focused Archify unit and integration tests",
+    )
     dependencies = bootstrap_package.get("dependencies", {})
     fallback_version = dependencies.get("beautiful-mermaid")
     locked_fallback = bootstrap_lock.get("packages", {}).get("node_modules/beautiful-mermaid", {})
@@ -2802,20 +3037,28 @@ def validate_diagram_tools_contract(
     ):
         require(expected in script_text, f"diagram runtime must preserve {expected} handling")
 
+    readme_normalized = " ".join(readme_text.split())
     for expected in (
         "## Diagram Tools",
-        "the default renderer",
+        "two bounded rendering lanes",
+        "graphical default",
         "task-scoped temporary directory",
         "contract-gated rolling runtime",
-        "Normal rendering is offline",
+        "v2.16.0",
+        "New workflows use schema v2",
+        "archify visual-check",
+        "https://tt-a1i.github.io/archify/skill-updates/archify/stable.json",
+        "fonts.googleapis.com",
+        "fonts.gstatic.com",
     ):
-        require(expected in readme_text, f"README Diagram Tools section must mention {expected}")
+        require(expected in readme_normalized, f"README Diagram Tools section must mention {expected}")
     for expected in (
-        "$pretty-mermaid` by default whenever Mermaid is the chosen format",
-        "task-scoped temporary directory",
-        "native inline Mermaid only",
-        "$drawio",
+        "$archify` for graphical architecture/workflow maps",
+        "$pretty-mermaid` for explicit Mermaid/`.mmd`, terminal ASCII, and compact static diagrams",
+        "task-scoped temporary output",
+        "$drawio` owns explicit native, multi-page, WYSIWYG",
         "$paper-figure-workflow",
+        "Visualize owns adjustable spatial views in conversation",
     ):
         require(expected in global_agents_text, f"global AGENTS diagram routing must mention {expected}")
     for retired in (
@@ -2836,13 +3079,41 @@ def validate_diagram_tools_contract(
     for expected in (
         "ubuntu-latest",
         "macos-latest",
+        "node: [20, 22]",
+        "tests.test_instruction_readability",
         "test:contract",
+        "test:archify:integration",
         "--update --strict",
+        "setup-archify-tools.sh --install",
+        "setup-archify-tools.sh --check",
+        "ARCHIFY_RUNTIME_ROOT",
+        "CODEX_LOCAL_BIN_DIR",
+        "runtime-info --json",
+        "architecture workflow sequence dataflow lifecycle",
+        "visual-check",
+        "archify-visual-evidence.mjs",
+        "tests/fixtures/archify-showcase",
+        "sequence|dataflow|lifecycle",
+        "Capture complete Archify theme and viewport matrix",
         "contact-sheet.mjs",
         "SVG and PNG contact sheets",
         "upload-artifact",
     ):
         require(expected in workflow_text, f"diagram CI must include {expected}")
+    require(
+        workflow_text.count("npm run test:archify:integration") == 1,
+        "diagram CI must run the Archify integration once per conformance matrix entry",
+    )
+    archify_visual_gate = (
+        '"$CODEX_LOCAL_BIN_DIR/archify" visual-check "$output_path" --json'
+    )
+    require(
+        workflow_text.count(archify_visual_gate) == 1
+        and f"{archify_visual_gate} ||" not in workflow_text
+        and workflow_text.index("Gate Archify artifacts with upstream visual-check")
+        < workflow_text.index("Capture complete Archify theme and viewport matrix"),
+        "diagram CI must keep upstream Archify visual-check as the fail-fast acceptance gate",
+    )
 
 
 def validate_drawio_tools_contract(
@@ -3047,8 +3318,8 @@ def validate_drawio_tools_contract(
         "paper-figure-workflow must delegate Draw.io execution without giving up pipeline ownership",
     )
     require(
-        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.3.0",
-        "diagram-tools version must reflect the Draw.io routing boundary",
+        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.4.0",
+        "diagram-tools version must reflect the Archify and Draw.io routing boundaries",
     )
     require(
         json.loads(PAPER_FIGURE_PLUGIN.read_text()).get("version") == "0.2.0",
@@ -3066,7 +3337,7 @@ def validate_drawio_tools_contract(
     ):
         require(expected in readme_text, f"README Draw.io section must mention {expected}")
     for expected in (
-        "Use `$drawio` for explicit editable, multi-page, browser, or exported draw.io work",
+        "$drawio` owns explicit native, multi-page, WYSIWYG",
         "`$paper-figure-workflow` owns publication pipelines",
     ):
         require(expected in global_agents_text, f"global AGENTS Draw.io routing must mention {expected}")
@@ -3131,12 +3402,13 @@ def main() -> None:
     ):
         require(expected in global_agents_text, f"global AGENTS routing must mention {expected}")
     for expected in (
-        "One conclusion or simple procedure",
-        "Three or more comparable entities",
-        "`$pretty-mermaid` by default",
-        "native inline Mermaid only",
-        "bundled Visualize",
-        "standalone or hosted application",
+        "One conclusion/simple procedure",
+        "Three or more comparable entities/repeated fields",
+        "$archify",
+        "$pretty-mermaid",
+        "task-scoped temporary output",
+        "Visualize",
+        "Standalone or hosted application",
         "A visual is presentation, not evidence",
         "side to move",
         "move legality",
@@ -3211,6 +3483,7 @@ def main() -> None:
         "$todoist-task-planning",
         "$daily-command-center",
         "$paper-figure-workflow",
+        "$archify",
         "$pretty-mermaid",
         "$drawio",
     ):
@@ -4334,7 +4607,8 @@ def main() -> None:
         "terse factual query",
         "explicit user instructions",
         "Choose the Smallest Useful Format",
-        "`$pretty-mermaid` by default",
+        "$archify",
+        "$pretty-mermaid",
         "native inline Mermaid only",
         "editable `.mmd` source",
         "bundled Visualize",

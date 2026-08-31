@@ -1,0 +1,6 @@
+interface:
+  display_name: "Archify"
+  short_description: "Interactive architecture and workflow maps"
+  default_prompt: "Use $archify to create a validated interactive system map with retained typed JSON source."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Agent Run Lifecycle",
+    "viewBox": [980, 630],
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "main", "label": "Main lifecycle" },
+    { "id": "recovery", "label": "Recovery" },
+    { "id": "terminal", "label": "Terminal exit" }
+  ],
+  "states": [
+    { "id": "queued", "type": "start", "label": "Queued", "sublabel": "request accepted", "lane": "main", "col": 0, "step": "01", "tag": "entry" },
+    { "id": "planning", "type": "active", "label": "Planning", "sublabel": "build task graph", "lane": "main", "col": 1, "step": "02", "tag": "model" },
+    { "id": "executing", "type": "active", "label": "Executing", "sublabel": "tool calls", "lane": "main", "col": 2, "step": "03", "tag": "work" },
+    { "id": "reviewing", "type": "decision", "label": "Reviewing", "sublabel": "quality gate", "lane": "main", "col": 3, "step": "04", "tag": "check" },
+    { "id": "completed", "type": "success", "label": "Completed", "sublabel": "final response", "lane": "main", "col": 4, "step": "05", "tag": "done" },
+    { "id": "failed", "type": "failure", "label": "Failed", "sublabel": "retryable error", "lane": "recovery", "col": 0, "tag": "retry" },
+    { "id": "exhausted", "type": "failure", "label": "Exhausted", "sublabel": "retry budget spent", "lane": "terminal", "col": 2, "tag": "terminal" }
+  ],
+  "transitions": [
+    { "id": "execution-failed", "from": "executing", "to": "failed", "variant": "security", "fromSide": "bottom", "toSide": "top", "route": "straight" },
+    { "id": "failed-retry", "from": "failed", "to": "executing", "variant": "emphasis", "fromSide": "left", "toSide": "top", "via": [[20, 307], [20, 80], [402, 80]] },
+    { "id": "retry-exhausted", "from": "failed", "to": "exhausted", "variant": "security", "route": "drop" }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Recovery Contract",
+      "items": [
+        "Five ordered phases carry the normal run to completion",
+        "Retryable failure returns to execution; exhaustion exits"
+      ]
+    }
+  ]
+}
