@@ -3165,7 +3165,7 @@ def validate_drawio_tools_contract(
 
     plugin = json.loads(DRAWIO_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "drawio-tools", "drawio-tools manifest name must be exact")
-    require(plugin.get("version") == "0.1.1", "drawio-tools manifest version must be 0.1.1")
+    require(plugin.get("version") == "0.1.2", "drawio-tools manifest version must be 0.1.2")
     require(plugin.get("skills") == "./skills/", "drawio-tools must expose its skill")
     require(plugin.get("mcpServers") == "./.mcp.json", "drawio-tools must expose its MCP config")
     require(plugin.get("license") == "MIT", "drawio-tools must declare its toolbox license")
@@ -3239,6 +3239,14 @@ def validate_drawio_tools_contract(
         locked_package.get("version") == "1.4.0"
         and locked_package.get("integrity") == expected_integrity,
         "Draw.io runtime lock must preserve the audited 1.4.0 package integrity",
+    )
+    require(
+        lock.get("packages", {}).get("node_modules/fast-uri", {}).get("version") == "3.1.7",
+        "Draw.io runtime lock must pin the audited fast-uri 3.1.7 release",
+    )
+    require(
+        lock.get("packages", {}).get("node_modules/qs", {}).get("version") == "6.16.0",
+        "Draw.io runtime lock must pin the audited qs 6.16.0 release",
     )
 
     setup_helper = DRAWIO_SETUP.read_text()

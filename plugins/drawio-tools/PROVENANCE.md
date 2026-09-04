@@ -8,6 +8,9 @@ plugin. Version `1.4.0` is pinned with npm integrity
 The extracted package tree (excluding the separately verified shape index) is
 also pinned to SHA-256
 `9b8fed587fd1bc61041c4a57ec536ad653673e8f413141d7ff6ef0b03754ac6d`.
+The production lock pins the security-fixed compatible transitive releases
+`fast-uri@3.1.7` and `qs@6.16.0`; setup audits the complete production tree
+before promotion.
 
 The offline shape search index is fetched only during setup from upstream
 commit `9ce8dc19caa8861315337ec91f3ac7c0df8e0978`. Setup requires SHA-256

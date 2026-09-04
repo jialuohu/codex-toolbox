@@ -20,7 +20,7 @@ class DrawioToolsContractTests(unittest.TestCase):
         lock = json.loads((PLUGIN / "runtime" / "bootstrap" / "package-lock.json").read_text())
 
         self.assertEqual(manifest["name"], "drawio-tools")
-        self.assertEqual(manifest["version"], "0.1.1")
+        self.assertEqual(manifest["version"], "0.1.2")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         server = mcp["mcpServers"]["drawio"]
         self.assertEqual(server["command"], "/bin/sh")
@@ -47,6 +47,8 @@ class DrawioToolsContractTests(unittest.TestCase):
             package["integrity"],
             "sha512-DRg8oveMZSN5rgH6TAtkfaGSm364GzJV53uqJE9ug4EYCORjCgEpapFr0XLi037kq2OXdM2Z/vgAyj7N6vbjiA==",
         )
+        self.assertEqual(lock["packages"]["node_modules/fast-uri"]["version"], "3.1.7")
+        self.assertEqual(lock["packages"]["node_modules/qs"]["version"], "6.16.0")
 
     def test_check_fails_closed_when_runtime_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as codex_home:
