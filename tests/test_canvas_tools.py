@@ -14,6 +14,9 @@ MCP = PLUGIN / ".mcp.json"
 LAUNCHER = PLUGIN / "scripts" / "run-canvas-mcp.sh"
 SKILL = PLUGIN / "skills" / "canvas-student-planning" / "SKILL.md"
 OPENAI = SKILL.parent / "agents" / "openai.yaml"
+HOMEWORK_SKILL = PLUGIN / "skills" / "canvas-overleaf-homework" / "SKILL.md"
+HOMEWORK_OPENAI = HOMEWORK_SKILL.parent / "agents" / "openai.yaml"
+HOMEWORK_TEMPLATE = HOMEWORK_SKILL.parent / "assets" / "homework-template"
 MARKETPLACE = ROOT / ".agents" / "plugins" / "marketplace.json"
 SETUP = ROOT / "scripts" / "setup-codex-toolbox.sh"
 
@@ -39,7 +42,7 @@ class CanvasToolsContractTests(unittest.TestCase):
         marketplace = json.loads(MARKETPLACE.read_text())
 
         self.assertEqual(manifest["name"], "canvas-tools")
-        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["version"], "0.2.0")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         self.assertLessEqual(len(manifest["interface"]["defaultPrompt"]), 3)
@@ -89,6 +92,80 @@ class CanvasToolsContractTests(unittest.TestCase):
             self.assertIn(expected, text)
         for expected in ('value: "canvas"', 'value: "todoist"', 'url: "https://ai.todoist.net/mcp"'):
             self.assertIn(expected, metadata)
+
+    def test_homework_skill_metadata_and_template_contract(self) -> None:
+        text = " ".join(HOMEWORK_SKILL.read_text().split())
+        metadata = HOMEWORK_OPENAI.read_text()
+        main = (HOMEWORK_TEMPLATE / "main.tex").read_text()
+        preamble = (HOMEWORK_TEMPLATE / "config" / "preamble.tex").read_text()
+        homework = (HOMEWORK_TEMPLATE / "homework" / "homework-01.tex").read_text()
+
+        self.assertEqual(
+            {
+                path.relative_to(HOMEWORK_TEMPLATE).as_posix()
+                for path in HOMEWORK_TEMPLATE.rglob("*")
+                if path.is_file()
+            },
+            {
+                "README.md",
+                "config/preamble.tex",
+                "figures/README.txt",
+                "homework/homework-01.tex",
+                "main.tex",
+            },
+        )
+        for expected in (
+            "Never paraphrase, summarize, correct grammar",
+            "complete visible problem label",
+            "Preserve its existing `solution` environment byte-for-byte",
+            "Include every figure that belongs to the question",
+            "Never redraw, trace, screenshot, or generate a replacement",
+            "If both have deadlines and the instants differ",
+            "Overleaf: <CANONICAL_PROJECT_URL>",
+            "If no task exists",
+            "never retry blindly",
+            "one-time reconciliation",
+        ):
+            self.assertIn(expected, text)
+
+        for expected in (
+            'value: "canvas"',
+            'value: "overleaf"',
+            'value: "todoist"',
+            'url: "https://ai.todoist.net/mcp"',
+            "allow_implicit_invocation: true",
+            "$canvas-overleaf-homework",
+        ):
+            self.assertIn(expected, metadata)
+
+        for expected in (
+            r"\newcommand{\studentname}",
+            r"\newcommand{\coursename}",
+            r"\newcommand{\assignmentname}",
+            r"\newcommand{\duedate}",
+            r"\newcommand{\assignmentfile}",
+            r"\input{config/preamble}",
+            r"\input{\assignmentfile}",
+        ):
+            self.assertIn(expected, main)
+        for expected in (
+            r"\graphicspath{{figures/}}",
+            r"\newenvironment{problem}",
+            r"\newenvironment{solution}",
+            r"\textbf{#1}\enspace",
+        ):
+            self.assertIn(expected, preamble)
+        self.assertNotIn(r"\begin{problem}", homework)
+        self.assertNotIn(r"\begin{solution}", homework)
+
+    def test_homework_skill_contains_no_runtime_assignment_data(self) -> None:
+        instruction_and_template_text = "\n".join(
+            path.read_text()
+            for path in (HOMEWORK_SKILL, *HOMEWORK_TEMPLATE.rglob("*"))
+            if path.is_file()
+        )
+        self.assertNotRegex(instruction_and_template_text, r"https?://")
+        self.assertNotRegex(instruction_and_template_text, r"\b[0-9a-f]{24}\b")
 
 
 class CanvasLauncherTests(unittest.TestCase):

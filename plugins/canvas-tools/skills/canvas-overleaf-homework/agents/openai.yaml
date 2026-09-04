@@ -1,0 +1,19 @@
+interface:
+  display_name: "Canvas Overleaf Homework"
+  short_description: "Build and sync course homework in Overleaf."
+  default_prompt: "Use $canvas-overleaf-homework to build this Canvas homework in Overleaf and link it in Todoist."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "canvas"
+      description: "Student-scoped Canvas courses, assignments, identities, and deadlines"
+    - type: "mcp"
+      value: "overleaf"
+      description: "Guarded Overleaf project reads, text writes, and local file imports"
+    - type: "mcp"
+      value: "todoist"
+      description: "Official Todoist task and project tools"
+      transport: "streamable_http"
+      url: "https://ai.todoist.net/mcp"
+policy:
+  allow_implicit_invocation: true

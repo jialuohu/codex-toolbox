@@ -1,7 +1,7 @@
 {
   "name": "canvas-tools",
-  "version": "0.1.0",
-  "description": "Student-focused Canvas LMS tracking, guarded submissions, and explicit Todoist reconciliation.",
+  "version": "0.2.0",
+  "description": "Student-focused Canvas tracking, guarded Overleaf homework setup, and explicit Todoist reconciliation.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -14,13 +14,16 @@
     "lms",
     "student",
     "assignments",
-    "todoist"
+    "todoist",
+    "overleaf",
+    "latex",
+    "homework"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Canvas Tools",
-    "shortDescription": "Track Canvas work and reconcile it with Todoist.",
-    "longDescription": "Packages Canvas MCP in a student-only profile for courses, assignments, deadlines, grades, peer reviews, guarded assignment submissions, and explicit duplicate-safe Todoist task reconciliation.",
+    "shortDescription": "Track Canvas work and prepare it in Overleaf.",
+    "longDescription": "Packages Canvas MCP in a student-only profile for courses, assignments, deadlines, grades, peer reviews, guarded assignment submissions, exact-source Overleaf homework setup, and explicit duplicate-safe Todoist reconciliation.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -30,7 +33,7 @@
     ],
     "defaultPrompt": [
       "Use $canvas-student-planning to show what I have due this week.",
-      "Use $canvas-student-planning to reconcile upcoming Canvas assignments into Todoist.",
+      "Use $canvas-overleaf-homework to build this Canvas assignment in Overleaf and link it in Todoist.",
       "Use $canvas-student-planning to submit this assignment after showing the exact preview."
     ]
   },

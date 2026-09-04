@@ -1,0 +1,31 @@
+\documentclass[11pt]{article}
+
+\input{config/preamble}
+
+\newcommand{\studentname}{Student Name}
+\newcommand{\coursename}{Course}
+\newcommand{\termname}{}
+\newcommand{\assignmentname}{Homework 1}
+\newcommand{\duedate}{Not specified}
+\newcommand{\assignmentfile}{homework/homework-01}
+
+\begin{document}
+
+\begin{center}
+  {\Large\bfseries \coursename}\par
+  \vspace{0.25em}
+  {\large \assignmentname}\par
+  \vspace{0.75em}
+  \studentname
+  \ifx\termname\empty\else\hfill\termname\fi
+  \par
+  \vspace{0.25em}
+  \textbf{Due:} \duedate
+\end{center}
+
+\hrule
+\vspace{1em}
+
+\input{\assignmentfile}
+
+\end{document}

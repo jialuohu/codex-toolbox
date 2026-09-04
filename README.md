@@ -665,6 +665,13 @@ assignments, due dates, grades, submission state, and peer reviews; it can also
 perform guarded assignment submissions and explicitly reconcile incomplete
 assignments into Todoist without claiming continuous synchronization.
 
+`$canvas-overleaf-homework` prepares one Canvas-linked assignment in a configured
+Overleaf project from selected questions on a user-supplied public source. It
+preserves the exact problem wording and original figures, compiles a temporary
+LaTeX snapshot before guarded sequential writes, resolves the displayed deadline
+from Canvas with a Todoist fallback, and adds a duplicate-safe Overleaf link to
+the assignment task. It does not solve or submit the homework.
+
 Canvas credentials remain outside Git in
 `${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/canvas-tools/canvas.env`.
 The file must be owned by the current user with mode `600` and contain an HTTPS
@@ -680,7 +687,8 @@ codex plugin add canvas-tools@jialuo-codex-toolbox
 Start a fresh task after installation. Canvas writes remain prompt-gated;
 assignment submission additionally requires the upstream full preview and
 single-use confirmation token. Todoist writes use the existing
-`$todoist-task-planning` workflow and one Todoist surface.
+`$todoist-task-planning` workflow and one Todoist surface. Overleaf homework
+setup also requires the configured `overleaf-tools` plugin and `$latex-compile`.
 
 ## Todoist Task Planning
 

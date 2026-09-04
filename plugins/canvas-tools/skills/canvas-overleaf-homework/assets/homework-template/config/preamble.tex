@@ -1,0 +1,24 @@
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{figures/}}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5em}
+
+\newenvironment{problem}[1]{%
+  \par\medskip
+  \noindent\textbf{#1}\enspace
+}{%
+  \par\medskip
+}
+
+\newenvironment{solution}{%
+  \par\noindent\textbf{Solution.}\enspace
+}{%
+  \par\medskip
+}

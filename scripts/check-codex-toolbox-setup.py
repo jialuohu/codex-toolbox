@@ -240,6 +240,9 @@ CANVAS_MCP = CANVAS_DIR / ".mcp.json"
 CANVAS_LAUNCHER = CANVAS_DIR / "scripts" / "run-canvas-mcp.sh"
 CANVAS_SKILL = CANVAS_DIR / "skills" / "canvas-student-planning" / "SKILL.md"
 CANVAS_OPENAI = CANVAS_SKILL.parent / "agents" / "openai.yaml"
+CANVAS_HOMEWORK_SKILL = CANVAS_DIR / "skills" / "canvas-overleaf-homework" / "SKILL.md"
+CANVAS_HOMEWORK_OPENAI = CANVAS_HOMEWORK_SKILL.parent / "agents" / "openai.yaml"
+CANVAS_HOMEWORK_TEMPLATE = CANVAS_HOMEWORK_SKILL.parent / "assets" / "homework-template"
 DOCMOST_DIR = ROOT / "plugins" / "docmost-tools"
 DOCMOST_PLUGIN = DOCMOST_DIR / ".codex-plugin" / "plugin.json"
 DOCMOST_MCP = DOCMOST_DIR / ".mcp.json"
@@ -3734,6 +3737,11 @@ def main() -> None:
     require(CANVAS_LAUNCHER.exists(), "canvas-tools must include its guarded launcher")
     require(CANVAS_SKILL.exists(), "canvas-tools must include canvas-student-planning")
     require(CANVAS_OPENAI.exists(), "canvas-student-planning must include OpenAI metadata")
+    require(CANVAS_HOMEWORK_SKILL.exists(), "canvas-tools must include canvas-overleaf-homework")
+    require(
+        CANVAS_HOMEWORK_OPENAI.exists(),
+        "canvas-overleaf-homework must include OpenAI metadata",
+    )
     require(
         TODOIST_TASK_PLANNING_SKILL.exists(),
         "productivity-tools must include todoist-task-planning skill",
@@ -4408,7 +4416,7 @@ def main() -> None:
         '  "canvas-tools"' not in default_plugins,
         "canvas-tools must remain opt-in because it requires institutional credentials",
     )
-    require(canvas_plugin.get("version") == "0.1.0", "canvas-tools must start at 0.1.0")
+    require(canvas_plugin.get("version") == "0.2.0", "canvas-tools must be version 0.2.0")
     require(canvas_plugin.get("skills") == "./skills/", "canvas-tools must expose its skill")
     require(canvas_plugin.get("mcpServers") == "./.mcp.json", "canvas-tools must expose its MCP config")
     canvas_server = canvas_mcp.get("mcpServers", {}).get("canvas")
@@ -4481,7 +4489,53 @@ def main() -> None:
         'url: "https://ai.todoist.net/mcp"',
     ):
         require(expected in canvas_openai, f"Canvas OpenAI metadata must mention {expected}")
-    for expected in ("## Canvas Student Planning", "$canvas-student-planning", "canvas-tools/canvas.env"):
+    canvas_homework_text = normalized(CANVAS_HOMEWORK_SKILL.read_text())
+    for expected in (
+        "Never paraphrase, summarize, correct grammar",
+        "Include every figure that belongs to the question",
+        "If both have deadlines and the instants differ",
+        "Overleaf: <CANONICAL_PROJECT_URL>",
+        "never retry blindly",
+    ):
+        require(
+            expected in canvas_homework_text,
+            f"canvas-overleaf-homework must mention {expected}",
+        )
+    canvas_homework_openai = CANVAS_HOMEWORK_OPENAI.read_text()
+    for expected in (
+        'display_name: "Canvas Overleaf Homework"',
+        'value: "canvas"',
+        'value: "overleaf"',
+        'value: "todoist"',
+        'url: "https://ai.todoist.net/mcp"',
+        "allow_implicit_invocation: true",
+    ):
+        require(
+            expected in canvas_homework_openai,
+            f"Canvas homework OpenAI metadata must mention {expected}",
+        )
+    expected_homework_template = {
+        "README.md",
+        "config/preamble.tex",
+        "figures/README.txt",
+        "homework/homework-01.tex",
+        "main.tex",
+    }
+    actual_homework_template = {
+        path.relative_to(CANVAS_HOMEWORK_TEMPLATE).as_posix()
+        for path in CANVAS_HOMEWORK_TEMPLATE.rglob("*")
+        if path.is_file()
+    }
+    require(
+        actual_homework_template == expected_homework_template,
+        "canvas-overleaf-homework must include the exact reusable template tree",
+    )
+    for expected in (
+        "## Canvas Student Planning",
+        "$canvas-student-planning",
+        "$canvas-overleaf-homework",
+        "canvas-tools/canvas.env",
+    ):
         require(expected in readme_text, f"README Canvas section must mention {expected}")
     require(
         "$canvas-student-planning" in global_agents_text

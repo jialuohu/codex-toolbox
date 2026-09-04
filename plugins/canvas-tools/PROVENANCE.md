@@ -9,6 +9,6 @@
 - Release date: 2026-08-30
 
 The upstream source is not vendored. Codex Toolbox supplies the manifest,
-launcher policy, skill, and documentation; `uvx` resolves the pinned published
-package at runtime. Review upstream changes and repeat the security and workflow
-checks before changing the pinned version.
+launcher policy, skills, template assets, and documentation; `uvx` resolves the
+pinned published package at runtime. Review upstream changes and repeat the
+security and workflow checks before changing the pinned version.
