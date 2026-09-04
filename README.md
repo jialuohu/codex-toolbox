@@ -657,6 +657,31 @@ scripts/setup-gws.sh --check-account account-one
 Start a fresh Codex task after installation or profile changes so the
 `google-workspace-tools` skills are available from the start.
 
+## Canvas Student Planning
+
+The opt-in `canvas-tools` plugin packages `canvas-mcp==1.12.0` with a positive
+student-only tool allowlist. `$canvas-student-planning` reads courses,
+assignments, due dates, grades, submission state, and peer reviews; it can also
+perform guarded assignment submissions and explicitly reconcile incomplete
+assignments into Todoist without claiming continuous synchronization.
+
+Canvas credentials remain outside Git in
+`${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/canvas-tools/canvas.env`.
+The file must be owned by the current user with mode `600` and contain an HTTPS
+`CANVAS_API_URL` ending in `/api/v1` plus `CANVAS_API_TOKEN`. Canvas personal
+tokens inherit the permissions of their account, so never paste one into chat or
+place it in command arguments, logs, or repository files. See
+[`plugins/canvas-tools/README.md`](plugins/canvas-tools/README.md) for setup.
+
+```bash
+codex plugin add canvas-tools@jialuo-codex-toolbox
+```
+
+Start a fresh task after installation. Canvas writes remain prompt-gated;
+assignment submission additionally requires the upstream full preview and
+single-use confirmation token. Todoist writes use the existing
+`$todoist-task-planning` workflow and one Todoist surface.
+
 ## Todoist Task Planning
 
 The default `productivity-tools` plugin bundles `$todoist-task-planning` and

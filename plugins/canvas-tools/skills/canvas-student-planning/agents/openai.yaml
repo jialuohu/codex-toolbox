@@ -1,0 +1,14 @@
+interface:
+  display_name: "Canvas Student Planning"
+  short_description: "Track Canvas work and reconcile it with Todoist."
+  default_prompt: "Use $canvas-student-planning to review my Canvas deadlines or reconcile selected assignments into Todoist."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "canvas"
+      description: "Student-scoped Canvas courses, assignments, submissions, grades, and peer reviews"
+    - type: "mcp"
+      value: "todoist"
+      description: "Official Todoist task and project tools"
+      transport: "streamable_http"
+      url: "https://ai.todoist.net/mcp"

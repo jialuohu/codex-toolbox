@@ -229,6 +229,12 @@ DRAWIO_TEST = ROOT / "tests" / "test_drawio_tools.py"
 DEPENDABOT = ROOT / ".github" / "dependabot.yml"
 PRODUCTIVITY_PLUGIN = ROOT / "plugins" / "productivity-tools" / ".codex-plugin" / "plugin.json"
 PRODUCTIVITY_MCP = ROOT / "plugins" / "productivity-tools" / ".mcp.json"
+CANVAS_DIR = ROOT / "plugins" / "canvas-tools"
+CANVAS_PLUGIN = CANVAS_DIR / ".codex-plugin" / "plugin.json"
+CANVAS_MCP = CANVAS_DIR / ".mcp.json"
+CANVAS_LAUNCHER = CANVAS_DIR / "scripts" / "run-canvas-mcp.sh"
+CANVAS_SKILL = CANVAS_DIR / "skills" / "canvas-student-planning" / "SKILL.md"
+CANVAS_OPENAI = CANVAS_SKILL.parent / "agents" / "openai.yaml"
 DOCMOST_DIR = ROOT / "plugins" / "docmost-tools"
 DOCMOST_PLUGIN = DOCMOST_DIR / ".codex-plugin" / "plugin.json"
 DOCMOST_MCP = DOCMOST_DIR / ".mcp.json"
@@ -3715,6 +3721,11 @@ def main() -> None:
     )
     require(PRODUCTIVITY_PLUGIN.exists(), "productivity-tools plugin manifest must exist")
     require(PRODUCTIVITY_MCP.exists(), "productivity-tools must define an MCP config")
+    require(CANVAS_PLUGIN.exists(), "canvas-tools plugin manifest must exist")
+    require(CANVAS_MCP.exists(), "canvas-tools must define an MCP config")
+    require(CANVAS_LAUNCHER.exists(), "canvas-tools must include its guarded launcher")
+    require(CANVAS_SKILL.exists(), "canvas-tools must include canvas-student-planning")
+    require(CANVAS_OPENAI.exists(), "canvas-student-planning must include OpenAI metadata")
     require(
         TODOIST_TASK_PLANNING_SKILL.exists(),
         "productivity-tools must include todoist-task-planning skill",
@@ -3737,6 +3748,8 @@ def main() -> None:
     paper_figure_plugin = json.loads(PAPER_FIGURE_PLUGIN.read_text())
     productivity_plugin = json.loads(PRODUCTIVITY_PLUGIN.read_text())
     productivity_mcp = json.loads(PRODUCTIVITY_MCP.read_text())
+    canvas_plugin = json.loads(CANVAS_PLUGIN.read_text())
+    canvas_mcp = json.loads(CANVAS_MCP.read_text())
     trading_mcp = json.loads(TRADING_MCP.read_text())
     default_plugins = array_body(script, "DEFAULT_PLUGINS")
     default_plugin_entries = shell_array_entries(script, "DEFAULT_PLUGINS")
@@ -4372,6 +4385,102 @@ def main() -> None:
             expected in todoist_openai,
             f"todoist-task-planning OpenAI metadata must mention {expected}",
         )
+
+    require(
+        any(
+            entry.get("name") == "canvas-tools"
+            and entry.get("source", {}).get("path") == "./plugins/canvas-tools"
+            and entry.get("policy")
+            == {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
+            for entry in marketplace.get("plugins", [])
+        ),
+        "marketplace must expose canvas-tools as an opt-in authenticated plugin",
+    )
+    require(
+        '  "canvas-tools"' not in default_plugins,
+        "canvas-tools must remain opt-in because it requires institutional credentials",
+    )
+    require(canvas_plugin.get("version") == "0.1.0", "canvas-tools must start at 0.1.0")
+    require(canvas_plugin.get("skills") == "./skills/", "canvas-tools must expose its skill")
+    require(canvas_plugin.get("mcpServers") == "./.mcp.json", "canvas-tools must expose its MCP config")
+    canvas_server = canvas_mcp.get("mcpServers", {}).get("canvas")
+    require(canvas_server is not None, "canvas-tools must define the canvas MCP server")
+    require(canvas_server.get("command") == "/bin/sh", "canvas MCP must use the guarded shell launcher")
+    require(
+        canvas_server.get("args") == ["scripts/run-canvas-mcp.sh"],
+        "canvas MCP must launch only the toolbox wrapper",
+    )
+    expected_canvas_tools = {
+        "get_assignment_details",
+        "get_my_course_grades",
+        "get_my_enrollments",
+        "get_my_peer_reviews_todo",
+        "get_my_profile",
+        "get_my_submission",
+        "get_my_submission_status",
+        "get_my_todo_items",
+        "get_my_upcoming_assignments",
+        "list_assignments",
+        "list_courses",
+        "comment_on_my_submission",
+        "submit_assignment",
+    }
+    require(
+        set(canvas_server.get("enabled_tools", [])) == expected_canvas_tools,
+        "canvas MCP must expose the exact student planning allowlist",
+    )
+    require(
+        canvas_server.get("default_tools_approval_mode") == "auto",
+        "allowlisted Canvas reads should be auto-approved",
+    )
+    canvas_approval = canvas_server.get("tools", {})
+    require(
+        canvas_approval
+        == {
+            "comment_on_my_submission": {"approval_mode": "prompt"},
+            "submit_assignment": {"approval_mode": "prompt"},
+        },
+        "both Canvas writes must be prompt-gated",
+    )
+    launcher_text = CANVAS_LAUNCHER.read_text()
+    for expected in (
+        "canvas-mcp==1.12.0",
+        "CANVAS_ROLE=student",
+        "STUDENT_WRITE_TOOLS=submit_assignment,comment_on_my_submission",
+        "COURSE_AGENT_POLICY_ENABLED=false",
+        "EXECUTE_TYPESCRIPT_ENABLED=false",
+        "canvas-tools/canvas.env",
+        'file_mode" != "600',
+    ):
+        require(expected in launcher_text, f"canvas launcher must enforce {expected}")
+    canvas_skill_text = normalized(CANVAS_SKILL.read_text())
+    for expected in (
+        "Canvas as the authoritative source",
+        "Todoist as the durable source",
+        "Choose exactly one Todoist surface",
+        "Canvas: course_id=<COURSE_ID>; assignment_id=<ASSIGNMENT_ID>",
+        "Confirm a multi-task preview",
+        "Never automatically complete, reopen, or delete",
+        "two-call preview-and-confirm",
+        "A successful Canvas submission does not automatically complete its Todoist task",
+    ):
+        require(expected in canvas_skill_text, f"canvas-student-planning must mention {expected}")
+    canvas_openai = CANVAS_OPENAI.read_text()
+    for expected in (
+        'display_name: "Canvas Student Planning"',
+        'value: "canvas"',
+        'value: "todoist"',
+        'url: "https://ai.todoist.net/mcp"',
+    ):
+        require(expected in canvas_openai, f"Canvas OpenAI metadata must mention {expected}")
+    for expected in ("## Canvas Student Planning", "$canvas-student-planning", "canvas-tools/canvas.env"):
+        require(expected in readme_text, f"README Canvas section must mention {expected}")
+    require(
+        "$canvas-student-planning" in global_agents_text
+        and "untrusted data" in global_agents_text,
+        "global AGENTS must route student Canvas work and preserve the trust boundary",
+    )
+
     daily_skill_text = DAILY_COMMAND_CENTER_SKILL.read_text()
     daily_skill_normalized = normalized(daily_skill_text)
     daily_skill_lower = daily_skill_normalized.lower()

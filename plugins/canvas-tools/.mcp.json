@@ -1,0 +1,43 @@
+{
+  "mcpServers": {
+    "canvas": {
+      "enabled": true,
+      "command": "/bin/sh",
+      "args": [
+        "scripts/run-canvas-mcp.sh"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "CODEX_HOME",
+        "CODEX_LOCAL_BIN_DIR",
+        "CODEX_SECRETS_DIR"
+      ],
+      "startup_timeout_sec": 300,
+      "tool_timeout_sec": 300,
+      "enabled_tools": [
+        "get_assignment_details",
+        "get_my_course_grades",
+        "get_my_enrollments",
+        "get_my_peer_reviews_todo",
+        "get_my_profile",
+        "get_my_submission",
+        "get_my_submission_status",
+        "get_my_todo_items",
+        "get_my_upcoming_assignments",
+        "list_assignments",
+        "list_courses",
+        "comment_on_my_submission",
+        "submit_assignment"
+      ],
+      "default_tools_approval_mode": "auto",
+      "tools": {
+        "comment_on_my_submission": {
+          "approval_mode": "prompt"
+        },
+        "submit_assignment": {
+          "approval_mode": "prompt"
+        }
+      }
+    }
+  }
+}
