@@ -1040,6 +1040,27 @@ tests, rollout, and scope, then chooses Codex-only, native Codex subagents, or
 OpenSpec routing. It does not create artifacts, dispatch workers, or perform
 verification after code changes.
 
+## Claude Counselor
+
+`$claude-counselor` gives Codex a bounded second opinion from the locally
+authenticated Claude Code CLI. For major architectural, high-risk, or material
+multi-file implementation work, it can run one independent planning pass and
+one final code-review pass. Codex sends only selected task context through
+stdin; Claude receives no tools or repository access, saves no session, and
+returns schema-constrained JSON. Codex remains responsible for edits, tests,
+evidence, and every final decision.
+
+The wrapper uses the local Claude.ai login and refuses non-empty Anthropic API
+authentication environment variables to avoid silently changing the billing
+path. It never sends credentials, unrelated diffs, confidential submissions,
+or private documents. Failures are not retried automatically.
+
+Example prompt:
+
+```text
+Use $claude-counselor to get an independent plan and final review for this architectural change.
+```
+
 ## Explain Clearly
 
 Use `$explain-clearly` when a concept, why/how question, comparison, or code

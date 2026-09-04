@@ -1,0 +1,6 @@
+interface:
+  display_name: "Claude Counselor"
+  short_description: "Bounded Claude planning and code review counsel."
+  default_prompt: "Use $claude-counselor to get a bounded Claude second opinion on this plan and final implementation."
+policy:
+  allow_implicit_invocation: true

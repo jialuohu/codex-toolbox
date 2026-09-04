@@ -30,6 +30,10 @@ SHIP_AGENT = (
     / "openai.yaml"
 )
 WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
+CLAUDE_COUNSELOR = (
+    ROOT / "plugins" / "workflow-tools" / "skills" / "claude-counselor" / "SKILL.md"
+)
+CLAUDE_COUNSELOR_AGENT = CLAUDE_COUNSELOR.parent / "agents" / "openai.yaml"
 
 
 class InstructionBudgetTests(unittest.TestCase):
@@ -181,9 +185,28 @@ class ReadabilityContractTests(unittest.TestCase):
         diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
-        self.assertEqual(workflow_manifest["version"], "0.5.0")
+        self.assertEqual(workflow_manifest["version"], "0.6.0")
         self.assertEqual(diagram_manifest["version"], "0.4.0")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
+
+    def test_claude_counselor_is_bounded_and_implicitly_available(self) -> None:
+        global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
+        skill_text = CLAUDE_COUNSELOR.read_text(encoding="utf-8")
+        agent_text = CLAUDE_COUNSELOR_AGENT.read_text(encoding="utf-8")
+        readme_text = README.read_text(encoding="utf-8")
+
+        for text in (global_text, skill_text, readme_text):
+            self.assertIn("$claude-counselor", text)
+        for expected in (
+            "at most two calls",
+            "wrapper never discovers or reads files",
+            "disabled tools",
+            "no session persistence",
+            "Codex remains",
+            "make no automatic retry",
+        ):
+            self.assertIn(expected, skill_text)
+        self.assertIn("allow_implicit_invocation: true", agent_text)
 
 
 if __name__ == "__main__":

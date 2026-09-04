@@ -170,6 +170,11 @@ SHIP_TOOLBOX_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "ship-toolbox" / "SKILL.md"
 )
 SHIP_TOOLBOX_OPENAI = SHIP_TOOLBOX_SKILL.parent / "agents" / "openai.yaml"
+CLAUDE_COUNSELOR_SKILL = (
+    ROOT / "plugins" / "workflow-tools" / "skills" / "claude-counselor" / "SKILL.md"
+)
+CLAUDE_COUNSELOR_OPENAI = CLAUDE_COUNSELOR_SKILL.parent / "agents" / "openai.yaml"
+CLAUDE_COUNSELOR_SCRIPT = CLAUDE_COUNSELOR_SKILL.parent / "scripts" / "claude_counselor.py"
 PAPER_FIGURE_PLUGIN = ROOT / "plugins" / "paper-figure-tools" / ".codex-plugin" / "plugin.json"
 PAPER_FIGURE_SKILL = (
     ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
@@ -3706,6 +3711,9 @@ def main() -> None:
         SHIP_TOOLBOX_OPENAI.exists(),
         "ship-toolbox must include OpenAI agent metadata",
     )
+    require(CLAUDE_COUNSELOR_SKILL.exists(), "workflow-tools must include claude-counselor")
+    require(CLAUDE_COUNSELOR_OPENAI.exists(), "claude-counselor must include OpenAI metadata")
+    require(CLAUDE_COUNSELOR_SCRIPT.exists(), "claude-counselor must include its guarded wrapper")
     require(PAPER_FIGURE_PLUGIN.exists(), "paper-figure-tools plugin manifest must exist")
     require(
         PAPER_FIGURE_SKILL.exists(),
@@ -4636,8 +4644,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.5.0",
-        "workflow-tools plugin version must reflect default Pretty Mermaid routing",
+        workflow_plugin.get("version") == "0.6.0",
+        "workflow-tools plugin version must reflect Claude Counselor support",
     )
     require(
         "mcpServers" not in workflow_plugin,
@@ -4671,6 +4679,10 @@ def main() -> None:
     require(
         any("ship-toolbox" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
         "workflow-tools default prompts must surface ship-toolbox usage",
+    )
+    require(
+        any("claude-counselor" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools default prompts must surface claude-counselor usage",
     )
     deep_planning_text = DEEP_PLANNING_SKILL.read_text()
     for expected in (
@@ -4791,6 +4803,33 @@ def main() -> None:
         require(
             expected in ship_toolbox_openai,
             f"ship-toolbox OpenAI metadata must mention {expected}",
+        )
+    claude_counselor_text = CLAUDE_COUNSELOR_SKILL.read_text()
+    for expected in (
+        "name: claude-counselor",
+        "at most two calls",
+        "wrapper never discovers or reads files",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+        "safe mode",
+        "disabled tools",
+        "no session persistence",
+        "make no automatic retry",
+        "Codex remains",
+    ):
+        require(
+            expected in claude_counselor_text,
+            f"claude-counselor skill must mention {expected}",
+        )
+    claude_counselor_openai = CLAUDE_COUNSELOR_OPENAI.read_text()
+    for expected in (
+        'display_name: "Claude Counselor"',
+        'default_prompt: "Use $claude-counselor',
+        "allow_implicit_invocation: true",
+    ):
+        require(
+            expected in claude_counselor_openai,
+            f"claude-counselor OpenAI metadata must mention {expected}",
         )
     require(
         paper_figure_plugin.get("skills") == "./skills/",
