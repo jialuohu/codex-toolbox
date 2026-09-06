@@ -3554,6 +3554,15 @@ class WechatDigestTests(unittest.TestCase):
 
 
 class WechatDigestSkillContractTests(unittest.TestCase):
+    def read_skill_contract(self):
+        entry = SKILL_FILE.read_text(encoding="utf-8")
+        documents = [entry]
+        for name in ("setup-migration", "interactive-reading", "incremental-digest", "sites-transport", "scheduling"):
+            relative = "references/" + name + ".md"
+            self.assertIn("(" + relative + ")", entry)
+            documents.append((SKILL_DIR / relative).read_text(encoding="utf-8"))
+        return "\n\n".join(documents)
+
     def markdown_section(self, text, heading, next_heading):
         start_marker = "## %s" % heading
         end_marker = "## %s" % next_heading
@@ -3572,7 +3581,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         return matches[0]
 
     def test_skill_routes_interactive_reading_without_the_digest_lifecycle(self):
-        text = SKILL_FILE.read_text(encoding="utf-8")
+        text = self.read_skill_contract()
         for heading in (
             "Setup", "Intent Routing", "Interactive Reading", "Incremental Digest",
             "Safety and Quotas", "Automation",
@@ -3591,7 +3600,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
             self.assertIn(command, forbidden, command)
 
     def test_skill_keeps_interactive_and_digest_fallbacks_separate(self):
-        text = SKILL_FILE.read_text(encoding="utf-8")
+        text = self.read_skill_contract()
         interactive = self.markdown_section(text, "Interactive Reading", "Incremental Digest")
         digest = self.markdown_section(text, "Incremental Digest", "Safety and Quotas")
         fallback = self.paragraph_containing(interactive, "Use Firecrawl only when read returns")
@@ -3639,21 +3648,20 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertTrue(SKILL_FILE.read_text(encoding="utf-8").isascii())
         for expected in (
             "configured WeChat subscriptions",
-            "configured-sources",
-            "latest",
-            "recent",
-            "read",
-            "claim/renew/ack lifecycle",
+            "selected operation reference",
+            "Current reading",
+            "incremental delivery",
             "Defuddle",
+            "public threads",
         ):
             self.assertIn(expected, routing)
         self.assertTrue(routing_text.isascii())
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.5.0")
+        self.assertEqual(plugin["version"], "0.5.1")
         self.assertIn("wechat reader and digest tools", plugin["description"].lower())
 
     def test_skill_declares_the_operational_digest_contract(self):
-        text = SKILL_FILE.read_text(encoding="utf-8")
+        text = self.read_skill_contract()
         self.assertIn("name: wechat-digest", text)
         self.assertRegex(text, r"description: Use when.*(?:WeChat|BestBlogs|digest|scheduled)")
         for clause in (
@@ -3670,7 +3678,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, text, forbidden)
 
     def test_skill_spells_out_safe_fallback_quota_and_output_sequence(self):
-        text = SKILL_FILE.read_text(encoding="utf-8")
+        text = self.read_skill_contract()
         self.assertIn("if and only if its JSON is an object with `complete: true`", text)
         self.assertIn("a missing or invalid `complete` field, or any `error` response", text)
         self.assertIn(
@@ -3709,7 +3717,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertLess(text.index("then call `ack <article_id>`"), text.index("then include the prepared block in the final digest"))
 
     def test_skill_documents_fresh_account_follow_and_fixed_publication_mirrors(self):
-        text = SKILL_FILE.read_text(encoding="utf-8")
+        text = self.read_skill_contract()
         for clause in (
             "search-sources --name", "follow --source-id", "explicitly requested",
             "www.qbitai.com", "www.jiqizhixin.com", "fixed article-path allowlist",
@@ -3719,7 +3727,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertLess(text.index("follow --source-id"), text.index("configure --source-id"))
 
     def test_skill_records_the_approved_scheduler_guardrails(self):
-        text = SKILL_FILE.read_text(encoding="utf-8")
+        text = self.read_skill_contract()
         for clause in (
             "08:30", "America/New_York", "automation", "scheduler",
             "complete baseline", "configured", "initialized", "not deployed",
@@ -3809,7 +3817,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("$wechat-digest", metadata)
         self.assertNotIn("dependencies:", metadata)
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.5.0")
+        self.assertEqual(plugin["version"], "0.5.1")
         joined = json.dumps(plugin).lower()
         for capability in ("wechat", "firecrawl", "playwright"):
             self.assertIn(capability, joined)

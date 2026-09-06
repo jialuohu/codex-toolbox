@@ -572,7 +572,7 @@ def validate_stevens_presentation_tools_contract(
         plugin.get("name") == "stevens-presentation-tools",
         "Stevens plugin name must be exact",
     )
-    require(plugin.get("version") == "0.2.0", "Stevens plugin version must be 0.2.0")
+    require(plugin.get("version") == "0.2.1", "Stevens plugin version must be 0.2.1")
     require(plugin.get("skills") == "./skills/", "Stevens plugin must expose its skills")
     require("mcpServers" not in plugin, "Stevens plugin must not declare an MCP server")
     require(
@@ -1938,7 +1938,7 @@ def validate_overleaf_tools_contract(
     plugin = json.loads(OVERLEAF_PLUGIN.read_text())
     mcp = json.loads(OVERLEAF_MCP.read_text())
     require(plugin.get("name") == "overleaf-tools", "Overleaf plugin name must be exact")
-    require(plugin.get("version") == "0.1.1", "overleaf-tools must use version 0.1.1")
+    require(plugin.get("version") == "0.1.2", "overleaf-tools must use version 0.1.2")
     require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "Overleaf manifest must use neutral publisher metadata",
@@ -1949,9 +1949,9 @@ def validate_overleaf_tools_contract(
         "Overleaf manifest must register its MCP config",
     )
     for path, pattern in (
-        (OVERLEAF_PYPROJECT, r'(?m)^version = "0\.1\.1"$'),
-        (OVERLEAF_UV_LOCK, r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.1"$'),
-        (OVERLEAF_PACKAGE_INIT, r'(?m)^__version__ = "0\.1\.1"$'),
+        (OVERLEAF_PYPROJECT, r'(?m)^version = "0\.1\.2"$'),
+        (OVERLEAF_UV_LOCK, r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.2"$'),
+        (OVERLEAF_PACKAGE_INIT, r'(?m)^__version__ = "0\.1\.2"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2098,11 +2098,11 @@ def validate_apple_mail_tools_contract(
     plugin = json.loads(APPLE_MAIL_PLUGIN.read_text())
     mcp = json.loads(APPLE_MAIL_MCP.read_text())
     require(plugin.get("name") == "apple-mail-tools", "Apple Mail plugin name must be exact")
-    require(plugin.get("version") == "0.2.0", "apple-mail-tools must use version 0.2.0")
+    require(plugin.get("version") == "0.2.1", "apple-mail-tools must use version 0.2.1")
     for path, pattern in (
-        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.0"$'),
-        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.0"$'),
-        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.0"$'),
+        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.1"$'),
+        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.1"$'),
+        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.1"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2352,11 +2352,11 @@ def validate_docmost_tools_contract(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
-    require(plugin.get("version") == "0.8.0", "docmost-tools must use version 0.8.0")
+    require(plugin.get("version") == "0.8.1", "docmost-tools must use version 0.8.1")
     for path, pattern in (
-        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.8\.0"$'),
-        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.8\.0"$'),
-        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.8\.0"$'),
+        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.8\.1"$'),
+        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.8\.1"$'),
+        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.8\.1"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2728,7 +2728,7 @@ def validate_diagram_tools_contract(
 
     plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
-    require(plugin.get("version") == "0.4.0", "diagram-tools manifest version must be 0.4.0")
+    require(plugin.get("version") == "0.4.1", "diagram-tools manifest version must be 0.4.1")
     require(plugin.get("skills") == "./skills/", "diagram-tools must expose its skills directory")
     require(plugin.get("license") == "MIT", "diagram-tools manifest must declare MIT")
     require("mcpServers" not in plugin, "diagram-tools must remain skill-only")
@@ -2999,8 +2999,8 @@ def validate_diagram_tools_contract(
     bootstrap_lock = json.loads((DIAGRAM_BOOTSTRAP / "package-lock.json").read_text())
     diagram_package = json.loads(DIAGRAM_TOOLS_PACKAGE.read_text())
     require(
-        diagram_package.get("version") == "0.4.0",
-        "Diagram Tools test package must track plugin version 0.4.0",
+        diagram_package.get("version") == "0.4.1",
+        "Diagram Tools test package must track plugin version 0.4.1",
     )
     diagram_scripts = diagram_package.get("scripts", {})
     require(
@@ -3067,12 +3067,12 @@ def validate_diagram_tools_contract(
     ):
         require(expected in readme_normalized, f"README Diagram Tools section must mention {expected}")
     for expected in (
-        "$archify` for graphical architecture/workflow maps",
-        "$pretty-mermaid` for explicit Mermaid/`.mmd`, terminal ASCII, and compact static diagrams",
+        "Graphical architecture/workflow or interactive sequence/data-flow/lifecycle: `$archify`",
+        "Explicit Mermaid/`.mmd`, terminal ASCII, or compact static diagrams: `$pretty-mermaid`",
         "task-scoped temporary output",
         "$drawio` owns explicit native, multi-page, WYSIWYG",
         "$paper-figure-workflow",
-        "Visualize owns adjustable spatial views in conversation",
+        "Adjustable/inspectable spatial view: bundled Visualize",
     ):
         require(expected in global_agents_text, f"global AGENTS diagram routing must mention {expected}")
     for retired in (
@@ -3165,7 +3165,7 @@ def validate_drawio_tools_contract(
 
     plugin = json.loads(DRAWIO_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "drawio-tools", "drawio-tools manifest name must be exact")
-    require(plugin.get("version") == "0.1.2", "drawio-tools manifest version must be 0.1.2")
+    require(plugin.get("version") == "0.1.3", "drawio-tools manifest version must be 0.1.3")
     require(plugin.get("skills") == "./skills/", "drawio-tools must expose its skill")
     require(plugin.get("mcpServers") == "./.mcp.json", "drawio-tools must expose its MCP config")
     require(plugin.get("license") == "MIT", "drawio-tools must declare its toolbox license")
@@ -3340,11 +3340,11 @@ def validate_drawio_tools_contract(
         "paper-figure-workflow must delegate Draw.io execution without giving up pipeline ownership",
     )
     require(
-        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.4.0",
+        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.4.1",
         "diagram-tools version must reflect the Archify and Draw.io routing boundaries",
     )
     require(
-        json.loads(PAPER_FIGURE_PLUGIN.read_text()).get("version") == "0.2.0",
+        json.loads(PAPER_FIGURE_PLUGIN.read_text()).get("version") == "0.2.1",
         "paper-figure-tools version must reflect Draw.io execution delegation",
     )
 
@@ -3521,8 +3521,8 @@ def main() -> None:
         require(expected in global_agents_text, f"global AGENTS deep planning must mention {expected}")
     for expected in (
         "$explain-clearly",
-        "why/how",
-        "code walkthrough",
+        "substantive explanations and comparisons",
+        "domain source establishes facts",
         "execution-only",
     ):
         require(
@@ -3786,7 +3786,7 @@ def main() -> None:
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
 
     require(web_data_plugin.get("name") == "web-data-tools", "web-data-tools name must be exact")
-    require(web_data_plugin.get("version") == "0.5.0", "web-data-tools must use version 0.5.0")
+    require(web_data_plugin.get("version") == "0.5.1", "web-data-tools must use version 0.5.1")
     require(
         web_data_plugin.get("skills") == "./skills/",
         "web-data-tools manifest must expose its community-research skill",
@@ -4321,7 +4321,7 @@ def main() -> None:
     )
     productivity_interface = productivity_plugin.get("interface", {})
     require(
-        productivity_plugin.get("version") == "0.2.0",
+        productivity_plugin.get("version") == "0.2.1",
         "productivity-tools plugin version must reflect daily-command-center",
     )
     require(
@@ -4424,7 +4424,7 @@ def main() -> None:
         '  "canvas-tools"' not in default_plugins,
         "canvas-tools must remain opt-in because it requires institutional credentials",
     )
-    require(canvas_plugin.get("version") == "0.2.0", "canvas-tools must be version 0.2.0")
+    require(canvas_plugin.get("version") == "0.2.1", "canvas-tools must be version 0.2.1")
     require(canvas_plugin.get("skills") == "./skills/", "canvas-tools must expose its skill")
     require(canvas_plugin.get("mcpServers") == "./.mcp.json", "canvas-tools must expose its MCP config")
     canvas_server = canvas_mcp.get("mcpServers", {}).get("canvas")
@@ -4706,7 +4706,7 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.6.0",
+        workflow_plugin.get("version") == "0.6.1",
         "workflow-tools plugin version must reflect Claude Counselor support",
     )
     require(
@@ -4777,25 +4777,24 @@ def main() -> None:
     explain_clearly_text = EXPLAIN_CLEARLY_SKILL.read_text()
     for expected in (
         "name: explain-clearly",
-        "Use when",
-        "Direct answer",
-        "Mental model",
-        "Concrete example",
-        "exactly one worked",
-        "Mechanism and limits",
+        "Use for explanations",
+        "direct answer",
+        "mental model",
+        "concrete example",
+        "There is no required example count or fixed sequence",
+        "mechanism and limits",
         "input",
         "state",
         "output",
         "analogy",
         "terse factual query",
-        "explicit user instructions",
+        "Explicit user instructions",
         "Choose the Smallest Useful Format",
         "$archify",
         "$pretty-mermaid",
         "native inline Mermaid only",
-        "editable `.mmd` source",
         "bundled Visualize",
-        "A visual is presentation, not evidence",
+        "validate visual data",
         "For chess",
         "responsive and accessible",
         "CLI or IDE",
@@ -4804,8 +4803,8 @@ def main() -> None:
     explain_clearly_openai = EXPLAIN_CLEARLY_OPENAI.read_text()
     for expected in (
         'display_name: "Explain Clearly"',
-        'short_description: "Clear mental models and concrete examples."',
-        'default_prompt: "Use $explain-clearly to lead with the answer, choose the smallest useful format, use Pretty Mermaid by default for diagrams, and give one accurate mental model and concrete example."',
+        'short_description: "Direct explanations with depth suited to the question."',
+        'default_prompt: "Use $explain-clearly to answer directly, adapt the depth to my question, and add examples or visuals only when they help."',
         "allow_implicit_invocation: true",
     ):
         require(
@@ -5174,7 +5173,7 @@ def main() -> None:
     )
 
     require(
-        research_plugin.get("version") == "0.8.1",
+        research_plugin.get("version") == "0.8.2",
         "research-tools must use the current plugin release version",
     )
     lab_skill = DOCMOST_LAB_WIKI_SKILL.read_text()

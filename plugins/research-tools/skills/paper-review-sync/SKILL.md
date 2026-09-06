@@ -1,6 +1,6 @@
 ---
 name: paper-review-sync
-description: Check, synchronize, or repair the user's private paper-review assignments from Docmost Review Assignments into Todoist Paper Reviews/Assigned, Zotero Research/PaperReview, and the matching conference edition under Docmost Review Dojo/Review Comments. Use when assignments or their managed links need reconciliation.
+description: "Check or reconcile confidential Docmost review assignments with Todoist, Zotero Research/PaperReview, and matching review-comment pages."
 ---
 
 # Paper Review Sync

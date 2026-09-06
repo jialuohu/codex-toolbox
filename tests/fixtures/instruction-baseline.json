@@ -1,0 +1,734 @@
+{
+  "schema_version": 1,
+  "skill_count": 56,
+  "description_chars": 13727,
+  "instruction_bytes": {
+    "AGENTS.md": 3581,
+    "config/codex/AGENTS.global.md": 8110
+  },
+  "source_sha256": "b4e9ef4769df494af5947a53611a1ddd3e1c0e408b36041c1742cccfbafb9f8d",
+  "skills": [
+    {
+      "name": "apple-mail",
+      "path": "plugins/apple-mail-tools/skills/apple-mail/SKILL.md",
+      "description_chars": 210,
+      "entry_bytes": 2464,
+      "entry_words": 353,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "3a8eb4350a0fe02aed20b49614875c17e1c479215cb8d7eaa9addb5d4440acdd",
+      "references": []
+    },
+    {
+      "name": "canvas-overleaf-homework",
+      "path": "plugins/canvas-tools/skills/canvas-overleaf-homework/SKILL.md",
+      "description_chars": 297,
+      "entry_bytes": 9566,
+      "entry_words": 1344,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "61cae13740a0f258f83f163c36f15dd41e6a64ddbf26886428eb46a20523e35d",
+      "references": []
+    },
+    {
+      "name": "canvas-student-planning",
+      "path": "plugins/canvas-tools/skills/canvas-student-planning/SKILL.md",
+      "description_chars": 214,
+      "entry_bytes": 6852,
+      "entry_words": 965,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "8624cbe312c0484b92f534240213e871751335c4c6ab302dac806c8a61457588",
+      "references": []
+    },
+    {
+      "name": "chronicle",
+      "path": "plugins/chronicle-tools/skills/chronicle/SKILL.md",
+      "description_chars": 544,
+      "entry_bytes": 5650,
+      "entry_words": 845,
+      "implicit": true,
+      "ownership": "preserved-import",
+      "sha256": "df64e9c38611b1653d29d760ada21f64b450de31895a75c3071691da99cf1129",
+      "references": []
+    },
+    {
+      "name": "animation-vocabulary",
+      "path": "plugins/design-engineering-tools/skills/animation-vocabulary/SKILL.md",
+      "description_chars": 154,
+      "entry_bytes": 966,
+      "entry_words": 133,
+      "implicit": true,
+      "ownership": "toolbox-adaptation",
+      "sha256": "387d746817f38cee0ff1754079fb0e5fa89542804862b386da18584bddfa9644",
+      "references": [
+        "plugins/design-engineering-tools/SHARED-BOUNDARIES.md",
+        "plugins/design-engineering-tools/skills/animation-vocabulary/references/glossary.md",
+        "plugins/design-engineering-tools/skills/animation-vocabulary/references/upstream.md"
+      ]
+    },
+    {
+      "name": "apple-design",
+      "path": "plugins/design-engineering-tools/skills/apple-design/SKILL.md",
+      "description_chars": 160,
+      "entry_bytes": 1066,
+      "entry_words": 128,
+      "implicit": true,
+      "ownership": "toolbox-adaptation",
+      "sha256": "b84b1adff99956bf72befc0723374aa7360d13e231f9b1c09f5768149d3e4f5e",
+      "references": [
+        "plugins/design-engineering-tools/SHARED-BOUNDARIES.md",
+        "plugins/design-engineering-tools/skills/apple-design/references/interaction-principles.md",
+        "plugins/design-engineering-tools/skills/apple-design/references/upstream.md"
+      ]
+    },
+    {
+      "name": "emil-design-eng",
+      "path": "plugins/design-engineering-tools/skills/emil-design-eng/SKILL.md",
+      "description_chars": 200,
+      "entry_bytes": 1140,
+      "entry_words": 151,
+      "implicit": true,
+      "ownership": "toolbox-adaptation",
+      "sha256": "1a910d80c11f4780222b0d27751f344db75eea004232c31dfdfe61e7a2fdd125",
+      "references": [
+        "plugins/design-engineering-tools/SHARED-BOUNDARIES.md",
+        "plugins/design-engineering-tools/skills/emil-design-eng/references/principles.md",
+        "plugins/design-engineering-tools/skills/emil-design-eng/references/upstream.md"
+      ]
+    },
+    {
+      "name": "find-animation-opportunities",
+      "path": "plugins/design-engineering-tools/skills/find-animation-opportunities/SKILL.md",
+      "description_chars": 140,
+      "entry_bytes": 944,
+      "entry_words": 121,
+      "implicit": true,
+      "ownership": "toolbox-adaptation",
+      "sha256": "52dc00ab21ed5d36db6fec9f2c1f268fe560f190c73688ca7937fb6d6dd36e91",
+      "references": [
+        "plugins/design-engineering-tools/SHARED-BOUNDARIES.md",
+        "plugins/design-engineering-tools/skills/find-animation-opportunities/references/screening.md",
+        "plugins/design-engineering-tools/skills/find-animation-opportunities/references/upstream.md"
+      ]
+    },
+    {
+      "name": "improve-animations",
+      "path": "plugins/design-engineering-tools/skills/improve-animations/SKILL.md",
+      "description_chars": 170,
+      "entry_bytes": 1401,
+      "entry_words": 191,
+      "implicit": true,
+      "ownership": "toolbox-adaptation",
+      "sha256": "40b9a32b0a2f3346c50819faec9ca654761f44d4b9d263ec65e80eaacc95674c",
+      "references": [
+        "plugins/design-engineering-tools/SHARED-BOUNDARIES.md",
+        "plugins/design-engineering-tools/skills/improve-animations/references/AUDIT.md",
+        "plugins/design-engineering-tools/skills/improve-animations/references/PLAN-TEMPLATE.md",
+        "plugins/design-engineering-tools/skills/improve-animations/references/upstream.md"
+      ]
+    },
+    {
+      "name": "pick-ui-library",
+      "path": "plugins/design-engineering-tools/skills/pick-ui-library/SKILL.md",
+      "description_chars": 127,
+      "entry_bytes": 1325,
+      "entry_words": 173,
+      "implicit": false,
+      "ownership": "toolbox-adaptation",
+      "sha256": "294fb5d74fbb7d3a5b599d3bd45cd9ad09b3df33dc15d57cbebd9fe2d317bf6b",
+      "references": [
+        "plugins/design-engineering-tools/SHARED-BOUNDARIES.md",
+        "plugins/design-engineering-tools/skills/pick-ui-library/references/library-choices.md",
+        "plugins/design-engineering-tools/skills/pick-ui-library/references/upstream.md"
+      ]
+    },
+    {
+      "name": "prototype",
+      "path": "plugins/design-engineering-tools/skills/prototype/SKILL.md",
+      "description_chars": 128,
+      "entry_bytes": 1467,
+      "entry_words": 200,
+      "implicit": false,
+      "ownership": "toolbox-adaptation",
+      "sha256": "7b34b66fde977c4a65f7a060decc51923abab3db400a153e20b95d7503265a1a",
+      "references": [
+        "plugins/design-engineering-tools/SHARED-BOUNDARIES.md",
+        "plugins/design-engineering-tools/skills/prototype/references/PICKER.md",
+        "plugins/design-engineering-tools/skills/prototype/references/upstream.md"
+      ]
+    },
+    {
+      "name": "review-animations",
+      "path": "plugins/design-engineering-tools/skills/review-animations/SKILL.md",
+      "description_chars": 145,
+      "entry_bytes": 980,
+      "entry_words": 122,
+      "implicit": false,
+      "ownership": "toolbox-adaptation",
+      "sha256": "2638630c6f2fe72e4361697162f9cc08cf943a6267c4e3b7f3e36385baa30cb0",
+      "references": [
+        "plugins/design-engineering-tools/SHARED-BOUNDARIES.md",
+        "plugins/design-engineering-tools/skills/review-animations/references/STANDARDS.md",
+        "plugins/design-engineering-tools/skills/review-animations/references/upstream.md"
+      ]
+    },
+    {
+      "name": "archify",
+      "path": "plugins/diagram-tools/skills/archify/SKILL.md",
+      "description_chars": 301,
+      "entry_bytes": 5952,
+      "entry_words": 816,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "a499ff7d767c10c2d16fca5dd38493bcd2dafaed8ad64ce7544cf05cfbb654ce",
+      "references": [
+        "plugins/diagram-tools/skills/archify/references/cli.md"
+      ]
+    },
+    {
+      "name": "pretty-mermaid",
+      "path": "plugins/diagram-tools/skills/pretty-mermaid/SKILL.md",
+      "description_chars": 301,
+      "entry_bytes": 4083,
+      "entry_words": 562,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "2bbd6e0167de35748fa8abd9297074535ea18a7b69f0ab16f569f53ecec40237",
+      "references": [
+        "plugins/diagram-tools/skills/pretty-mermaid/references/cli.md"
+      ]
+    },
+    {
+      "name": "docmost-attachment-import",
+      "path": "plugins/docmost-tools/skills/docmost-attachment-import/SKILL.md",
+      "description_chars": 351,
+      "entry_bytes": 5618,
+      "entry_words": 796,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "083e289d6f08e273e0b5206eb73e592227c9c198015a463e34bfa2487e2595d9",
+      "references": []
+    },
+    {
+      "name": "drawio",
+      "path": "plugins/drawio-tools/skills/drawio/SKILL.md",
+      "description_chars": 223,
+      "entry_bytes": 3839,
+      "entry_words": 537,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "cb8e77ce6806f5f3a850ebe9d10d893f6a76a2e60eaa94fe35600e061b48052a",
+      "references": [
+        "plugins/drawio-tools/skills/drawio/references/cli.md"
+      ]
+    },
+    {
+      "name": "pixellab-game-assets",
+      "path": "plugins/game-asset-tools/skills/pixellab-game-assets/SKILL.md",
+      "description_chars": 311,
+      "entry_bytes": 1827,
+      "entry_words": 276,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "3337ab6453eb2b6dfe144e0fe4ca1f6f1b3690a0910c89d3a8eb4364764559e3",
+      "references": []
+    },
+    {
+      "name": "gws-gmail",
+      "path": "plugins/google-workspace-tools/skills/gws-gmail/SKILL.md",
+      "description_chars": 140,
+      "entry_bytes": 2277,
+      "entry_words": 278,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "5dec2f19457737a4611fe073c9cb943c0e2337af12b7bb7cdd9e3b8571216ef3",
+      "references": [
+        "plugins/google-workspace-tools/skills/gws-gmail-forward/SKILL.md",
+        "plugins/google-workspace-tools/skills/gws-gmail-read/SKILL.md",
+        "plugins/google-workspace-tools/skills/gws-gmail-reply-all/SKILL.md",
+        "plugins/google-workspace-tools/skills/gws-gmail-reply/SKILL.md",
+        "plugins/google-workspace-tools/skills/gws-gmail-send/SKILL.md",
+        "plugins/google-workspace-tools/skills/gws-gmail-triage/SKILL.md",
+        "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+      ]
+    },
+    {
+      "name": "gws-gmail-forward",
+      "path": "plugins/google-workspace-tools/skills/gws-gmail-forward/SKILL.md",
+      "description_chars": 94,
+      "entry_bytes": 4888,
+      "entry_words": 617,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "f03e8693bb59705edd17379f9c745e57b9d40f5b89edfff994f7719781f3a7a1",
+      "references": [
+        "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+      ]
+    },
+    {
+      "name": "gws-gmail-read",
+      "path": "plugins/google-workspace-tools/skills/gws-gmail-read/SKILL.md",
+      "description_chars": 94,
+      "entry_bytes": 503,
+      "entry_words": 69,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "b5712fccedc4a706652633d8fa10c68c36c8b436da7a64a6c634f628c8feb60f",
+      "references": [
+        "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+      ]
+    },
+    {
+      "name": "gws-gmail-reply",
+      "path": "plugins/google-workspace-tools/skills/gws-gmail-reply/SKILL.md",
+      "description_chars": 105,
+      "entry_bytes": 4649,
+      "entry_words": 589,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "0f8debeb36280fa48d1fd2767544dab45999925519b2a754f69c35736b6bc303",
+      "references": [
+        "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+      ]
+    },
+    {
+      "name": "gws-gmail-reply-all",
+      "path": "plugins/google-workspace-tools/skills/gws-gmail-reply-all/SKILL.md",
+      "description_chars": 96,
+      "entry_bytes": 4696,
+      "entry_words": 590,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "d1cfe8753e1cb151e7d93b679a0013fec29371311694c6f2d76a96f9d62f4648",
+      "references": [
+        "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+      ]
+    },
+    {
+      "name": "gws-gmail-send",
+      "path": "plugins/google-workspace-tools/skills/gws-gmail-send/SKILL.md",
+      "description_chars": 106,
+      "entry_bytes": 4598,
+      "entry_words": 575,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "58e25295e204e414d429aa0fa80cc349eafaaea2816d6e64a25e2182367a9e42",
+      "references": [
+        "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+      ]
+    },
+    {
+      "name": "gws-gmail-triage",
+      "path": "plugins/google-workspace-tools/skills/gws-gmail-triage/SKILL.md",
+      "description_chars": 87,
+      "entry_bytes": 501,
+      "entry_words": 69,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "9ce72c66fbe1afe34d4183404c3e82be6ae89a4752334b2d11e6f8c20c6778d7",
+      "references": [
+        "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+      ]
+    },
+    {
+      "name": "gws-shared",
+      "path": "plugins/google-workspace-tools/skills/gws-shared/SKILL.md",
+      "description_chars": 148,
+      "entry_bytes": 13069,
+      "entry_words": 1440,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "0bd1debf74c8161591394d4bf3a3a470150b351f0807088de1602f0285b8128a",
+      "references": []
+    },
+    {
+      "name": "json-canvas",
+      "path": "plugins/obsidian-tools/skills/json-canvas/SKILL.md",
+      "description_chars": 225,
+      "entry_bytes": 7624,
+      "entry_words": 1229,
+      "implicit": true,
+      "ownership": "preserved-import",
+      "sha256": "97d1ae0728955c4203922753d5656890e5e4dd371b8306ea11884f9b510f1b85",
+      "references": [
+        "plugins/obsidian-tools/skills/json-canvas/references/EXAMPLES.md"
+      ]
+    },
+    {
+      "name": "obsidian-bases",
+      "path": "plugins/obsidian-tools/skills/obsidian-bases/SKILL.md",
+      "description_chars": 256,
+      "entry_bytes": 13027,
+      "entry_words": 1776,
+      "implicit": true,
+      "ownership": "preserved-import",
+      "sha256": "c0037f20926c7d8591cdd040365e4c0e4c0c4146386a506f28f241faee9a27d9",
+      "references": [
+        "plugins/obsidian-tools/skills/obsidian-bases/references/FUNCTIONS_REFERENCE.md"
+      ]
+    },
+    {
+      "name": "obsidian-cli",
+      "path": "plugins/obsidian-tools/skills/obsidian-cli/SKILL.md",
+      "description_chars": 467,
+      "entry_bytes": 3183,
+      "entry_words": 442,
+      "implicit": true,
+      "ownership": "preserved-import",
+      "sha256": "b54257cdc0e5d04488b35b0c797bfe427b24359f0848d3c73924dcacf8da6358",
+      "references": []
+    },
+    {
+      "name": "obsidian-markdown",
+      "path": "plugins/obsidian-tools/skills/obsidian-markdown/SKILL.md",
+      "description_chars": 262,
+      "entry_bytes": 5367,
+      "entry_words": 677,
+      "implicit": true,
+      "ownership": "preserved-import",
+      "sha256": "7ad72e1f0a9081ed325e76b6402ad5de50a00e63e2341fd403a92f147234a007",
+      "references": [
+        "plugins/obsidian-tools/skills/obsidian-markdown/references/CALLOUTS.md",
+        "plugins/obsidian-tools/skills/obsidian-markdown/references/EMBEDS.md",
+        "plugins/obsidian-tools/skills/obsidian-markdown/references/PROPERTIES.md"
+      ]
+    },
+    {
+      "name": "overleaf",
+      "path": "plugins/overleaf-tools/skills/overleaf/SKILL.md",
+      "description_chars": 289,
+      "entry_bytes": 3026,
+      "entry_words": 432,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "01c8573098b00fa9719fbb4614ba16daa34ee2015e6c0a8b908aa32af874a0eb",
+      "references": []
+    },
+    {
+      "name": "paper-figure-workflow",
+      "path": "plugins/paper-figure-tools/skills/paper-figure-workflow/SKILL.md",
+      "description_chars": 317,
+      "entry_bytes": 3675,
+      "entry_words": 515,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "7444d5b1cb06dea105cd3d60308e3f1987da0e7de7c409d86671e38901e2f3a6",
+      "references": [
+        "plugins/paper-figure-tools/skills/paper-figure-workflow/references/templates.md"
+      ]
+    },
+    {
+      "name": "daily-command-center",
+      "path": "plugins/productivity-tools/skills/daily-command-center/SKILL.md",
+      "description_chars": 282,
+      "entry_bytes": 3428,
+      "entry_words": 498,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "4d7190e917e410e42f718965e9cbdc85ec7fda879cc1cd8fa964a87145ef567f",
+      "references": []
+    },
+    {
+      "name": "todoist-task-planning",
+      "path": "plugins/productivity-tools/skills/todoist-task-planning/SKILL.md",
+      "description_chars": 284,
+      "entry_bytes": 5013,
+      "entry_words": 801,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "2263760c39ac1cfe4470a16fe47649b1cec2cb4c78c494a744d1285237badf58",
+      "references": []
+    },
+    {
+      "name": "defuddle",
+      "path": "plugins/research-tools/skills/defuddle/SKILL.md",
+      "description_chars": 347,
+      "entry_bytes": 1123,
+      "entry_words": 184,
+      "implicit": true,
+      "ownership": "preserved-import",
+      "sha256": "10673a4dc70a0a057612d443243ab7a5aa4abdd4a0fadc3f6eec5fd71ad5a971",
+      "references": []
+    },
+    {
+      "name": "docmost-lab-wiki",
+      "path": "plugins/research-tools/skills/docmost-lab-wiki/SKILL.md",
+      "description_chars": 259,
+      "entry_bytes": 6079,
+      "entry_words": 871,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "69212a846fad2045dd318c45d1b17f175ce688613076f734c5a65b1d94c09159",
+      "references": [
+        "plugins/research-tools/skills/docmost-lab-wiki/references/commands.md"
+      ]
+    },
+    {
+      "name": "mineru-document-extraction",
+      "path": "plugins/research-tools/skills/mineru-document-extraction/SKILL.md",
+      "description_chars": 340,
+      "entry_bytes": 5270,
+      "entry_words": 743,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "35d96b38ee2e592d65163414b04571d5fa49fb4ea2dfb027be4e8f1c06ef1b14",
+      "references": []
+    },
+    {
+      "name": "paper-library-intake",
+      "path": "plugins/research-tools/skills/paper-library-intake/SKILL.md",
+      "description_chars": 327,
+      "entry_bytes": 9979,
+      "entry_words": 1385,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "966168a37673afdd77dcb55292092510e98e817a5cbab8d60da59f8f760bfa3e",
+      "references": []
+    },
+    {
+      "name": "paper-read-draft",
+      "path": "plugins/research-tools/skills/paper-read-draft/SKILL.md",
+      "description_chars": 113,
+      "entry_bytes": 5430,
+      "entry_words": 790,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "e01876046ab85d947d67d203f2d161b04eebc85c7796f0774cc14080f2c9afc5",
+      "references": [
+        "plugins/research-tools/skills/paper-read-draft/references/paper-read-template.md"
+      ]
+    },
+    {
+      "name": "paper-read-review",
+      "path": "plugins/research-tools/skills/paper-read-review/SKILL.md",
+      "description_chars": 181,
+      "entry_bytes": 10024,
+      "entry_words": 1376,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "2bdb1f969b69e89bba472a7096a08d3e03b3b154068e0ad6a13ec778b6667abf",
+      "references": []
+    },
+    {
+      "name": "paper-review-library-intake",
+      "path": "plugins/research-tools/skills/paper-review-library-intake/SKILL.md",
+      "description_chars": 289,
+      "entry_bytes": 5557,
+      "entry_words": 708,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "2676fbce4341f2992acd7d4469b191483a77fb05506c9764a2f70c0601c1f2d4",
+      "references": []
+    },
+    {
+      "name": "paper-review-page",
+      "path": "plugins/research-tools/skills/paper-review-page/SKILL.md",
+      "description_chars": 359,
+      "entry_bytes": 6105,
+      "entry_words": 846,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "c77249234d953e6cf28c6438ba9d1e02d123d7bd8d564dbc849cca085b594eb9",
+      "references": [
+        "plugins/research-tools/skills/paper-review-page/assets/conference-review-template.md",
+        "plugins/research-tools/skills/paper-review-page/assets/journal-review-template.md"
+      ]
+    },
+    {
+      "name": "paper-review-sync",
+      "path": "plugins/research-tools/skills/paper-review-sync/SKILL.md",
+      "description_chars": 315,
+      "entry_bytes": 9960,
+      "entry_words": 1382,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "c3ad919eba9edee0fce1f3dc3eae9de4a98345102420edbb8a65939b08b6c546",
+      "references": []
+    },
+    {
+      "name": "research-llm-wiki",
+      "path": "plugins/research-tools/skills/research-llm-wiki/SKILL.md",
+      "description_chars": 472,
+      "entry_bytes": 6144,
+      "entry_words": 886,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "87ee431a30599ed5647328f945333c6b8d7b896f1101e07f6e3070ae1f88c98d",
+      "references": [
+        "plugins/research-tools/skills/research-llm-wiki/references/schema-template.md"
+      ]
+    },
+    {
+      "name": "zotero-todoist-reading-tasks",
+      "path": "plugins/research-tools/skills/zotero-todoist-reading-tasks/SKILL.md",
+      "description_chars": 160,
+      "entry_bytes": 9881,
+      "entry_words": 1420,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "3f90b54cc1ec7aba19fe238348f66eb11623bb3f4f7de682d0ec5b939410c8f7",
+      "references": []
+    },
+    {
+      "name": "stevens-slides",
+      "path": "plugins/stevens-presentation-tools/skills/stevens-slides/SKILL.md",
+      "description_chars": 351,
+      "entry_bytes": 2121,
+      "entry_words": 293,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "1e9bf5dfea73ea825a5e73b8f2be4dadd4c3da50170fc47a96bef3fd71d434ec",
+      "references": [
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/brand-system.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/delivery-workflow.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/layout-catalog.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/source-notes.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/template-manifest.json"
+      ]
+    },
+    {
+      "name": "stevens-slides-dark",
+      "path": "plugins/stevens-presentation-tools/skills/stevens-slides-dark/SKILL.md",
+      "description_chars": 276,
+      "entry_bytes": 664,
+      "entry_words": 93,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "89bda834d8d0b12fd87b448d183f5d31d53b63264c8b1f9b150bf98c75552c3e",
+      "references": [
+        "plugins/stevens-presentation-tools/skills/stevens-slides/SKILL.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/brand-system.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/delivery-workflow.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/layout-catalog.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/source-notes.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/template-manifest.json"
+      ]
+    },
+    {
+      "name": "stevens-slides-white",
+      "path": "plugins/stevens-presentation-tools/skills/stevens-slides-white/SKILL.md",
+      "description_chars": 253,
+      "entry_bytes": 600,
+      "entry_words": 85,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "b431e8e5f0b1db2a6e5971bb1e69109da84da1bd77fcc52d39334bbecdc1784e",
+      "references": [
+        "plugins/stevens-presentation-tools/skills/stevens-slides/SKILL.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/brand-system.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/delivery-workflow.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/layout-catalog.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/source-notes.md",
+        "plugins/stevens-presentation-tools/skills/stevens-slides/references/template-manifest.json"
+      ]
+    },
+    {
+      "name": "vibe-trading",
+      "path": "plugins/vibe-trading-tools/skills/vibe-trading/SKILL.md",
+      "description_chars": 160,
+      "entry_bytes": 1919,
+      "entry_words": 277,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "0886a84c9984f4f0541bc6b4b922d39df1ce9df2da61cb298b41b7e39984ef9a",
+      "references": []
+    },
+    {
+      "name": "bestblogs-brief",
+      "path": "plugins/web-data-tools/skills/bestblogs-brief/SKILL.md",
+      "description_chars": 150,
+      "entry_bytes": 6703,
+      "entry_words": 910,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "13c5327aec354518958c88182baad6b685765a29d7fe862684fff1d461820585",
+      "references": []
+    },
+    {
+      "name": "community-research",
+      "path": "plugins/web-data-tools/skills/community-research/SKILL.md",
+      "description_chars": 334,
+      "entry_bytes": 3715,
+      "entry_words": 512,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "0ee92c56e6166717e8504fcd93bf8bb0706025dc30d6ccc411d88533d67d0fa3",
+      "references": []
+    },
+    {
+      "name": "playwright",
+      "path": "plugins/web-data-tools/skills/playwright/SKILL.md",
+      "description_chars": 209,
+      "entry_bytes": 3842,
+      "entry_words": 542,
+      "implicit": true,
+      "ownership": "preserved-import",
+      "sha256": "5460e3fb95998099ad8fe78e044c4cb904575e6243beba6b841211592ed50751",
+      "references": [
+        "plugins/web-data-tools/skills/playwright/references/cli.md",
+        "plugins/web-data-tools/skills/playwright/references/workflows.md"
+      ]
+    },
+    {
+      "name": "wechat-digest",
+      "path": "plugins/web-data-tools/skills/wechat-digest/SKILL.md",
+      "description_chars": 174,
+      "entry_bytes": 13310,
+      "entry_words": 1823,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "1e214eaae24325a71c16ccf5b5b08113a499ad076144066416636697a94948e6",
+      "references": []
+    },
+    {
+      "name": "claude-counselor",
+      "path": "plugins/workflow-tools/skills/claude-counselor/SKILL.md",
+      "description_chars": 403,
+      "entry_bytes": 3851,
+      "entry_words": 537,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "c3fc93a30d6ba219b1280914a90f910b21dea460c0ef7aee6c1061e00a74c8e1",
+      "references": []
+    },
+    {
+      "name": "deep-planning",
+      "path": "plugins/workflow-tools/skills/deep-planning/SKILL.md",
+      "description_chars": 337,
+      "entry_bytes": 3813,
+      "entry_words": 562,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "f036192df9e84042d20fc89e24ccf7f1e13447472156d96018f7a070dbd240a4",
+      "references": []
+    },
+    {
+      "name": "explain-clearly",
+      "path": "plugins/workflow-tools/skills/explain-clearly/SKILL.md",
+      "description_chars": 302,
+      "entry_bytes": 4855,
+      "entry_words": 743,
+      "implicit": true,
+      "ownership": "toolbox",
+      "sha256": "d266e10e2e6e05ff16b15809d17b9534cb0d260c86ca1a0cfb97900c5c9a898b",
+      "references": []
+    },
+    {
+      "name": "ship-toolbox",
+      "path": "plugins/workflow-tools/skills/ship-toolbox/SKILL.md",
+      "description_chars": 388,
+      "entry_bytes": 6764,
+      "entry_words": 974,
+      "implicit": false,
+      "ownership": "toolbox",
+      "sha256": "4e78f977f8f959d258000de3508ff008aa2284786ef8c447bde9efa00e8143be",
+      "references": []
+    }
+  ],
+  "errors": [],
+  "warnings": [],
+  "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
+  "initial_capture_source_sha256": "62a9ddcbd8ebe0e567f925bede69d5128cc651026998c17c3639714f37ad19a7",
+  "audit_note": "Reference inventory recomputed from the unchanged archived source after adding inline reference-path recognition. Initial capture hash retained; original skill hashes and fixed routing outcomes unchanged."
+}

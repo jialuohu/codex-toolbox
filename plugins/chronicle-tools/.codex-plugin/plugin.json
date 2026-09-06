@@ -1,6 +1,6 @@
 {
   "name": "chronicle-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Chronicle screen-history skill for resolving recent-work context.",
   "author": {
     "name": "Jialuo Hu",

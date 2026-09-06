@@ -1,6 +1,6 @@
 {
   "name": "docmost-tools",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Browser-authenticated MCP with private snapshots, guarded rich-page writes, and verified PDF attachment imports.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",

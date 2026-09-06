@@ -1,6 +1,6 @@
 ---
 name: claude-counselor
-description: Consult the local Claude Code CLI as a bounded, read-only second opinion for architectural or high-risk plans and final reviews of material code changes. Use automatically only when workspace instructions opt into Claude counsel, or when the user explicitly invokes $claude-counselor. Do not use for small edits, routine explanations, confidential material, or when the user declines external model use.
+description: "Use for a bounded Claude second opinion on major plans or changes, only with workspace opt-in or explicit invocation. Excludes small edits and confidential material."
 ---
 
 # Claude Counselor

@@ -1,6 +1,6 @@
 ---
 name: docmost-attachment-import
-description: Import one or more authorized local or GitHub-hosted PDF reports into matching child pages beneath a private Docmost parent, with guarded page creation or reuse, exact SHA-256 verification, and upload recovery that never reuploads a known attachment. Use for Docmost PDF attachment batches, weekly-report imports, and one-PDF-per-child-page workflows.
+description: "Use for authorized PDF batches imported into matching Docmost child pages, including weekly reports and one-PDF-per-page workflows."
 ---
 
 # Docmost Attachment Import

@@ -1,6 +1,6 @@
 {
   "name": "research-tools",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Research skills and MCP servers for PaperRead drafts and reviews, private paper-review assignment sync, paper-library intake, Zotero-linked Todoist reading tasks, public paper search, clean web-page extraction, local document extraction, and source-backed Research and Docmost Lab Wikis.",
   "author": {
     "name": "Jialuo Hu",

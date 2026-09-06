@@ -50,7 +50,7 @@ class StevensPresentationToolsTests(unittest.TestCase):
             (PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
         )
         self.assertEqual(plugin["name"], "stevens-presentation-tools")
-        self.assertEqual(plugin["version"], "0.2.0")
+        self.assertEqual(plugin["version"], "0.2.1")
         self.assertEqual(plugin["skills"], "./skills/")
         self.assertNotIn("mcpServers", plugin)
         self.assertEqual(plugin["interface"]["capabilities"], ["Read", "Write"])

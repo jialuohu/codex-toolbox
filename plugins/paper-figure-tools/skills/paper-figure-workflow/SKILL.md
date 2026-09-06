@@ -1,6 +1,6 @@
 ---
 name: paper-figure-workflow
-description: Use when Codex needs to create, review, or repair reproducible AI/systems paper figure workflows with editable draw.io or diagrams.net pipeline diagrams, Matplotlib and SciencePlots experimental plots, SVG/PDF exports, Inkscape cleanup, figures_src/, figures/, Makefile targets, or publication-quality vector figures.
+description: "Use for reproducible AI/systems paper figures: editable draw.io pipelines, experimental plots, vector exports, and publication build/verification workflows."
 ---
 
 # Paper Figure Workflow

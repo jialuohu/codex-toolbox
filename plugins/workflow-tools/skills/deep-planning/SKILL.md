@@ -1,6 +1,6 @@
 ---
 name: deep-planning
-description: Use when Codex is in Plan Mode for architectural or high-risk work; when reviewing a plan before coding; or when the user asks to think deeply, challenge assumptions, or do adversarial planning. Do not use merely because work has multiple steps, or for tiny edits, simple command-output checks, pure execution, or post-code verification.
+description: "Use for architectural or high-risk Plan Mode work, explicit plan critique, or adversarial planning. Skip ordinary multi-step work and execution-only requests."
 ---
 
 # Deep Planning

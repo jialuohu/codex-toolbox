@@ -1,6 +1,6 @@
 ---
 name: canvas-overleaf-homework
-description: Use when a student wants to create or update one Canvas-linked homework project in Overleaf from selected problems on a user-supplied public source, including exact question transcription, original figures, deadline resolution, or a Todoist cross-link. Do not use it to solve or submit coursework.
+description: "Use to create or update one Canvas-linked Overleaf homework project from selected public problems. Preserve exact questions and figures; do not solve or submit coursework."
 ---
 
 # Canvas Overleaf Homework

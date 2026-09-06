@@ -1,6 +1,6 @@
 ---
 name: drawio
-description: Use when the user explicitly requests draw.io or diagrams.net, or needs editable .drawio source, multi-page diagram inspection or editing, specialized shape libraries, browser editing, or draw.io Desktop PNG/SVG/PDF export.
+description: "Use for explicit draw.io/diagrams.net, editable .drawio source, multi-page diagrams, shape libraries, or native Desktop exports."
 ---
 
 # Draw.io

@@ -1,6 +1,6 @@
 ---
 name: canvas-student-planning
-description: Use when a student wants to inspect Canvas courses, assignments, deadlines, grades, submissions, or peer reviews; reconcile Canvas assignments into Todoist; or explicitly submit or comment on their own Canvas work.
+description: "Use for Canvas course and assignment tracking, Todoist reconciliation, or explicitly authorized student submissions and comments."
 ---
 
 # Canvas Student Planning

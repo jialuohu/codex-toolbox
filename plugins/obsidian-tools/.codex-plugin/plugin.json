@@ -1,6 +1,6 @@
 {
   "name": "obsidian-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Obsidian skills and vault filesystem MCP access for personal note workflows.",
   "author": {
     "name": "Jialuo Hu",

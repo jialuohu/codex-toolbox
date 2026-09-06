@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "source_repository": "https://github.com/jialuohu/codex-toolbox",
+  "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
+  "source_path": "plugins/chronicle-tools/skills/chronicle/SKILL.md",
+  "sha256": "df64e9c38611b1653d29d760ada21f64b450de31895a75c3071691da99cf1129",
+  "preserved_file": "UPSTREAM.md",
+  "note": "Verbatim imported skill as present in the audited toolbox revision; earlier upstream revision was not recorded. The toolbox entrypoint owns routing."
+}

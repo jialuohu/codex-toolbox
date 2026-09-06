@@ -1,6 +1,6 @@
 ---
 name: stevens-slides-dark
-description: Create, edit, restyle, or convert Stevens Institute of Technology presentations in the Stevens Dark visual theme for PowerPoint or native Google Slides. Use when the user explicitly asks for a dark, technical, systems, engineering, or high-contrast Stevens presentation theme.
+description: "Use for explicitly requested Stevens Institute of Technology presentations in the Dark theme. Generic dark or technical decks do not activate this skill."
 ---
 
 # Stevens Slides — Dark

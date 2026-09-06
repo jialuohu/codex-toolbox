@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "source_repository": "https://github.com/jialuohu/codex-toolbox",
+  "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
+  "source_path": "plugins/research-tools/skills/defuddle/SKILL.md",
+  "sha256": "10673a4dc70a0a057612d443243ab7a5aa4abdd4a0fadc3f6eec5fd71ad5a971",
+  "preserved_file": "UPSTREAM.md",
+  "note": "Verbatim imported skill as present in the audited toolbox revision; earlier upstream revision was not recorded. The toolbox entrypoint owns routing."
+}

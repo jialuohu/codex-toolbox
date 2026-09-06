@@ -1,6 +1,6 @@
 {
   "name": "productivity-tools",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Read-only daily Gmail, Calendar, and Todoist briefs plus Todoist task planning.",
   "author": {
     "name": "Jialuo Hu",

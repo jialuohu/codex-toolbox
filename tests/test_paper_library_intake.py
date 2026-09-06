@@ -987,7 +987,7 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
     def test_research_plugin_version_and_prompts_expose_intake_and_paperread(self) -> None:
         manifest = json.loads(RESEARCH_PLUGIN.read_text())
 
-        self.assertEqual(manifest["version"], "0.8.1")
+        self.assertEqual(manifest["version"], "0.8.2")
         default_prompts = manifest["interface"]["defaultPrompt"]
         self.assertLessEqual(len(default_prompts), 3)
         self.assertTrue(all(len(prompt) <= 128 for prompt in default_prompts))
@@ -1006,10 +1006,9 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
 
         for expected in (
             "$paper-library-intake",
-            "Search Zotero first",
-            "paper_search_mcp",
-            "never enable Sci-Hub",
-            "A scoped import does not authorize merge, deletion, indexing, or unrelated cleanup",
+            "Its workflow owns identifier checks and filing",
+            "Never enable Sci-Hub",
+            "infer permission for merge, deletion, indexing, or unrelated cleanup",
         ):
             self.assertIn(expected, agents)
         for expected in (

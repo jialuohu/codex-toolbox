@@ -1,88 +1,42 @@
 ---
 name: explain-clearly
-description: Use when the user asks to explain, teach, clarify, compare, walk through, or help them understand a concept, system behavior, error, or code; especially for why/how questions or when a definition alone is not enough. Do not use for execution-only requests or simple facts that need only a terse answer.
+description: "Use for explanations, comparisons, teaching, or code walkthroughs when understanding needs more than a terse fact. Skip execution-only requests."
 ---
 
 # Explain Clearly
 
-## Overview
+## Explain the requested distinction
 
-Make the idea usable, not merely correct. Lead with the answer, build one
-truthful mental model, and ground it in one concrete example before adding
-detail.
+Lead with the direct answer. Choose the depth and structure needed for this
+question; a terse factual query or an explicit brevity request may need only
+that answer. Explicit user instructions for length, audience, format, and
+examples take precedence.
 
-## Answer Contract
-
-Present these layers in order, using natural prose rather than mandatory
-headings:
-
-1. **Direct answer:** State the conclusion in one or two plain sentences.
-2. **Mental model:** Give the smallest accurate way to think about the idea.
-   Label an analogy as an analogy and do not let it replace the real mechanism.
-3. **Concrete example:** Make the default response contain exactly one worked
-   example and connect every step back to the idea. Extend that same example to
-   expose a misconception instead of starting another. For code, trace the
-   input, important state or control flow, and output.
-4. **Mechanism and limits:** Explain what literally happens, then add only the
-   caveat or common misconception needed to prevent a wrong understanding.
-
-Infer the user's level from their wording. Define unavoidable jargon inline.
-For a terse factual query that was explicitly routed here, or when the user
-explicitly requests brevity, the Direct answer may be the complete response.
+Use a mental model, concrete example, or comparison when it improves understanding.
+There is no required example count or fixed sequence of answer layers. Explain
+the real mechanism and limits that matter, label an analogy as an analogy,
+and define unavoidable jargon inline. For code, trace the relevant input,
+state changes, and output; for errors, distinguish symptoms from causes.
 
 ## Choose the Smallest Useful Format
 
-Add a visual only when it makes an important relationship materially easier to
-understand. Use concise prose or a short list for one conclusion or a simple
-procedure; a Markdown table for three or more comparable entities or repeated
-fields; `$archify` for architecture or workflow maps on graphical surfaces and
-polished interactive sequence, data-flow, or lifecycle artifacts;
-`$pretty-mermaid` for explicit Mermaid/`.mmd`, terminal ASCII, compact static
-relationships, hierarchies, or sequences; and bundled Visualize for spatial,
-changing, adjustable, or inspectable information in the conversation on a
-supported desktop, web, or mobile surface. Use `$pretty-mermaid` by default
-whenever that lane applies; it retains editable `.mmd` source and renders SVG on graphical surfaces or ASCII in a terminal.
-Use native inline Mermaid only when explicitly requested or as a
-disclosed fallback for an unavailable renderer or rejected syntax. Use
-`$drawio` for explicit native draw.io/WYSIWYG work and
-`$paper-figure-workflow` for publication figures. Build project files or use
-Sites for a standalone or hosted application rather than putting it in inline
-Visualize.
+Use prose for a simple conclusion, or a Markdown table for three or more comparable
+entities. Add visuals only when they materially help. Respect workspace routing;
+otherwise use `$archify` for graphical maps, `$pretty-mermaid` for explicit
+Mermaid or compact static diagrams, bundled Visualize for adjustable spatial
+views, `$drawio` for native editable diagrams, and `$paper-figure-workflow` for
+publication figures. Build standalone applications with project files or Sites.
+Use native inline Mermaid only when explicitly requested or as a disclosed
+renderer fallback. The owning visual skill supplies its export and validation
+requirements; do not load it until a visual is selected.
 
-Lead with the result, show the smallest useful representation, and add only the
-essential caveat. Do not narrate every element already visible in a diagram or
-table. A visual is presentation, not evidence: validate the source data,
-coordinates, calculations, and legal state first. For chess, reconstruct and
-validate the exact position, orientation, side to move, and move legality before
-drawing a board or arrow; report ambiguity instead of inventing pieces. Never
-use a generative image model for an exact factual diagram. Make Visualize output
-responsive and accessible; in a CLI or IDE, fall back to Mermaid, a table,
-ASCII, or explicit coordinates.
+## Accuracy and concision
 
-## Adapt the Explanation
+Establish sourced facts with the domain skill or source first. Preserve uncertainty
+and validate visual data, coordinates, calculations, and legal state. For chess,
+verify the position, orientation, side to move, and move legality before drawing.
+Do not use generative images for exact factual diagrams. Visualize must be
+responsive and accessible; use prose, tables, or ASCII in a CLI or IDE when needed.
 
-- For a comparison, lead with the practical distinction, compare only the
-  dimensions that affect the user's decision, and give one contrasting example.
-- For a code walkthrough, show the result first, then trace only the lines and
-  state changes that cause it. Make snippets runnable when practical.
-- For an error, distinguish the visible symptom from the underlying cause and
-  show one minimal failing-to-working example when a fix is requested.
-- For sourced or current claims, establish the facts with the appropriate tool
-  or domain skill first. Preserve uncertainty instead of simplifying it away.
-
-## Control Depth
-
-Default to layered concision and complete the answer after the mechanism-and-
-limits layer. Use multiple worked examples only when the user asks for them or
-two cases must be contrasted to answer the question. Add deeper internals,
-history, or edge cases only when they prevent a likely misunderstanding. Avoid
-quizzes, repeated summaries, decorative analogies, and closing offers that add
-no information. Other explicit user instructions for length, format, audience,
-or depth override these defaults.
-
-## Example Shape
-
-For `setTimeout(fn, 0)`, first say that `fn` runs after the current synchronous
-work, not immediately. Model it as joining a queue, trace `1 -> queued callback
--> 3 -> 2`, then clarify that the queue is the intuition while the event loop
-and task queue are the mechanism.
+Avoid repeated summaries, decorative analogies, unnecessary caveats, and closing
+offers. Do not restate what a visual already shows.

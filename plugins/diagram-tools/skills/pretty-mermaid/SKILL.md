@@ -1,6 +1,6 @@
 ---
 name: pretty-mermaid
-description: Render explicit Mermaid or .mmd requests, terminal ASCII, and compact static diagrams. Preserve editable .mmd source and export self-contained SVG, genuine PNG, or ASCII; use Archify instead for graphical architecture/workflow maps or polished interactive sequence, data-flow, and lifecycle artifacts.
+description: "Render explicit Mermaid/.mmd, terminal ASCII, or compact static diagrams with editable source. Use Archify for graphical architecture and workflow maps."
 ---
 
 # Pretty Mermaid
@@ -9,6 +9,8 @@ Use this skill whenever Mermaid is the chosen format, including explicit
 Mermaid or `.mmd`, terminal ASCII, and compact static diagrams. Save Mermaid
 source before rendering. Keep an existing `.mmd` file unchanged unless the
 user asks to edit it, and place new source beside its export.
+Exports retain editable `.mmd` source and use self-contained SVG, genuine PNG,
+or rendered ASCII as requested.
 
 ## Workflow
 

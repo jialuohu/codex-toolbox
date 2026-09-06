@@ -1,6 +1,6 @@
 ---
 name: daily-command-center
-description: Prepare a concise, strictly read-only daily command-center brief across Gmail, Google Calendar, and Todoist. Use for daily or morning briefs, daily planning, and scheduled command-center runs that need email context, time commitments, and priority tasks without changing any source.
+description: "Use for read-only daily or morning briefs, daily planning, and scheduled command-center runs across Gmail, Google Calendar, and Todoist."
 ---
 
 # Daily Command Center

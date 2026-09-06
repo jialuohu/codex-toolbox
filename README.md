@@ -1072,9 +1072,9 @@ Use $claude-counselor to get an independent plan and final review for this archi
 ## Explain Clearly
 
 Use `$explain-clearly` when a concept, why/how question, comparison, or code
-walkthrough needs a clear mental model and concrete example. It leads with the
-direct answer, uses one accurate example by default, and adds only the mechanism
-or caveat needed to avoid a misleading simplification. It also chooses the
+walkthrough needs more than a terse fact. It leads with the direct answer and
+adapts depth, examples, and structure to the question. It has no fixed answer
+sequence or example count. It also chooses the
 smallest useful format: prose for simple results, a table for repeated
 comparisons, `$archify` for graphical architecture/workflow maps or polished
 interactive sequence/data-flow/lifecycle artifacts, `$pretty-mermaid` for
@@ -1090,6 +1090,74 @@ Example prompt:
 ```text
 Use $explain-clearly to explain JavaScript closures with a simple mental model and one concrete example.
 ```
+
+## Instruction Development Checks
+
+Skill descriptions are discovery text: put the distinguishing trigger first,
+aim for at most 200 characters, and document any exception above 240 in
+`tests/fixtures/instruction-policy.json`. These are toolbox conventions, not
+Codex limits. The offline audit parses real YAML, including literal and folded
+descriptions; checks local reference chains and invocation policies; and reports
+description lengths, entry sizes, ownership, and source hashes.
+
+Install its development-only dependency in an isolated environment:
+
+```bash
+python3 -m venv /tmp/toolbox-instruction-audit
+/tmp/toolbox-instruction-audit/bin/python -m pip install -r scripts/instruction-audit-requirements.txt
+/tmp/toolbox-instruction-audit/bin/python scripts/audit_skill_instructions.py --check --json
+/tmp/toolbox-instruction-audit/bin/python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit
+```
+
+Use `--baseline tests/fixtures/instruction-baseline.json` to compare this cleanup
+against the recorded pre-refactor inventory and enforce its 25% aggregate
+description reduction. General CI omits that historical comparison so future
+skills can be added deliberately. The Skill Instructions workflow runs offline
+metadata, setup, instruction, and privacy checks; it never invokes a model.
+
+Chronicle activates for screen or recent-activity context, Stevens Slides for
+Stevens-branded requests, and Defuddle for standalone article extraction.
+`ship-toolbox`, `pick-ui-library`, `prototype`, and `review-animations` remain
+explicit-only. Customized imported skills use toolbox-owned entry routers with
+verbatim `UPSTREAM.md` guidance and a `references/provenance.json` record. The
+documented Codex registration entry is `SKILL.md`; preservation checks forbid
+a second entrypoint inside each wrapped skill. See the official
+[skill layout](https://learn.chatgpt.com/docs/build-skills). The
+WeChat entry routes to separate interactive reading, setup/migration,
+incremental digest, Sites transport, and scheduling references; its helper
+interfaces, state formats, quotas, and delivery lifecycle are unchanged.
+Chronicle's preserved original contains trailing whitespace; `.gitattributes`
+exempts only that hash-verified `UPSTREAM.md` from whitespace checks.
+
+`scripts/eval_skill_routing.py` prepares and scores the fixed 16 synthetic cases
+in `tests/fixtures/skill-routing.json`. The intended three phases are `baseline`,
+`candidate`, and `candidate-short` (descriptions truncated to 160 characters),
+with one current model and settings, at most 48 model requests, and no automatic
+retries. For example, prepare discovery data without document bodies with:
+
+```bash
+/tmp/toolbox-instruction-audit/bin/python scripts/eval_skill_routing.py \
+  --phase candidate --model gpt-6-astra --effort high --prepare > /tmp/toolbox-routing.json
+```
+
+`--prepare` outputs the catalog and synthetic requests without document bodies.
+After selection, `--lookup <skill-name>` outputs only that entry body; repeated
+`--reference <repository-relative-path>` flags add specific reachable Markdown
+references and reject references from other skills. The internal document store
+is never printed by `--prepare`. Expected outcomes stay in the scorer. A future live
+adapter must establish a capability-restricted Codex process with an empty
+effective tool catalog before submitting fixtures. The checked CLI versions
+do not provide verified isolation, so `--run` currently refuses with status
+`unavailable`, exit code 2, and zero model requests. There is no live execution
+adapter or bypass flag. `--score <response.json>` grades imported responses but
+does not authenticate their runtime provenance or establish live safety. Passing
+single-pass routing screens would remain screening evidence, not proof of
+runtime safety.
+
+Plugin versions live in `.codex-plugin/plugin.json`. The marketplace catalog
+references local plugin paths without duplicating versions. Instruction changes
+that affect public activation behavior patch-bump the owning plugins; preparing
+or validating them does not install, publish, or synchronize the marketplace.
 
 ## Ship Toolbox
 

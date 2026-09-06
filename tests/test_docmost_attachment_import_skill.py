@@ -16,7 +16,7 @@ class DocmostAttachmentImportSkillTests(unittest.TestCase):
     def test_plugin_registers_one_self_contained_attachment_skill(self) -> None:
         manifest = json.loads(MANIFEST.read_text())
 
-        self.assertEqual(manifest["version"], "0.8.0")
+        self.assertEqual(manifest["version"], "0.8.1")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertTrue(SKILL.is_file())
         self.assertEqual(

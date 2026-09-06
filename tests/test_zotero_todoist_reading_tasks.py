@@ -209,7 +209,7 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
         mcp = json.loads(RESEARCH_MCP.read_text())
         prompts = manifest["interface"]["defaultPrompt"]
 
-        self.assertEqual(manifest["version"], "0.8.1")
+        self.assertEqual(manifest["version"], "0.8.2")
         self.assertLessEqual(len(prompts), 3)
         self.assertTrue(all(len(prompt) <= 128 for prompt in prompts))
         prompt_text = " ".join(prompts)

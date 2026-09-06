@@ -1,6 +1,6 @@
 ---
 name: stevens-slides-white
-description: Create, edit, restyle, or convert Stevens Institute of Technology presentations in the Stevens White visual theme for PowerPoint or native Google Slides. Use when the user explicitly asks for a white, light, clean, or default Stevens presentation theme.
+description: "Use for Stevens Institute of Technology presentations in the White or default theme. Generic light or academic decks do not activate this skill."
 ---
 
 # Stevens Slides — White

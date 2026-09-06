@@ -436,7 +436,9 @@ class SitesSourceTransportTests(unittest.TestCase):
         self.assertEqual(self.fixture.records(), [])
 
     def test_skill_documents_the_bound_tool_controlled_transport(self):
-        text = SKILL_FILE.read_text(encoding="utf-8")
+        entry = SKILL_FILE.read_text(encoding="utf-8")
+        self.assertIn("(references/sites-transport.md)", entry)
+        text = (SKILL_FILE.parent / "references/sites-transport.md").read_text(encoding="utf-8")
         self.assertIn("## Pinned Sites Source Transport", text)
         for clause in (
             "sites-source-transport.json",
@@ -463,7 +465,7 @@ class SitesSourceTransportTests(unittest.TestCase):
         self.assertNotIn(SYNTHETIC_TOKEN, text)
 
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.5.0")
+        self.assertEqual(plugin["version"], "0.5.1")
 
     def test_boundary_config_is_private_strict_and_fail_closed(self):
         spec = importlib.util.spec_from_file_location(

@@ -304,8 +304,8 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         def mutate_version(root: Path) -> None:
             path = root / "plugins" / "docmost-tools" / "server" / "pyproject.toml"
             value = path.read_text()
-            self.assertIn('version = "0.8.0"', value)
-            path.write_text(value.replace('version = "0.8.0"', 'version = "0.8.1"', 1))
+            self.assertIn('version = "0.8.1"', value)
+            path.write_text(value.replace('version = "0.8.1"', 'version = "0.8.2"', 1))
 
         def mutate_jsonpatch(root: Path) -> None:
             path = root / "plugins" / "docmost-tools" / "server" / "pyproject.toml"

@@ -1,6 +1,6 @@
 ---
 name: apple-mail
-description: "Use for explicit Apple Mail or Mail.app requests on macOS: account and mailbox discovery, inbox triage, live message reads, private historical search, attachments, visible drafts, and guarded message mutations."
+description: "Use for explicit Apple Mail or Mail.app requests on macOS: read and search mail, inspect attachments, prepare drafts, or make authorized mailbox changes."
 ---
 
 # Apple Mail

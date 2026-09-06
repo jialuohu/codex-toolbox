@@ -1,6 +1,6 @@
 {
   "name": "canvas-tools",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Student-focused Canvas tracking, guarded Overleaf homework setup, and explicit Todoist reconciliation.",
   "author": {
     "name": "Jialuo Hu",

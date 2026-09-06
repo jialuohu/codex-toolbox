@@ -42,7 +42,7 @@ class CanvasToolsContractTests(unittest.TestCase):
         marketplace = json.loads(MARKETPLACE.read_text())
 
         self.assertEqual(manifest["name"], "canvas-tools")
-        self.assertEqual(manifest["version"], "0.2.0")
+        self.assertEqual(manifest["version"], "0.2.1")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         self.assertLessEqual(len(manifest["interface"]["defaultPrompt"]), 3)

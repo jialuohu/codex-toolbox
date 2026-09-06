@@ -1,0 +1,3 @@
+# Preserve this imported source byte-for-byte, including its original whitespace.
+# tests/test_skill_instructions.py verifies it against the audited baseline hash.
+plugins/chronicle-tools/skills/chronicle/UPSTREAM.md -whitespace

@@ -1,6 +1,6 @@
 ---
 name: paper-library-intake
-description: Find, check, classify, add, or repair one academic paper across public scholarly sources and the user's Zotero Research library. Use for a title, DOI, arXiv ID/URL, or publisher URL when the user asks whether the paper is saved, where it belongs, or asks to add/save/import it with a verified PDF and Research/ReadLater filing.
+description: "Find or check one public academic paper in Zotero, classify it, or import it with an authorized verified PDF. Private assigned reviews use the paper-review workflows."
 ---
 
 # Paper Library Intake

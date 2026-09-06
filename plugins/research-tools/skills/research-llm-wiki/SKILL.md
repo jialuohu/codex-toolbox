@@ -1,6 +1,6 @@
 ---
 name: research-llm-wiki
-description: Maintain a Karpathy-style, source-backed research LLM Wiki in the user's Obsidian vault. Use when the user asks to ingest papers, Zotero items, web clips, PDFs, or paper notes into `Research/LLM Wiki`; query or synthesize from that wiki; file durable research analyses; lint the wiki for stale claims, missing citations, orphan pages, duplicate concepts, or contradictions; or mentions `$research-llm-wiki ingest`, `$research-llm-wiki query`, or `$research-llm-wiki lint`.
+description: "Maintain Research/LLM Wiki in Obsidian: ingest sources, answer source-backed queries, synthesize research, and audit existing wiki content."
 ---
 
 # Research LLM Wiki

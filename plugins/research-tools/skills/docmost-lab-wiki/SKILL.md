@@ -1,6 +1,6 @@
 ---
 name: docmost-lab-wiki
-description: Maintain the user's separate private Obsidian Lab Wiki from complete read-only Docmost page snapshots. Use for initialization, synchronization, local hybrid queries, explicit durable synthesis, status, linting, or offline index rebuilds. Never mutate Docmost.
+description: "Use for the private Obsidian Lab Wiki mirror of Docmost: sync, query, synthesize, lint, or rebuild its local index. Never mutate Docmost."
 ---
 
 # Docmost Lab Wiki

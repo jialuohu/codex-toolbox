@@ -1,6 +1,6 @@
 ---
 name: mineru-document-extraction
-description: Extract one local PDF, image, DOCX, PPTX, or XLSX with a quality-first MinerU workflow and a checksum-verified manifest. Use for complex, scanned, OCR-heavy, table/formula-rich, or layout-sensitive documents where simple text extraction may lose structure, and for bounded page-range extraction that must preserve auditable local artifacts.
+description: "Use MinerU for one complex, scanned, OCR-heavy, or layout-sensitive local document, including bounded pages and checksum-verified extraction artifacts."
 ---
 
 # MinerU Document Extraction
@@ -9,7 +9,7 @@ Extract one local document into an explicit review directory. Preserve the sourc
 
 ## Route the document
 
-- Use this skill for scans, multi-column pages, tables, formulas, figures, mixed text and OCR, or other layout-sensitive documents.
+- Use this skill for complex, scanned, OCR-heavy, table/formula-rich, or layout-sensitive documents, including multi-column pages and mixed text, figures, and OCR.
 - Prefer a simpler local text extractor for straightforward born-digital documents when layout reconstruction has no value.
 - Reject URLs and directories. Download or select exactly one supported local file before running the wrapper.
 - Use Zotero tools instead when the task is primarily about an item already saved in the user's Zotero library.

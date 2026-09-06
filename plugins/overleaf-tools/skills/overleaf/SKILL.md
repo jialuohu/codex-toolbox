@@ -1,9 +1,11 @@
 ---
 name: overleaf
-description: Use for reading, organizing, importing, editing, moving, or deleting files in configured Overleaf projects through the guarded Overleaf MCP. Also use for Overleaf Tools configuration/status questions. Do not use browser automation or raw Git as a workaround for unavailable MCP operations.
+description: "Use the guarded Overleaf MCP for configured projects and authorized file operations, or Overleaf Tools status. Do not bypass unavailable operations with browser or raw Git."
 ---
 
 # Overleaf
+
+Do not use browser automation or raw Git as a workaround for unavailable MCP operations.
 
 Use the `overleaf` MCP for configured Overleaf project operations. This plugin is unofficial and
 uses Overleaf's Git integration; the relevant Overleaf account must currently have Git access.

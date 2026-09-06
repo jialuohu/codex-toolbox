@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
+  "global_safety_sha256": "5262b4b9e70a1350b0aef8af98a9f88e5e044c21d14ffd6fec120978a48556a0",
+  "wechat_sections": [
+    {
+      "heading": "Setup",
+      "destination": "plugins/web-data-tools/skills/wechat-digest/references/setup-migration.md",
+      "sha256": "32314db75896ead6bd4bddfd6b028181d3843c78b4ef9112e240dee5decaaf34"
+    },
+    {
+      "heading": "Intent Routing",
+      "destination": "plugins/web-data-tools/skills/wechat-digest/references/interactive-reading.md",
+      "sha256": "ac00179902729eb63403c5ac07a4c90600901233577ca2103cac750488518ffc"
+    },
+    {
+      "heading": "Interactive Reading",
+      "destination": "plugins/web-data-tools/skills/wechat-digest/references/interactive-reading.md",
+      "sha256": "e36b7ece588d362052fb8d8cb4db27aff8684efbc1c9798f0ca8dac0cfc751fa"
+    },
+    {
+      "heading": "Incremental Digest",
+      "destination": "plugins/web-data-tools/skills/wechat-digest/references/incremental-digest.md",
+      "sha256": "aaf673499763a49a67c6c2e4d99fe04ee0e742e9685b7233adc2e4c679ebcf50"
+    },
+    {
+      "heading": "Safety and Quotas",
+      "destination": "plugins/web-data-tools/skills/wechat-digest/references/incremental-digest.md",
+      "sha256": "57a638149a998cb5e9372255a7399e89a2abb3946446397313401b45e8255508"
+    },
+    {
+      "heading": "Pinned Sites Source Transport",
+      "destination": "plugins/web-data-tools/skills/wechat-digest/references/sites-transport.md",
+      "sha256": "27271598642bc0fd802f197751d4605a64419708123e58e3d7b163ba8024bf59"
+    },
+    {
+      "heading": "Automation",
+      "destination": "plugins/web-data-tools/skills/wechat-digest/references/scheduling.md",
+      "sha256": "a92247e8f57b4cb8f2add486d74e64a60b2465d490ce2745a24b4ac14a2ca93b"
+    }
+  ]
+}

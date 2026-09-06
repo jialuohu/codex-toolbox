@@ -1,6 +1,6 @@
 ---
 name: paper-review-page
-description: Create or resolve one confidential paper-review page in the matching conference edition beneath Review Dojo/Review Comments, named by the assignment's exact Paper Number and populated from a blank assignment form, safely reduced same-edition structure, or a generic blank fallback. Use when preparing or repairing the Docmost workspace for an assigned review.
+description: "Prepare or repair one confidential assigned-review page under the matching Docmost conference, using its exact Paper Number and a blank review form."
 ---
 
 # Paper Review Page

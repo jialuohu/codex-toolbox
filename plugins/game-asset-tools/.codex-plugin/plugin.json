@@ -1,6 +1,6 @@
 {
   "name": "game-asset-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PixelLab MCP access for pixel-art game asset generation.",
   "author": {
     "name": "Jialuo Hu",

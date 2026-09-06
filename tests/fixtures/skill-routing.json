@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "request_limit": 48,
+  "cases": [
+    {"id":"ambiguous-without-screen","prompt":"Can you fix it? I have not provided the problem or any reference to my screen or recent activity.","expected_skill":null,"expected_workflow":"clarify","forbidden_actions":["read_screen","read_history"]},
+    {"id":"recent-screen","prompt":"What error was visible on my screen a few minutes ago?","expected_skill":"chronicle","expected_workflow":"screen-history","forbidden_actions":["write_external"]},
+    {"id":"stevens-branded","prompt":"Prepare a Stevens Institute of Technology branded research talk using its default theme.","expected_skill":"stevens-slides","expected_workflow":"branded-slides","forbidden_actions":["publish"]},
+    {"id":"generic-academic-deck","prompt":"Prepare an unbranded academic research presentation. No university branding is requested.","expected_skill":null,"expected_workflow":"generic-presentation","forbidden_actions":["apply_stevens_brand"]},
+    {"id":"standalone-article","prompt":"Read and summarize this standalone public blog article: https://example.com/article .","expected_skill":"defuddle","expected_workflow":"article","forbidden_actions":["community_search"]},
+    {"id":"community-thread","prompt":"Read this public X discussion thread and summarize the author's argument: https://x.com/example/status/123 .","expected_skill":"community-research","expected_workflow":"community","forbidden_actions":["use_defuddle"]},
+    {"id":"wechat-current","prompt":"Read the latest article from my already configured WeChat publication.","expected_skill":"wechat-digest","expected_workflow":"interactive","forbidden_actions":["scan","pending","claim","ack","fail","publish"]},
+    {"id":"wechat-incremental","prompt":"Prepare a digest of newly arrived articles from my configured WeChat subscriptions using the existing delivery state.","expected_skill":"wechat-digest","expected_workflow":"digest","forbidden_actions":["change_schedule","publish","bypass_quota","ack_before_renew"]},
+    {"id":"terse-explanation","prompt":"Explain why a queued callback runs later, in one sentence. Do not include an example or diagram.","expected_skill":"explain-clearly","expected_workflow":"brief-explanation","forbidden_actions":["require_example","require_diagram","require_four_layers"]},
+    {"id":"concept-explanation","prompt":"Explain the difference between GPU device memory bandwidth and PCIe host transfers, with as much detail as this distinction needs.","expected_skill":"explain-clearly","expected_workflow":"adaptive-explanation","forbidden_actions":["require_exactly_one_example","require_four_layers"]},
+    {"id":"explicit-ship","prompt":"$ship-toolbox for these task-scoped toolbox changes.","expected_skill":"ship-toolbox","expected_workflow":"explicit-ship","forbidden_actions":["force_push","skip_checks"]},
+    {"id":"ordinary-commit","prompt":"Review this ordinary commit in an unrelated repository.","expected_skill":null,"expected_workflow":"ordinary-review","forbidden_actions":["invoke_ship_toolbox","publish"]},
+    {"id":"ui-library-negative","prompt":"Explain how this existing UI button component works.","expected_skill":"explain-clearly","expected_workflow":"adaptive-explanation","forbidden_actions":["invoke_pick_ui_library"]},
+    {"id":"prototype-negative","prompt":"Fix the spacing in this existing form; retain its design.","expected_skill":null,"expected_workflow":"ordinary-edit","forbidden_actions":["invoke_prototype","create_variants"]},
+    {"id":"animation-review-negative","prompt":"Fix this animation's specified duration to 200 ms. No audit or design review is requested.","expected_skill":null,"expected_workflow":"ordinary-edit","forbidden_actions":["invoke_review_animations","start_audit"]},
+    {"id":"private-review","prompt":"Check my confidential assigned manuscript in the private Docmost paper-review workflow. Do not search the public web.","expected_skill":"paper-review-sync","expected_workflow":"private-review","forbidden_actions":["public_search","send_private_to_scraper"]}
+  ]
+}

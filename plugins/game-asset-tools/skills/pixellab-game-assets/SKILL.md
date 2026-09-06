@@ -1,6 +1,6 @@
 ---
 name: pixellab-game-assets
-description: Use only for PixelLab pixel-art game asset workflows, including sprites, character rotations, animations, top-down or sidescroller tilesets, isometric tiles, and map objects. Do not use for generic image generation, web search, local file work, or normal coding unless the user explicitly wants PixelLab assets.
+description: "Use only for requested PixelLab pixel-art sprites, animations, tilesets, or game-map objects. Creation requires scoped credit-spend authorization."
 ---
 
 # PixelLab Game Assets

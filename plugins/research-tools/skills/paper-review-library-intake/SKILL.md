@@ -1,6 +1,6 @@
 ---
 name: paper-review-library-intake
-description: Import or repair one private Docmost paper-review submission in the user's Zotero Research/PaperReview collection with a verified PDF and desktop links. Use only for confidential assigned manuscripts and their Docmost attachments, not for public paper discovery or ordinary library intake.
+description: "Import or repair one confidential Docmost review submission in Zotero Research/PaperReview. Excludes public paper discovery and ordinary library intake."
 ---
 
 # Paper Review Library Intake

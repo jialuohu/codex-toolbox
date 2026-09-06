@@ -1,6 +1,6 @@
 ---
 name: community-research
-description: Use when a user asks for public community or forum discussions, user reports, sentiment, community troubleshooting, or evidence from public threads. Also use for a known public community-thread URL. Do not use for ordinary web discovery, official documentation alone, a straightforward non-community article, or private/local content.
+description: "Use for public community/forum discussions, reports, sentiment, or a known public thread URL. Excludes standalone articles, ordinary discovery, and private content."
 ---
 
 # Community Research

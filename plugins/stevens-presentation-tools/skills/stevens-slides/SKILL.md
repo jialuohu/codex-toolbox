@@ -1,6 +1,6 @@
 ---
 name: stevens-slides
-description: Create, edit, restyle, or convert Stevens Institute of Technology presentations in PowerPoint or native Google Slides using the bundled White or Dark 16:9 theme templates. Use for Stevens-branded decks, university presentations, research talks, systems talks, slide templates, and theme selection; default to White when the user does not name a theme.
+description: "Use only for Stevens Institute of Technology branded presentations in PowerPoint or Google Slides. Select White by default, or the explicitly requested Stevens theme."
 ---
 
 # Stevens Slides

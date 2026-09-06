@@ -1,6 +1,6 @@
 ---
 name: todoist-task-planning
-description: Manage a personal task system across Todoist and Google Calendar. Use when the user asks to add, edit, complete, find, review, or organize tasks; capture deadlines or task details; block focused work time; or schedule a remote meeting while keeping tasks and calendar events distinct.
+description: "Use to capture, review, organize, or complete Todoist tasks, or plan Calendar focus time and meetings while keeping tasks and events distinct."
 ---
 
 # Todoist Task Planning

@@ -1,6 +1,6 @@
 ---
 name: ship-toolbox
-description: Validate, commit, and push task-scoped changes in the jialuohu/codex-toolbox repository on main, then refresh and verify the local Git-backed marketplace. Use only when explicitly invoked as $ship-toolbox after adding or updating toolbox plugins or skills. Do not use for ordinary commits, feature branches, pull requests, tags, releases, rebases, force pushes, or unrelated repositories.
+description: "Use only when explicitly invoked as $ship-toolbox to validate and publish task-scoped toolbox changes, then refresh the local marketplace."
 ---
 
 # Ship Toolbox

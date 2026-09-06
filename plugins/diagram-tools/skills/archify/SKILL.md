@@ -1,6 +1,6 @@
 ---
 name: archify
-description: Create polished interactive architecture and workflow maps on graphical surfaces, plus interactive sequence, data-flow, and lifecycle diagrams, as validated Archify HTML with retained typed JSON source. Use Pretty Mermaid instead for explicit Mermaid, .mmd, terminal ASCII, or compact static diagrams.
+description: "Create graphical architecture, workflow, sequence, data-flow, and lifecycle maps as interactive Archify HTML. Use Pretty Mermaid for explicit Mermaid or compact static diagrams."
 ---
 
 # Archify

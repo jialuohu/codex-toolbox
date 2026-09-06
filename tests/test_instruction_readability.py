@@ -81,20 +81,19 @@ class ReadabilityContractTests(unittest.TestCase):
 
         for expected in (
             "Choose the Smallest Useful Format",
-            "Markdown table for three or more comparable entities",
+            "Markdown table for three or more comparable",
             "$archify",
             "$pretty-mermaid",
             "native inline Mermaid only",
-            "editable `.mmd` source",
-            "SVG on graphical surfaces",
-            "ASCII in a terminal",
             "bundled Visualize",
-            "A visual is presentation, not evidence",
+            "validate visual data",
             "For chess",
             "responsive and accessible",
             "CLI or IDE",
         ):
             self.assertIn(expected, text)
+        self.assertIn("There is no required example count or fixed sequence", text)
+        self.assertNotIn("exactly one worked", text)
 
     def test_pretty_mermaid_default_routing_and_fallback_contract(self) -> None:
         global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
@@ -138,7 +137,8 @@ class ReadabilityContractTests(unittest.TestCase):
         drawio_text = DRAWIO_SKILL.read_text(encoding="utf-8")
         paper_text = PAPER_FIGURE_SKILL.read_text(encoding="utf-8")
 
-        self.assertIn("$pretty-mermaid` for explicit Mermaid/`.mmd`, terminal ASCII", global_text)
+        self.assertIn("Explicit Mermaid/`.mmd`, terminal ASCII", global_text)
+        self.assertIn("`$pretty-mermaid`", global_text)
         self.assertIn("$drawio` owns explicit native, multi-page, WYSIWYG", global_text)
         self.assertIn("Use `$drawio` for explicit draw.io", pretty_text)
         self.assertIn("$pretty-mermaid` owns explicit", drawio_text)
@@ -185,8 +185,8 @@ class ReadabilityContractTests(unittest.TestCase):
         diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
-        self.assertEqual(workflow_manifest["version"], "0.6.0")
-        self.assertEqual(diagram_manifest["version"], "0.4.0")
+        self.assertEqual(workflow_manifest["version"], "0.6.1")
+        self.assertEqual(diagram_manifest["version"], "0.4.1")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
     def test_claude_counselor_is_bounded_and_implicitly_available(self) -> None:

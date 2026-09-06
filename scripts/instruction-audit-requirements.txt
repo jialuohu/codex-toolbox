@@ -1,0 +1,2 @@
+# Development-only; never imported by setup or a plugin runtime.
+PyYAML==6.0.3

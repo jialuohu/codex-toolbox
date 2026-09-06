@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "source_repository": "https://github.com/jialuohu/codex-toolbox",
+  "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
+  "source_path": "plugins/obsidian-tools/skills/obsidian-markdown/SKILL.md",
+  "sha256": "7ad72e1f0a9081ed325e76b6402ad5de50a00e63e2341fd403a92f147234a007",
+  "preserved_file": "UPSTREAM.md",
+  "note": "Verbatim imported skill as present in the audited toolbox revision; earlier upstream revision was not recorded. The toolbox entrypoint owns routing."
+}
