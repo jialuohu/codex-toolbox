@@ -1,6 +1,6 @@
 {
   "name": "workflow-tools",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Codex planning, independent Claude counsel, explanation, toolbox synchronization, and explicit shipping skills.",
   "author": {
     "name": "Jialuo Hu"

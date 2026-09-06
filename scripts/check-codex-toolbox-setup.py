@@ -4749,8 +4749,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.7.0",
-        "workflow-tools plugin version must reflect Sync Toolbox support",
+        workflow_plugin.get("version") == "0.8.0",
+        "workflow-tools plugin version must reflect counselor timeout diagnostics",
     )
     require(
         "mcpServers" not in workflow_plugin,
@@ -4928,6 +4928,10 @@ def main() -> None:
     claude_counselor_text = CLAUDE_COUNSELOR_SKILL.read_text()
     for expected in (
         "name: claude-counselor",
+        "600 seconds",
+        "--timeout-seconds 900",
+        "Metadata-only JSON",
+        "Progress",
         "at most two calls",
         "wrapper never discovers or reads files",
         "ANTHROPIC_API_KEY",

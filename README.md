@@ -1082,6 +1082,15 @@ authentication environment variables to avoid silently changing the billing
 path. It never sends credentials, unrelated diffs, confidential submissions,
 or private documents. Failures are not retried automatically.
 
+Counselor calls default to a 10-minute deadline. Use `--timeout-seconds 900`
+for large task-scoped reviews; do not shorten the default unless requested.
+Version and login checks have separate 20-second deadlines. The final JSON
+result stays on stdout, while metadata-only diagnostics on stderr report
+stages, elapsed time, progress every 30 seconds, and available model and token
+counts. Timeout errors retain these diagnostics without exposing prompts,
+thinking, response text, raw stderr, or authentication data. Progress never
+extends the deadline or retries a model call.
+
 Example prompt:
 
 ```text

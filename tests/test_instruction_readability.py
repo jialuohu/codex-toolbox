@@ -185,7 +185,7 @@ class ReadabilityContractTests(unittest.TestCase):
         diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
-        self.assertEqual(workflow_manifest["version"], "0.7.0")
+        self.assertEqual(workflow_manifest["version"], "0.8.0")
         self.assertEqual(diagram_manifest["version"], "0.4.1")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
@@ -199,6 +199,10 @@ class ReadabilityContractTests(unittest.TestCase):
             self.assertIn("$claude-counselor", text)
         for expected in (
             "at most two calls",
+            "600 seconds",
+            "--timeout-seconds 900",
+            "Metadata-only JSON",
+            "do not shorten it to 120 seconds",
             "wrapper never discovers or reads files",
             "disabled tools",
             "no session persistence",

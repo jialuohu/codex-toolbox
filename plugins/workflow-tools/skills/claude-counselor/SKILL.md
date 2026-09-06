@@ -52,6 +52,27 @@ python3 scripts/claude_counselor.py plan < bounded-context.txt
 python3 scripts/claude_counselor.py review < bounded-context.txt
 ```
 
+The model-call deadline defaults to 600 seconds (10 minutes). For a large
+task-scoped diff or a substantial architectural review, use
+`--timeout-seconds 900` (15 minutes), the maximum. Keep the default for ordinary
+counsel; do not shorten it to 120 seconds or another smaller value unless the
+user requests a shorter budget. Version and authentication checks each retain
+their separate 20-second deadline. Tool polling or yield intervals are not the
+model-call deadline; keep waiting on the same running command.
+
+The wrapper returns one final JSON object on stdout. Metadata-only JSON
+diagnostics on stderr report preflight stages, model progress every 30 seconds,
+and process exit or failure. They include elapsed time, the configured deadline,
+input size, the version/auth/model stage, and supported model/timing/token
+metadata, allowlisted result subtypes, and output byte counts when available
+after the process exits. Progress
+is an elapsed-time heartbeat; it does not distinguish thinking, answer
+generation, or network waiting inside a model call.
+Timeout errors also include diagnostics so redirected stdout preserves the
+failure context. Diagnostics never include prompts, thinking or response text,
+raw Claude stderr, session identifiers, or authentication details. Progress
+does not extend the deadline and never launches another model request.
+
 Run `doctor` before the first call in a task. It makes no model request. The
 `plan` and `review` commands use the local Claude.ai login, safe mode with
 disabled tools, no session persistence, a minimal child environment, and
