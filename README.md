@@ -1159,6 +1159,25 @@ references local plugin paths without duplicating versions. Instruction changes
 that affect public activation behavior patch-bump the owning plugins; preparing
 or validating them does not install, publish, or synchronize the marketplace.
 
+## Sync Toolbox
+
+Use `$sync-toolbox`, or ask to sync and apply the latest codex-toolbox to this
+machine. It checks the published revision and relevant CI, fast-forwards a clean
+`main` checkout, runs the full managed setup, and verifies the installed result.
+Setup covers instructions, pets, default plugins, runtime dependencies, managed
+migrations, and third-party marketplace pins. Sync also checks previously
+installed optional toolbox plugins, preserving their selection and enabled state.
+
+Status-only requests inspect without changing the machine. An update stops on
+unsafe Git state, unavailable or failed required CI, setup failures, and live
+runtime locks; it does not repair history or stop services automatically.
+Sync does not commit or publish changes. Use the explicitly invoked shipping
+workflow below for a completed repository change.
+
+```text
+Use $sync-toolbox to update this machine from published main and verify the full managed setup.
+```
+
 ## Ship Toolbox
 
 Use `$ship-toolbox` explicitly after completing a task-scoped plugin or skill

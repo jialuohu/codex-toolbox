@@ -73,6 +73,19 @@ class DiscoveryContractTests(unittest.TestCase):
         errors, _ = audit.check(report, {"description_exceptions": {"ship-toolbox": "old exception"}})
         self.assertTrue(any("stale" in e for e in errors))
 
+    def test_sync_discovery_preserves_explicit_shipping(self):
+        by_name = {row["name"]: row for row in self.report["skills"]}
+        self.assertTrue(by_name["sync-toolbox"]["implicit"])
+        self.assertFalse(by_name["ship-toolbox"]["implicit"])
+        packet = evaluator.prepare(ROOT, CASES, "fixture-model", "fixture-effort", "candidate-short")
+        selected = evaluator.lookup(packet, "sync-toolbox", [])
+        self.assertEqual(selected["references"], {})
+        self.assertEqual(
+            selected["entry"],
+            (ROOT / by_name["sync-toolbox"]["path"]).read_text().split("---", 2)[2],
+        )
+        self.assertNotIn("document_store", evaluator.discovery(packet))
+
     def test_preserved_imports_are_verbatim_and_reachable(self):
         original = {r["name"]: r for r in json.loads(BASELINE.read_text())["skills"]}
         for row in self.report["skills"]:

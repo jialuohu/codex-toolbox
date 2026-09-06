@@ -1,15 +1,15 @@
 {
   "name": "workflow-tools",
-  "version": "0.6.1",
-  "description": "Codex planning, independent Claude counsel, explanation, and explicit toolbox shipping skills.",
+  "version": "0.7.0",
+  "description": "Codex planning, independent Claude counsel, explanation, toolbox synchronization, and explicit shipping skills.",
   "author": {
     "name": "Jialuo Hu"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Workflow Tools",
-    "shortDescription": "Plan, consult, explain, and safely ship changes.",
-    "longDescription": "Workflow Tools packages Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial Plan Mode critique, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
+    "shortDescription": "Plan, consult, explain, sync, and ship changes.",
+    "longDescription": "Workflow Tools packages Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial Plan Mode critique, Sync Toolbox for applying the published toolbox to this machine, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -21,6 +21,7 @@
       "Use $deep-planning to critique this plan before implementation.",
       "Use $claude-counselor for bounded independent planning and final code review on major work.",
       "Use $ship-toolbox to validate, commit, push, refresh, and verify the current toolbox changes.",
+      "Use $sync-toolbox to update this machine from published main and verify the full managed setup.",
       "Review this Plan Mode request for assumptions, risks, and routing."
     ]
   }

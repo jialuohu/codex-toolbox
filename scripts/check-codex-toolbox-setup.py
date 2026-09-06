@@ -170,6 +170,10 @@ SHIP_TOOLBOX_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "ship-toolbox" / "SKILL.md"
 )
 SHIP_TOOLBOX_OPENAI = SHIP_TOOLBOX_SKILL.parent / "agents" / "openai.yaml"
+SYNC_TOOLBOX_SKILL = (
+    ROOT / "plugins" / "workflow-tools" / "skills" / "sync-toolbox" / "SKILL.md"
+)
+SYNC_TOOLBOX_OPENAI = SYNC_TOOLBOX_SKILL.parent / "agents" / "openai.yaml"
 CLAUDE_COUNSELOR_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "claude-counselor" / "SKILL.md"
 )
@@ -3718,6 +3722,8 @@ def main() -> None:
         "explain-clearly must include OpenAI agent metadata",
     )
     require(SHIP_TOOLBOX_SKILL.exists(), "workflow-tools must include ship-toolbox skill")
+    require(SYNC_TOOLBOX_SKILL.exists(), "workflow-tools must include sync-toolbox skill")
+    require(SYNC_TOOLBOX_OPENAI.exists(), "sync-toolbox must include OpenAI agent metadata")
     require(
         SHIP_TOOLBOX_OPENAI.exists(),
         "ship-toolbox must include OpenAI agent metadata",
@@ -4706,14 +4712,31 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.6.1",
-        "workflow-tools plugin version must reflect Claude Counselor support",
+        workflow_plugin.get("version") == "0.7.0",
+        "workflow-tools plugin version must reflect Sync Toolbox support",
     )
     require(
         "mcpServers" not in workflow_plugin,
         "workflow-tools must not expose an MCP server",
     )
     workflow_interface = workflow_plugin.get("interface", {})
+    require(
+        "Sync Toolbox" in workflow_interface.get("longDescription", "")
+        and any("$sync-toolbox" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools metadata must expose Sync Toolbox",
+    )
+    require(
+        "## Sync Toolbox" in readme_text and "$sync-toolbox" in readme_text,
+        "README must document Sync Toolbox",
+    )
+    require(
+        {
+            path.relative_to(SYNC_TOOLBOX_SKILL.parent).as_posix()
+            for path in SYNC_TOOLBOX_SKILL.parent.rglob("*")
+            if path.is_file()
+        } == {"SKILL.md", "agents/openai.yaml"},
+        "sync-toolbox must remain instruction-only with SKILL.md and agents/openai.yaml",
+    )
     require(
         "Plan Mode" in workflow_interface.get("longDescription", ""),
         "workflow-tools plugin description must mention Plan Mode",
