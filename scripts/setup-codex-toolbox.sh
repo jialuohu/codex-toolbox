@@ -40,6 +40,7 @@ DEFAULT_PLUGINS=(
   "stevens-presentation-tools"
   "docmost-tools"
   "apple-mail-tools"
+  "photo-tools"
 )
 THIRD_PARTY_DEFAULT_PLUGINS=(
   "ui-ux-pro-max"

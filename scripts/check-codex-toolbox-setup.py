@@ -651,6 +651,42 @@ def validate_stevens_presentation_tools_contract(
         require(expected in readme_text, f"README must document Stevens presentations: {expected}")
 
 
+def validate_photo_tools_contract(
+    marketplace: dict,
+    default_plugins: list[str],
+    root: Path = ROOT,
+) -> None:
+    """Ensure the photo skill is discoverable and included in default setup."""
+    plugin_dir = root / "plugins" / "photo-tools"
+    manifest_path = plugin_dir / ".codex-plugin" / "plugin.json"
+    require(manifest_path.is_file(), "photo-tools manifest must exist")
+    manifest = json.loads(manifest_path.read_text())
+    require(manifest.get("name") == "photo-tools", "photo-tools manifest name must be exact")
+    require(manifest.get("version") == "0.1.0", "photo-tools must be version 0.1.0")
+    require(manifest.get("skills") == "./skills/", "photo-tools must expose ./skills/")
+    require(
+        "mcpServers" not in manifest and not (plugin_dir / ".mcp.json").exists(),
+        "photo-tools must use built-in image editing without an additional MCP",
+    )
+    entries = [entry for entry in marketplace["plugins"] if entry.get("name") == "photo-tools"]
+    require(len(entries) == 1, "marketplace must include photo-tools exactly once")
+    require(
+        entries[0].get("source") == {"source": "local", "path": "./plugins/photo-tools"},
+        "photo-tools marketplace source must resolve to its plugin directory",
+    )
+    require(
+        entries[0].get("policy") == {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+        "photo-tools marketplace policy must be AVAILABLE and ON_INSTALL",
+    )
+    require(default_plugins.count("photo-tools") == 1, "setup must install photo-tools exactly once")
+    skill_dir = plugin_dir / "skills" / "rubber-stamp-travel-poster"
+    for relative_path in ("SKILL.md", "agents/openai.yaml"):
+        require(
+            (skill_dir / relative_path).is_file(),
+            f"rubber-stamp-travel-poster must include {relative_path}",
+        )
+
+
 def validate_design_engineering_tools_contract(
     marketplace: dict,
     global_agents_text: str,
@@ -3882,6 +3918,7 @@ def main() -> None:
         readme_text,
         default_plugins,
     )
+    validate_photo_tools_contract(marketplace, default_plugin_entries)
     validate_design_engineering_tools_contract(
         marketplace,
         global_agents_text,

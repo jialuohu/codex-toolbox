@@ -549,6 +549,25 @@ The skills adapt the MIT-licensed
 non-affiliated adaptation. Start a fresh Codex task after installing or
 upgrading so the plugin is available to the task from its start.
 
+## Photo Tools
+
+The default `photo-tools` plugin provides `$rubber-stamp-travel-poster`.
+Give it one or more travel photos to create a separate 4:3 landscape journal
+poster for each: the photograph occupies the left half, and a small rubber
+stamp drawn from that scene sits on aged paper on the right. The workflow
+preserves the original subjects, uses two to four source colors, and checks
+layout, photo fidelity, print texture, and restrained English field notes.
+
+```text
+Use $rubber-stamp-travel-poster to make one independent poster for each attached photo.
+```
+
+Location names, entry numbers, and years can be supplied with the photos.
+Uncertain places receive descriptive scene labels; missing capture years use
+a labeled journal year. The skill uses Codex's built-in image editing, requires
+no additional MCP or credentials, and reports unresolved preservation or text
+errors rather than promising pixel-identical output.
+
 ## Stevens Presentation Tools
 
 The default `stevens-presentation-tools` plugin provides reusable 16:9 Stevens

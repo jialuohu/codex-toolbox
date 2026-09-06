@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rubber Stamp Travel Poster"
+  short_description: "Make a separate travel journal poster from each photo"
+  default_prompt: "Use $rubber-stamp-travel-poster to turn each uploaded photo into its own 4:3 travel journal poster."

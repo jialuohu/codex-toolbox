@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
+import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +16,44 @@ if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"Unable to load setup checker: {CHECKER_PATH}")
 CHECKER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECKER)
+
+
+class PhotoToolsSetupTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.marketplace = json.loads((ROOT / ".agents/plugins/marketplace.json").read_text())
+        self.defaults = CHECKER.shell_array_entries(
+            (ROOT / "scripts/setup-codex-toolbox.sh").read_text(), "DEFAULT_PLUGINS"
+        )
+
+    def test_photo_plugin_is_discoverable_and_installed_by_setup(self) -> None:
+        CHECKER.validate_photo_tools_contract(self.marketplace, self.defaults)
+
+    def test_broken_registration_or_default_install_is_rejected(self) -> None:
+        for failure in ("missing-entry", "duplicate-entry", "wrong-source", "missing-default"):
+            with self.subTest(failure=failure):
+                marketplace = copy.deepcopy(self.marketplace)
+                defaults = self.defaults.copy()
+                entry = next(item for item in marketplace["plugins"] if item["name"] == "photo-tools")
+                if failure == "missing-entry":
+                    marketplace["plugins"].remove(entry)
+                elif failure == "duplicate-entry":
+                    marketplace["plugins"].append(copy.deepcopy(entry))
+                elif failure == "wrong-source":
+                    entry["source"]["path"] = "./plugins/missing-tools"
+                else:
+                    defaults.remove("photo-tools")
+                with self.assertRaises(SystemExit):
+                    CHECKER.validate_photo_tools_contract(marketplace, defaults)
+
+    def test_missing_skill_payload_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plugin = root / "plugins/photo-tools"
+            shutil.copytree(ROOT / "plugins/photo-tools", plugin)
+            skill = plugin / "skills/rubber-stamp-travel-poster/SKILL.md"
+            skill.rename(skill.with_suffix(".missing"))
+            with self.assertRaisesRegex(SystemExit, "must include SKILL.md"):
+                CHECKER.validate_photo_tools_contract(self.marketplace, self.defaults, root)
 
 
 class SetupCheckerScanTests(unittest.TestCase):

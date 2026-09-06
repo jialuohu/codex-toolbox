@@ -1,0 +1,18 @@
+{
+  "name": "photo-tools",
+  "version": "0.1.0",
+  "description": "Photo-based travel journal posters with handmade rubber stamp artwork.",
+  "author": {
+    "name": "Codex Toolbox Maintainers"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Photo Tools",
+    "shortDescription": "Turn travel photos into rubber stamp journal posters.",
+    "longDescription": "Create one independent 4:3 travel journal poster per source photo, pairing the photograph with a small handmade rubber stamp on aged paper. Uses Codex image generation with source preservation and visual checks.",
+    "developerName": "Codex Toolbox Maintainers",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": "Use $rubber-stamp-travel-poster to turn each uploaded photo into its own travel journal poster."
+  }
+}
