@@ -45,6 +45,7 @@ Use owning installed MCPs, apps, and skills for specialized work; use `tool_sear
 - Use `$mineru-document-extraction` for complex scanned, OCR-heavy, or layout-sensitive local documents; keep caches and outputs outside Git checkouts and Obsidian vaults. Use simple document readers for straightforward born-digital files.
 - Use PixelLab only for requested pixel-art game assets; creation can spend credits and remains prompt-gated.
 - Follow the visual routing above. Use task-scoped temporary output by default. `$drawio` owns explicit native, multi-page, WYSIWYG; `$paper-figure-workflow` owns publication pipelines. Native inline Mermaid is explicit-only or a disclosed fallback.
+- Use `$mono-color` for research graph color-pick requests and one/two-ink editorial images. Keep scientific drawing with its existing figure tools; palette selection alone does not generate artwork.
 - Use `$paper-library-intake` for one public paper's discovery, Zotero check, classification, or authorized import. Its workflow owns identifier checks and filing. Never enable Sci-Hub or infer permission for merge, deletion, indexing, or unrelated cleanup.
 - Use `$paper-review-sync` for private review-assignment reconciliation; never send confidential submissions to public search or scraping. Use `$paper-review-library-intake` and `$paper-review-page` for their private workflow stages.
 - Use Zotero for the user's saved research library. Treat additions, annotations, indexing, library switching, and deletion as mutations requiring scoped authorization.

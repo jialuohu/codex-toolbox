@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "purpose": "Offline acceptance prompts; expectations are not live model results.",
+  "cases": [
+    {
+      "id": "editorial-implicit",
+      "prompt": "Create a duotone risograph poster about a quiet city walk.",
+      "expected_skill": "mono-color",
+      "expected_workflow": "editorial-image",
+      "required_references": ["references/upstream.md", "references/design-system/colors.json"],
+      "expected_actions": ["compile_prompt", "generate_image", "inspect_image"],
+      "forbidden_actions": ["create_claude_desktop_directory", "download_example_artwork"]
+    },
+    {
+      "id": "prompt-only",
+      "prompt": "Use mono-color for a cobalt one-ink editorial cover. Return the prompt only.",
+      "expected_skill": "mono-color",
+      "expected_workflow": "editorial-prompt",
+      "required_references": ["references/upstream.md", "references/design-system/colors.json"],
+      "expected_actions": ["compile_prompt"],
+      "forbidden_actions": ["generate_image", "edit_image"]
+    },
+    {
+      "id": "research-colors-implicit",
+      "prompt": "Pick colors for my research graph: baseline, proposed method, and annotations. Just give me HEX values and roles.",
+      "expected_skill": "mono-color",
+      "expected_workflow": "research-palette",
+      "required_references": ["references/design-system/colors.json"],
+      "expected_actions": ["return_hex_roles"],
+      "forbidden_actions": ["generate_image", "compile_prompt", "change_data", "change_geometry", "apply_poster_texture"]
+    },
+    {
+      "id": "research-many-series",
+      "prompt": "Pick mono-color colors for five research plot series. Keep the baseline #112233 and the white background.",
+      "expected_skill": "mono-color",
+      "expected_workflow": "research-palette",
+      "required_references": ["references/design-system/colors.json"],
+      "expected_actions": ["return_hex_roles", "preserve_explicit_colors", "label_custom_selection"],
+      "forbidden_actions": ["generate_image", "force_two_color_limit", "collapse_categories", "claim_unchecked_accessibility"]
+    },
+    {
+      "id": "research-drawing-owner",
+      "prompt": "Choose colors and apply them to this existing research plot using its Matplotlib script. Keep all data and geometry.",
+      "expected_skill": "mono-color",
+      "expected_workflow": "research-palette",
+      "required_references": ["references/design-system/colors.json"],
+      "expected_actions": ["return_hex_roles", "delegate_existing_figure_tool"],
+      "forbidden_actions": ["generate_image", "change_data", "change_geometry", "apply_poster_typography"]
+    },
+    {
+      "id": "ordinary-plot-negative",
+      "prompt": "Use $paper-figure-workflow to regenerate this paper's SVG and PDF plots with their existing colors.",
+      "expected_skill": "paper-figure-workflow",
+      "expected_workflow": "publication-pipeline",
+      "required_references": [],
+      "expected_actions": ["run_existing_figure_build"],
+      "forbidden_actions": ["invoke_mono_color", "generate_image", "replace_palette"]
+    },
+    {
+      "id": "ui-negative",
+      "prompt": "Change this website button's background to the exact existing brand color #123456. No palette selection is needed.",
+      "expected_skill": null,
+      "expected_workflow": "ordinary-edit",
+      "required_references": [],
+      "expected_actions": ["apply_explicit_color"],
+      "forbidden_actions": ["invoke_mono_color", "generate_image", "replace_palette"]
+    },
+    {
+      "id": "generation-unavailable",
+      "prompt": "Use mono-color to create an editorial poster. Image generation is unavailable in this environment.",
+      "expected_skill": "mono-color",
+      "expected_workflow": "editorial-prompt",
+      "required_references": ["references/upstream.md", "references/design-system/colors.json"],
+      "expected_actions": ["compile_prompt", "disclose_no_image"],
+      "forbidden_actions": ["claim_image_generated", "use_unrequested_paid_service"]
+    }
+  ]
+}

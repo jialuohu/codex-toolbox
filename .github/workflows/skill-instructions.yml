@@ -12,6 +12,7 @@ on:
       - "plugins/**/references/**"
       - "plugins/**/agents/openai.yaml"
       - "plugins/**/.codex-plugin/plugin.json"
+      - "plugins/photo-tools/**"
       - ".agents/plugins/marketplace.json"
       - "scripts/audit_skill_instructions.py"
       - "scripts/eval_skill_routing.py"
@@ -45,7 +46,7 @@ jobs:
       - name: Validate setup contracts
         run: python scripts/check-codex-toolbox-setup.py
       - name: Check instructions, evaluator refusal, and privacy
-        run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit
+        run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup
       - name: Check whitespace
         env:
           INSTRUCTION_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

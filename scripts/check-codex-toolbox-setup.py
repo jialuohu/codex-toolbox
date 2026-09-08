@@ -656,13 +656,13 @@ def validate_photo_tools_contract(
     default_plugins: list[str],
     root: Path = ROOT,
 ) -> None:
-    """Ensure the photo skill is discoverable and included in default setup."""
+    """Ensure photo skills and the pinned Mono-Color payload ship in setup."""
     plugin_dir = root / "plugins" / "photo-tools"
     manifest_path = plugin_dir / ".codex-plugin" / "plugin.json"
     require(manifest_path.is_file(), "photo-tools manifest must exist")
     manifest = json.loads(manifest_path.read_text())
     require(manifest.get("name") == "photo-tools", "photo-tools manifest name must be exact")
-    require(manifest.get("version") == "0.1.0", "photo-tools must be version 0.1.0")
+    require(manifest.get("version") == "0.2.0", "photo-tools must be version 0.2.0")
     require(manifest.get("skills") == "./skills/", "photo-tools must expose ./skills/")
     require(
         "mcpServers" not in manifest and not (plugin_dir / ".mcp.json").exists(),
@@ -679,11 +679,55 @@ def validate_photo_tools_contract(
         "photo-tools marketplace policy must be AVAILABLE and ON_INSTALL",
     )
     require(default_plugins.count("photo-tools") == 1, "setup must install photo-tools exactly once")
-    skill_dir = plugin_dir / "skills" / "rubber-stamp-travel-poster"
-    for relative_path in ("SKILL.md", "agents/openai.yaml"):
+    for name in ("rubber-stamp-travel-poster", "mono-color"):
+        skill_dir = plugin_dir / "skills" / name
+        for relative_path in ("SKILL.md", "agents/openai.yaml"):
+            require(
+                (skill_dir / relative_path).is_file(),
+                f"{name} must include {relative_path}",
+            )
+    provenance_path = plugin_dir / "mono-color-upstream.json"
+    require((plugin_dir / "PROVENANCE.md").is_file(), "photo-tools provenance must exist")
+    require(provenance_path.is_file(), "mono-color import manifest must exist")
+    provenance = json.loads(provenance_path.read_text())
+    require(
+        provenance.get("schema_version") == 1
+        and provenance.get("repository") == "https://github.com/yanliudesign/mono-color-skill"
+        and provenance.get("commit") == "c8ff70597ddedcd65f21a0b528f6a70c35690b0a",
+        "mono-color must preserve the reviewed upstream snapshot",
+    )
+    imported = {
+        "SKILL.md": "upstream.md",
+        "LICENSE": "LICENSE",
+        "evals/evals.json": "evals/evals.json",
+        "evals/schema.json": "evals/schema.json",
+        "scripts/validate_evals.py": "scripts/validate_evals.py",
+        **{f"design-system/{name}.json": f"design-system/{name}.json" for name in (
+            "colors", "typography", "compositions", "carriers", "imperfections", "rhythm"
+        )},
+    }
+    expected = {
+        (source, f"skills/mono-color/references/{local}")
+        for source, local in imported.items()
+    }
+    records = provenance.get("files", [])
+    require(
+        isinstance(records, list)
+        and all(isinstance(record, dict) for record in records)
+        and len(records) == len(expected)
+        and {(record.get("upstream_path"), record.get("local_path")) for record in records}
+        == expected,
+        "mono-color import inventory must contain exactly the reviewed software files",
+    )
+    for record in records:
+        path = plugin_dir / record["local_path"]
         require(
-            (skill_dir / relative_path).is_file(),
-            f"rubber-stamp-travel-poster must include {relative_path}",
+            path.is_file() and not path.is_symlink(),
+            f"mono-color must include {record['local_path']}",
+        )
+        require(
+            hashlib.sha256(path.read_bytes()).hexdigest() == record.get("sha256"),
+            f"mono-color checksum mismatch: {record['local_path']}",
         )
 
 

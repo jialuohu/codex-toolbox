@@ -1,0 +1,6 @@
+interface:
+  display_name: "Mono-Color"
+  short_description: "Pick research colors or create editorial images"
+  default_prompt: "Use $mono-color to pick colors for this research graph."
+policy:
+  allow_implicit_invocation: true

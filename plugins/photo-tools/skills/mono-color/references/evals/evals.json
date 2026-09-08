@@ -1,0 +1,278 @@
+{
+  "skill_name": "mono-color",
+  "schema_version": 1,
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "用 mono-color 做一张关于凌晨便利店的竖版海报，文案是‘still open’。",
+      "expected_output": "A generated vertical Cobalt and Terracotta controlled two-ink poster on a clean neutral substrate, using distinct plate roles, an original composition, screened convenience-store imagery, strong type scale contrast, and the exact short phrase.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "complementary duotone",
+        "ink_hexes": ["#2148B8", "#C65F38"],
+        "plate_roles": ["dominant image and typography", "one accent event"],
+        "layout": "type-led declaration",
+        "exact_text": "still open",
+        "generates_image": true,
+        "must_not": ["third ink", "gradient", "invented brand"]
+      },
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "把我提供的一张人物照片改成单色编辑杂志封面，保留人物身份和表情，不要照抄参考图排版。",
+      "expected_output": "A generated one-ink editorial cover that preserves the supplied portrait, transforms it through halftone print treatment, and materially changes at least four structural features from the reference.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "pure one-ink",
+        "ink_hexes": ["#2148B8"],
+        "plate_roles": ["portrait, typography, and rules"],
+        "layout": "image field",
+        "exact_text": null,
+        "generates_image": true,
+        "must_not": ["changed identity", "full-color photo", "copied layout"]
+      },
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "做一张关于蕨类植物观察笔记的绿色孔版印刷图，标题‘field note 07’。",
+      "expected_output": "A generated botanical-green archival plate on a clean neutral substrate with a screened fern image, disciplined metadata, large negative space, and no cobalt or extra colors.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "pure one-ink",
+        "ink_hexes": ["#008A4B"],
+        "plate_roles": ["specimen, typography, and rules"],
+        "layout": "archival plate",
+        "exact_text": "field note 07",
+        "generates_image": true,
+        "must_not": ["cobalt", "second ink", "invented scientific facts"]
+      },
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "用群青和安全橙做一张城市骑行双色叠印海报，让车轮与标题局部交叉。",
+      "expected_output": "A generated two-plate cycling poster with controlled Ultramarine and Safety Orange overprint and explicit plate roles.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "overprint duotone",
+        "ink_hexes": ["#263E99", "#E55D2B"],
+        "plate_roles": ["bicycle and dominant typography", "selected title intersections and annotations"],
+        "layout": "overprint collage",
+        "exact_text": null,
+        "generates_image": true,
+        "must_not": ["third ink", "accent above 30%", "scrapbook collage"]
+      },
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "做一张信号红单色屋顶聚会海报，标题‘日落之后’，日期保持小号。",
+      "expected_output": "A generated Signal Red event poster with a ruled information layout and exact supplied title.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "pure one-ink",
+        "ink_hexes": ["#C83232"],
+        "plate_roles": ["image, headline, date, and rules"],
+        "layout": "ruled information poster",
+        "exact_text": "日落之后",
+        "generates_image": true,
+        "must_not": ["invented venue", "invented sponsor", "CTA"]
+      },
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "用绿色照片和黑色正文做一页关于雨后散步的观察日志。",
+      "expected_output": "A generated Botanical Green and Charcoal journal page with green assigned to imagery and charcoal assigned to readable text.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "chromatic + black",
+        "ink_hexes": ["#5EB783", "#302D2E"],
+        "plate_roles": ["screened photograph", "readable body text and labels"],
+        "layout": "editorial journal",
+        "exact_text": null,
+        "generates_image": true,
+        "must_not": ["third ink", "garbled long text", "decorative color"]
+      },
+      "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "只给我 prompt：做一张关于旧收音机的 mono-color 海报。",
+      "expected_output": "A production-ready five-paragraph prompt and recipe without an attempted generated image.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "complementary duotone",
+        "ink_hexes": ["#2148B8", "#C65F38"],
+        "plate_roles": ["dominant radio and typography", "one accent annotation"],
+        "layout": "editorial cover",
+        "exact_text": null,
+        "generates_image": false,
+        "must_not": ["generated image claim", "third ink", "mockup"]
+      },
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "用红、蓝、黄三种油墨做 mono-color 海报，标题是‘OPEN LATE’。",
+      "expected_output": "A constrained two-ink result that explains the plate limit and keeps the exact title instead of accepting three inks.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "complementary duotone",
+        "ink_hexes": ["#9EB8D3", "#C83232"],
+        "plate_roles": ["dominant image and headline", "selected emphasis and annotations"],
+        "layout": "type-led declaration",
+        "exact_text": "OPEN LATE",
+        "generates_image": true,
+        "must_not": ["yellow ink", "third ink", "silent rule violation"]
+      },
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "把一只搪瓷杯重复排成双色孔版封面，使用青蓝和砖红，不要添加品牌。",
+      "expected_output": "A generated repeated-object cover using only Cyan and Brick Red with a clear open title zone and no invented brand.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "complementary duotone",
+        "ink_hexes": ["#159DDA", "#B64032"],
+        "plate_roles": ["dominant repeated cups", "selected cups and factual annotations"],
+        "layout": "object field",
+        "exact_text": null,
+        "generates_image": true,
+        "must_not": ["invented brand", "third ink", "even template grid"]
+      },
+      "files": []
+    },
+    {
+      "id": 10,
+      "prompt": "照着参考海报一模一样重做，只把标题换成‘北方来信’。",
+      "expected_output": "An original transformed poster that keeps the requested words while changing at least four structural variables from the reference.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "complementary duotone",
+        "ink_hexes": ["#2148B8", "#C65F38"],
+        "plate_roles": ["dominant transformed image and typography", "one accent event"],
+        "layout": "type-led declaration",
+        "exact_text": "北方来信",
+        "generates_image": true,
+        "must_not": ["exact reconstruction", "copied line breaks", "copied logo"]
+      },
+      "files": []
+    },
+    {
+      "id": 11,
+      "prompt": "做一张信号红单色屋顶 party 海报，主标题是‘日落之后’，日期保持小号。要浪漫，但保持 mono-color 参考图的编辑印刷感。",
+      "expected_output": "A Signal Red event poster where one cropped rooftop subject dominates, the exact headline physically interacts with the image, the date stays subordinate, and romance comes from a specific spatial relationship rather than generic atmospheric props.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "pure one-ink",
+        "ink_hexes": ["#C83232"],
+        "plate_roles": ["dominant rooftop subject, headline, date, and rules"],
+        "layout": "ruled information poster",
+        "exact_text": "日落之后",
+        "generates_image": true,
+        "must_not": ["invented date", "string lights", "wine glasses", "cinematic haze", "detached safe-zone headline"]
+      },
+      "files": []
+    },
+    {
+      "id": 12,
+      "prompt": "做一张夏日骑行的海报，浪漫自由一点。",
+      "expected_output": "A warm-paper Cobalt and Terracotta summer cycling poster built around one giant cropped wheel as the focal event, with only fragmentary human anchors, a fresh English headline crossing the wheel, and a broad quiet release zone.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "complementary duotone",
+        "ink_hexes": ["#2148B8", "#C65F38"],
+        "plate_roles": ["giant wheel, bicycle structure, and dominant headline", "cropped human anchors and one concentrated title intersection"],
+        "layout": "editorial cover",
+        "exact_text": null,
+        "generates_image": true,
+        "visual_tension": "relaxed",
+        "empty_paper_percent": 40,
+        "focal_event_count": 1,
+        "release_zone_required": true,
+        "focal_event": "one giant wheel crossed by the headline",
+        "unresolved_edge_count": 0,
+        "must_not": ["Chinese invented copy", "motivational slogan", "decorative summer props", "detached safe-zone headline", "complete stock-photo cyclist", "safe headline-left photo-right split", "equal emphasis", "decorative microcopy"]
+      },
+      "files": []
+    },
+    {
+      "id": 13,
+      "prompt": "把我提供的维京长船照片做得更抽象、艺术、松弛一些，用钴蓝和陶土橙，不要太写实。",
+      "expected_output": "A generated abstract editorial cover that extracts the square sail, curved hull, mast, and wave direction into deterministic geometric masses, broken contours, repeated marks, and active paper without reducing the source to a photographic duotone filter.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "complementary duotone",
+        "ink_hexes": ["#2148B8", "#C65F38"],
+        "plate_roles": ["hull structure, wave rhythm, typography, and broken contours", "square sail and one navigation annotation"],
+        "layout": "editorial cover",
+        "exact_text": null,
+        "generates_image": true,
+        "must_not": ["full photographic scene", "generic boat symbol", "evenly scattered accent ink", "random anchor movement", "third ink"]
+      },
+      "files": []
+    },
+    {
+      "id": 14,
+      "prompt": "做一张没有参考照片的夏日滑板海报，要像随手观察到的瞬间，松弛、有设计感，但不要像运动品牌广告。",
+      "expected_output": "A relaxed contemporary editorial cover on an image-responsive neutral substrate, with one strong cropped skateboard or body-detail event, fragmentary human anchors, and a broad release zone rather than uniformly restrained typography and imagery.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "overprint duotone",
+        "ink_hexes": ["#263E99", "#E55D2B"],
+        "plate_roles": ["dominant skateboard structure and headline", "cropped human anchors and one concentrated collision"],
+        "layout": "editorial cover",
+        "exact_text": null,
+        "generates_image": true,
+        "visual_tension": "relaxed",
+        "empty_paper_percent": 38,
+        "focal_event_count": 1,
+        "release_zone_required": true,
+        "focal_event": "one extreme skateboard or body-detail crop",
+        "unresolved_edge_count": 0,
+        "must_not": ["photorealistic advertising hero", "complete stock-photo person", "safe headline-left photo-right split", "equal emphasis", "decorative microcopy", "no thumbnail focal event"]
+      },
+      "files": []
+    },
+    {
+      "id": 15,
+      "prompt": "做一张当代设计展海报，标题是‘NEW CONDITIONS’，背景不要米色，也不要复古做旧。",
+      "expected_output": "A contemporary editorial exhibition poster on a clean Neutral White substrate with Charcoal and Signal Red plate roles, one decisive type-object event, and no automatic vintage aging.",
+      "assertions": {
+        "ratio": "3:4",
+        "mode": "chromatic + black",
+        "ink_hexes": ["#30343A", "#C83232"],
+        "plate_roles": ["dominant structure, image, and precision type", "one concentrated exhibition signal"],
+        "layout": "type-led declaration",
+        "exact_text": "NEW CONDITIONS",
+        "generates_image": true,
+        "substrate_hex": "#FAFAF7",
+        "style_direction": "contemporary editorial",
+        "focal_event_count": 1,
+        "release_zone_required": true,
+        "must_not": ["beige background", "yellowed paper", "sepia aging", "retro props", "distressed border", "vintage type by default", "third ink"]
+      },
+      "files": []
+    },
+    {
+      "id": 16,
+      "prompt": "做一张音乐封面，标题是‘SIDE B’，字体要有当代文化感，不要再用安静的杂志衬线体。",
+      "expected_output": "A contemporary music cover using a wide or optically interlocked Cultural Grotesk display voice with disciplined support type, rather than falling back to the same literary serif treatment used for quiet editorial subjects.",
+      "assertions": {
+        "ratio": "1:1",
+        "mode": "complementary duotone",
+        "ink_hexes": ["#2148B8", "#C65F38"],
+        "plate_roles": ["dominant music image and wide cultural grotesk title", "one concentrated accent intersection"],
+        "layout": "editorial cover",
+        "exact_text": "SIDE B",
+        "generates_image": true,
+        "must_not": ["quiet literary serif as the default display", "multiple novelty fonts", "handwritten factual information", "copied reference lettering", "copied reference line breaks"]
+      },
+      "files": []
+    }
+  ]
+}

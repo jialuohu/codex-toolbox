@@ -551,10 +551,30 @@ upgrading so the plugin is available to the task from its start.
 
 ## Photo Tools
 
-The default `photo-tools` plugin provides `$rubber-stamp-travel-poster`.
-Give it one or more travel photos to create a separate 4:3 landscape journal
-poster for each: the photograph occupies the left half, and a small rubber
-stamp drawn from that scene sits on aged paper on the right. The workflow
+The default `photo-tools` plugin provides `$mono-color` and
+`$rubber-stamp-travel-poster`.
+
+Use Mono-Color for research graph color-pick requests or its full one/two-ink
+editorial image workflow. Color selection returns exact HEX values and
+suggested roles, while existing plotting and diagram tools handle scientific
+figures. It preserves explicit colors and supports more than two graph series
+without imposing poster styling. Editorial requests produce the image, exact
+production prompt, and recipe; prompt-only requests skip generation.
+
+```text
+Use mono-color to create a duotone poster.
+Pick mono-color colors for this research graph.
+```
+
+The workflow preserves the MIT-licensed
+[mono-color-skill](https://github.com/yanliudesign/mono-color-skill) snapshot at
+`c8ff70597ddedcd65f21a0b528f6a70c35690b0a`; separately licensed example artwork
+is linked rather than bundled. See [provenance and validation](plugins/photo-tools/PROVENANCE.md).
+Start a fresh Codex task after installing or upgrading Photo Tools.
+
+Give Rubber Stamp Travel Poster one or more travel photos to create a separate
+4:3 landscape journal poster for each: the photograph occupies the left half,
+and a small rubber stamp drawn from that scene sits on aged paper on the right. The workflow
 preserves the original subjects, uses two to four source colors, and checks
 layout, photo fidelity, print texture, and restrained English field notes.
 

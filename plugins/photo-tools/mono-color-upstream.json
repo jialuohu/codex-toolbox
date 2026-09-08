@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/yanliudesign/mono-color-skill",
+  "commit": "c8ff70597ddedcd65f21a0b528f6a70c35690b0a",
+  "files": [
+    {
+      "upstream_path": "LICENSE",
+      "local_path": "skills/mono-color/references/LICENSE",
+      "sha256": "2025880f6441e121c76c01bc5996e84a7498d9d5aa7222a10400d303bdd043cb"
+    },
+    {
+      "upstream_path": "design-system/carriers.json",
+      "local_path": "skills/mono-color/references/design-system/carriers.json",
+      "sha256": "32ad6bd5917c8d5ad4b0c8f78006848f941489649824f0857a7a94685914a8d7"
+    },
+    {
+      "upstream_path": "design-system/colors.json",
+      "local_path": "skills/mono-color/references/design-system/colors.json",
+      "sha256": "e299d6b4a2ec36e2e59b7095b85bae5f13609f505d21c9a83561088f7c446b48"
+    },
+    {
+      "upstream_path": "design-system/compositions.json",
+      "local_path": "skills/mono-color/references/design-system/compositions.json",
+      "sha256": "8faec6d102a6dcf15a465123f00265609afe271dd2998baa0d56f0fb39105703"
+    },
+    {
+      "upstream_path": "design-system/imperfections.json",
+      "local_path": "skills/mono-color/references/design-system/imperfections.json",
+      "sha256": "e281a1c7fb183af973179a7588df5745527a231462681797850227e791372715"
+    },
+    {
+      "upstream_path": "design-system/rhythm.json",
+      "local_path": "skills/mono-color/references/design-system/rhythm.json",
+      "sha256": "02c8c4ca0bba218feeca7311b35b61362972bded129f050b288a384d61c0c920"
+    },
+    {
+      "upstream_path": "design-system/typography.json",
+      "local_path": "skills/mono-color/references/design-system/typography.json",
+      "sha256": "b20f558444aab2c93b6339b76aa3178ae9e04e25eed1059cd2db8044733db26f"
+    },
+    {
+      "upstream_path": "evals/evals.json",
+      "local_path": "skills/mono-color/references/evals/evals.json",
+      "sha256": "8e1c1dbd6c475aedf9ba58c74c4f67990b11649313b075e44eda6123f9236596"
+    },
+    {
+      "upstream_path": "evals/schema.json",
+      "local_path": "skills/mono-color/references/evals/schema.json",
+      "sha256": "f3c7ed82148c78d1f49717e8eb237c60e97c2f8d517620fd31f278b1136ce7c0"
+    },
+    {
+      "upstream_path": "scripts/validate_evals.py",
+      "local_path": "skills/mono-color/references/scripts/validate_evals.py",
+      "sha256": "d87778e0c8ede4ac42a7480d192005acb426ac825b2d69f9773e32c1ff604b86"
+    },
+    {
+      "upstream_path": "SKILL.md",
+      "local_path": "skills/mono-color/references/upstream.md",
+      "sha256": "8274bc1f30a92a9dc715c03c3fb9aeaa060fb5a12fd58dfe8d977ae98a26bd76"
+    }
+  ]
+}

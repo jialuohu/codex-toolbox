@@ -1,18 +1,22 @@
 {
   "name": "photo-tools",
-  "version": "0.1.0",
-  "description": "Photo-based travel journal posters with handmade rubber stamp artwork.",
+  "version": "0.2.0",
+  "description": "Photo and editorial image workflows, with mono-color research palette selection.",
   "author": {
     "name": "Codex Toolbox Maintainers"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Photo Tools",
-    "shortDescription": "Turn travel photos into rubber stamp journal posters.",
-    "longDescription": "Create one independent 4:3 travel journal poster per source photo, pairing the photograph with a small handmade rubber stamp on aged paper. Uses Codex image generation with source preservation and visual checks.",
+    "shortDescription": "Research palettes, editorial images, and photo posters.",
+    "longDescription": "Choose research graph colors with Mono-Color, create one/two-ink editorial images, or turn each travel photo into its own 4:3 rubber stamp journal poster. Uses Codex image generation for artwork and existing figure tools for scientific graphs.",
     "developerName": "Codex Toolbox Maintainers",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],
-    "defaultPrompt": "Use $rubber-stamp-travel-poster to turn each uploaded photo into its own travel journal poster."
+    "defaultPrompt": [
+      "Use $mono-color to pick colors for this research graph.",
+      "Use $mono-color to create a duotone poster.",
+      "Use $rubber-stamp-travel-poster to turn each uploaded photo into its own travel journal poster."
+    ]
   }
 }

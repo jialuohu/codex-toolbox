@@ -55,6 +55,34 @@ class PhotoToolsSetupTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "must include SKILL.md"):
                 CHECKER.validate_photo_tools_contract(self.marketplace, self.defaults, root)
 
+    def test_missing_or_changed_mono_color_import_is_rejected(self) -> None:
+        for failure in ("entry", "metadata", "catalog", "license", "checksum", "pin", "inventory"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                plugin = root / "plugins/photo-tools"
+                shutil.copytree(ROOT / "plugins/photo-tools", plugin)
+                skill = plugin / "skills/mono-color"
+                if failure in ("entry", "metadata", "catalog", "license"):
+                    relative = {
+                        "entry": "SKILL.md",
+                        "metadata": "agents/openai.yaml",
+                        "catalog": "references/design-system/colors.json",
+                        "license": "references/LICENSE",
+                    }[failure]
+                    (skill / relative).unlink()
+                elif failure == "checksum":
+                    (skill / "references/upstream.md").write_text("Truncated import.\n")
+                else:
+                    path = plugin / "mono-color-upstream.json"
+                    data = json.loads(path.read_text())
+                    if failure == "pin":
+                        data["commit"] = "main"
+                    else:
+                        data["files"][0]["local_path"] = "../outside"
+                    path.write_text(json.dumps(data))
+                with self.assertRaises(SystemExit):
+                    CHECKER.validate_photo_tools_contract(self.marketplace, self.defaults, root)
+
 
 class SetupCheckerScanTests(unittest.TestCase):
     def test_retired_tracker_scan_checks_a_repo_nested_below_worktrees(self) -> None:
