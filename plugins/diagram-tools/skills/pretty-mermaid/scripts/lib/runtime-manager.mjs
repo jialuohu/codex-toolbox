@@ -13,7 +13,12 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveActiveRelease, resolveManifestRelease } from './active-runtime.mjs';
-import { CONTRACT_VERSION, MIN_NODE_MAJOR, RUNTIME_SCHEMA_VERSION } from './constants.mjs';
+import {
+  CONTRACT_VERSION,
+  MIN_NODE_MAJOR,
+  RUNTIME_SCHEMA_VERSION,
+  WRAPPER_DEPENDENCIES,
+} from './constants.mjs';
 import { readJson, readJsonOrNull, safeError, writeJsonAtomic } from './io.mjs';
 import { bootstrapDirectory, runtimePaths, scriptsDirectory } from './paths.mjs';
 
@@ -147,7 +152,20 @@ async function bootstrapReceipt() {
   }
   validateStableVersion(version);
   validateIntegrity(locked.integrity);
-  return { version, integrity: locked.integrity, packageJson };
+  return { version, integrity: locked.integrity, packageJson, lock };
+}
+
+async function supportDependenciesCurrent(releaseDirectory, bootstrap) {
+  const packageJson = await readJson(join(releaseDirectory, 'package.json'));
+  const lock = await readJson(join(releaseDirectory, 'package-lock.json'));
+  return WRAPPER_DEPENDENCIES.every((dependency) => {
+    const expected = bootstrap.lock.packages?.[`node_modules/${dependency}`];
+    const installed = lock.packages?.[`node_modules/${dependency}`];
+    return expected &&
+      packageJson.dependencies?.[dependency] === bootstrap.packageJson.dependencies[dependency] &&
+      installed?.version === expected.version &&
+      installed?.integrity === expected.integrity;
+  });
 }
 
 async function latestReceipt() {
@@ -446,7 +464,8 @@ export async function updateRuntime(options = {}) {
     if (
       active &&
       active.manifest.version === newest.version &&
-      active.manifest.integrity === newest.integrity
+      active.manifest.integrity === newest.integrity &&
+      await supportDependenciesCurrent(active.releaseDirectory, fallback)
     ) {
       await pruneReleases(paths, fallback.version);
       return {

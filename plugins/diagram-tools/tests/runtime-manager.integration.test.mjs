@@ -2,12 +2,14 @@ import assert from 'node:assert/strict';
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import test from 'node:test';
 
 const enabled = process.env.DIAGRAM_TOOLS_INTEGRATION === '1';
 const manager = resolve('skills/pretty-mermaid/scripts/runtime-manager.mjs');
 const cli = resolve('skills/pretty-mermaid/scripts/pretty-mermaid.mjs');
+const execFileAsync = promisify(execFile);
 
 function runCli(root, args, extraEnv = {}) {
   return new Promise((resolvePromise, reject) => {
@@ -136,6 +138,37 @@ test('fresh install uses approved fallback after a rejected candidate', {
   const active = JSON.parse(await readFile(join(root, 'active.json'), 'utf8'));
   assert.equal(active.channel, 'approved-fallback');
   assert.notEqual(active.version, 'not-a-stable-version');
+});
+
+test('updates support dependencies when the renderer version is unchanged', {
+  skip: !enabled,
+  timeout: 120_000,
+}, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'diagram-tools-support-upgrade-'));
+  await runManager(root);
+  const activePath = join(root, 'active.json');
+  const before = JSON.parse(await readFile(activePath, 'utf8'));
+  const release = join(root, 'releases', before.releaseId);
+  // Reproduce an existing installation made with the previous support pin.
+  await execFileAsync('npm', [
+    'install', '@xmldom/xmldom@0.9.10', '--save-exact', '--ignore-scripts',
+    '--no-audit', '--no-fund',
+  ], { cwd: release, timeout: 60_000 });
+  const installedPath = join(release, 'node_modules/@xmldom/xmldom/package.json');
+  assert.equal(JSON.parse(await readFile(installedPath, 'utf8')).version, '0.9.10');
+
+  const upgraded = await runManager(root);
+  assert.equal(upgraded.status, 'promoted');
+  const after = JSON.parse(await readFile(activePath, 'utf8'));
+  assert.equal(after.version, before.version);
+  const expected = JSON.parse(await readFile(resolve('runtime/bootstrap/package.json'), 'utf8'));
+  assert.equal(
+    JSON.parse(await readFile(installedPath, 'utf8')).version,
+    expected.dependencies['@xmldom/xmldom'],
+  );
+  assert.equal(after.audit.high, 0);
+  assert.equal(after.audit.critical, 0);
+  assert.equal((await runManager(root)).status, 'current');
 });
 
 test('a live updater lock is never stolen, even when its timestamp is old', {

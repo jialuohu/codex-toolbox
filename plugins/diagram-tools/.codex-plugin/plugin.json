@@ -1,6 +1,6 @@
 {
   "name": "diagram-tools",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Validated interactive Archify system maps plus polished Mermaid rendering with editable source.",
   "author": {
     "name": "Jialuo Hu",

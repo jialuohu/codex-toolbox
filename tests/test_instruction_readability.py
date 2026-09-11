@@ -186,7 +186,7 @@ class ReadabilityContractTests(unittest.TestCase):
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
         self.assertEqual(workflow_manifest["version"], "0.8.0")
-        self.assertEqual(diagram_manifest["version"], "0.4.1")
+        self.assertEqual(diagram_manifest["version"], "0.4.2")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
     def test_claude_counselor_is_bounded_and_implicitly_available(self) -> None:

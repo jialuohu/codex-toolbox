@@ -32,7 +32,7 @@ SVG and PNG require an output file. ASCII defaults to stdout and may instead use
 - `themes [--json]` lists themes exported by the active Beautiful Mermaid package.
 - `capabilities [--json]` reports the active version, selected API exports, formats, themes, and conformance contract.
 - `doctor [--json]` is offline and checks the active runtime and its installation receipt.
-- `update [--strict]` contacts npm, stages the newest stable release, runs conformance in a bounded process, and atomically promotes it. Without `--strict`, a rejected candidate is a warning when an active or approved fallback runtime remains usable. CI uses `--strict`.
+- `update [--strict]` contacts npm, stages the newest stable release with the approved support dependencies, audits it, runs conformance in a bounded process, and promotes it. Changed support dependency versions or integrity receipts trigger reinstallation even when the renderer version is unchanged. Without `--strict`, a rejected candidate is a warning when an active or approved fallback runtime remains usable. CI uses `--strict`.
 - `rollback` validates and swaps to the previous active release.
 
 Normal rendering never contacts npm. When doctor reports no usable runtime, run the repository's `scripts/setup-diagram-tools.sh --update`, or rerun `scripts/setup-codex-toolbox.sh`.

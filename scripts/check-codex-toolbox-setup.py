@@ -2812,7 +2812,7 @@ def validate_diagram_tools_contract(
 
     plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
-    require(plugin.get("version") == "0.4.1", "diagram-tools manifest version must be 0.4.1")
+    require(plugin.get("version") == "0.4.2", "diagram-tools manifest version must be 0.4.2")
     require(plugin.get("skills") == "./skills/", "diagram-tools must expose its skills directory")
     require(plugin.get("license") == "MIT", "diagram-tools manifest must declare MIT")
     require("mcpServers" not in plugin, "diagram-tools must remain skill-only")
@@ -3083,8 +3083,8 @@ def validate_diagram_tools_contract(
     bootstrap_lock = json.loads((DIAGRAM_BOOTSTRAP / "package-lock.json").read_text())
     diagram_package = json.loads(DIAGRAM_TOOLS_PACKAGE.read_text())
     require(
-        diagram_package.get("version") == "0.4.1",
-        "Diagram Tools test package must track plugin version 0.4.1",
+        diagram_package.get("version") == "0.4.2",
+        "Diagram Tools test package must track plugin version 0.4.2",
     )
     diagram_scripts = diagram_package.get("scripts", {})
     require(
@@ -3424,7 +3424,7 @@ def validate_drawio_tools_contract(
         "paper-figure-workflow must delegate Draw.io execution without giving up pipeline ownership",
     )
     require(
-        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.4.1",
+        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.4.2",
         "diagram-tools version must reflect the Archify and Draw.io routing boundaries",
     )
     require(
