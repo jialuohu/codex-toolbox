@@ -40,6 +40,26 @@ uses Overleaf's Git integration; the relevant Overleaf account must currently ha
 7. After an Overleaf project is deliberately deleted, remove its configured alias with
    `overleaf-config remove-project ALIAS`; the command retains shared tokens and private caches.
 
+## LaTeX editing
+
+- Read the current preamble and nearby content before choosing syntax. Reuse loaded packages,
+  custom commands, and environments; do not add packages or change the compiler merely to
+  modernize a small edit.
+- Use standard LaTeX supported by that setup: with `amsmath`, prefer `\text{...}` for words
+  within math, `aligned` for aligned derivations, `cases` for piecewise expressions, and
+  `\operatorname{...}` for named operators. Use `\mid` for a conditional bar and `\[...\]`
+  for unnumbered display math instead of `$$...$$` or `eqnarray`.
+- With `enumitem`, set labels through options such as `[label=\alph*.]` for a., b., c.;
+  reuse an existing custom list such as `parts` when it fits. Do not type labels into item
+  contents. A requested blank scaffold contains one `\item` per actual subpart, in order,
+  without answers, hints, or filler comments. Preserve any solution text already present.
+- Use portable TeX lengths such as `pt`, `em`, or `ex`; check web-derived spacing before
+  copying it into LaTeX. Preserve the question's wording and mathematical meaning when
+  converting its markup.
+- Keep edits and explanations concise. Verify the requested change by fresh readback; use
+  a local compiler when checking rendering and distinguish that result from Overleaf's
+  compile status. Do not claim an uncompiled project builds successfully.
+
 ## Scope
 
 The v0.1 MCP reads project state and files, parses a read-only LaTeX outline, reconciles commits,
