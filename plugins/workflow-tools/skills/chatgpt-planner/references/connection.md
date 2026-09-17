@@ -1,75 +1,90 @@
-# Bind and verify a planning conversation
+# Global setup
 
-Setup changes local state and runs harmless tests. Perform it in execution mode
-on a user setup request, not as an automatic response to a missing binding.
+Perform setup in execution mode on a setup request. Setup is shared by all
+workspaces using this Codex installation. No project path or pre-existing
+conversation is needed. Global readiness records a successful check, not a
+permanent guarantee of login, quota, or model availability.
 
-1. Have the user create/select a dedicated ChatGPT conversation, select
-   **GPT-6 Pro**, send an initial message, and provide its private conversation
-   URL or ID. A shared conversation URL is not a writable destination. Do not
-   create a ChatGPT Work task as a substitute or reuse a chat based on its title.
-2. Verify the exact ID through native `list_threads`/`read_thread`. Confirm
-   `thread.kind: chatgpt`. Explain that the native reader omits model metadata;
-   model identity requires user confirmation from the UI, not the model saying
-   what it is. An available Pro subscription alone does not verify this chat.
-3. Resolve the helper relative to the skill and bind:
+## Verify the browser
 
-   ```text
-   python3 scripts/planner_state.py bind --project <project-root> --conversation <conversation-url-or-id> --mode default
-   ```
+Use the user-selected supported browser and signed-in ChatGPT account. Prefer an
+already connected, signed-in browser; this installation was verified with Brave.
+Supported preference names are `brave`, `chrome`, `edge`, and `iab`; select the
+matching current browser inventory entry, never a stale numeric browser ID.
+Read its current tool documentation. If signed out, show that exact automation
+tab and let the user sign in there. A different browser or panel may not share
+its session. Do not read credentials, cookies, or private application state.
 
-   Bind accepts `https://chatgpt.com/c/<id>` or a UUID and starts unverified.
-   One conversation belongs to one project. Use the same canonical project root
-   for a repository and its worktrees; supply the actual worktree evidence in
-   each planning packet. Never put IDs or private state in the plugin source.
-4. Read [native transport](transport.md) for the send/observe protocol. Use the
-   following synthetic packet on stdin for a deliberately requested setup probe:
+Create a blank ChatGPT tab and use visible controls to select **GPT-6 Pro**.
+The current UI displays this as **6 Pro**: select Latest, then adjust the Power
+menu item until its visible label is 6 Pro (Pro, 5 of 5). Use the observed menu
+item's arrow-key controls; do not hardcode clicks or assume High means Pro.
+Do not guess model URL parameters, infer Pro from subscription status, or
+substitute another model. If the visible controls cannot establish the exact
+model, leave setup unavailable and explain what remains.
 
-   ```json
-   {"objective_key":"setup-initial","objective":"Verify native planning transport","requirements":"Return the requested markers and READY","context":"Synthetic setup check; no repository content","snapshot":"setup"}
-   ```
+Use a fresh UUID as the setup task ID. The helper namespaces setup tasks separately
+from ordinary Codex tasks. Send a fixed harmless probe using the transport
+procedure with `--mode default --setup-probe`:
 
-   ```text
-   python3 scripts/planner_state.py plan --project <project-root> --task-id <current-task-id> --mode default --setup-probe
-   python3 scripts/planner_state.py observe --project <project-root> --request-id <request-id> --mode default --setup-probe
-   ```
+```text
+python3 scripts/planner_state.py plan --task-id <setup-uuid> --mode default --setup-probe --model-confirmed
+```
 
-   `--setup-probe` emits a fixed harmless prompt, not the supplied task context.
-   It is exclusively for explicit connection testing; never use it to bypass the
-   Plan-mode gate. Send once through the native tool and validate the reply.
-5. Ask the user to confirm Pro remains selected and restart the desktop app at
-   a convenient point. Do not terminate the app or other active tasks. After the
-   user confirms the restart, repeat the probe with `objective_key` changed to
-   `setup-after-restart`. Keep both request IDs. If interrupted, recover through
-   `status` and native reads, not a second send of the same request.
-6. Only after both completed exchanges, user-confirmed model selection, and
-   user-confirmed app restart, enable the binding:
+Supply the normal five-field packet on stdin; the helper replaces all fields with
+synthetic setup data before constructing the prompt. The returned prompt requests
+READY with exact request markers. Reserve first, send once through the browser,
+and observe its exact visible request and response as described in
+[transport](transport.md). Never use the setup exception for real planning.
 
-   ```text
-   python3 scripts/planner_state.py verify --project <project-root> --mode default --first-probe <first-id> --restart-probe <second-id> --model-confirmed --restart-confirmed
-   ```
+Only after the helper accepts the completed probe, enable global readiness:
 
-   These flags record actual user confirmation; they are not evidence created
-   by the helper. If any check cannot run, leave the binding unverified and say
-   which check remains. Do not substitute another model or API route.
+```text
+python3 scripts/planner_state.py setup --mode default --request-id <completed-probe-id> --browser brave
+python3 scripts/planner_state.py status
+```
 
-`status` reports the verification basis and time. A verified binding means the
-transport probes passed and the user confirmed the setup; it does not mean the
-helper can attest to every response's model. Recheck if the user changes the
-conversation's model or if an app update changes transport behavior.
+There is no per-project binding and no mandatory app restart for model verification.
+The browser's selected-model control and accepted probe are the verification basis.
+A flag records an actual observation; it does not manufacture evidence. Keep the
+probe conversation in ChatGPT; do not delete user history as cleanup.
 
-To disable this workflow, remove its automatic routing during an authorized
-configuration change or explicitly rebind to a new, unverified conversation.
-Do not delete conversations or local history as part of setup or rollback.
+The first real Plan-mode task creates its own conversation, never reuses the setup
+probe. Check native access during the probe if available, but failure does not
+prevent browser-only setup. Native tools do not independently establish model
+identity. Recheck visible model selection before each later consultation.
 
-## Private state location
+## Legacy migration
 
-The default is `${CODEX_HOME:-$HOME/.codex}/state/chatgpt-planner`; an unset or
-empty `CODEX_HOME` uses `~/.codex`. `STATE_INSIDE_GIT` or `STATE_INSIDE_PROJECT`
-means this directory would fall inside a checkout, including a Git-managed home
-directory. Choose a private directory outside every Git checkout and pass
-`--state-dir <absolute-private-directory>` consistently to every helper action.
-`STATE_PATH_NOT_ABSOLUTE` requires an absolute path. `STATE_PERMISSIONS` requires
-a private directory (mode 0700) and state file (0600); do not silently loosen or
-rewrite existing permissions. Continue ordinary planning until the path issue
-is resolved. Do not copy a conversation binding to multiple independent state
-directories or hosts, where their locks cannot coordinate.
+`status` reads version-1 state without changing it. A deliberately requested setup
+probe migrates resolved state under a lock, writing a private, durable
+`state.v1.backup.json` before creating version-2 global state. Existing project
+bindings are not promoted to task conversations or global readiness.
+
+Pending legacy requests block migration. Inspect and reconcile through the old
+installed helper when available. If the user explicitly requests abandonment
+after confirming the remote request has stopped, the new helper supports:
+
+```text
+python3 scripts/planner_state.py abandon --mode default --legacy --request-id <legacy-id> --confirm-abandon
+```
+
+Never infer abandonment from silence or timeout. Keep the old state and backup
+outside Git. A conflicting backup or invalid permissions requires investigation,
+not overwrite. Retired `bind`, `verify`, and `--project` calls are not accepted by
+the new CLI, so stale callers fail visibly rather than creating project state.
+
+## Private state and installation
+
+Default state: `${CODEX_HOME:-$HOME/.codex}/state/chatgpt-planner`; unset/empty
+CODEX_HOME uses the home directory default. Directory permissions must be 0700
+and files 0600. Reject relative paths, symlink roots, and paths inside Git.
+Use `--state-dir <absolute-private-directory>` consistently if needed. Do not
+copy active coordination state between hosts.
+
+Keep automatic routing concise in the managed global AGENTS source and detailed
+behavior in this skill. Install through the supported toolbox setup path and
+verify the installed version and effective global instructions in a fresh task.
+Do not overwrite bundled skills or treat a source edit as a completed rollout.
+If browser sign-in or a live probe is unavailable, report implementation and
+live readiness separately.

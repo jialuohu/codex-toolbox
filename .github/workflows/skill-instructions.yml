@@ -15,6 +15,7 @@ on:
       - "plugins/**/.codex-plugin/plugin.json"
       - "plugins/photo-tools/**"
       - "plugins/workflow-tools/skills/recover-codex-sidebar/**"
+      - "plugins/workflow-tools/skills/chatgpt-planner/**"
       - ".agents/plugins/marketplace.json"
       - "scripts/audit_skill_instructions.py"
       - "scripts/eval_skill_routing.py"
@@ -48,7 +49,7 @@ jobs:
       - name: Validate setup contracts
         run: python scripts/check-codex-toolbox-setup.py
       - name: Check instructions, evaluator refusal, and privacy
-        run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup tests.test_recover_codex_sidebar
+        run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup tests.test_recover_codex_sidebar tests.test_chatgpt_planner
       - name: Check whitespace
         env:
           INSTRUCTION_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

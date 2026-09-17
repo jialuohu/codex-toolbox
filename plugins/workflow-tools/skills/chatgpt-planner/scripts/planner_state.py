@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local coordination only; native Codex app tools own all ChatGPT access."""
+"""Private global coordination; supported browser/native tools own ChatGPT access."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import uuid
 MAX_INPUT_BYTES = 1024 * 1024
 MAX_PACKET_BYTES = 64 * 1024
 MAX_PROMPT_CHARS = 18_000
-REPLY_TARGET_CHARS = 12_000
+REPLY_TARGET_CHARS = 6_000
 MAX_REPLY_CHARS = 20_000
 DEADLINE_SECONDS = 900
 MODEL = "GPT-6 Pro"
@@ -59,13 +59,15 @@ def conversation_id(value: str) -> str:
     if not isinstance(value, str):
         raise PlannerError("INVALID_CONVERSATION_URL")
     if "://" not in value:
+        if value.startswith("WEB:"):
+            raise PlannerError("CONVERSATION_NOT_PERSISTED")
         return identifier(value)
     parsed = urlsplit(value)
     parts = parsed.path.rstrip("/").split("/")
     if (parsed.scheme != "https" or parsed.netloc != "chatgpt.com"
             or parsed.query or parsed.fragment or len(parts) != 3 or parts[1] != "c"):
         raise PlannerError("INVALID_CONVERSATION_URL")
-    return identifier(parts[2])
+    return conversation_id(parts[2])
 
 
 def required_text(packet: dict, key: str) -> str:
@@ -146,40 +148,67 @@ def make_prompt(request: dict, packet: dict) -> str:
 
 
 class Store:
-    def __init__(self, root: Path, project: Path, now=time.time):
+    def __init__(self, root: Path, task_id=None, probe=False, now=time.time):
         root = root.expanduser()
         if not root.is_absolute():
             raise PlannerError("STATE_PATH_NOT_ABSOLUTE")
+        # Reject symlink roots instead of silently moving private state.
+        if root.is_symlink():
+            raise PlannerError("STATE_PERMISSIONS")
         self.root = root.resolve()
-        project = project.expanduser().resolve(strict=True)
-        if not project.is_dir():
-            raise PlannerError("INVALID_PROJECT")
-        if self.root == project or project in self.root.parents:
-            raise PlannerError("STATE_INSIDE_PROJECT")
-        if any((parent / ".git").exists() for parent in (self.root, *self.root.parents)):
+        if any((p / ".git").exists() for p in (self.root, *self.root.parents)):
             raise PlannerError("STATE_INSIDE_GIT")
-        self.project = digest(str(project))
+        self.task_id = identifier(task_id) if task_id else None
+        self.probe = probe
+        self.task_key = ("probe:" if probe else "") + self.task_id if self.task_id else None
         self.now = now
 
-    def _read(self) -> dict:
-        path = self.root / "state.json"
+    @staticmethod
+    def empty():
+        return {"version": 2, "setup": None, "tasks": {}, "requests": {}}
+
+    def _read(self):
+        if self.root.exists() and self.root.stat().st_mode & 0o077:
+            raise PlannerError("STATE_PERMISSIONS")
         try:
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            fd = os.open(self.root / "state.json", os.O_RDONLY | os.O_NOFOLLOW)
         except FileNotFoundError:
-            return {"version": 1, "bindings": {}, "requests": {}}
+            return self.empty()
         with os.fdopen(fd, "r", encoding="utf-8") as handle:
             info = os.fstat(handle.fileno())
             if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077:
                 raise PlannerError("STATE_PERMISSIONS")
-            try:
-                state = json.load(handle)
-            except (ValueError, UnicodeError):
-                raise PlannerError("INVALID_STATE") from None
-        if (not isinstance(state, dict) or state.get("version") != 1
-                or not isinstance(state.get("bindings"), dict)
-                or not isinstance(state.get("requests"), dict)):
+            state = json.load(handle)
+        if not isinstance(state, dict) or not isinstance(state.get("requests"), dict):
+            raise PlannerError("INVALID_STATE")
+        if state.get("version") == 1 and isinstance(state.get("bindings"), dict):
+            return state
+        if state.get("version") != 2 or not isinstance(state.get("tasks"), dict):
             raise PlannerError("INVALID_STATE")
         return state
+
+    def _migrate(self, state):
+        if state["version"] == 2:
+            return
+        if any(r.get("status") == "pending" for r in state["requests"].values()):
+            raise PlannerError("LEGACY_REQUESTS_PENDING")
+        # Backup is durable before replacement, and is never overwritten.
+        backup = self.root / "state.v1.backup.json"
+        raw = json.dumps(state, sort_keys=True)
+        try:
+            fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except FileExistsError:
+            fd = os.open(backup, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, "r", encoding="utf-8") as handle:
+                if os.fstat(handle.fileno()).st_mode & 0o077 or json.load(handle) != state:
+                    raise PlannerError("LEGACY_BACKUP_CONFLICT")
+        else:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(raw)
+                handle.flush()
+                os.fsync(handle.fileno())
+        state.clear()
+        state.update(self.empty())
 
     @contextlib.contextmanager
     def transaction(self):
@@ -204,136 +233,188 @@ class Store:
                     if os.path.exists(tmp_name):
                         os.unlink(tmp_name)
 
-    def status(self) -> dict:
+
+    def status(self):
         state = self._read()
-        return {"action": "status", "binding": state["bindings"].get(self.project),
+        if state["version"] == 1:
+            return {"action": "status", "ready": False, "migration_required": True,
+                    "pending_legacy_requests": [
+                        r for r in state["requests"].values() if r.get("status") == "pending"]}
+        return {"action": "status", "ready": bool(state.get("setup")),
+                "setup": state.get("setup"),
+                "task": state["tasks"].get(self.task_key) if self.task_key else None,
                 "requests": [r for r in state["requests"].values()
-                             if r["project"] == self.project]}
+                             if self.task_key and r["task_key"] == self.task_key]}
 
-    def bind(self, conversation: str) -> dict:
-        cid = conversation_id(conversation)
-        with self.transaction() as state:
-            if any(b["conversation_id"] == cid and p != self.project
-                   for p, b in state["bindings"].items()):
-                raise PlannerError("CONVERSATION_ALREADY_BOUND")
-            old = state["bindings"].get(self.project)
-            if old and old["conversation_id"] == cid:
-                return {"action": "bound", "binding": old}
-            if any(r["project"] == self.project and r["status"] == "pending"
-                   for r in state["requests"].values()):
-                raise PlannerError("REQUEST_PENDING")
-            binding = {"conversation_id": cid, "model": MODEL, "verified": False,
-                       "bound_at": self.now()}
-            state["bindings"][self.project] = binding
-            return {"action": "bound", "binding": binding}
+    def _request(self, state, rid):
+        request = state["requests"].get(identifier(rid))
+        if not request or not self.task_key or request.get("task_key") != self.task_key:
+            raise PlannerError("UNKNOWN_REQUEST")
+        return request
 
-    def plan(self, mode: str, task_id: str, packet: dict, probe: bool = False) -> dict:
-        if not can_consult(mode, probe):
-            return {"action": "skip", "reason": "not_plan_mode" if not probe else "not_setup_mode"}
-        if not self.root.exists():
-            return {"action": "unavailable", "reason": "missing_binding"}
-        task_id = identifier(task_id)
+    def plan(self, mode, packet, model_confirmed=False):
+        if not can_consult(mode, self.probe):
+            return {"action": "skip", "reason": "not_plan_mode" if not self.probe else "not_setup_mode"}
+        if not self.task_id:
+            raise PlannerError("TASK_ID_REQUIRED")
+        if not self.probe:
+            current = self._read()
+            if current["version"] != 2 or not current.get("setup"):
+                return {"action": "unavailable", "reason": "global_setup_required"}
         packet = packet_fields(packet)
-        requirements = digest({k: packet[k] for k in ("objective", "requirements")})
-        key = digest([self.project, task_id, packet["objective_key"], requirements, probe])
+        # Setup checks never serialize caller-supplied context.
+        if self.probe:
+            packet = {k: packet[k] if k == "objective_key" else "setup" for k in packet}
+        key = digest([self.task_key, packet["objective_key"], packet["objective"], packet["requirements"]])
         with self.transaction() as state:
-            binding = state["bindings"].get(self.project)
-            if not binding or (not probe and not binding["verified"]):
-                return {"action": "unavailable", "reason": "unverified_binding" if binding else "missing_binding"}
-            candidates = [r for r in state["requests"].values()
-                          if r["key"] == key and r["conversation_id"] == binding["conversation_id"]]
+            self._migrate(state)
+            if not self.probe and not state.get("setup"):
+                return {"action": "unavailable", "reason": "global_setup_required"}
+            task = state["tasks"].get(self.task_key)
+            candidates = [r for r in state["requests"].values() if r["key"] == key]
             if candidates:
                 request = candidates[-1]
                 if request["status"] == "complete":
-                    action = "reuse" if request["snapshot"] == digest(packet["snapshot"]) else "revalidate"
-                    return {"action": action, "request": request}
+                    return {"action": "reuse" if request["snapshot"] == digest(packet["snapshot"])
+                            else "revalidate", "request": request}
                 if request["status"] != "pending":
                     return {"action": "unavailable", "reason": request["status"], "request": request}
-                action = "reconcile" if self.now() < request["deadline"] else "unavailable"
-                return {"action": action, "reason": "pending" if action == "reconcile" else "timeout",
-                        "request": request}
+                return self._waiting(request, "reconcile")
             pending = next((r for r in state["requests"].values()
-                            if r["conversation_id"] == binding["conversation_id"]
-                            and r["status"] == "pending"), None)
+                            if r["task_key"] == self.task_key and r["status"] == "pending"), None)
             if pending:
                 return {"action": "unavailable", "reason": "conversation_busy", "request": pending}
-            request = {"id": str(uuid.uuid4()), "project": self.project, "task_id": task_id,
-                       "conversation_id": binding["conversation_id"], "key": key,
-                       "snapshot": digest(packet["snapshot"]), "probe": probe,
+            # An abandoned creation whose URL is unknown must not create another chat.
+            if task and not task.get("conversation_id"):
+                return {"action": "unavailable", "reason": "creation_unresolved"}
+            if not model_confirmed:
+                return {"action": "unavailable", "reason": "model_not_confirmed"}
+            request = {"id": str(uuid.uuid4()), "task_id": self.task_id,
+                       "task_key": self.task_key, "key": key,
+                       "conversation_id": task.get("conversation_id") if task else None,
+                       "snapshot": digest(packet["snapshot"]), "probe": self.probe,
                        "status": "pending", "created_at": self.now(),
-                       "deadline": self.now() + DEADLINE_SECONDS}
+                       "deadline": self.now() + DEADLINE_SECONDS,
+                       "transport": task["transport"] if task else "browser"}
             prompt = make_prompt(request, packet)
             if native_text_length(prompt) > MAX_PROMPT_CHARS:
                 raise PlannerError("PROMPT_TOO_LARGE")
             request["prompt_hash"] = digest(prompt)
             state["requests"][request["id"]] = request
-            # Persist pending BEFORE exposing a send instruction. A crash after this
-            # point is ambiguous, so a subsequent call can only reconcile, not resend.
-            return {"action": "send", "request": request,
-                    "send_arguments": {"threadId": request["conversation_id"], "prompt": prompt}}
+            if task is None:
+                state["tasks"][self.task_key] = {
+                    "task_id": self.task_id, "conversation_id": None,
+                    "transport": "browser", "creation_request": request["id"]}
+            action = "create_browser" if task is None else "send_" + task["transport"]
+            result = {"action": action, "request": request, "prompt": prompt}
+            if action == "send_native":
+                result["send_arguments"] = {"threadId": request["conversation_id"], "prompt": prompt}
+            return result
 
-    def _request(self, state: dict, rid: str) -> dict:
-        request = state["requests"].get(identifier(rid))
-        if not request or request["project"] != self.project:
-            raise PlannerError("UNKNOWN_REQUEST")
-        return request
-
-    def _waiting(self, request: dict, action: str, reason: str = "pending") -> dict:
+    def _waiting(self, request, action):
         if request["status"] == "complete":
             return {"action": "retrieve", "reason": "completed_turn_not_visible", "request": request}
         if self.now() >= request["deadline"]:
             return {"action": "unavailable", "reason": "timeout", "request": request}
-        return {"action": action, "reason": reason, "request": request}
+        return {"action": action, "request": request}
 
-    def observe(self, mode: str, rid: str, snapshot: dict, probe: bool = False) -> dict:
-        if not can_consult(mode, probe):
-            return {"action": "skip", "reason": "not_plan_mode" if not probe else "not_setup_mode"}
+    def _browser_snapshot(self, snapshot):
+        if not isinstance(snapshot, dict):
+            raise PlannerError("INVALID_BROWSER_SNAPSHOT")
+        cid = conversation_id(snapshot.get("url"))
+        if snapshot.get("signed_in") is not True or snapshot.get("model") != MODEL:
+            raise PlannerError("MODEL_NOT_CONFIRMED")
+        if type(snapshot.get("generating")) is not bool or not isinstance(snapshot.get("messages"), list):
+            raise PlannerError("INVALID_BROWSER_SNAPSHOT")
+        messages = snapshot["messages"]
+        for message in messages:
+            if (not isinstance(message, dict) or message.get("role") not in ("user", "assistant")
+                    or not isinstance(message.get("text"), str)
+                    or type(message.get("truncated")) is not bool):
+                raise PlannerError("INVALID_BROWSER_SNAPSHOT")
+        # Browser identities are content fingerprints, never fabricated native IDs.
+        turns = []
+        for index, message in enumerate(messages):
+            if message["role"] != "user":
+                continue
+            answer = messages[index + 1] if index + 1 < len(messages) else None
+            items = [{"type": "userMessage", "content": [
+                {"type": "text", "text": message["text"], "truncated": message["truncated"]}]}]
+            if answer and answer["role"] == "assistant":
+                items.append({"type": "agentMessage", "id": "browser:" + digest(answer["text"]),
+                              "text": answer["text"], "truncated": answer["truncated"]})
+            turns.append({"id": "browser:" + digest(message["text"]), "items": items,
+                          "status": "inProgress" if snapshot["generating"] else "completed"})
+        return {"thread": {"id": cid, "kind": "chatgpt",
+                           "status": {"type": "active" if snapshot["generating"] else "idle"}},
+                "turns": turns}
+
+    def observe(self, mode, rid, snapshot, transport="browser"):
+        if not can_consult(mode, self.probe):
+            return {"action": "skip", "reason": "not_plan_mode" if not self.probe else "not_setup_mode"}
+        if transport not in ("browser", "native"):
+            raise PlannerError("INVALID_TRANSPORT")
+        if transport == "browser":
+            snapshot = self._browser_snapshot(snapshot)
         validate_snapshot(snapshot)
         with self.transaction() as state:
+            if state["version"] != 2:
+                raise PlannerError("LEGACY_REQUESTS_PENDING")
             request = self._request(state, rid)
-            if request["probe"] != probe:
-                raise PlannerError("WRONG_REQUEST_KIND")
             if request["status"] not in ("pending", "complete"):
                 return {"action": "unavailable", "reason": request["status"]}
-            thread = snapshot.get("thread", {})
-            try:
-                observed_id = identifier(thread.get("id"))
-            except PlannerError:
-                raise PlannerError("WRONG_CONVERSATION") from None
-            if thread.get("kind") != "chatgpt" or observed_id != request["conversation_id"]:
+            cid = conversation_id(snapshot["thread"].get("id"))
+            if snapshot["thread"].get("kind") != "chatgpt":
                 raise PlannerError("WRONG_CONVERSATION")
-            match = None
-            for turn in snapshot.get("turns", []):
-                users = [item for item in turn.get("items", []) if item.get("type") == "userMessage"]
+            if request["conversation_id"] and cid != request["conversation_id"]:
+                raise PlannerError("WRONG_CONVERSATION")
+            if not request["conversation_id"] and transport != "browser":
+                raise PlannerError("BROWSER_CREATION_NOT_VERIFIED")
+            matches = []
+            for turn in snapshot["turns"]:
+                users = [i for i in turn["items"] if i.get("type") == "userMessage"]
                 if len(users) != 1:
                     continue
-                content = users[0].get("content", [])
-                if (len(content) != 1 or content[0].get("truncated")
-                        or content[0].get("type") != "text"):
-                    continue
-                text = content[0]["text"].strip()
-                if digest(text) == request["prompt_hash"]:
-                    if match is not None:
-                        raise PlannerError("AMBIGUOUS_REQUEST")
-                    match = turn
-            if match is None:
-                return self._waiting(request, "reconcile", "request_not_visible")
-            thread_status = thread.get("status") or {}
+                content = users[0]["content"]
+                if (len(content) == 1 and content[0].get("type") == "text"
+                        and not content[0].get("truncated")
+                        and digest(content[0]["text"].strip()) == request["prompt_hash"]):
+                    matches.append(turn)
+            if len(matches) > 1:
+                raise PlannerError("AMBIGUOUS_REQUEST")
+            if not matches:
+                return self._waiting(request, "reconcile")
+            match = matches[0]
+            task = state["tasks"][self.task_key]
+            if any(t.get("conversation_id") == cid and k != self.task_key
+                   for k, t in state["tasks"].items()):
+                raise PlannerError("CONVERSATION_ALREADY_ASSIGNED")
+            request["conversation_id"] = cid
+            task["conversation_id"] = cid
+            if transport == "browser":
+                request["model_observed_at"] = self.now()
+            elif "model_observed_at" not in request and not task.get("model_observed_at"):
+                raise PlannerError("MODEL_NOT_CONFIRMED")
+            if transport == "native":
+                # Promotion requires exact conversation AND exact prompt, even while pending.
+                task["transport"] = "native"
+            task["model_observed_at"] = request.get("model_observed_at", task.get("model_observed_at"))
             if request["status"] == "pending":
                 if match.get("error"):
                     request["status"] = "failed"
                     return {"action": "unavailable", "reason": "remote_error", "request": request}
-                if thread_status.get("type") == "systemError":
+                if (snapshot["thread"].get("status") or {}).get("type") == "systemError":
                     return {"action": "unavailable", "reason": "conversation_error", "request": request}
-                if thread_status.get("type") != "idle" or match.get("status") != "completed":
+                if ((snapshot["thread"].get("status") or {}).get("type") != "idle"
+                        or match.get("status") != "completed"):
                     return self._waiting(request, "wait")
             elif match.get("status") != "completed":
                 return {"action": "unavailable", "reason": "incomplete_reply", "request": request}
-            answers = [i for i in match.get("items", []) if i.get("type") == "agentMessage"]
+            answers = [i for i in match["items"] if i.get("type") == "agentMessage"]
             if not answers:
                 return self._waiting(request, "wait")
             answer = answers[-1]
-            text = answer.get("text", "").strip()
+            text = answer["text"].strip()
             if answer.get("truncated"):
                 return {"action": "unavailable", "reason": "truncated_reply", "request": request}
             if native_text_length(text) > MAX_REPLY_CHARS:
@@ -341,52 +422,60 @@ class Store:
             lines = text.splitlines()
             if (len(lines) < 3 or lines[0] != f"Planning reply {request['id']}"
                     or lines[-1] != f"End planning reply {request['id']}"
-                    or not "\n".join(lines[1:-1]).strip() or not answer.get("id")):
+                    or not "\n".join(lines[1:-1]).strip()):
                 return {"action": "unavailable", "reason": "incomplete_reply", "request": request}
-            if probe and "\n".join(lines[1:-1]).strip() != "READY":
+            if self.probe and "\n".join(lines[1:-1]).strip() != "READY":
                 return {"action": "unavailable", "reason": "invalid_probe_reply", "request": request}
-            if request["status"] == "complete":
-                if (request["response_id"] != answer["id"]
-                        or request["response_hash"] != digest(text)
-                        or request["turn_id"] != match.get("id")):
-                    raise PlannerError("RESPONSE_CHANGED")
-            if (not isinstance(match.get("id"), str) or not match["id"]
-                    or not isinstance(answer["id"], str)):
+            if not isinstance(answer.get("id"), str) or not answer["id"] or not match.get("id"):
                 raise PlannerError("INVALID_SNAPSHOT")
-            request.update(status="complete", response_id=answer["id"], turn_id=match["id"],
-                           response_hash=digest(text))
-            request.setdefault("completed_at", self.now())
+            if request["status"] == "complete":
+                if request["response_hash"] != digest(text):
+                    raise PlannerError("RESPONSE_CHANGED")
+                if request["completed_transport"] == transport and (
+                        request["response_id"] != answer["id"] or request["turn_id"] != match["id"]):
+                    raise PlannerError("RESPONSE_CHANGED")
+            else:
+                request.update(status="complete", response_hash=digest(text),
+                               response_id=answer["id"], turn_id=match["id"],
+                               completed_transport=transport, completed_at=self.now())
             return {"action": "complete", "request": request, "reply": text}
 
-    def verify(self, first: str, after_restart: str, model_confirmed: bool,
-               restart_confirmed: bool) -> dict:
-        if not model_confirmed or not restart_confirmed:
-            raise PlannerError("VERIFICATION_REQUIRED")
-        first, after_restart = identifier(first), identifier(after_restart)
-        if first == after_restart:
-            raise PlannerError("VERIFICATION_REQUIRED")
+    def setup(self, probe_id, browser="iab"):
         with self.transaction() as state:
-            binding = state["bindings"].get(self.project)
-            if not binding:
-                raise PlannerError("MISSING_BINDING")
-            probes = [self._request(state, r) for r in (first, after_restart)]
-            if any(not r["probe"] or r["status"] != "complete"
-                   or r["conversation_id"] != binding["conversation_id"] for r in probes):
-                raise PlannerError("VERIFICATION_REQUIRED")
-            if probes[1]["created_at"] < probes[0]["completed_at"]:
-                raise PlannerError("VERIFICATION_ORDER")
-            binding.update(verified=True, verified_at=self.now(),
-                           verification="user-confirmed-model-and-restart-plus-native-probes",
-                           probe_ids=[r["id"] for r in probes])
-            return {"action": "verified", "binding": binding}
+            self._migrate(state)
+            request = state["requests"].get(identifier(probe_id))
+            if (not request or not request["probe"] or request["status"] != "complete"
+                    or "model_observed_at" not in request or not request["conversation_id"]):
+                raise PlannerError("COMPLETED_BROWSER_PROBE_REQUIRED")
+            if browser not in ("iab", "brave", "chrome", "edge"):
+                raise PlannerError("UNSUPPORTED_BROWSER")
+            state["setup"] = {"model": MODEL, "browser": browser, "probe_id": request["id"],
+                              "verified_at": self.now(), "verification": "visible-model-and-completed-browser-probe"}
+            return {"action": "setup", "ready": True, "setup": state["setup"]}
 
-    def abandon(self, rid: str, confirmed: bool) -> dict:
+    def fallback(self, mode, rid):
+        if not can_consult(mode, self.probe):
+            return {"action": "skip", "reason": "not_plan_mode"}
+        with self.transaction() as state:
+            request = self._request(state, rid)
+            state["tasks"][self.task_key]["transport"] = "browser"
+            # Never return another send directive; uncertainty always reconciles.
+            return {"action": "reconcile", "request": request}
+
+    def abandon(self, rid, confirmed, legacy=False):
         if not confirmed:
             raise PlannerError("EXPLICIT_ABANDON_REQUIRED")
         with self.transaction() as state:
-            request = self._request(state, rid)
+            if legacy:
+                if state["version"] != 1:
+                    raise PlannerError("NOT_LEGACY_STATE")
+                request = state["requests"].get(identifier(rid))
+                if not request:
+                    raise PlannerError("UNKNOWN_REQUEST")
+            else:
+                request = self._request(state, rid)
             if request["status"] != "pending":
-                return {"action": "noop", "reason": request["status"], "request": request}
+                return {"action": "noop", "reason": request["status"]}
             request.update(status="abandoned", abandoned_at=self.now())
             return {"action": "abandoned", "request": request}
 
@@ -404,49 +493,47 @@ def read_input() -> dict:
     return packet
 
 
-def main() -> int:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("bind", "status", "plan", "observe", "verify", "abandon"))
-    parser.add_argument("--project", type=Path, required=True)
+    parser.add_argument("action", choices=("status", "plan", "observe", "setup", "fallback", "abandon"))
     parser.add_argument("--state-dir", type=Path, default=default_state_dir())
     parser.add_argument("--mode", choices=("plan", "default", "unknown"), default="unknown")
-    parser.add_argument("--conversation")
     parser.add_argument("--task-id")
     parser.add_argument("--request-id")
     parser.add_argument("--setup-probe", action="store_true")
-    parser.add_argument("--first-probe")
-    parser.add_argument("--restart-probe")
     parser.add_argument("--model-confirmed", action="store_true")
-    parser.add_argument("--restart-confirmed", action="store_true")
+    parser.add_argument("--transport", choices=("browser", "native"), default="browser")
+    parser.add_argument("--browser", default="iab")
     parser.add_argument("--confirm-abandon", action="store_true")
+    parser.add_argument("--legacy", action="store_true")
     args = parser.parse_args()
     try:
-        if args.action in ("plan", "observe") and not can_consult(args.mode, args.setup_probe):
+        if args.action in ("plan", "observe", "fallback") and not can_consult(args.mode, args.setup_probe):
             result = {"action": "skip", "reason": "not_plan_mode" if not args.setup_probe else "not_setup_mode"}
-        elif args.action in ("bind", "verify", "abandon") and args.mode != "default":
+        elif args.action in ("setup", "abandon") and args.mode != "default":
             result = {"action": "skip", "reason": "setup_requires_execution_mode"}
         else:
-            store = Store(args.state_dir, args.project)
+            store = Store(args.state_dir, args.task_id, args.setup_probe)
             if args.action == "status":
                 result = store.status()
-            elif args.action == "bind":
-                result = store.bind(args.conversation)
             elif args.action == "plan":
-                result = store.plan(args.mode, args.task_id, read_input(), args.setup_probe)
+                result = store.plan(args.mode, read_input(), args.model_confirmed)
             elif args.action == "observe":
-                result = store.observe(args.mode, args.request_id, read_input(), args.setup_probe)
-            elif args.action == "verify":
-                result = store.verify(args.first_probe, args.restart_probe,
-                                      args.model_confirmed, args.restart_confirmed)
+                result = store.observe(args.mode, args.request_id, read_input(), args.transport)
+            elif args.action == "setup":
+                result = store.setup(args.request_id, args.browser)
+            elif args.action == "fallback":
+                result = store.fallback(args.mode, args.request_id)
             else:
-                result = store.abandon(args.request_id, args.confirm_abandon)
+                result = store.abandon(args.request_id, args.confirm_abandon, args.legacy)
         print(json.dumps({"ok": True, **result}))
         return 0
-    except (PlannerError, OSError, ValueError, KeyError, TypeError):
+    except (PlannerError, OSError, ValueError, KeyError, TypeError, AttributeError):
         error = sys.exc_info()[1]
-        print(json.dumps({"ok": False, "error": error.code if isinstance(error, PlannerError) else "STATE_OR_INPUT_ERROR"}))
+        print(json.dumps({"ok": False, "error": error.code if isinstance(error, PlannerError)
+                         else "STATE_OR_INPUT_ERROR"}))
         return 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

@@ -4820,8 +4820,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.10.0",
-        "workflow-tools plugin version must reflect sidebar recovery",
+        workflow_plugin.get("version") == "0.11.0",
+        "workflow-tools plugin version must reflect global Pro planning",
     )
     require(
         "mcpServers" not in workflow_plugin,

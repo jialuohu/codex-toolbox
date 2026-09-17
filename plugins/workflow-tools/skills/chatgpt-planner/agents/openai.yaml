@@ -1,6 +1,6 @@
 interface:
   display_name: "ChatGPT Planner"
-  short_description: "Consult GPT-6 Pro during Codex Plan mode."
-  default_prompt: "Use $chatgpt-planner to consult the connected GPT-6 Pro conversation for this Plan-mode objective."
+  short_description: "Consult GPT-6 Pro globally, one chat per Codex task."
+  default_prompt: "Use $chatgpt-planner to consult GPT-6 Pro for this Plan-mode task using the global setup."
 policy:
   allow_implicit_invocation: true

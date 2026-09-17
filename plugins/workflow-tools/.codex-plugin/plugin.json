@@ -1,6 +1,6 @@
 {
   "name": "workflow-tools",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Codex planning, independent counsel, explanations, sidebar recovery, toolbox synchronization, and explicit shipping skills.",
   "author": {
     "name": "Jialuo Hu"
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Workflow Tools",
     "shortDescription": "Plan, explain, recover sidebars, sync, and ship.",
-    "longDescription": "Workflow Tools packages ChatGPT Planner for GPT-6 Pro consultation in Codex Plan Mode, Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial critique, Recover Codex Sidebar for on-request macOS project mapping recovery after account switches, Sync Toolbox for applying the published toolbox to this machine, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
+    "longDescription": "Workflow Tools packages ChatGPT Planner for global GPT-6 Pro consultation with one conversation per Codex task in Plan Mode, browser creation and native messaging when available, Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial critique, Recover Codex Sidebar for on-request macOS project mapping recovery after account switches, Sync Toolbox for applying the published toolbox to this machine, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -18,7 +18,7 @@
     ],
     "defaultPrompt": [
       "Use $recover-codex-sidebar to restore missing sidebar projects after switching Codex accounts on macOS.",
-      "Use $chatgpt-planner to consult the connected GPT-6 Pro conversation for this Plan-mode objective.",
+      "Use $chatgpt-planner to consult GPT-6 Pro with global setup and one conversation per Plan-mode task.",
       "Use $explain-clearly to answer directly, adapt the depth to my question, and add examples or visuals only when they help.",
       "Use $deep-planning to critique this plan before implementation.",
       "Use $claude-counselor for bounded independent planning and final code review on major work.",

@@ -26,48 +26,50 @@ spec governance should be settled before implementation.
 
 ## ChatGPT Planner
 
-`$chatgpt-planner` consults a dedicated GPT-6 Pro conversation through the native
-Codex app conversation tools. Astra gathers source evidence, reconciles the
-advice, and owns the final plan, implementation, and verification. It uses the
-ChatGPT subscription; no API key or additional MCP server is required.
+`$chatgpt-planner` consults GPT-6 Pro automatically in actual Codex Plan mode,
+across workspaces. One global setup creates readiness for this installation;
+each persistent Codex task gets its own ChatGPT conversation. Codex checks the
+advice and owns the final plan, implementation, and verification.
 
-| Active Codex mode and objective | Automatic Pro consultation |
+| Mode and objective | Pro consultation |
 | --- | --- |
-| Plan mode, new objective of any size | Once after gathering context, before presenting the plan |
-| Plan mode, clarification of the same requirements | Reuse; material requirements changes start a new request |
+| Plan mode, new task | Create a dedicated Pro chat and consult after gathering context |
+| Plan mode, unchanged requirements | Reuse accepted advice in that task's conversation |
+| Plan mode, material requirements change | Send a new request in the same conversation |
 | Execution of an approved plan | None |
 | Direct execution, including major work | None |
 
-The authoritative collaboration mode controls the route. Words such as “plan”
-in a prompt or checklist do not activate it. Switching the UI toggle takes effect
-on the next planning turn. Claude Counselor's existing major-work planning and
-final review policy remains separate and unchanged.
+Ask `Use $chatgpt-planner setup globally` once. Follow the skill's
+[global setup](../plugins/workflow-tools/skills/chatgpt-planner/references/connection.md):
+sign into a connected browser, select GPT-6 Pro, and complete one
+synthetic probe. Brave was verified for this installation. A regular Chrome
+login does not sign a separate automation browser in.
+Setup is not operational until model selection and the complete probe are verified.
 
-To connect this repository, ask:
+The first planning request creates the chat through supported browser controls.
+Native Codex messaging is preferred only when the exact browser-created
+conversation and request can be verified through native reads. Otherwise, use
+the browser throughout. This uses the ChatGPT subscription, without an API key,
+private endpoints, or another MCP server.
 
-```text
-Use $chatgpt-planner bind for this project and my dedicated GPT-6 Pro conversation.
-```
+The skill uses text controls, compact completion polling, and one full response
+retrieval to limit overhead. Native handoff is an optimization, not an assumption.
+Record pilot tool calls and returned characters; report token counts only when
+actual usage is available.
 
-Follow the skill's [connection setup](../plugins/workflow-tools/skills/chatgpt-planner/references/connection.md):
-select GPT-6 Pro in ChatGPT, provide its conversation URL, and complete harmless
-native exchanges before and after an app restart. Native reads do not expose the
-selected model, so verification records the user's model and restart confirmation
-alongside the two exchanges. Automatic consultation stays disabled until the
-binding is verified. Pilot one repository before connecting others.
-
-Bindings and request metadata live outside Git under
-`${CODEX_HOME:-$HOME/.codex}/state/chatgpt-planner`. The local helper requires
-Python 3.9+ on macOS or Linux and stores no prompt or reply text. Use
-`$chatgpt-planner status` to inspect the connection without sending a message.
+Private metadata lives under
+`${CODEX_HOME:-$HOME/.codex}/state/chatgpt-planner`. Use `$chatgpt-planner status`
+for global readiness and optionally provide the persistent Codex task ID.
+There are no project bindings. The Python 3.9+ helper stores hashes, IDs, and
+status, not prompt/reply text. Legacy state is backed up before migration;
+unresolved legacy requests block activation.
 
 The [owning skill](../plugins/workflow-tools/skills/chatgpt-planner/SKILL.md)
-defines scoped context, one outstanding request per conversation, complete reply
-matching, and a 15-minute polling limit. An uncertain send is reconciled without
-resending. Execution mode stops polling and cannot silently adopt a late reply.
-Missing bindings, unavailable tools, and incomplete replies produce an explicit
-notice while ordinary Codex planning continues. This is an instruction-driven
-workflow, not an app toggle hook; the helper checks the mode supplied by Codex.
+defines bounded context, duplicate prevention, exact reply validation, and a
+15-minute deadline. Uncertain sends are reconciled, never resent via another
+transport. Execution mode stops consultation. Unavailable login, model, or
+transport produces a clear disclosure and ordinary Codex planning continues.
+The existing Claude Counselor policy remains separate.
 
 ## Deep Planning
 

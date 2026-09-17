@@ -188,7 +188,7 @@ class ReadabilityContractTests(unittest.TestCase):
         diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
-        self.assertEqual(workflow_manifest["version"], "0.10.0")
+        self.assertEqual(workflow_manifest["version"], "0.11.0")
         self.assertEqual(diagram_manifest["version"], "0.4.2")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
@@ -224,7 +224,8 @@ class ReadabilityContractTests(unittest.TestCase):
         self.assertIn("Automatically use `$chatgpt-planner` only in Plan mode", global_text)
         self.assertIn("Use `$claude-counselor` for one plan and review on major changes", global_text)
         self.assertIn("active collaboration mode from the current developer instructions", skill_text)
-        self.assertIn("Require a verified binding", skill_text)
+        self.assertIn("Each task has one", skill_text)
+        self.assertIn("global setup", skill_text)
         self.assertIn("execution mode**, skip Pro planning", skill_text)
         self.assertIn("there is no complexity threshold", skill_text)
         self.assertIn("allow_implicit_invocation: true", agent_text)
