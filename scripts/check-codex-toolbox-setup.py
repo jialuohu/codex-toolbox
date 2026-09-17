@@ -4820,14 +4820,19 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.9.0",
-        "workflow-tools plugin version must reflect Plan-mode ChatGPT consultation",
+        workflow_plugin.get("version") == "0.10.0",
+        "workflow-tools plugin version must reflect sidebar recovery",
     )
     require(
         "mcpServers" not in workflow_plugin,
         "workflow-tools must not expose an MCP server",
     )
     workflow_interface = workflow_plugin.get("interface", {})
+    require(
+        (WORKFLOW_PLUGIN.parent.parent / "skills/recover-codex-sidebar/SKILL.md").exists()
+        and any("$recover-codex-sidebar" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools must expose Recover Codex Sidebar",
+    )
     require(
         "ChatGPT Planner" in workflow_interface.get("longDescription", "")
         and any("$chatgpt-planner" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
