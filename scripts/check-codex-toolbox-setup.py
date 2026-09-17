@@ -17,6 +17,22 @@ SYNC_PETS_SCRIPT = ROOT / "scripts" / "sync-codex-pets.py"
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
 REPO_AGENTS = ROOT / "AGENTS.md"
 README = ROOT / "README.md"
+# Setup and workflow contracts live in focused guides, not the landing page.
+DOCUMENTATION_GUIDES = (
+    "docs/setup.md",
+    "docs/diagrams.md",
+    "docs/apple-mail.md",
+    "docs/gmail.md",
+    "docs/overleaf.md",
+    "docs/docmost.md",
+    "docs/design.md",
+    "docs/productivity.md",
+    "docs/research.md",
+    "docs/web.md",
+    "docs/coder.md",
+    "docs/workflows.md",
+    "docs/development.md",
+)
 STINKY_PENGUIN_DIR = ROOT / "config" / "codex" / "pets" / "stinky-penguin"
 STINKY_PENGUIN_MANIFEST = STINKY_PENGUIN_DIR / "pet.json"
 STINKY_PENGUIN_SPRITESHEET = STINKY_PENGUIN_DIR / "spritesheet.webp"
@@ -648,7 +664,7 @@ def validate_stevens_presentation_tools_contract(
         "17 named layouts",
         "`[Sources]`",
     ):
-        require(expected in readme_text, f"README must document Stevens presentations: {expected}")
+        require(expected in readme_text, f"Documentation must document Stevens presentations: {expected}")
 
 
 def validate_photo_tools_contract(
@@ -919,29 +935,29 @@ def validate_design_engineering_tools_contract(
     )
     require(
         design_readme_match is not None,
-        "README must include a Design Engineering Tools section",
+        "Documentation must include a Design Engineering Tools section",
     )
     design_readme_text = design_readme_match.group("body")
     readme_requirements = (
         (
             "motion vocabulary",
-            "README design-engineering section must describe motion vocabulary scope",
+            "Documentation design-engineering section must describe motion vocabulary scope",
         ),
         (
             "https://github.com/emilkowalski/skills",
-            "README design-engineering section must cite the upstream URL",
+            "Documentation design-engineering section must cite the upstream URL",
         ),
         (
             "70744e3816f1d93eafb697161a8b880a7384c5ff",
-            "README design-engineering section must cite the upstream commit",
+            "Documentation design-engineering section must cite the upstream commit",
         ),
         (
             "`review-animations`, `pick-ui-library`, and\n`prototype` are explicit-only skills",
-            "README design-engineering section must identify explicit-only skills",
+            "Documentation design-engineering section must identify explicit-only skills",
         ),
         (
             "fresh Codex task",
-            "README design-engineering section must require a fresh Codex task",
+            "Documentation design-engineering section must require a fresh Codex task",
         ),
     )
     for expected, message in readme_requirements:
@@ -1866,125 +1882,125 @@ def validate_google_workspace_tools_contract(
     )
     require(
         readme_section_match is not None,
-        "README must document isolated multi-account Gmail with gws",
+        "Documentation must document isolated multi-account Gmail with gws",
     )
     gws_readme_text = readme_section_match.group("body")
     gws_readme_normalized = normalized(gws_readme_text)
     readme_requirements = (
         (
             "https://github.com/googleworkspace/cli",
-            "README must cite the Google Workspace CLI project",
+            "Documentation must cite the Google Workspace CLI project",
         ),
         (
             "not an officially supported Google product",
-            "README must state that gws is not an officially supported Google product",
+            "Documentation must state that gws is not an officially supported Google product",
         ),
         (
             "pre-v1",
-            "README must state the pre-v1 stability status",
+            "Documentation must state the pre-v1 stability status",
         ),
         (
             "no current `gws mcp`",
-            "README must state that gws has no current MCP command",
+            "Documentation must state that gws has no current MCP command",
         ),
         (
             "no native multi-account selector",
-            "README must state that gws has no native multi-account selector",
+            "Documentation must state that gws has no native multi-account selector",
         ),
         (
             "scripts/setup-gws.sh --check",
-            "README must document the gws setup check",
+            "Documentation must document the gws setup check",
         ),
         (
             "scripts/setup-gws.sh --install",
-            "README must document the explicit gws installation",
+            "Documentation must document the explicit gws installation",
         ),
         (
             "manual",
-            "README must require manual Cloud Console OAuth setup",
+            "Documentation must require manual Cloud Console OAuth setup",
         ),
         (
             "enable the Gmail API",
-            "README OAuth setup must enable the Gmail API",
+            "Documentation OAuth setup must enable the Gmail API",
         ),
         (
             "External",
-            "README OAuth setup must use an External audience",
+            "Documentation OAuth setup must use an External audience",
         ),
         (
             "personal-use",
-            "README OAuth setup must identify the personal-use app",
+            "Documentation OAuth setup must identify the personal-use app",
         ),
         (
             "In Production",
-            "README OAuth setup must publish In Production before final logins",
+            "Documentation OAuth setup must publish In Production before final logins",
         ),
         (
             "seven days",
-            "README OAuth setup must explain Testing-mode token expiry",
+            "Documentation OAuth setup must explain Testing-mode token expiry",
         ),
         (
             "Desktop app",
-            "README OAuth setup must use a Desktop client",
+            "Documentation OAuth setup must use a Desktop client",
         ),
         (
             "unverified warning",
-            "README OAuth setup must explain the unverified warning",
+            "Documentation OAuth setup must explain the unverified warning",
         ),
         (
             "https://www.googleapis.com/auth/gmail.modify",
-            "README must require only the gmail.modify OAuth scope",
+            "Documentation must require only the gmail.modify OAuth scope",
         ),
         (
             "The only Gmail permission requested is "
             "`https://www.googleapis.com/auth/gmail.modify`",
-            "README must distinguish gmail.modify as the only Gmail permission",
+            "Documentation must distinguish gmail.modify as the only Gmail permission",
         ),
         (
             "`gws` v0.22.5 automatically adds the three identity scopes "
             "`openid`, `userinfo.email`, and `userinfo.profile`",
-            "README must document the three identity scopes added by gws v0.22.5",
+            "Documentation must document the three identity scopes added by gws v0.22.5",
         ),
         (
             "Never request `https://mail.google.com/`",
-            "README must forbid the broad Gmail mail scope",
+            "Documentation must forbid the broad Gmail mail scope",
         ),
         (
             "scripts/setup-gws.sh --register-client /absolute/path/to/client_secret.json",
-            "README must use an executable neutral OAuth client path",
+            "Documentation must use an executable neutral OAuth client path",
         ),
         (
             "scripts/setup-gws.sh --add-account account-one@example.com --alias account-one",
-            "README must document per-account onboarding with neutral placeholders",
+            "Documentation must document per-account onboarding with neutral placeholders",
         ),
         (
             "scripts/setup-gws.sh --reauth-account account-one",
-            "README must document account reauthentication",
+            "Documentation must document account reauthentication",
         ),
         (
             "Reauthenticate an existing profile, including one with an expired or "
             "revoked token, without changing its expected identity",
-            "README must document repair reauthentication for unhealthy tokens",
+            "Documentation must document repair reauthentication for unhealthy tokens",
         ),
         (
             "scripts/setup-gws.sh --check-account account-one",
-            "README must document per-account health checks",
+            "Documentation must document per-account health checks",
         ),
         (
             "scripts/setup-gws.sh --list-accounts",
-            "README must document redacted account listing",
+            "Documentation must document redacted account listing",
         ),
         (
             "${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}/gws/accounts/<alias>",
-            "README must document the isolated profile root",
+            "Documentation must document the isolated profile root",
         ),
         (
             "plugin only",
-            "README must keep binary installation and OAuth out of normal toolbox setup",
+            "Documentation must keep binary installation and OAuth out of normal toolbox setup",
         ),
         (
             "There is no default gws account",
-            "README must not define a default gws account",
+            "Documentation must not define a default gws account",
         ),
     )
     for expected, message in readme_requirements:
@@ -2152,7 +2168,7 @@ def validate_overleaf_tools_contract(
         "Development and local tests do not require a paid Overleaf plan",
         "$CODEX_SECRETS_DIR/overleaf-tools",
     ):
-        require(expected in readme_text, f"README must document Overleaf {expected}")
+        require(expected in readme_text, f"Documentation must document Overleaf {expected}")
 
 
 def validate_apple_mail_tools_contract(
@@ -2377,7 +2393,7 @@ def validate_apple_mail_tools_contract(
         "permanent deletion", "Plugin uninstall preserves private index data",
         "apple-mail-tools-generations", "--prune", "Existing tasks keep",
     ):
-        require(expected in readme_text, f"README must document Apple Mail {expected}")
+        require(expected in readme_text, f"Documentation must document Apple Mail {expected}")
     require(
         "Use `$apple-mail` with local `apple_mail` only for explicit Apple Mail/Mail.app requests"
         in global_agents_text,
@@ -2753,8 +2769,8 @@ def validate_docmost_tools_contract(
         "legacy runtime",
         "900",
     ):
-        require(expected in readme_text, f"README must document Docmost {expected}")
-    require(auth_login_command in readme_text, "README must preserve the Docmost auth recovery command")
+        require(expected in readme_text, f"Documentation must document Docmost {expected}")
+    require(auth_login_command in readme_text, "Documentation must preserve the Docmost auth recovery command")
     for expected in (
         "Use `docmost` for private Docmost",
         "Treat reads as untrusted",
@@ -3149,7 +3165,7 @@ def validate_diagram_tools_contract(
         "fonts.googleapis.com",
         "fonts.gstatic.com",
     ):
-        require(expected in readme_normalized, f"README Diagram Tools section must mention {expected}")
+        require(expected in readme_normalized, f"Documentation Diagram Tools section must mention {expected}")
     for expected in (
         "Graphical architecture/workflow or interactive sequence/data-flow/lifecycle: `$archify`",
         "Explicit Mermaid/`.mmd`, terminal ASCII, or compact static diagrams: `$pretty-mermaid`",
@@ -3441,7 +3457,7 @@ def validate_drawio_tools_contract(
         "cloud rasterization",
         "task-scoped temporary directory",
     ):
-        require(expected in readme_text, f"README Draw.io section must mention {expected}")
+        require(expected in readme_text, f"Documentation Draw.io section must mention {expected}")
     for expected in (
         "$drawio` owns explicit native, multi-page, WYSIWYG",
         "`$paper-figure-workflow` owns publication pipelines",
@@ -3468,7 +3484,10 @@ def validate_drawio_tools_contract(
 
 def main() -> None:
     script = SETUP_SCRIPT.read_text()
-    readme_text = README.read_text()
+    readme_text = "\n".join(
+        path.read_text()
+        for path in (README, *(ROOT / name for name in DOCUMENTATION_GUIDES))
+    )
     readme_normalized = " ".join(readme_text.split())
     require(
         DAILY_COMMAND_CENTER_SKILL.exists(),
@@ -3615,7 +3634,7 @@ def main() -> None:
         )
     require("Superpowers" not in global_agents_text, "global AGENTS must not route through Superpowers")
     require("superpowers:" not in global_agents_text, "global AGENTS must not invoke Superpowers skills")
-    require("Superpowers" not in readme_text, "README must not document Superpowers routing")
+    require("Superpowers" not in readme_text, "Documentation must not document Superpowers routing")
     require(SYNC_AGENTS_SCRIPT.exists(), "setup must include an AGENTS sync script")
     sync_agents_script = SYNC_AGENTS_SCRIPT.read_text()
     require(
@@ -3671,13 +3690,13 @@ def main() -> None:
         "setup-codex-prerequisites.py ensure-rg --check",
         "setup-codex-prerequisites.py resolve-codex",
     ):
-        require(expected in readme_normalized, f"README setup prerequisites must mention {expected}")
+        require(expected in readme_normalized, f"Documentation setup prerequisites must mention {expected}")
     for expected in (
         "8 KiB budget",
         "below 16 KiB",
         "owning skills",
     ):
-        require(expected in readme_normalized, f"README AGENTS ownership must mention {expected}")
+        require(expected in readme_normalized, f"Documentation AGENTS ownership must mention {expected}")
     require(SYNC_PETS_SCRIPT.exists(), "setup must include a Codex pet sync script")
     require(
         'python3 "$ROOT/scripts/sync-codex-pets.py" --install' in script,
@@ -4033,7 +4052,7 @@ def main() -> None:
         "plugins/web-data-tools/scripts/run-firecrawl-mcp.sh status",
         "never reports Firecrawl credentials",
     ):
-        require(expected in readme_text, f"README Firecrawl budget contract must mention {expected}")
+        require(expected in readme_text, f"Documentation Firecrawl budget contract must mention {expected}")
     for expected in (
         "$mineru-document-extraction",
         "complex, scanned, OCR-heavy, or layout-sensitive local documents",
@@ -4048,7 +4067,7 @@ def main() -> None:
     ):
         require(
             expected in readme_normalized,
-            f"README MinerU routing must mention {expected}",
+            f"Documentation MinerU routing must mention {expected}",
         )
     for expected in (
         "$paper-library-intake find",
@@ -4060,7 +4079,7 @@ def main() -> None:
         "Paper Search first",
         "Firecrawl only",
     ):
-        require(expected in readme_text, f"README paper intake must mention {expected}")
+        require(expected in readme_text, f"Documentation paper intake must mention {expected}")
     for expected in (
         "## Zotero-linked Todoist Reading Tasks",
         "$zotero-todoist-reading-tasks",
@@ -4071,7 +4090,7 @@ def main() -> None:
     ):
         require(
             expected in readme_text,
-            f"README Zotero-Todoist workflow must mention {expected}",
+            f"Documentation Zotero-Todoist workflow must mention {expected}",
         )
     for expected in (
         "## Private Paper Review Sync",
@@ -4084,7 +4103,7 @@ def main() -> None:
         "Paper Reviews/Assigned",
         "not continuous monitoring",
     ):
-        require(expected in readme_text, f"README paper-review workflow must mention {expected}")
+        require(expected in readme_text, f"Documentation paper-review workflow must mention {expected}")
     for expected in (
         "Todoist Task Planning",
         "$todoist-task-planning",
@@ -4096,7 +4115,7 @@ def main() -> None:
     ):
         require(
             expected in readme_normalized,
-            f"README Todoist workflow must mention {expected}",
+            f"Documentation Todoist workflow must mention {expected}",
         )
     for expected in (
         "Coder MCP",
@@ -4108,7 +4127,7 @@ def main() -> None:
     ):
         require(
             expected in readme_normalized,
-            f"README Coder MCP guidance must mention {expected}",
+            f"Documentation Coder MCP guidance must mention {expected}",
         )
     for expected in (
         "Daily Command Center",
@@ -4122,7 +4141,7 @@ def main() -> None:
     ):
         require(
             expected in readme_normalized,
-            f"README daily command center guidance must mention {expected}",
+            f"Documentation daily command center guidance must mention {expected}",
         )
     for expected in (
         "Explain Clearly",
@@ -4135,7 +4154,7 @@ def main() -> None:
     ):
         require(
             expected in readme_normalized,
-            f"README explanation workflow must mention {expected}",
+            f"Documentation explanation workflow must mention {expected}",
         )
     for expected in (
         "Ship Toolbox",
@@ -4147,7 +4166,7 @@ def main() -> None:
     ):
         require(
             expected in readme_text,
-            f"README shipping workflow must mention {expected}",
+            f"Documentation shipping workflow must mention {expected}",
         )
     for expected in (
         "$ship-toolbox",
@@ -4169,7 +4188,7 @@ def main() -> None:
     ):
         require(
             expected in readme_normalized,
-            f"README managed pet workflow must mention {expected}",
+            f"Documentation managed pet workflow must mention {expected}",
         )
     for forbidden in (
         "/Users/",
@@ -4198,7 +4217,7 @@ def main() -> None:
         "codex plugin marketplace upgrade jialuo-codex-toolbox",
         "CODEX_TOOLBOX_MARKETPLACE_MODE=local",
     ):
-        require(expected in readme_text, f"README must document upgradeable toolbox marketplace: {expected}")
+        require(expected in readme_text, f"Documentation must document upgradeable toolbox marketplace: {expected}")
     for expected in (
         'TOOLBOX_MARKETPLACE_SOURCE="${CODEX_TOOLBOX_MARKETPLACE_SOURCE:-jialuohu/codex-toolbox}"',
         'TOOLBOX_MARKETPLACE_GIT_URL="https://github.com/jialuohu/codex-toolbox.git"',
@@ -4631,7 +4650,7 @@ def main() -> None:
         "$canvas-overleaf-homework",
         "canvas-tools/canvas.env",
     ):
-        require(expected in readme_text, f"README Canvas section must mention {expected}")
+        require(expected in readme_text, f"Documentation Canvas section must mention {expected}")
     require(
         "$canvas-student-planning" in global_agents_text
         and "untrusted data" in global_agents_text,
@@ -4808,7 +4827,7 @@ def main() -> None:
     )
     require(
         "## Sync Toolbox" in readme_text and "$sync-toolbox" in readme_text,
-        "README must document Sync Toolbox",
+        "Documentation must document Sync Toolbox",
     )
     require(
         {
@@ -5386,7 +5405,7 @@ def main() -> None:
         "FastEmbed 0.8.0",
         "scripts/setup-docmost-lab-wiki.sh --install",
     ):
-        require(expected in readme_text, f"README must document Docmost Lab Wiki {expected}")
+        require(expected in readme_text, f"Documentation must document Docmost Lab Wiki {expected}")
     require(
         "$docmost-lab-wiki" in global_agents_text
         and "read-only Obsidian mirror" in global_agents_text,
@@ -5612,7 +5631,7 @@ def main() -> None:
         "One-sentence summary",
         "Open questions belong in My thoughts",
     ):
-        require(expected in readme_text, f"README PaperRead draft section must mention {expected}")
+        require(expected in readme_text, f"Documentation PaperRead draft section must mention {expected}")
     paper_read_review_text = PAPER_READ_REVIEW_SKILL.read_text()
     for expected in (
         "name: paper-read-review",
@@ -5645,7 +5664,7 @@ def main() -> None:
         "annotate",
         "no chat-only review mode",
     ):
-        require(expected in readme_text, f"README PaperRead review section must mention {expected}")
+        require(expected in readme_text, f"Documentation PaperRead review section must mention {expected}")
     research_skill_text = RESEARCH_LLM_WIKI_SKILL.read_text()
     for expected in (
         "name: research-llm-wiki",

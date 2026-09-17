@@ -11,7 +11,7 @@ SKILL_DIR = ROOT / "plugins" / "research-tools" / "skills" / "paper-read-review"
 SKILL = SKILL_DIR / "SKILL.md"
 OPENAI_METADATA = SKILL_DIR / "agents" / "openai.yaml"
 RESEARCH_PLUGIN = ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json"
-README = ROOT / "README.md"
+README = ROOT / "docs/research.md"
 SETUP_CHECKER = ROOT / "scripts" / "check-codex-toolbox-setup.py"
 
 

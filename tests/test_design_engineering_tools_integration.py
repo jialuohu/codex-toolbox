@@ -371,7 +371,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             )
 
         def erase_readme_reload_guidance(root: Path) -> None:
-            path = root / "README.md"
+            path = root / "docs/design.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
                     "Start a fresh Codex task after installing or\nupgrading",
@@ -382,7 +382,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             )
 
         def erase_readme_scope(root: Path) -> None:
-            path = root / "README.md"
+            path = root / "docs/design.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
                     "motion vocabulary", "motion guidance", 1
@@ -391,7 +391,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             )
 
         def erase_readme_url(root: Path) -> None:
-            path = root / "README.md"
+            path = root / "docs/design.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
                     "https://github.com/emilkowalski/skills", "https://example.invalid/skills", 1
@@ -400,7 +400,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             )
 
         def erase_readme_commit(root: Path) -> None:
-            path = root / "README.md"
+            path = root / "docs/design.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
                     "70744e3816f1d93eafb697161a8b880a7384c5ff", "missing-commit", 1
@@ -409,7 +409,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             )
 
         def erase_readme_explicit_only(root: Path) -> None:
-            path = root / "README.md"
+            path = root / "docs/design.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
                     "are explicit-only skills", "are default skills", 1
@@ -463,11 +463,11 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             (erase_emil_routing, "global AGENTS design-engineering routing must reserve emil-design-eng for explicit Emil or animations.dev requests"),
             (erase_discovery_routing, "global AGENTS design-engineering routing must map motion discovery and audits to their skills"),
             (erase_authority_routing, "global AGENTS design-engineering routing must preserve the authority override order"),
-            (erase_readme_scope, "README design-engineering section must describe motion vocabulary scope"),
-            (erase_readme_url, "README design-engineering section must cite the upstream URL"),
-            (erase_readme_commit, "README design-engineering section must cite the upstream commit"),
-            (erase_readme_explicit_only, "README design-engineering section must identify explicit-only skills"),
-            (erase_readme_reload_guidance, "README design-engineering section must require a fresh Codex task"),
+            (erase_readme_scope, "Documentation design-engineering section must describe motion vocabulary scope"),
+            (erase_readme_url, "Documentation design-engineering section must cite the upstream URL"),
+            (erase_readme_commit, "Documentation design-engineering section must cite the upstream commit"),
+            (erase_readme_explicit_only, "Documentation design-engineering section must identify explicit-only skills"),
+            (erase_readme_reload_guidance, "Documentation design-engineering section must require a fresh Codex task"),
             (add_plugin_mcp_file, "design-engineering-tools must not define an MCP config file"),
             (manage_a_design_plugin_mcp, "design-engineering-tools must not be a managed MCP server"),
         )

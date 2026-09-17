@@ -362,13 +362,13 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
 
     def test_checker_rejects_restart_documentation_regression(self) -> None:
         def mutate(root: Path) -> None:
-            path = root / "README.md"
+            path = root / "docs/docmost.md"
             value = path.read_text()
             old = "Settings → MCP servers → Restart"
             self.assertIn(old, value)
             path.write_text(value.replace(old, "restart control", 1))
 
-        self.assert_checker_rejects(mutate, "README must document Docmost Settings")
+        self.assert_checker_rejects(mutate, "Documentation must document Docmost Settings")
 
 
 if __name__ == "__main__":

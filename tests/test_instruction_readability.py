@@ -6,7 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
 REPO_AGENTS = ROOT / "AGENTS.md"
-README = ROOT / "README.md"
+DIAGRAM_DOC = ROOT / "docs" / "diagrams.md"
+WORKFLOW_DOC = ROOT / "docs" / "workflows.md"
 PRETTY_SKILL = (
     ROOT / "plugins" / "diagram-tools" / "skills" / "pretty-mermaid" / "SKILL.md"
 )
@@ -99,7 +100,7 @@ class ReadabilityContractTests(unittest.TestCase):
         global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
         skill_text = PRETTY_SKILL.read_text(encoding="utf-8")
         explain_text = EXPLAIN_SKILL.read_text(encoding="utf-8")
-        readme_text = README.read_text(encoding="utf-8")
+        readme_text = DIAGRAM_DOC.read_text(encoding="utf-8")
 
         for expected in (
             "Use this skill by default whenever Mermaid is selected",
@@ -148,7 +149,7 @@ class ReadabilityContractTests(unittest.TestCase):
     def test_archify_owns_graphical_maps_without_erasing_format_boundaries(self) -> None:
         global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
         explain_text = EXPLAIN_SKILL.read_text(encoding="utf-8")
-        readme_text = README.read_text(encoding="utf-8")
+        readme_text = DIAGRAM_DOC.read_text(encoding="utf-8")
         archify_text = ARCHIFY_SKILL.read_text(encoding="utf-8")
         archify_openai = ARCHIFY_OPENAI.read_text(encoding="utf-8")
         pretty_text = PRETTY_SKILL.read_text(encoding="utf-8")
@@ -193,7 +194,7 @@ class ReadabilityContractTests(unittest.TestCase):
         global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
         skill_text = CLAUDE_COUNSELOR.read_text(encoding="utf-8")
         agent_text = CLAUDE_COUNSELOR_AGENT.read_text(encoding="utf-8")
-        readme_text = README.read_text(encoding="utf-8")
+        readme_text = WORKFLOW_DOC.read_text(encoding="utf-8")
 
         for text in (global_text, skill_text, readme_text):
             self.assertIn("$claude-counselor", text)

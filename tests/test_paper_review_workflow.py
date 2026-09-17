@@ -259,7 +259,7 @@ class PaperReviewWorkflowTests(unittest.TestCase):
                 LIBRARY,
                 PAGE,
                 SYNC,
-                ROOT / "README.md",
+                ROOT / "docs/research.md",
                 ROOT / "config" / "codex" / "AGENTS.global.md",
             )
         )

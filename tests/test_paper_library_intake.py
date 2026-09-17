@@ -26,7 +26,7 @@ OPENAI_METADATA = SKILL.parent / "agents" / "openai.yaml"
 RESEARCH_MCP = ROOT / "plugins" / "research-tools" / ".mcp.json"
 RESEARCH_PLUGIN = ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json"
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
-README = ROOT / "README.md"
+README = ROOT / "docs/research.md"
 RESEARCH_LLM_WIKI = (
     ROOT
     / "plugins"

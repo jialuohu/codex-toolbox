@@ -5,6 +5,7 @@ on:
     paths: &instruction_paths
       - "AGENTS.md"
       - "README.md"
+      - "docs/**"
       - ".gitattributes"
       - "config/codex/**"
       - "plugins/**/SKILL.md"

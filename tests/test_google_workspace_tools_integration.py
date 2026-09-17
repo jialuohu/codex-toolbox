@@ -1020,7 +1020,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         def remove_readme_status(root: Path) -> None:
             self.replace_once(
                 root,
-                "README.md",
+                "docs/gmail.md",
                 "not an officially supported Google product",
                 "an officially supported Google product",
             )
@@ -1028,7 +1028,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         def remove_readme_oauth_scope(root: Path) -> None:
             self.replace_once(
                 root,
-                "README.md",
+                "docs/gmail.md",
                 "https://www.googleapis.com/auth/gmail.modify",
                 "https://mail.google.com/",
             )
@@ -1036,7 +1036,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         def remove_readme_identity_scope(root: Path) -> None:
             self.replace_once(
                 root,
-                "README.md",
+                "docs/gmail.md",
                 "`openid`, `userinfo.email`, and\n"
                 "   `userinfo.profile`",
                 "`openid` and `userinfo.email`",
@@ -1045,7 +1045,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         def restore_healthy_only_reauth_wording(root: Path) -> None:
             self.replace_once(
                 root,
-                "README.md",
+                "docs/gmail.md",
                 "Reauthenticate an existing profile, including one with an expired or revoked\n"
                 "token, without changing its expected identity",
                 "Reauthenticate an existing healthy profile without changing its expected identity",
@@ -1054,7 +1054,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         def make_readme_client_path_non_executable(root: Path) -> None:
             self.replace_once(
                 root,
-                "README.md",
+                "docs/gmail.md",
                 "/absolute/path/to/client_secret.json",
                 "<downloaded-client.json>",
             )
@@ -1154,23 +1154,23 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 remove_readme_status,
-                "README must state that gws is not an officially supported Google product",
+                "Documentation must state that gws is not an officially supported Google product",
             ),
             (
                 remove_readme_oauth_scope,
-                "README must require only the gmail.modify OAuth scope",
+                "Documentation must require only the gmail.modify OAuth scope",
             ),
             (
                 remove_readme_identity_scope,
-                "README must document the three identity scopes added by gws v0.22.5",
+                "Documentation must document the three identity scopes added by gws v0.22.5",
             ),
             (
                 restore_healthy_only_reauth_wording,
-                "README must document repair reauthentication for unhealthy tokens",
+                "Documentation must document repair reauthentication for unhealthy tokens",
             ),
             (
                 make_readme_client_path_non_executable,
-                "README must use an executable neutral OAuth client path",
+                "Documentation must use an executable neutral OAuth client path",
             ),
         )
 
