@@ -30,6 +30,7 @@ Plan large/vague projects. Use Codex alone for small/coupled work, native subage
 Use `$deep-planning` only for adversarial, architectural, or high-risk planning. Use `$explain-clearly` for substantive explanations and comparisons after the domain source establishes facts. Skip both for simple facts and execution-only requests.
 
 Use `$claude-counselor` for one plan and review on major changes; exclude secrets/confidential data and verify advice.
+Automatically use `$chatgpt-planner` only in Plan mode.
 
 ## Reliability and safety
 

@@ -195,6 +195,11 @@ CLAUDE_COUNSELOR_SKILL = (
 )
 CLAUDE_COUNSELOR_OPENAI = CLAUDE_COUNSELOR_SKILL.parent / "agents" / "openai.yaml"
 CLAUDE_COUNSELOR_SCRIPT = CLAUDE_COUNSELOR_SKILL.parent / "scripts" / "claude_counselor.py"
+CHATGPT_PLANNER_SKILL = (
+    ROOT / "plugins" / "workflow-tools" / "skills" / "chatgpt-planner" / "SKILL.md"
+)
+CHATGPT_PLANNER_OPENAI = CHATGPT_PLANNER_SKILL.parent / "agents" / "openai.yaml"
+CHATGPT_PLANNER_SCRIPT = CHATGPT_PLANNER_SKILL.parent / "scripts" / "planner_state.py"
 PAPER_FIGURE_PLUGIN = ROOT / "plugins" / "paper-figure-tools" / ".codex-plugin" / "plugin.json"
 PAPER_FIGURE_SKILL = (
     ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
@@ -3830,6 +3835,9 @@ def main() -> None:
     require(CLAUDE_COUNSELOR_SKILL.exists(), "workflow-tools must include claude-counselor")
     require(CLAUDE_COUNSELOR_OPENAI.exists(), "claude-counselor must include OpenAI metadata")
     require(CLAUDE_COUNSELOR_SCRIPT.exists(), "claude-counselor must include its guarded wrapper")
+    require(CHATGPT_PLANNER_SKILL.exists(), "workflow-tools must include chatgpt-planner")
+    require(CHATGPT_PLANNER_OPENAI.exists(), "chatgpt-planner must include OpenAI metadata")
+    require(CHATGPT_PLANNER_SCRIPT.exists(), "chatgpt-planner must include local request tracking")
     require(PAPER_FIGURE_PLUGIN.exists(), "paper-figure-tools plugin manifest must exist")
     require(
         PAPER_FIGURE_SKILL.exists(),
@@ -4812,14 +4820,23 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.8.0",
-        "workflow-tools plugin version must reflect counselor timeout diagnostics",
+        workflow_plugin.get("version") == "0.9.0",
+        "workflow-tools plugin version must reflect Plan-mode ChatGPT consultation",
     )
     require(
         "mcpServers" not in workflow_plugin,
         "workflow-tools must not expose an MCP server",
     )
     workflow_interface = workflow_plugin.get("interface", {})
+    require(
+        "ChatGPT Planner" in workflow_interface.get("longDescription", "")
+        and any("$chatgpt-planner" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools metadata must expose ChatGPT Planner",
+    )
+    require(
+        "## ChatGPT Planner" in readme_text and "$chatgpt-planner" in readme_text,
+        "Documentation must document ChatGPT Planner",
+    )
     require(
         "Sync Toolbox" in workflow_interface.get("longDescription", "")
         and any("$sync-toolbox" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),

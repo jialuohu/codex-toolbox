@@ -35,6 +35,8 @@ CLAUDE_COUNSELOR = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "claude-counselor" / "SKILL.md"
 )
 CLAUDE_COUNSELOR_AGENT = CLAUDE_COUNSELOR.parent / "agents" / "openai.yaml"
+CHATGPT_PLANNER = CLAUDE_COUNSELOR.parent.parent / "chatgpt-planner" / "SKILL.md"
+CHATGPT_PLANNER_AGENT = CHATGPT_PLANNER.parent / "agents" / "openai.yaml"
 
 
 class InstructionBudgetTests(unittest.TestCase):
@@ -186,7 +188,7 @@ class ReadabilityContractTests(unittest.TestCase):
         diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
-        self.assertEqual(workflow_manifest["version"], "0.8.0")
+        self.assertEqual(workflow_manifest["version"], "0.9.0")
         self.assertEqual(diagram_manifest["version"], "0.4.2")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
@@ -212,6 +214,22 @@ class ReadabilityContractTests(unittest.TestCase):
         ):
             self.assertIn(expected, skill_text)
         self.assertIn("allow_implicit_invocation: true", agent_text)
+
+    def test_chatgpt_planner_routes_by_mode_without_replacing_claude(self) -> None:
+        global_text = GLOBAL_AGENTS.read_text(encoding="utf-8")
+        skill_text = CHATGPT_PLANNER.read_text(encoding="utf-8")
+        agent_text = CHATGPT_PLANNER_AGENT.read_text(encoding="utf-8")
+        docs = WORKFLOW_DOC.read_text(encoding="utf-8")
+
+        self.assertIn("Automatically use `$chatgpt-planner` only in Plan mode", global_text)
+        self.assertIn("Use `$claude-counselor` for one plan and review on major changes", global_text)
+        self.assertIn("active collaboration mode from the current developer instructions", skill_text)
+        self.assertIn("Require a verified binding", skill_text)
+        self.assertIn("execution mode**, skip Pro planning", skill_text)
+        self.assertIn("there is no complexity threshold", skill_text)
+        self.assertIn("allow_implicit_invocation: true", agent_text)
+        self.assertIn("$chatgpt-planner", docs)
+        self.assertIn("Direct execution, including major work | None", docs)
 
 
 if __name__ == "__main__":

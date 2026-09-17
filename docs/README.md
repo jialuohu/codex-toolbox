@@ -19,7 +19,7 @@ Commands run from the repository root. Guides cover setup and usage; the owning
 | [Find, save, or read papers](research.md) | Zotero intake, private reviews, PaperRead, MinerU |
 | [Extract public pages](web.md) | Firecrawl routing and credit limits |
 | [Inspect Coder workspaces](coder.md) | CLI authentication and read-only access |
-| [Plan or explain complex work](workflows.md) | Planning, Claude second opinions, explanations |
+| [Plan or explain work](workflows.md) | Plan-mode Pro consultation, Claude second opinions, explanations |
 | [Develop, validate, or publish](development.md) | Instruction audits, repository checks, explicit shipping |
 
 ## Source map

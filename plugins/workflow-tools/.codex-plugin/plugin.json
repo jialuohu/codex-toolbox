@@ -1,7 +1,7 @@
 {
   "name": "workflow-tools",
-  "version": "0.8.0",
-  "description": "Codex planning, independent Claude counsel, explanation, toolbox synchronization, and explicit shipping skills.",
+  "version": "0.9.0",
+  "description": "Codex Plan-mode consultation with ChatGPT Pro, independent Claude counsel, explanations, toolbox synchronization, and explicit shipping skills.",
   "author": {
     "name": "Jialuo Hu"
   },
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Workflow Tools",
     "shortDescription": "Plan, consult, explain, sync, and ship changes.",
-    "longDescription": "Workflow Tools packages Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial Plan Mode critique, Sync Toolbox for applying the published toolbox to this machine, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
+    "longDescription": "Workflow Tools packages ChatGPT Planner for GPT-6 Pro consultation in Codex Plan Mode, Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial critique, Sync Toolbox for applying the published toolbox to this machine, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -17,6 +17,7 @@
       "Write"
     ],
     "defaultPrompt": [
+      "Use $chatgpt-planner to consult the connected GPT-6 Pro conversation for this Plan-mode objective.",
       "Use $explain-clearly to answer directly, adapt the depth to my question, and add examples or visuals only when they help.",
       "Use $deep-planning to critique this plan before implementation.",
       "Use $claude-counselor for bounded independent planning and final code review on major work.",
