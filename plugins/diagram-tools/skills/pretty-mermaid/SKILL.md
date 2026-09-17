@@ -33,6 +33,8 @@ or rendered ASCII as requested.
 
 ## Selection Rules
 
+- Explicit application choice takes precedence, followed by the existing artifact format. Use `$omnigraffle-workflow` for OmniGraffle or `.graffle`.
+
 - Use this skill by default whenever Mermaid is selected, including quick explanations,
   compact static relationships, and architecture or workflow content that the
   user explicitly wants in Mermaid.
@@ -40,7 +42,7 @@ or rendered ASCII as requested.
   and for polished interactive sequence, data-flow, or lifecycle artifacts.
 - Use native inline Mermaid only when the user explicitly requests it or when the runtime is unavailable or rejects the syntax. Briefly disclose automatic fallback, reuse the exact source, and do not silently change semantics.
 - Use `$drawio` for explicit draw.io or diagrams.net requests, editable `.drawio` source, multi-page files, specialized shapes, browser editing, or draw.io Desktop exports.
-- Use `$paper-figure-workflow` for reproducible publication figure pipelines; it delegates native draw.io execution to `$drawio`.
+- Use `$paper-figure-workflow` for reproducible publication figure pipelines; it delegates native execution to the selected application owner.
 - Use bundled Visualize for adjustable, inspectable, in-conversation spatial
   views rather than a standalone static export.
 - Beautiful Mermaid implements a Mermaid subset. Run `capabilities` when syntax support is uncertain. If rendering rejects a diagram family, preserve the `.mmd`, fall back to native inline Mermaid, and report the limitation.

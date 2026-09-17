@@ -24,8 +24,8 @@ Use prose for a simple conclusion, or a Markdown table for three or more compara
 entities. Add visuals only when they materially help. Respect workspace routing;
 otherwise use `$archify` for graphical maps, `$pretty-mermaid` for explicit
 Mermaid or compact static diagrams, bundled Visualize for adjustable spatial
-views, `$drawio` for native editable diagrams, and `$paper-figure-workflow` for
-publication figures. Build standalone applications with project files or Sites.
+views, `$omnigraffle-workflow` for OmniGraffle/`.graffle`, `$drawio` for draw.io/`.drawio`, and `$paper-figure-workflow` for
+publication figures. Explicit application choice takes precedence, followed by the existing artifact format. Build standalone applications with project files or Sites.
 Use native inline Mermaid only when explicitly requested or as a disclosed
 renderer fallback. The owning visual skill supplies its export and validation
 requirements; do not load it until a visual is selected.

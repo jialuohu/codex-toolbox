@@ -32,6 +32,7 @@ DEFAULT_PLUGINS=(
   "diagram-tools"
   "drawio-tools"
   "paper-figure-tools"
+  "omnigraffle-tools"
   "productivity-tools"
   "trading-tools"
   "vibe-trading-tools"

@@ -6,6 +6,7 @@ Run shell commands from the repository root. Read the owning skill before using 
 
 - [Diagram Tools](#diagram-tools)
 - [Draw.io Tools](#drawio-tools)
+- [OmniGraffle Tools](#omnigraffle-tools)
 - [Paper Figure Workflow](#paper-figure-workflow)
 
 ## Diagram Tools
@@ -138,11 +139,19 @@ unavailable, the workflow leaves the editable `.drawio` source and exact local
 export command; it does not silently use cloud rasterization. With no requested
 destination, artifacts go in a task-scoped temporary directory.
 
+## OmniGraffle Tools
+
+Use `$omnigraffle-workflow` for explicit OmniGraffle or an existing `.graffle` artifact. Native drawing and exports use OmniGraffle scripting; editable equations use official LaTeXiT and real LinkBack GUI callbacks. Equation automation requires an unlocked Mac. General graphical requests retain `$archify`; explicit Mermaid and compact static diagrams retain `$pretty-mermaid`.
+
+Default setup installs plugin files only. Applications, TeX and permission changes require explicit dependency setup. Start with [the skill and doctor command](../plugins/omnigraffle-tools/skills/omnigraffle-workflow/SKILL.md); [command details](../plugins/omnigraffle-tools/skills/omnigraffle-workflow/references/commands.md) describe inspection, mutation, export and interruption reconciliation. A retained JSON request never replaces later manual native edits. Do not retry an uncertain mutation before reconciliation.
+
 ## Paper Figure Workflow
 
+Explicit application choice takes precedence, followed by the existing source format. `$omnigraffle-workflow` owns OmniGraffle/`.graffle`; `$drawio` owns draw.io/`.drawio`. Otherwise publication pipelines retain draw.io as their default. Paper Figure Workflow owns directories, regeneration commands and cross-figure checks.
+
 Use `$paper-figure-workflow` when a research repo needs reproducible paper
-figures. The skill guides Codex to inspect the repo first, keep draw.io source
-diagrams editable through `$drawio`, generate Matplotlib and SciencePlots result
+figures. The skill guides Codex to inspect the repo first, keep native source
+diagrams editable through the selected drawing owner, generate Matplotlib and SciencePlots result
 plots from repo data, export SVG/PDF figures, use Inkscape only for conversion
 or light cleanup, and add a command such as `make figures`.
 

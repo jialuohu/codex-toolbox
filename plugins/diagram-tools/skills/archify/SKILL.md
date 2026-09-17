@@ -5,6 +5,8 @@ description: "Create graphical architecture, workflow, sequence, data-flow, and 
 
 # Archify
 
+Explicit application choice takes precedence, followed by the existing artifact format: use `$omnigraffle-workflow` for OmniGraffle or `.graffle`, and `$drawio` for draw.io or `.drawio`. Otherwise retain the graphical default below.
+
 Use `$archify` as the graphical default for architecture and workflow maps and for
 polished interactive sequence, data-flow, or lifecycle artifacts. Produce one
 validated standalone HTML file and retain its editable typed JSON source beside

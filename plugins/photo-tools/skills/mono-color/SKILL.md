@@ -35,7 +35,7 @@ artwork, a production prompt, or a new figure.
 
 When drawing or applying colors is also requested, keep execution with the
 current plotting/diagram owner: `$paper-figure-workflow` for publication
-pipelines, `$drawio` for native diagrams, or the existing plotting code.
+pipelines, `$omnigraffle-workflow` for OmniGraffle/`.graffle`, `$drawio` for draw.io/`.drawio`, or the existing plotting code. Explicit application choice takes precedence, followed by the existing artifact format. Include the exact absolute path of this active skill's `references/design-system/colors.json` with the palette handoff; do not substitute a duplicated catalog.
 
 ## Editorial Images
 

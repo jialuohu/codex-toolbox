@@ -683,7 +683,7 @@ def validate_photo_tools_contract(
     require(manifest_path.is_file(), "photo-tools manifest must exist")
     manifest = json.loads(manifest_path.read_text())
     require(manifest.get("name") == "photo-tools", "photo-tools manifest name must be exact")
-    require(manifest.get("version") == "0.2.0", "photo-tools must be version 0.2.0")
+    require(manifest.get("version") == "0.2.1", "photo-tools must be version 0.2.1")
     require(manifest.get("skills") == "./skills/", "photo-tools must expose ./skills/")
     require(
         "mcpServers" not in manifest and not (plugin_dir / ".mcp.json").exists(),
@@ -2833,7 +2833,7 @@ def validate_diagram_tools_contract(
 
     plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
-    require(plugin.get("version") == "0.4.2", "diagram-tools manifest version must be 0.4.2")
+    require(plugin.get("version") == "0.4.3", "diagram-tools manifest version must be 0.4.3")
     require(plugin.get("skills") == "./skills/", "diagram-tools must expose its skills directory")
     require(plugin.get("license") == "MIT", "diagram-tools manifest must declare MIT")
     require("mcpServers" not in plugin, "diagram-tools must remain skill-only")
@@ -3104,8 +3104,8 @@ def validate_diagram_tools_contract(
     bootstrap_lock = json.loads((DIAGRAM_BOOTSTRAP / "package-lock.json").read_text())
     diagram_package = json.loads(DIAGRAM_TOOLS_PACKAGE.read_text())
     require(
-        diagram_package.get("version") == "0.4.2",
-        "Diagram Tools test package must track plugin version 0.4.2",
+        diagram_package.get("version") == "0.4.3",
+        "Diagram Tools test package must track plugin version 0.4.3",
     )
     diagram_scripts = diagram_package.get("scripts", {})
     require(
@@ -3270,7 +3270,7 @@ def validate_drawio_tools_contract(
 
     plugin = json.loads(DRAWIO_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "drawio-tools", "drawio-tools manifest name must be exact")
-    require(plugin.get("version") == "0.1.3", "drawio-tools manifest version must be 0.1.3")
+    require(plugin.get("version") == "0.1.4", "drawio-tools manifest version must be 0.1.4")
     require(plugin.get("skills") == "./skills/", "drawio-tools must expose its skill")
     require(plugin.get("mcpServers") == "./.mcp.json", "drawio-tools must expose its MCP config")
     require(plugin.get("license") == "MIT", "drawio-tools must declare its toolbox license")
@@ -3445,11 +3445,11 @@ def validate_drawio_tools_contract(
         "paper-figure-workflow must delegate Draw.io execution without giving up pipeline ownership",
     )
     require(
-        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.4.2",
+        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.4.3",
         "diagram-tools version must reflect the Archify and Draw.io routing boundaries",
     )
     require(
-        json.loads(PAPER_FIGURE_PLUGIN.read_text()).get("version") == "0.2.1",
+        json.loads(PAPER_FIGURE_PLUGIN.read_text()).get("version") == "0.2.2",
         "paper-figure-tools version must reflect Draw.io execution delegation",
     )
 
@@ -3520,8 +3520,10 @@ def main() -> None:
         "combined global and toolbox AGENTS files must fit within the 16 KiB budget",
     )
     require(
-        "Lead with the result. Write in a concise, factual, newspaper style"
-        in global_agents_text,
+        any(style in global_agents_text for style in (
+            "Lead with the result. Write in a concise, factual, newspaper style",
+            "Lead with the result in concise, factual newspaper style",
+        )),
         "global AGENTS must preserve the configured response style",
     )
     for expected in (
@@ -4820,7 +4822,7 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.11.0",
+        workflow_plugin.get("version") == "0.11.1",
         "workflow-tools plugin version must reflect global Pro planning",
     )
     require(

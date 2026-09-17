@@ -5,6 +5,8 @@ description: "Use for explicit draw.io/diagrams.net, editable .drawio source, mu
 
 # Draw.io
 
+Explicit application choice takes precedence, followed by the existing artifact format. Use `$omnigraffle-workflow` for OmniGraffle or `.graffle`; do not convert an existing native artifact merely to use this skill.
+
 Use the `drawio` MCP server for editable draw.io work. This skill owns explicit
 draw.io requests and native `.drawio`, multi-page, WYSIWYG,
 specialized-shape, browser, or Desktop export workflows. Keep Pretty Mermaid as

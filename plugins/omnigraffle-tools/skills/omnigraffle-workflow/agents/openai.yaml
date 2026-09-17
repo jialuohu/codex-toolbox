@@ -1,0 +1,4 @@
+interface:
+  display_name: "OmniGraffle Workflow"
+  short_description: "Native diagrams and editable LaTeXiT equations"
+  default_prompt: "Use $omnigraffle-workflow to create or revise an editable OmniGraffle diagram."

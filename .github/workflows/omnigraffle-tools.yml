@@ -1,0 +1,59 @@
+name: OmniGraffle Tools
+
+on:
+  pull_request:
+    paths:
+      - "plugins/omnigraffle-tools/**"
+      - "scripts/omnigraffle/**"
+      - "tests/test_omnigraffle*.py"
+      - "tests/test_latexit_compile_probe.py"
+      - "config/codex/AGENTS.global.md"
+      - "scripts/setup-codex-toolbox.sh"
+      - "scripts/check-codex-toolbox-setup.py"
+      - ".agents/plugins/marketplace.json"
+      - ".github/workflows/omnigraffle-tools.yml"
+  push:
+    branches: [main]
+    paths:
+      - "plugins/omnigraffle-tools/**"
+      - "scripts/omnigraffle/**"
+      - "tests/test_omnigraffle*.py"
+      - "tests/test_latexit_compile_probe.py"
+      - ".github/workflows/omnigraffle-tools.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Portable archive, request, journal, adapter and routing tests
+        run: >-
+          python3 -m unittest
+          tests.test_omnigraffle_document
+          tests.test_omnigraffle_plugin_document
+          tests.test_omnigraffle_preflight
+          tests.test_omnigraffle_plugin_preflight
+          tests.test_latexit_compile_probe
+          tests.test_omnigraffle_native
+          tests.test_omnigraffle_latexit
+          tests.test_omnigraffle_transactions
+          tests.test_omnigraffle_routing
+          tests.test_omnigraffle_mac
+      - name: Setup and privacy contracts
+        run: |
+          python3 scripts/check-codex-toolbox-setup.py
+          python3 -m unittest tests.test_privacy_audit
+          scripts/privacy-audit.sh current
+          git diff --check
+
+# Licensed-Mac acceptance runs locally, with explicit environment gates described
+# in tests/test_omnigraffle_mac.py. CI never installs applications, grants GUI
+# permissions, opens a desktop session, or claims live LinkBack acceptance.

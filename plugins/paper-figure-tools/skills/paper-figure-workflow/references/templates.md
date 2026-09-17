@@ -2,6 +2,8 @@
 
 Use these as starting points only after inspecting the target repo.
 
+The example below retains the publication default of draw.io. For explicit OmniGraffle or existing `.graffle`, delegate export to `$omnigraffle-workflow`, retain that native source, and document the actual JSON export request in the regeneration command. An unlocked Mac and licensed applications may be required; do not describe a GUI-dependent regeneration step as portable CI. Keep directory layout and cross-figure checks here.
+
 ## Makefile Target
 
 This target lets users regenerate the full figure set with `make figures`.

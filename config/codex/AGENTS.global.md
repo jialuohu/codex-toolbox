@@ -1,13 +1,13 @@
 ## Response style
 
-Lead with the result. Write in a concise, factual, newspaper style. Use the shortest complete wording, retaining definitions, units, evidence, and qualifications. Omit repetition, filler, and closing offers.
+Lead with the result in concise, factual newspaper style. Retain definitions, units, evidence, and qualifications; omit repetition, filler, and closing offers.
 
 For conversations, artifacts, and optional skill guidance:
 
-- Use established terms and source definitions. Do not invent technical labels, acronyms, or frameworks. Without a standard term, describe plainly. Define jargon at first use.
-- Explain mechanisms using practical inputs, operations, and results when useful. Label hypothetical numbers. No analogies or metaphors unless explicitly requested.
-- Substantive problem, cause, limitation, and performance claims need citations to inspected sources, code, observations, tests, or calculations beside them. State what the evidence establishes or leaves unknown.
-- Support new ideas with evidence and rationale; state assumptions and needed validation. Distinguish facts, proposals, and unknowns. Do not claim untested ideas work.
+- Use established terms and source definitions; never invent technical labels, acronyms, or frameworks. Otherwise describe plainly. Define jargon at first use.
+- Explain mechanisms with practical inputs, operations, and results. Label hypothetical numbers. No analogies or metaphors unless explicitly requested.
+- Cite inspected sources, code, observations, tests, or calculations beside substantive problem, cause, limitation, and performance claims. State what evidence establishes or leaves unknown.
+- Support ideas with evidence and rationale; state assumptions and validation needed. Distinguish facts, proposals, and unknowns. Never claim untested ideas work.
 - Keep documents, slides, diagrams, and interfaces focused. Use short labels, compact traceable citations, and notes/appendices for supporting detail as needed. No fixed word limits.
 
 ## Readability and visuals
@@ -53,7 +53,7 @@ Use owning installed MCPs/apps/skills, `tool_search` for hidden tools, and `rg`,
 - Use `$wechat-digest` for configured WeChat subscriptions; read its selected operation reference. Current reading and incremental delivery have separate contracts. Defuddle: standalone articles. `$community-research`: public threads.
 - Use `$mineru-document-extraction` for complex scanned/OCR/layout-sensitive local documents; keep outputs/caches outside Git/Obsidian. Use simple readers for born-digital files.
 - PixelLab: requested pixel-art game assets only; creation can spend credits and remains prompt-gated.
-- Prefer task-scoped temporary output. `$drawio` owns explicit native, multi-page, WYSIWYG; `$paper-figure-workflow` owns publication pipelines. Native inline Mermaid is explicit-only or a disclosed fallback.
+- Use task-scoped temporary output. App then format overrides defaults: `$omnigraffle-workflow` for OmniGraffle/`.graffle`; `$drawio` owns explicit native, multi-page, WYSIWYG; `$paper-figure-workflow` owns publication pipelines. Inline Mermaid: explicit-only or disclosed fallback.
 - `$mono-color`: research graph palettes and one/two-ink editorial images. Keep existing scientific figure tools; palette requests do not generate artwork.
 - Use `$paper-library-intake` for one public paper's discovery/Zotero check/classification/authorized import. Its workflow owns identifier checks and filing. Never enable Sci-Hub or infer permission for merge, deletion, indexing, or unrelated cleanup.
 - Private review assignments: `$paper-review-sync`; intake: `$paper-review-library-intake`; pages: `$paper-review-page`. Never send confidential submissions to public search or scraping.

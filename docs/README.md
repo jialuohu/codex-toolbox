@@ -9,7 +9,7 @@ Commands run from the repository root. Guides cover setup and usage; the owning
 | Task | Guide covers |
 |---|---|
 | [Install or update](setup.md) | Device prerequisites, authentication, sync, instructions, pets |
-| [Create diagrams](diagrams.md) | Archify, Mermaid, draw.io, paper figures |
+| [Create diagrams](diagrams.md) | Archify, Mermaid, draw.io, OmniGraffle, paper figures |
 | [Use Mail.app](apple-mail.md) | Local accounts, indexing, attachments, drafts |
 | [Use explicit multi-account Gmail](gmail.md) | gws installation, OAuth, account profiles |
 | [Edit Overleaf projects](overleaf.md) | Git-backed setup and guarded edits |

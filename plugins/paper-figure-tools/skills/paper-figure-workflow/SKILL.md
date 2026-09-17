@@ -21,10 +21,12 @@ Prefer the repo's conventions when they are clear. Otherwise use `figures_src/` 
 
 ## Diagram Workflow
 
-Use draw.io or diagrams.net for AI/ML/system pipeline and architecture diagrams.
+Explicit application choice takes precedence, followed by the existing artifact format. Delegate OmniGraffle or `.graffle` to `$omnigraffle-workflow`; delegate draw.io, diagrams.net or `.drawio` to `$drawio`. Otherwise retain draw.io as this publication pipeline's default.
+
+- Preserve native `.graffle` sources when OmniGraffle owns drawing. The native owner checks available exports; SVG is conditional on application support. This skill owns publication directories, regeneration commands, and cross-figure checks.
 
 - Use `$drawio` for native `.drawio` creation, page-level MCP inspection or edits, browser opening, specialized shape search, and Desktop export. This skill remains responsible for the publication directory layout, regeneration command, and cross-figure quality bar.
-- Keep `.drawio` source files under the chosen source directory.
+- Keep native source files under the chosen source directory.
 - Use clean vector shapes, consistent alignment, limited color, readable labels, and publication-scale spacing.
 - Export final diagrams as both SVG and PDF under the generated figure directory.
 - Use the `$drawio` Desktop helper when available; manual export is acceptable when the repo documents it.

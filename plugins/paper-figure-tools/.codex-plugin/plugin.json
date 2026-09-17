@@ -1,6 +1,6 @@
 {
   "name": "paper-figure-tools",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Codex skills for reproducible AI/systems paper figure workflows.",
   "author": {
     "name": "Jialuo Hu",
@@ -10,7 +10,7 @@
   "interface": {
     "displayName": "Paper Figure Tools",
     "shortDescription": "Editable diagrams and publication plots.",
-    "longDescription": "Paper Figure Tools helps Codex set up reproducible AI/systems paper figure workflows with editable draw.io diagrams executed through Draw.io Tools, Matplotlib and SciencePlots plotting code, vector exports, and regeneration commands.",
+    "longDescription": "Paper Figure Tools helps Codex set up reproducible AI/systems paper figure workflows, delegates editable diagrams to Draw.io Tools or OmniGraffle Tools according to application choice and source format, and owns Matplotlib and SciencePlots plotting code, vector exports, and regeneration commands.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
