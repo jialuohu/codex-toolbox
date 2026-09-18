@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -24,10 +25,16 @@ CID = "33333333-3333-4333-8333-333333333333"
 SECOND_CID = "44444444-4444-4444-8444-444444444444"
 
 
+def connection(**changes):
+    return dict({"browser": "iab", "connected": True, "signed_in": True,
+                 "model": "GPT-6 Pro", "observed_at": 1000.}, **changes)
+
+
 def packet(**changes):
     result = dict(objective_key="test", objective="Plan an export filename fix",
                   requirements="Preserve Unicode and extensions",
-                  context="Inspected export.py save handler", snapshot="revision-one")
+                  context="Inspected export.py save handler", snapshot="revision-one",
+                  connection=connection())
     return dict(result, **changes)
 
 
@@ -61,7 +68,10 @@ class GlobalPlannerTests(unittest.TestCase):
     def new_store(self, task=TASK, probe=False):
         return planner.Store(self.state, task, probe, now=lambda: self.clock)
 
-    def cli(self, action, *args, payload=None, cwd=None):
+    def cli(self, action, *args, payload=None, cwd=None, refresh_connection=False):
+        payload = copy.deepcopy(payload)
+        if refresh_connection:
+            payload["connection"]["observed_at"] = time.time()
         return subprocess.run([sys.executable, str(SCRIPT), action, "--state-dir", str(self.state), *args],
                               input=json.dumps(payload) if payload is not None else "",
                               text=True, capture_output=True, cwd=cwd, timeout=10)
@@ -71,13 +81,14 @@ class GlobalPlannerTests(unittest.TestCase):
             function(*args, **kwargs)
         self.assertEqual(caught.exception.code, code)
 
-    def setup_global(self):
+    def setup_global(self, browser="iab"):
         probe = self.new_store(PROBE, True)
-        prepared = probe.plan("default", packet(context="private source must not enter probe"), True)
+        prepared = probe.plan("default", packet(context="private source must not enter probe",
+                                               connection=connection(browser=browser)), True)
         self.assertNotIn("private source", prepared["prompt"])
         probe.observe("default", prepared["request"]["id"],
                       browser_snapshot(prepared, SECOND_CID, "READY"))
-        probe.setup(prepared["request"]["id"])
+        probe.setup(prepared["request"]["id"], browser)
         return prepared
 
     def prepare(self, **changes):
@@ -88,8 +99,12 @@ class GlobalPlannerTests(unittest.TestCase):
         return self.store.observe("plan", prepared["request"]["id"], browser_snapshot(prepared, **changes))
 
     def test_status_and_missing_setup_are_read_only(self):
-        self.assertFalse(self.store.status()["ready"])
-        self.assertEqual(self.store.plan("plan", packet(), True)["reason"], "global_setup_required")
+        self.assertFalse(self.store.status()["configured"])
+        self.assertIsNone(self.store.status()["available"])
+        result = self.store.plan("plan", packet(), True)
+        self.assertEqual(result["reason"], "global_setup_required")
+        self.assertFalse(result["available"])
+        self.assertTrue(result["recovery"])
         self.assertFalse(self.state.exists())
 
     def test_mode_gates_skip_invalid_input_and_state_paths(self):
@@ -111,11 +126,11 @@ class GlobalPlannerTests(unittest.TestCase):
         bad = browser_snapshot(p, SECOND_CID, "READY")
         bad["model"] = "Another model"
         self.error("MODEL_NOT_CONFIRMED", probe.observe, "default", p["request"]["id"], bad)
-        self.assertFalse(probe.status()["ready"])
+        self.assertFalse(probe.status()["configured"])
         self.assertEqual(probe.observe("default", p["request"]["id"],
                                       browser_snapshot(p, SECOND_CID, "Wrong"))["reason"], "invalid_probe_reply")
         probe.observe("default", p["request"]["id"], browser_snapshot(p, SECOND_CID, "READY"))
-        self.assertTrue(probe.setup(p["request"]["id"])["ready"])
+        self.assertTrue(probe.setup(p["request"]["id"])["configured"])
 
     def test_probe_and_normal_conversations_are_separate_even_with_same_task_id(self):
         self.setup_global()
@@ -145,9 +160,11 @@ class GlobalPlannerTests(unittest.TestCase):
         a.mkdir()
         b.mkdir()
         first = json.loads(self.cli("plan", "--mode", "plan", "--task-id", TASK,
-                                   "--model-confirmed", payload=packet(), cwd=a).stdout)
+                                   "--model-confirmed", payload=packet(), cwd=a,
+                                   refresh_connection=True).stdout)
         second = json.loads(self.cli("plan", "--mode", "plan", "--task-id", TASK,
-                                    "--model-confirmed", payload=packet(), cwd=b).stdout)
+                                    "--model-confirmed", payload=packet(), cwd=b,
+                                    refresh_connection=True).stdout)
         self.assertEqual(first["action"], "create_browser")
         self.assertEqual(second["action"], "reconcile")
         self.assertEqual(first["request"]["id"], second["request"]["id"])
@@ -286,7 +303,7 @@ class GlobalPlannerTests(unittest.TestCase):
         self.setup_global()
         def call(_):
             return json.loads(self.cli("plan", "--mode", "plan", "--task-id", TASK,
-                                       "--model-confirmed", payload=packet()).stdout)
+                                       "--model-confirmed", payload=packet(), refresh_connection=True).stdout)
         with ThreadPoolExecutor(max_workers=4) as pool:
             results = list(pool.map(call, range(4)))
         self.assertEqual(sum(r["action"] == "create_browser" for r in results), 1)
@@ -322,7 +339,7 @@ class GlobalPlannerTests(unittest.TestCase):
         self.assertFalse((self.state / "state.v1.backup.json").exists())
         self.store.abandon("77777777-7777-4777-8777-777777777777", True, legacy=True)
         self.setup_global()
-        self.assertTrue(self.store.status()["ready"])
+        self.assertTrue(self.store.status()["configured"])
 
     def test_state_contains_metadata_only_and_private_permissions(self):
         p = self.prepare()
@@ -413,7 +430,7 @@ class GlobalPlannerTests(unittest.TestCase):
         self.error("RESPONSE_CHANGED", self.store.observe, "plan", p["request"]["id"], snapshot, "native")
 
     def test_repeated_setup_probes_can_measure_followups_without_task_context(self):
-        p = self.setup_global()
+        p = self.setup_global(browser="brave")
         probe = self.new_store(PROBE, True)
         probe.setup(p["request"]["id"], "brave")
         self.assertEqual(probe.status()["setup"]["browser"], "brave")
@@ -421,6 +438,98 @@ class GlobalPlannerTests(unittest.TestCase):
         self.assertEqual(q["action"], "send_browser")
         self.assertNotIn("secret fixture", q["prompt"])
         self.assertEqual(probe.plan("default", packet(objective_key="followup"), True)["action"], "reconcile")
+
+    def test_saved_setup_and_live_check_are_distinct_and_read_only(self):
+        self.assertEqual(self.store.check(connection())["reason"], "global_setup_required")
+        self.assertFalse(self.state.exists())
+        self.setup_global()
+        before = (self.state / "state.json").read_bytes()
+        status = self.store.status()
+        self.assertTrue(status["configured"])
+        self.assertIsNone(status["available"])
+        self.assertNotIn("ready", status)
+        self.assertTrue(self.store.check(connection())["available"])
+        self.assertEqual((self.state / "state.json").read_bytes(), before)
+        self.assertIsNone(self.new_store().status()["available"])
+
+    def test_unavailable_connection_never_reserves_a_request(self):
+        self.setup_global()
+        cases = [(None, "live_check_required"),
+                 (connection(browser="brave"), "browser_mismatch"),
+                 (connection(connected=False, signed_in=None, model=None), "browser_unavailable"),
+                 (connection(signed_in=None, model=None), "login_unknown"),
+                 (connection(signed_in=False, model=None), "signed_out"),
+                 (connection(model="GPT-6"), "model_not_available"),
+                 (connection(observed_at=879), "connection_observation_expired"),
+                 (connection(observed_at=1001), "connection_observation_expired"),
+                 (connection(observed_at=10**1000), "connection_observation_expired")]
+        before = (self.state / "state.json").read_bytes()
+        for observation, reason in cases:
+            with self.subTest(reason=reason):
+                result = self.store.plan("plan", packet(connection=observation), True)
+                self.assertEqual(result["reason"], reason)
+                self.assertFalse(result["available"])
+                self.assertTrue(result["recovery"])
+                self.assertEqual((self.state / "state.json").read_bytes(), before)
+        self.assertIsNone(self.store.status()["task"])
+
+    def test_connection_schema_rejects_ambiguous_or_extra_fields(self):
+        self.setup_global()
+        for observation in ({}, [], connection(connected="true"), connection(signed_in=1),
+                            connection(observed_at=True), connection(observed_at=float("nan")),
+                            connection(observed_at=float("inf")), connection(browser="unknown"),
+                            connection(cookie="untrusted text"), connection(model=[])):
+            with self.subTest(observation=observation):
+                result = self.store.plan("plan", packet(connection=observation), True)
+                self.assertEqual(result["reason"], "invalid_connection_observation")
+                self.assertIsNone(self.store.status()["task"])
+
+    def test_freshness_boundary_and_every_new_send_require_check(self):
+        p = self.prepare(connection=connection(observed_at=880))
+        self.observe(p)
+        self.clock = 1121
+        self.assertEqual(self.store.plan("plan", packet(requirements="next"), True)["reason"],
+                         "connection_observation_expired")
+        q = self.store.plan("plan", packet(requirements="next",
+                                           connection=connection(observed_at=self.clock)), True)
+        self.assertEqual(q["action"], "send_browser")
+
+    def test_reconciliation_and_reuse_do_not_require_a_new_connection(self):
+        p = self.prepare()
+        self.assertEqual(self.store.plan("plan", packet(connection=None), True)["action"], "reconcile")
+        self.observe(p)
+        self.assertEqual(self.store.plan("plan", packet(connection=None), True)["action"], "reuse")
+        self.assertNotIn("observed_at", p["prompt"])
+        self.assertNotIn("signed_in", p["prompt"])
+        self.assertNotIn("browser", p["prompt"])
+        self.assertNotIn("iab", p["prompt"])
+        self.assertNotIn("observed_at", (self.state / "state.json").read_text().replace("model_observed_at", ""))
+
+    def test_setup_cannot_relabel_probe_browser(self):
+        p = self.setup_global()
+        probe = self.new_store(PROBE, True)
+        self.error("PROBE_BROWSER_MISMATCH", probe.setup, p["request"]["id"], "brave")
+        self.assertEqual(probe.status()["setup"]["browser"], "iab")
+
+    def test_check_cli_has_no_write_side_effects(self):
+        observation = connection(observed_at=time.time())
+        result = self.cli("check", "--setup-probe", payload=observation)
+        self.assertTrue(json.loads(result.stdout)["available"])
+        self.assertFalse(self.state.exists())
+
+    def test_cli_expired_observation_cannot_reserve(self):
+        self.setup_global()
+        result = self.cli("plan", "--mode", "plan", "--task-id", TASK,
+                          "--model-confirmed", payload=packet())
+        self.assertEqual(json.loads(result.stdout)["reason"], "connection_observation_expired")
+        self.assertIsNone(self.store.status()["task"])
+
+    def test_documented_setup_command_resolves_completed_probe(self):
+        p = self.setup_global()
+        result = self.cli("setup", "--mode", "default", "--request-id", p["request"]["id"],
+                          "--browser", "iab")
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(json.loads(result.stdout)["configured"])
 
     def test_conflicting_legacy_backup_is_not_overwritten(self):
         self.legacy()

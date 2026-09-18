@@ -4822,8 +4822,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.11.1",
-        "workflow-tools plugin version must reflect global Pro planning",
+        workflow_plugin.get("version") == "0.12.0",
+        "workflow-tools plugin version must reflect live Pro connection checks",
     )
     require(
         "mcpServers" not in workflow_plugin,

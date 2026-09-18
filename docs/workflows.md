@@ -27,7 +27,7 @@ spec governance should be settled before implementation.
 ## ChatGPT Planner
 
 `$chatgpt-planner` consults GPT-6 Pro automatically in actual Codex Plan mode,
-across workspaces. One global setup creates readiness for this installation;
+across workspaces. One global setup configures this installation;
 each persistent Codex task gets its own ChatGPT conversation. Codex checks the
 advice and owns the final plan, implementation, and verification.
 
@@ -41,10 +41,12 @@ advice and owns the final plan, implementation, and verification.
 
 Ask `Use $chatgpt-planner setup globally` once. Follow the skill's
 [global setup](../plugins/workflow-tools/skills/chatgpt-planner/references/connection.md):
-sign into a connected browser, select GPT-6 Pro, and complete one
-synthetic probe. Brave was verified for this installation. A regular Chrome
-login does not sign a separate automation browser in.
+sign into the selected automation browser, select GPT-6 Pro, and complete one
+synthetic probe. New setups prefer the Codex in-app browser unless you choose
+another supported browser. Its login is separate from your regular browser.
 Setup is not operational until model selection and the complete probe are verified.
+Saved setup is not proof of a current connection: every new consultation checks
+the selected browser, sign-in, and exact model before reserving a request.
 
 The first planning request creates the chat through supported browser controls.
 Native Codex messaging is preferred only when the exact browser-created
@@ -59,7 +61,11 @@ actual usage is available.
 
 Private metadata lives under
 `${CODEX_HOME:-$HOME/.codex}/state/chatgpt-planner`. Use `$chatgpt-planner status`
-for global readiness and optionally provide the persistent Codex task ID.
+for saved configuration and optionally provide the persistent Codex task ID.
+`configured` records completed setup; `available: null` means the current browser
+has not been checked. A live check reports a specific recovery action when the
+browser is missing, signed out, or cannot confirm GPT-6 Pro. It never silently
+switches browser sessions or claims a stored setup guarantees current access.
 There are no project bindings. The Python 3.9+ helper stores hashes, IDs, and
 status, not prompt/reply text. Legacy state is backed up before migration;
 unresolved legacy requests block activation.

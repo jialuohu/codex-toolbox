@@ -8,6 +8,7 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import stat
@@ -24,7 +25,21 @@ MAX_PROMPT_CHARS = 18_000
 REPLY_TARGET_CHARS = 6_000
 MAX_REPLY_CHARS = 20_000
 DEADLINE_SECONDS = 900
+CONNECTION_MAX_AGE_SECONDS = 120
+BROWSERS = ("iab", "brave", "chrome", "edge")
 MODEL = "GPT-6 Pro"
+
+RECOVERY = {
+    "global_setup_required": "Run explicit global setup in the selected browser.",
+    "live_check_required": "Inspect the current browser inventory and ChatGPT tab before preparing a new request.",
+    "invalid_connection_observation": "Provide only the documented fields from a fresh browser observation.",
+    "connection_observation_expired": "Inspect the selected browser again; do not reuse or redate an old observation.",
+    "browser_mismatch": "Use the configured browser, or run explicit setup to change it; do not silently switch.",
+    "browser_unavailable": "Expose the configured browser to this task; for an external browser, check Settings > Computer Use and its extension.",
+    "login_unknown": "Open ChatGPT in the selected automation browser and inspect its sign-in state.",
+    "signed_out": "Show the exact automation tab and let the user sign into ChatGPT there.",
+    "model_not_available": "Use visible model controls to select and confirm GPT-6 Pro in the selected tab.",
+}
 
 
 class PlannerError(Exception):
@@ -237,14 +252,55 @@ class Store:
     def status(self):
         state = self._read()
         if state["version"] == 1:
-            return {"action": "status", "ready": False, "migration_required": True,
+            return {"action": "status", "configured": False, "available": None,
+                    "reason": "global_setup_required", "migration_required": True,
                     "pending_legacy_requests": [
                         r for r in state["requests"].values() if r.get("status") == "pending"]}
-        return {"action": "status", "ready": bool(state.get("setup")),
+        return {"action": "status", "configured": bool(state.get("setup")),
+                "available": None,
+                "reason": "live_check_required" if state.get("setup") else "global_setup_required",
                 "setup": state.get("setup"),
                 "task": state["tasks"].get(self.task_key) if self.task_key else None,
                 "requests": [r for r in state["requests"].values()
                              if self.task_key and r["task_key"] == self.task_key]}
+
+    def _connection(self, state, observation):
+        """Validate caller-observed UI facts, never infer or cache browser availability."""
+        configured = state["version"] == 2 and bool(state.get("setup"))
+        reason = None
+        if not configured and not self.probe:
+            reason = "global_setup_required"
+        elif observation is None:
+            reason = "live_check_required"
+        elif (not isinstance(observation, dict) or set(observation) != {
+                "browser", "connected", "signed_in", "model", "observed_at"}
+              or observation["browser"] not in BROWSERS
+              or type(observation["connected"]) is not bool
+              or (observation["signed_in"] is not None and type(observation["signed_in"]) is not bool)
+              or (observation["model"] is not None and not isinstance(observation["model"], str))
+              or type(observation["observed_at"]) not in (int, float)
+              or (type(observation["observed_at"]) is float and not math.isfinite(observation["observed_at"]))):
+            reason = "invalid_connection_observation"
+        elif (not 0 <= observation["observed_at"] <= self.now()
+              or self.now() - observation["observed_at"] > CONNECTION_MAX_AGE_SECONDS):
+            reason = "connection_observation_expired"
+        elif not self.probe and observation["browser"] != state["setup"]["browser"]:
+            reason = "browser_mismatch"
+        elif not observation["connected"]:
+            reason = "browser_unavailable"
+        elif observation["signed_in"] is None:
+            reason = "login_unknown"
+        elif not observation["signed_in"]:
+            reason = "signed_out"
+        elif observation["model"] != MODEL:
+            reason = "model_not_available"
+        result = {"action": "check", "configured": configured, "available": reason is None}
+        if reason:
+            result.update(reason=reason, recovery=RECOVERY[reason])
+        return result
+
+    def check(self, observation):
+        return self._connection(self._read(), observation)
 
     def _request(self, state, rid):
         request = state["requests"].get(identifier(rid))
@@ -260,8 +316,10 @@ class Store:
         if not self.probe:
             current = self._read()
             if current["version"] != 2 or not current.get("setup"):
-                return {"action": "unavailable", "reason": "global_setup_required"}
-        packet = packet_fields(packet)
+                return {**self._connection(current, None), "action": "unavailable"}
+        connection = packet.get("connection") if isinstance(packet, dict) else None
+        packet = packet_fields({k: v for k, v in packet.items() if k != "connection"}
+                               if isinstance(packet, dict) else packet)
         # Setup checks never serialize caller-supplied context.
         if self.probe:
             packet = {k: packet[k] if k == "objective_key" else "setup" for k in packet}
@@ -269,7 +327,7 @@ class Store:
         with self.transaction() as state:
             self._migrate(state)
             if not self.probe and not state.get("setup"):
-                return {"action": "unavailable", "reason": "global_setup_required"}
+                return {**self._connection(state, None), "action": "unavailable"}
             task = state["tasks"].get(self.task_key)
             candidates = [r for r in state["requests"].values() if r["key"] == key]
             if candidates:
@@ -289,13 +347,17 @@ class Store:
                 return {"action": "unavailable", "reason": "creation_unresolved"}
             if not model_confirmed:
                 return {"action": "unavailable", "reason": "model_not_confirmed"}
+            connection_result = self._connection(state, connection)
+            if not connection_result["available"]:
+                return {**connection_result, "action": "unavailable"}
             request = {"id": str(uuid.uuid4()), "task_id": self.task_id,
                        "task_key": self.task_key, "key": key,
                        "conversation_id": task.get("conversation_id") if task else None,
                        "snapshot": digest(packet["snapshot"]), "probe": self.probe,
                        "status": "pending", "created_at": self.now(),
                        "deadline": self.now() + DEADLINE_SECONDS,
-                       "transport": task["transport"] if task else "browser"}
+                       "transport": task["transport"] if task else "browser",
+                       "browser": connection["browser"]}
             prompt = make_prompt(request, packet)
             if native_text_length(prompt) > MAX_PROMPT_CHARS:
                 raise PlannerError("PROMPT_TOO_LARGE")
@@ -447,11 +509,14 @@ class Store:
             if (not request or not request["probe"] or request["status"] != "complete"
                     or "model_observed_at" not in request or not request["conversation_id"]):
                 raise PlannerError("COMPLETED_BROWSER_PROBE_REQUIRED")
-            if browser not in ("iab", "brave", "chrome", "edge"):
+            if browser not in BROWSERS:
                 raise PlannerError("UNSUPPORTED_BROWSER")
+            if request.get("browser") != browser:
+                raise PlannerError("PROBE_BROWSER_MISMATCH")
             state["setup"] = {"model": MODEL, "browser": browser, "probe_id": request["id"],
                               "verified_at": self.now(), "verification": "visible-model-and-completed-browser-probe"}
-            return {"action": "setup", "ready": True, "setup": state["setup"]}
+            return {"action": "setup", "configured": True, "available": None,
+                    "reason": "live_check_required", "setup": state["setup"]}
 
     def fallback(self, mode, rid):
         if not can_consult(mode, self.probe):
@@ -495,7 +560,7 @@ def read_input() -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("status", "plan", "observe", "setup", "fallback", "abandon"))
+    parser.add_argument("action", choices=("status", "check", "plan", "observe", "setup", "fallback", "abandon"))
     parser.add_argument("--state-dir", type=Path, default=default_state_dir())
     parser.add_argument("--mode", choices=("plan", "default", "unknown"), default="unknown")
     parser.add_argument("--task-id")
@@ -516,6 +581,8 @@ def main():
             store = Store(args.state_dir, args.task_id, args.setup_probe)
             if args.action == "status":
                 result = store.status()
+            elif args.action == "check":
+                result = store.check(read_input())
             elif args.action == "plan":
                 result = store.plan(args.mode, read_input(), args.model_confirmed)
             elif args.action == "observe":
