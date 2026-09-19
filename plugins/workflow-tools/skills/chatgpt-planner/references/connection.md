@@ -8,19 +8,55 @@ separately from `available`; availability is unknown until a live check.
 
 ## Verify the browser
 
-Use the user-selected supported browser and signed-in ChatGPT account. For new
-setups without an explicit browser choice, prefer the Codex in-app browser (`iab`)
-to avoid depending on a separate browser process and extension connection.
-Existing preferences change only through an explicitly requested setup and a
-successful probe in the selected browser; never silently switch browsers.
-Supported preference names are `brave`, `chrome`, `edge`, and `iab`; select the
-matching current browser inventory entry, never a stale numeric browser ID.
+Use the machine's current default HTTPS browser unless the user explicitly selects
+another browser. `system-default` is a selection policy, not a concrete browser or
+proof of a working connection. Resolve it before each new request:
+
+```text
+python3 scripts/planner_state.py browser
+```
+
+The read-only resolver uses macOS NSWorkspace or Linux's HTTPS MIME association;
+it neither launches the browser nor reads profiles, cookies, or account data.
+Unsupported or unknown defaults stop selection without falling back to `iab`.
+New installations default to `system-default`. Existing installations retain their
+saved choice until the user requests a preference change. For an authorized switch:
+
+```text
+python3 scripts/planner_state.py prefer-browser --mode default --browser system-default
+python3 scripts/planner_state.py browser
+```
+
+This saves the preference without asserting readiness or altering any conversation.
+`setup.browser` remains the concrete browser that passed the last probe. If the
+selected browser differs, complete a fresh probe there before new consultations.
+When the OS default changes later, resolve it again and verify it; do not silently
+continue in the old browser. Pending requests retain their original browser and
+conversation for reconciliation, never a second send in the new default.
+
+Explicit alternatives are `brave`, `chrome`, `edge`, `opera`, `vivaldi`, and `iab`.
+Select the matching current browser inventory entry, never a stale numeric ID.
 Read its current tool documentation. If signed out, show that exact automation
 tab and let the user sign in there. A different browser or panel may not share
 its session. Do not read credentials, cookies, or private application state.
-If an external browser is missing, reconnect it through the desktop app's
-Settings > Computer Use and its browser extension, then inspect the inventory
-again. Installed or running does not mean exposed to the current task.
+If browser tools are missing, check available tool discovery first. An installed or
+running browser is insufficient. Follow the [official browser connection steps](https://learn.chatgpt.com/docs/chrome-extension):
+connect the selected browser under Settings > Computer Use, enable its toggle,
+then attach it to the task with its `@`-mention, using the extension's profile.
+These are user UI actions when no browser tools are exposed. Do not claim a code
+change connected the browser, change site permissions, or automate the Codex UI.
+Inspect inventory again after attachment; if tools remain absent, a fresh task may
+be needed. Do not switch browsers to work around missing tools.
+
+For SSH or CLI use, distinguish the shell host from the machine providing GUI
+control. Resolve the default on the GUI host; never infer the client laptop's
+browser from a remote shell. A desktop connection, enabled feature flag, or a
+successful MCP startup does not prove the current CLI task has browser tools.
+If extension checks pass but tools are absent, start a fresh CLI task under the
+same host account and check its loaded MCP tools. Browser calls require genuine
+Codex session and turn metadata; do not fabricate identifiers in a standalone
+diagnostic. Do not restart a shared app-server while other work is active without
+the user's authorization. See [remote connections](https://learn.chatgpt.com/docs/remote-connections).
 
 Create a blank ChatGPT tab and use visible controls to select **GPT-6 Pro**.
 The current UI displays this as **6 Pro**: select Latest, then adjust the Power
@@ -49,11 +85,14 @@ and observe its exact visible request and response as described in
 Only after the helper accepts the completed probe, enable global readiness:
 
 ```text
-python3 scripts/planner_state.py setup --mode default --request-id <completed-probe-id> --browser iab
+python3 scripts/planner_state.py setup --mode default --request-id <completed-probe-id>
 python3 scripts/planner_state.py status
 ```
 
-The browser argument must match the browser actually observed for this probe.
+Setup uses the saved preference (initially `system-default`). To select an explicit
+alternative, use `--browser <name>` during setup. The resolved selection must match
+the concrete browser actually observed for this probe; the OS default is rechecked
+at setup completion so a mid-probe change cannot verify the wrong browser.
 Old probes without that evidence cannot establish or change the preference;
 perform a fresh probe instead. Existing configured installations remain readable.
 

@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -26,7 +27,8 @@ REPLY_TARGET_CHARS = 6_000
 MAX_REPLY_CHARS = 20_000
 DEADLINE_SECONDS = 900
 CONNECTION_MAX_AGE_SECONDS = 120
-BROWSERS = ("iab", "brave", "chrome", "edge")
+BROWSERS = ("iab", "brave", "chrome", "edge", "opera", "vivaldi")
+BROWSER_PREFERENCES = ("system-default", *BROWSERS)
 MODEL = "GPT-6 Pro"
 
 RECOVERY = {
@@ -34,8 +36,11 @@ RECOVERY = {
     "live_check_required": "Inspect the current browser inventory and ChatGPT tab before preparing a new request.",
     "invalid_connection_observation": "Provide only the documented fields from a fresh browser observation.",
     "connection_observation_expired": "Inspect the selected browser again; do not reuse or redate an old observation.",
-    "browser_mismatch": "Use the configured browser, or run explicit setup to change it; do not silently switch.",
-    "browser_unavailable": "Expose the configured browser to this task; for an external browser, check Settings > Computer Use and its extension.",
+    "browser_mismatch": "Resolve the selected browser again and inspect that exact browser; do not substitute another session.",
+    "browser_unavailable": "Connect the selected browser in Settings > Computer Use, then attach it to this task with its @-mention; installed or running is insufficient.",
+    "default_browser_unknown": "Check the OS default HTTPS browser setting; no browser was selected and no fallback is allowed.",
+    "default_browser_unsupported": "The OS default HTTPS handler is not a supported browser; explicitly choose a supported browser or change the OS default yourself.",
+    "browser_setup_required": "Complete a fresh synthetic setup probe in the selected browser; previous verification belongs to another browser.",
     "login_unknown": "Open ChatGPT in the selected automation browser and inspect its sign-in state.",
     "signed_out": "Show the exact automation tab and let the user sign into ChatGPT there.",
     "model_not_available": "Use visible model controls to select and confirm GPT-6 Pro in the selected tab.",
@@ -46,6 +51,56 @@ class PlannerError(Exception):
     def __init__(self, code: str):
         super().__init__(code)
         self.code = code
+
+
+def system_default_browser() -> dict:
+    """Read the local OS HTTPS association without launching or controlling a browser."""
+    if sys.platform == "darwin":
+        command = ["/usr/bin/osascript", "-l", "JavaScript", "-e", '''
+ObjC.import("AppKit");
+var app = $.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL(
+    $.NSURL.URLWithString("https://chatgpt.com"));
+ObjC.unwrap($.NSBundle.bundleWithURL(app).bundleIdentifier);
+''']
+        names = {"com.brave.Browser": "brave", "com.google.Chrome": "chrome",
+                 "com.microsoft.edgemac": "edge", "com.operasoftware.Opera": "opera",
+                 "com.vivaldi.Vivaldi": "vivaldi"}
+    elif sys.platform.startswith("linux"):
+        command = ["xdg-mime", "query", "default", "x-scheme-handler/https"]
+        names = {"brave-browser.desktop": "brave", "com.brave.Browser.desktop": "brave",
+                 "google-chrome.desktop": "chrome", "com.google.Chrome.desktop": "chrome",
+                 "microsoft-edge.desktop": "edge", "com.microsoft.Edge.desktop": "edge",
+                 "opera.desktop": "opera", "com.opera.Opera.desktop": "opera",
+                 "vivaldi-stable.desktop": "vivaldi", "com.vivaldi.Vivaldi.desktop": "vivaldi"}
+    else:
+        return {"browser": None, "reason": "default_browser_unknown"}
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10, check=True)
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return {"browser": None, "reason": "default_browser_unknown"}
+    identity = result.stdout.strip()
+    if not identity or len(identity) > 200 or not all(c.isalnum() or c in ".-_" for c in identity):
+        return {"browser": None, "reason": "default_browser_unknown"}
+    browser = names.get(identity)
+    return {"browser": browser, "os_handler": identity,
+            **({"reason": "default_browser_unsupported"} if browser is None else {})}
+
+
+def browser_preference(state: dict) -> str:
+    if state["version"] != 2:
+        return "system-default"
+    # Preserve previously configured choices until the user requests a change.
+    preference = state.get("browser_preference", (state.get("setup") or {}).get("browser", "system-default"))
+    if preference not in BROWSER_PREFERENCES:
+        raise PlannerError("UNSUPPORTED_BROWSER")
+    return preference
+
+
+def select_browser(preference: str) -> dict:
+    if preference not in BROWSER_PREFERENCES:
+        raise PlannerError("UNSUPPORTED_BROWSER")
+    selection = system_default_browser() if preference == "system-default" else {"browser": preference}
+    return {"preference": preference, **selection}
 
 
 def digest(value) -> str:
@@ -257,12 +312,31 @@ class Store:
                     "pending_legacy_requests": [
                         r for r in state["requests"].values() if r.get("status") == "pending"]}
         return {"action": "status", "configured": bool(state.get("setup")),
+                "browser_preference": browser_preference(state),
                 "available": None,
                 "reason": "live_check_required" if state.get("setup") else "global_setup_required",
                 "setup": state.get("setup"),
                 "task": state["tasks"].get(self.task_key) if self.task_key else None,
                 "requests": [r for r in state["requests"].values()
                              if self.task_key and r["task_key"] == self.task_key]}
+
+    def browser(self, preference=None):
+        state = self._read()
+        if state["version"] != 2:
+            return {**self.status(), "action": "browser"}
+        selection = select_browser(preference or browser_preference(state))
+        result = {"action": "browser", "available": None, **selection}
+        if selection.get("reason"):
+            result["recovery"] = RECOVERY[selection["reason"]]
+        return result
+
+    def prefer_browser(self, preference):
+        if preference not in BROWSER_PREFERENCES:
+            raise PlannerError("UNSUPPORTED_BROWSER")
+        with self.transaction() as state:
+            self._migrate(state)
+            state["browser_preference"] = preference
+        return {**self.status(), "action": "prefer-browser"}
 
     def _connection(self, state, observation):
         """Validate caller-observed UI facts, never infer or cache browser availability."""
@@ -284,16 +358,22 @@ class Store:
         elif (not 0 <= observation["observed_at"] <= self.now()
               or self.now() - observation["observed_at"] > CONNECTION_MAX_AGE_SECONDS):
             reason = "connection_observation_expired"
-        elif not self.probe and observation["browser"] != state["setup"]["browser"]:
-            reason = "browser_mismatch"
-        elif not observation["connected"]:
-            reason = "browser_unavailable"
-        elif observation["signed_in"] is None:
-            reason = "login_unknown"
-        elif not observation["signed_in"]:
-            reason = "signed_out"
-        elif observation["model"] != MODEL:
-            reason = "model_not_available"
+        else:
+            selection = select_browser(browser_preference(state)) if not self.probe else None
+            if selection and selection.get("reason"):
+                reason = selection["reason"]
+            elif selection and observation["browser"] != selection["browser"]:
+                reason = "browser_mismatch"
+            elif not observation["connected"]:
+                reason = "browser_unavailable"
+            elif observation["signed_in"] is None:
+                reason = "login_unknown"
+            elif not observation["signed_in"]:
+                reason = "signed_out"
+            elif observation["model"] != MODEL:
+                reason = "model_not_available"
+            elif not self.probe and observation["browser"] != state["setup"]["browser"]:
+                reason = "browser_setup_required"
         result = {"action": "check", "configured": configured, "available": reason is None}
         if reason:
             result.update(reason=reason, recovery=RECOVERY[reason])
@@ -502,21 +582,24 @@ class Store:
                                completed_transport=transport, completed_at=self.now())
             return {"action": "complete", "request": request, "reply": text}
 
-    def setup(self, probe_id, browser="iab"):
+    def setup(self, probe_id, browser=None):
         with self.transaction() as state:
             self._migrate(state)
             request = state["requests"].get(identifier(probe_id))
             if (not request or not request["probe"] or request["status"] != "complete"
                     or "model_observed_at" not in request or not request["conversation_id"]):
                 raise PlannerError("COMPLETED_BROWSER_PROBE_REQUIRED")
-            if browser not in BROWSERS:
-                raise PlannerError("UNSUPPORTED_BROWSER")
-            if request.get("browser") != browser:
+            preference = browser or browser_preference(state)
+            selection = select_browser(preference)
+            if selection.get("reason"):
+                raise PlannerError(selection["reason"].upper())
+            if request.get("browser") != selection["browser"]:
                 raise PlannerError("PROBE_BROWSER_MISMATCH")
-            state["setup"] = {"model": MODEL, "browser": browser, "probe_id": request["id"],
+            state["browser_preference"] = preference
+            state["setup"] = {"model": MODEL, "browser": selection["browser"], "probe_id": request["id"],
                               "verified_at": self.now(), "verification": "visible-model-and-completed-browser-probe"}
             return {"action": "setup", "configured": True, "available": None,
-                    "reason": "live_check_required", "setup": state["setup"]}
+                    "reason": "live_check_required", "browser_preference": preference, "setup": state["setup"]}
 
     def fallback(self, mode, rid):
         if not can_consult(mode, self.probe):
@@ -560,7 +643,7 @@ def read_input() -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("status", "check", "plan", "observe", "setup", "fallback", "abandon"))
+    parser.add_argument("action", choices=("status", "browser", "prefer-browser", "check", "plan", "observe", "setup", "fallback", "abandon"))
     parser.add_argument("--state-dir", type=Path, default=default_state_dir())
     parser.add_argument("--mode", choices=("plan", "default", "unknown"), default="unknown")
     parser.add_argument("--task-id")
@@ -568,19 +651,25 @@ def main():
     parser.add_argument("--setup-probe", action="store_true")
     parser.add_argument("--model-confirmed", action="store_true")
     parser.add_argument("--transport", choices=("browser", "native"), default="browser")
-    parser.add_argument("--browser", default="iab")
+    parser.add_argument("--browser", choices=BROWSER_PREFERENCES)
     parser.add_argument("--confirm-abandon", action="store_true")
     parser.add_argument("--legacy", action="store_true")
     args = parser.parse_args()
+    if args.action == "prefer-browser" and args.browser is None:
+        parser.error("prefer-browser requires --browser")
     try:
         if args.action in ("plan", "observe", "fallback") and not can_consult(args.mode, args.setup_probe):
             result = {"action": "skip", "reason": "not_plan_mode" if not args.setup_probe else "not_setup_mode"}
-        elif args.action in ("setup", "abandon") and args.mode != "default":
+        elif args.action in ("setup", "prefer-browser", "abandon") and args.mode != "default":
             result = {"action": "skip", "reason": "setup_requires_execution_mode"}
         else:
             store = Store(args.state_dir, args.task_id, args.setup_probe)
             if args.action == "status":
                 result = store.status()
+            elif args.action == "browser":
+                result = store.browser(args.browser)
+            elif args.action == "prefer-browser":
+                result = store.prefer_browser(args.browser)
             elif args.action == "check":
                 result = store.check(read_input())
             elif args.action == "plan":
@@ -597,8 +686,9 @@ def main():
         return 0
     except (PlannerError, OSError, ValueError, KeyError, TypeError, AttributeError):
         error = sys.exc_info()[1]
-        print(json.dumps({"ok": False, "error": error.code if isinstance(error, PlannerError)
-                         else "STATE_OR_INPUT_ERROR"}))
+        code = error.code if isinstance(error, PlannerError) else "STATE_OR_INPUT_ERROR"
+        print(json.dumps({"ok": False, "error": code,
+                          **({"recovery": RECOVERY[code.lower()]} if code.lower() in RECOVERY else {})}))
         return 1
 
 

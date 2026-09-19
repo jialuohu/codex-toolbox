@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -130,7 +131,7 @@ class GlobalPlannerTests(unittest.TestCase):
         self.assertEqual(probe.observe("default", p["request"]["id"],
                                       browser_snapshot(p, SECOND_CID, "Wrong"))["reason"], "invalid_probe_reply")
         probe.observe("default", p["request"]["id"], browser_snapshot(p, SECOND_CID, "READY"))
-        self.assertTrue(probe.setup(p["request"]["id"])["configured"])
+        self.assertTrue(probe.setup(p["request"]["id"], "iab")["configured"])
 
     def test_probe_and_normal_conversations_are_separate_even_with_same_task_id(self):
         self.setup_global()
@@ -478,6 +479,7 @@ class GlobalPlannerTests(unittest.TestCase):
         for observation in ({}, [], connection(connected="true"), connection(signed_in=1),
                             connection(observed_at=True), connection(observed_at=float("nan")),
                             connection(observed_at=float("inf")), connection(browser="unknown"),
+                            connection(browser="system-default"),
                             connection(cookie="untrusted text"), connection(model=[])):
             with self.subTest(observation=observation):
                 result = self.store.plan("plan", packet(connection=observation), True)
@@ -530,6 +532,126 @@ class GlobalPlannerTests(unittest.TestCase):
                           "--browser", "iab")
         self.assertEqual(result.returncode, 0)
         self.assertTrue(json.loads(result.stdout)["configured"])
+
+    def test_default_selection_is_dynamic_and_does_not_claim_connection(self):
+        with mock.patch.object(planner, "system_default_browser", return_value={"browser": "brave"}) as detect:
+            self.assertEqual(self.store.status()["browser_preference"], "system-default")
+            detect.assert_not_called()
+            first = self.store.browser()
+            self.assertEqual(first["browser"], "brave")
+            self.assertIsNone(first["available"])
+            detect.return_value = {"browser": "edge"}
+            self.assertEqual(self.store.browser()["browser"], "edge")
+        self.assertFalse(self.state.exists())
+
+    def test_legacy_browser_choice_remains_until_explicit_preference_change(self):
+        self.setup_global()
+        with self.store.transaction() as state:
+            del state["browser_preference"]
+        before = (self.state / "state.json").read_bytes()
+        with mock.patch.object(planner, "system_default_browser") as detect:
+            self.assertEqual(self.store.browser()["browser"], "iab")
+            self.assertTrue(self.store.check(connection())["available"])
+            detect.assert_not_called()
+        self.assertEqual((self.state / "state.json").read_bytes(), before)
+        result = self.store.prefer_browser("system-default")
+        self.assertIsNone(result["available"])
+        self.assertEqual(result["setup"]["browser"], "iab")
+        with mock.patch.object(planner, "system_default_browser", return_value={"browser": "brave"}):
+            self.assertEqual(self.store.check(connection())["reason"], "browser_mismatch")
+            self.assertEqual(self.store.check(connection(browser="brave"))["reason"], "browser_setup_required")
+            self.assertEqual(self.store.check(connection(browser="brave", connected=False))["reason"], "browser_unavailable")
+
+    def test_default_change_blocks_new_sends_without_changing_saved_conversation(self):
+        p = self.prepare()
+        self.store.prefer_browser("system-default")
+        with mock.patch.object(planner, "system_default_browser", return_value={"browser": "brave"}):
+            pending = self.store.plan("plan", packet(), True)
+            self.assertEqual(pending["action"], "reconcile")
+            self.assertEqual(pending["request"]["browser"], "iab")
+            self.observe(p)
+            self.assertEqual(self.store.plan("plan", packet(), True)["action"], "reuse")
+            before = (self.state / "state.json").read_bytes()
+            result = self.store.plan("plan", packet(requirements="new", connection=connection(browser="brave")), True)
+            self.assertEqual(result["reason"], "browser_setup_required")
+            self.assertEqual((self.state / "state.json").read_bytes(), before)
+            self.assertEqual(self.store.status()["task"]["conversation_id"], CID)
+
+    def test_system_default_setup_requires_matching_probe_then_detects_later_changes(self):
+        self.setup_global()
+        self.store.prefer_browser("system-default")
+        probe = self.new_store(OTHER, True)
+        p = probe.plan("default", packet(connection=connection(browser="brave")), True)
+        probe.observe("default", p["request"]["id"], browser_snapshot(p, CID, "READY"))
+        with mock.patch.object(planner, "system_default_browser", return_value={"browser": "edge"}) as detect:
+            self.error("PROBE_BROWSER_MISMATCH", probe.setup, p["request"]["id"])
+            detect.return_value = {"browser": "brave"}
+            result = probe.setup(p["request"]["id"])
+            self.assertEqual(result["browser_preference"], "system-default")
+            self.assertEqual(result["setup"]["browser"], "brave")
+            self.assertTrue(self.store.check(connection(browser="brave"))["available"])
+            request = self.store.plan("plan", packet(connection=connection(browser="brave")), True)
+            self.assertEqual(request["action"], "create_browser")
+            self.assertEqual(request["request"]["browser"], "brave")
+            detect.return_value = {"browser": "edge"}
+            self.assertEqual(self.store.check(connection(browser="brave"))["reason"], "browser_mismatch")
+            self.assertEqual(self.store.check(connection(browser="edge"))["reason"], "browser_setup_required")
+
+    def test_unresolved_default_never_uses_saved_browser_or_reserves(self):
+        self.setup_global()
+        self.store.prefer_browser("system-default")
+        before = (self.state / "state.json").read_bytes()
+        for reason in ("default_browser_unknown", "default_browser_unsupported"):
+            with mock.patch.object(planner, "system_default_browser", return_value={"browser": None, "reason": reason}):
+                result = self.store.plan("plan", packet(), True)
+                self.assertEqual(result["reason"], reason)
+                self.assertFalse(result["available"])
+                self.assertIsNone(self.store.browser()["browser"])
+        self.assertEqual((self.state / "state.json").read_bytes(), before)
+
+    def test_preference_cli_is_mode_gated_and_does_not_enable_setup(self):
+        missing = self.cli("prefer-browser", "--mode", "default")
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("requires --browser", missing.stderr)
+        skipped = self.cli("prefer-browser", "--mode", "plan", "--browser", "system-default")
+        self.assertEqual(json.loads(skipped.stdout)["action"], "skip")
+        self.assertFalse(self.state.exists())
+        changed = self.cli("prefer-browser", "--mode", "default", "--browser", "system-default")
+        self.assertFalse(json.loads(changed.stdout)["configured"])
+        self.assertIsNone(json.loads(changed.stdout)["available"])
+        self.assertEqual(self.store.status()["requests"], [])
+
+    def test_v1_browser_status_is_read_only_and_preference_migration_preserves_pending(self):
+        self.legacy(True)
+        before = (self.state / "state.json").read_bytes()
+        result = self.store.browser()
+        self.assertTrue(result["migration_required"])
+        self.assertIsNone(result["available"])
+        self.error("LEGACY_REQUESTS_PENDING", self.store.prefer_browser, "system-default")
+        self.assertEqual((self.state / "state.json").read_bytes(), before)
+        self.assertFalse((self.state / "state.v1.backup.json").exists())
+        self.store.abandon("77777777-7777-4777-8777-777777777777", True, legacy=True)
+        self.store.prefer_browser("system-default")
+        self.assertEqual(self.store.status()["browser_preference"], "system-default")
+        self.assertFalse(self.store.status()["configured"])
+
+    def test_os_detection_is_read_only_bounded_and_does_not_guess_unknown_handlers(self):
+        with mock.patch.object(planner.sys, "platform", "darwin"), mock.patch.object(planner.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, "com.brave.Browser\n")
+            self.assertEqual(planner.system_default_browser()["browser"], "brave")
+            self.assertEqual(run.call_args.args[0][0], "/usr/bin/osascript")
+            self.assertEqual(run.call_args.kwargs["timeout"], 10)
+            self.assertNotIn("shell", run.call_args.kwargs)
+            run.return_value.stdout = "com.apple.Safari\n"
+            self.assertEqual(planner.system_default_browser()["reason"], "default_browser_unsupported")
+            run.return_value.stdout = "untrusted\nmultiple lines"
+            self.assertEqual(planner.system_default_browser()["reason"], "default_browser_unknown")
+            run.side_effect = subprocess.TimeoutExpired("osascript", 10)
+            self.assertEqual(planner.system_default_browser()["reason"], "default_browser_unknown")
+        with mock.patch.object(planner.sys, "platform", "linux"), mock.patch.object(planner.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, "microsoft-edge.desktop\n")
+            self.assertEqual(planner.system_default_browser()["browser"], "edge")
+            self.assertEqual(run.call_args.args[0], ["xdg-mime", "query", "default", "x-scheme-handler/https"])
 
     def test_conflicting_legacy_backup_is_not_overwritten(self):
         self.legacy()

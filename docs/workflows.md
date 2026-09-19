@@ -42,11 +42,22 @@ advice and owns the final plan, implementation, and verification.
 Ask `Use $chatgpt-planner setup globally` once. Follow the skill's
 [global setup](../plugins/workflow-tools/skills/chatgpt-planner/references/connection.md):
 sign into the selected automation browser, select GPT-6 Pro, and complete one
-synthetic probe. New setups prefer the Codex in-app browser unless you choose
-another supported browser. Its login is separate from your regular browser.
+synthetic probe. New setups follow the machine's default HTTPS browser unless you
+explicitly choose another. The helper resolves the current OS setting on macOS
+and Linux; it does not infer a connection from an installed or running browser.
 Setup is not operational until model selection and the complete probe are verified.
 Saved setup is not proof of a current connection: every new consultation checks
 the selected browser, sign-in, and exact model before reserving a request.
+To switch an existing installation to the OS default, ask for that preference or
+run `python3 scripts/planner_state.py prefer-browser --mode default --browser system-default`
+from the skill directory. `python3 scripts/planner_state.py browser` reports the selected
+browser without claiming availability. A different browser needs a fresh setup
+probe; saved conversations and unresolved requests are preserved.
+
+When browser-control tools are absent, connect that browser under Settings >
+Computer Use and attach it to the task with its `@`-mention. Use the profile with
+the extension installed. See the [official connection guide](https://learn.chatgpt.com/docs/chrome-extension).
+No source or preference change can expose missing tools to a running task.
 
 The first planning request creates the chat through supported browser controls.
 Native Codex messaging is preferred only when the exact browser-created

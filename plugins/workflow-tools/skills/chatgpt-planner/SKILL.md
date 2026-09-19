@@ -15,7 +15,8 @@ subscription through supported browser and native Codex tools.
   and material clarification, before the final plan. This includes small tasks
   deliberately started in Plan mode; there is no complexity threshold.
 - **setup:** On a setup request, verify the signed-in browser and enable this
-  installation globally. Read [global setup](references/connection.md).
+  installation globally. Default to the machine's current default browser;
+  read [global setup](references/connection.md) for selection and connection repair.
 - **status:** Run `python3 scripts/planner_state.py status`, optionally with
   `--task-id <persistent-codex-task-id>`. This sends nothing and creates no state.
   `configured` means setup succeeded previously; `available: null` means current
@@ -36,7 +37,7 @@ Plan mode. The UI toggle alone starts no work; consult on the next planning turn
 1. Read global and task status. If `configured` is false, disclose that Pro did
    not participate and continue local planning. Do not ask for project binding.
    Saved setup never proves current access. Before reserving a new consultation,
-   inspect the configured browser in this task and provide a fresh connection
+   resolve the browser preference, inspect that browser in this task, and provide a fresh connection
    observation as specified in [transport](references/transport.md#live-connection-check).
    On failure, give the specific recovery action once and continue local planning;
    retry only after the connection changes or the user requests another check.
@@ -66,7 +67,9 @@ own planning pass and implementation review. Codex resolves disagreements.
 `$deep-planning` remains the architectural critique owner; neither adviser is a
 prerequisite for execution.
 
-The helper stores only private coordination metadata outside Git under
+The helper reads the OS default HTTPS handler when resolving `system-default`
+(macOS or Linux); this does not launch a browser or prove tool access.
+It stores only private coordination metadata outside Git under
 `${CODEX_HOME:-$HOME/.codex}/state/chatgpt-planner`. It never contacts ChatGPT,
 reads credentials, inspects repository content, or controls browsers. Python 3.9+
 is required. Setup is installation-wide, not automatically synchronized to other
