@@ -32,6 +32,7 @@ DOCUMENTATION_GUIDES = (
     "docs/coder.md",
     "docs/workflows.md",
     "docs/development.md",
+    "docs/typesafe.md",
 )
 STINKY_PENGUIN_DIR = ROOT / "config" / "codex" / "pets" / "stinky-penguin"
 STINKY_PENGUIN_MANIFEST = STINKY_PENGUIN_DIR / "pet.json"
@@ -5800,5 +5801,23 @@ def main() -> None:
     )
 
 
+def check_typesafe_contract() -> None:
+    """The opt-in wrapper owns its MCP; ordinary setup must not enable it."""
+    plugin = ROOT / "plugins/typesafe-tools"
+    manifest = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
+    mcp = json.loads((plugin / ".mcp.json").read_text())
+    require(manifest["version"] == "0.1.2", "TypeSafe contract version must be 0.1.2")
+    require(set(mcp["mcpServers"]) == {"typesafe"}, "TypeSafe must own one MCP server")
+    launch = mcp["mcpServers"]["typesafe"]
+    require(launch["command"] == "uv" and "--frozen" in launch["args"]
+            and "--no-env-file" in launch["args"], "TypeSafe runtime must be locked")
+    require((plugin / "server/.python-version").read_text().strip() == "3.12.13",
+            "TypeSafe Python runtime must be pinned")
+    require("typesafe" not in GLOBAL_AGENTS.read_text().lower(),
+            "TypeSafe routing belongs in its owning skill, not global instructions")
+    require((plugin / "server/uv.lock").is_file(), "TypeSafe dependency lock is required")
+
+
 if __name__ == "__main__":
     main()
+    check_typesafe_contract()

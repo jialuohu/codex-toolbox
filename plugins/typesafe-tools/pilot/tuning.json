@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "split": "tuning",
+  "cases": [
+    {
+      "id": "tuning-ranking-1",
+      "task": "ranking",
+      "category": "direct",
+      "question": "Which passage reports synthetic study T's memory use?",
+      "passages": [
+        {
+          "id": "a",
+          "text": "Study T reports 7 GiB peak memory.",
+          "provenance": {
+            "kind": "synthetic",
+            "author": "codex-toolbox",
+            "license": "CC0-1.0"
+          }
+        },
+        {
+          "id": "b",
+          "text": "Study T reports 9 ms latency.",
+          "provenance": {
+            "kind": "synthetic",
+            "author": "codex-toolbox",
+            "license": "CC0-1.0"
+          }
+        }
+      ],
+      "gold": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "id": "tuning-claim-1",
+      "task": "claim",
+      "category": "direct",
+      "question": "Study T used 7 GiB peak memory.",
+      "passages": [
+        {
+          "id": "a",
+          "text": "Study T reports 7 GiB peak memory during measurement; warmup was not measured.",
+          "provenance": {
+            "kind": "synthetic",
+            "author": "codex-toolbox",
+            "license": "CC0-1.0"
+          }
+        }
+      ],
+      "gold": "supported"
+    },
+    {
+      "id": "tuning-claim-2",
+      "task": "claim",
+      "category": "direct",
+      "question": "Study T used 8 GiB peak memory.",
+      "passages": [
+        {
+          "id": "a",
+          "text": "Study T reports 7 GiB peak memory during measurement; warmup was not measured.",
+          "provenance": {
+            "kind": "synthetic",
+            "author": "codex-toolbox",
+            "license": "CC0-1.0"
+          }
+        }
+      ],
+      "gold": "contradicted"
+    },
+    {
+      "id": "tuning-claim-3",
+      "task": "claim",
+      "category": "direct",
+      "question": "Study T used 10 GiB during warmup.",
+      "passages": [
+        {
+          "id": "a",
+          "text": "Study T reports 7 GiB peak memory during measurement; warmup was not measured.",
+          "provenance": {
+            "kind": "synthetic",
+            "author": "codex-toolbox",
+            "license": "CC0-1.0"
+          }
+        }
+      ],
+      "gold": "insufficient"
+    }
+  ]
+}

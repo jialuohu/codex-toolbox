@@ -1,0 +1,59 @@
+name: TypeSafe Tools
+
+on:
+  pull_request:
+    paths:
+      - ".agents/plugins/marketplace.json"
+      - ".github/workflows/typesafe-tools.yml"
+      - "plugins/typesafe-tools/**"
+      - "scripts/setup-typesafe-tools.py"
+      - "scripts/check-codex-toolbox-setup.py"
+      - "tests/test_typesafe_tools.py"
+  push:
+    branches: [main]
+    paths:
+      - ".agents/plugins/marketplace.json"
+      - ".github/workflows/typesafe-tools.yml"
+      - "plugins/typesafe-tools/**"
+      - "scripts/setup-typesafe-tools.py"
+      - "scripts/check-codex-toolbox-setup.py"
+      - "tests/test_typesafe_tools.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "plugins/typesafe-tools/server/uv.lock"
+      - name: Install frozen development environment
+        run: uv sync --frozen --project plugins/typesafe-tools/server
+      - name: Run offline runtime tests
+        run: uv run --frozen --project plugins/typesafe-tools/server pytest plugins/typesafe-tools/server/tests -q
+      - name: Verify package and installation contracts
+        run: python3 -m unittest tests.test_typesafe_tools
+      - name: Verify frozen pilot and offline scorer
+        run: |
+          python3 plugins/typesafe-tools/pilot/pilot.py validate
+          python3 -m unittest discover -s plugins/typesafe-tools/pilot -p 'test_*.py'
+      - name: Check runtime lint and types
+        working-directory: plugins/typesafe-tools/server
+        run: |
+          uv run --frozen ruff check src tests
+          uv run --frozen pyright
+      - name: Validate toolbox integration
+        run: python3 scripts/check-codex-toolbox-setup.py
+      - name: Scan current tree
+        run: scripts/privacy-audit.sh current
