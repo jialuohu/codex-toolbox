@@ -58,6 +58,7 @@ class SetupAppleMailToolsTest(unittest.TestCase):
         self.write_executable(
             "uv",
             "#!/bin/sh\n"
+            "printf 'APPLE_MAIL_RUNTIME_FINGERPRINT=%s\\n' \"${APPLE_MAIL_RUNTIME_FINGERPRINT:-}\" >> \"$FAKE_APPLE_MAIL_LOG\"\n"
             "printf 'UV_PROJECT_ENVIRONMENT=%s %s\\n' \"${UV_PROJECT_ENVIRONMENT:-}\" \"$*\" >> \"$FAKE_APPLE_MAIL_LOG\"\n"
             "if [ \"${FAKE_APPLE_MAIL_LOCK:-fresh}\" = stale ] && [ \"$1\" = lock ]; then exit 1; fi\n"
             "case \"$*\" in\n"
@@ -266,6 +267,95 @@ class SetupAppleMailToolsTest(unittest.TestCase):
         self.assertIn("runtime generation: ready", second.stdout)
         commands = self.log_file.read_text()
         self.assertEqual(commands.count("--reinstall-package apple-mail-tools"), 1)
+
+    def assert_uv_fingerprint(self, expected: str) -> None:
+        commands = self.log_file.read_text().splitlines()
+        fingerprints = [line.split("=", 1)[1] for line in commands
+                        if line.startswith("APPLE_MAIL_RUNTIME_FINGERPRINT=")]
+        uv_commands = [line for line in commands if line.startswith("UV_PROJECT_ENVIRONMENT=")]
+        self.assertTrue(fingerprints, "Expected uv calls with a source fingerprint")
+        self.assertEqual(len(fingerprints), len(uv_commands))
+        self.assertEqual(set(fingerprints), {expected})
+
+    def test_uv_install_and_check_export_computed_fingerprint_over_ambient_value(self) -> None:
+        self.install_fake_uv()
+        expected = self.source_fingerprint()
+        self.env["APPLE_MAIL_RUNTIME_FINGERPRINT"] = "0" * 64
+
+        installed = self.run_script("--install")
+
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        self.assert_uv_fingerprint(expected)
+        self.log_file.write_text("")
+
+        checked = self.run_script("--check")
+
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assert_uv_fingerprint(expected)
+        self.assertIn("lock --check", self.log_file.read_text())
+        self.assertIn("sync --frozen --check", self.log_file.read_text())
+
+    def test_recopied_source_with_new_timestamps_reuses_content_generation(self) -> None:
+        self.install_fake_uv()
+        copied_server = self.home / "refreshed-plugin-server"
+        ignore = shutil.ignore_patterns(".venv", ".pytest_cache", ".ruff_cache", "__pycache__")
+        shutil.copytree(SERVER, copied_server, ignore=ignore)
+        original_fingerprint = self.source_fingerprint(copied_server)
+        original_mtime = (copied_server / "pyproject.toml").stat().st_mtime_ns
+
+        installed = self.run_script("--install", server=copied_server)
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        runtime = self.generation_runtime(copied_server)
+        marker = runtime / "retain-on-reuse"
+        marker.write_text("existing generation")
+
+        # Model a plugin-cache refresh: the same location and bytes, newly copied files.
+        shutil.rmtree(copied_server)
+        shutil.copytree(SERVER, copied_server, ignore=ignore, copy_function=shutil.copyfile)
+        for path in copied_server.rglob("*"):
+            if path.is_file():
+                os.utime(path, ns=(original_mtime + 10_000_000_000,
+                                   original_mtime + 10_000_000_000))
+        self.assertNotEqual((copied_server / "pyproject.toml").stat().st_mtime_ns, original_mtime)
+        self.assertEqual(self.source_fingerprint(copied_server), original_fingerprint)
+
+        reused = self.run_script("--install", server=copied_server)
+        checked = self.run_script("--check", server=copied_server)
+
+        self.assertEqual(reused.returncode, 0, reused.stdout + reused.stderr)
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertIn("runtime generation: ready", reused.stdout)
+        self.assertEqual(marker.read_text(), "existing generation")
+        self.assertEqual(self.log_file.read_text().count("--reinstall-package apple-mail-tools"), 1)
+        self.assert_uv_fingerprint(original_fingerprint)
+
+    def test_changed_source_bytes_select_new_generation_and_new_uv_fingerprint(self) -> None:
+        self.install_fake_uv()
+        copied_server = self.home / "changed-plugin-server"
+        shutil.copytree(SERVER, copied_server,
+                        ignore=shutil.ignore_patterns(".venv", ".pytest_cache", ".ruff_cache", "__pycache__"))
+        previous_fingerprint = self.source_fingerprint(copied_server)
+        installed = self.run_script("--install", server=copied_server)
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        previous_runtime = self.generation_runtime(copied_server)
+        marker = previous_runtime / "retain-old-generation"
+        marker.write_text("original")
+        models = copied_server / "src/apple_mail_tools/models.py"
+        models.write_text(models.read_text() + "\n# changed source fingerprint fixture\n")
+        expected = self.source_fingerprint(copied_server)
+        self.assertNotEqual(expected, previous_fingerprint)
+        self.env["APPLE_MAIL_RUNTIME_FINGERPRINT"] = previous_fingerprint
+        self.log_file.write_text("")
+
+        replaced = self.run_script("--install", server=copied_server)
+        checked = self.run_script("--check", server=copied_server)
+
+        self.assertEqual(replaced.returncode, 0, replaced.stdout + replaced.stderr)
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertEqual(marker.read_text(), "original")
+        self.assertTrue(self.generation_runtime(copied_server).is_dir())
+        self.assertNotEqual(self.generation_runtime(copied_server), previous_runtime)
+        self.assert_uv_fingerprint(expected)
 
     def test_source_race_never_publishes_a_generation_stamp(self) -> None:
         self.install_fake_uv()

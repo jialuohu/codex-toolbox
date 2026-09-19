@@ -381,6 +381,11 @@ FINGERPRINT="$(source_fingerprint)"
 GENERATION_RUNTIME="$GENERATION_ENVS/$FINGERPRINT"
 RUNTIME_STAMP="$GENERATION_RUNTIME/.apple-mail-tools-source.sha256"
 readonly FINGERPRINT GENERATION_RUNTIME RUNTIME_STAMP
+# Plugin refreshes may replace identical files and change their timestamps.
+# Use the same content identity for uv freshness and immutable generations.
+APPLE_MAIL_RUNTIME_FINGERPRINT="$FINGERPRINT"
+export APPLE_MAIL_RUNTIME_FINGERPRINT
+readonly APPLE_MAIL_RUNTIME_FINGERPRINT
 
 ACTION="${1:-}"
 case "$ACTION" in

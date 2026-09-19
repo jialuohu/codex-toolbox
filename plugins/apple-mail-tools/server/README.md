@@ -28,5 +28,10 @@ generation. The legacy `${CODEX_HOME:-$HOME/.codex}/runtime/apple-mail-tools`
 environment is never mutated or removed by normal setup. `--prune` is a manual
 operation that removes only unlocked, unreferenced generations.
 
+Setup supplies the source fingerprint as uv's `APPLE_MAIL_RUNTIME_FINGERPRINT`
+cache key. Replacing a plugin cache with identical files therefore leaves its
+runtime current, even if file timestamps change. Actual source changes select a
+new generation. The strict dependency check and generation locks still apply.
+
 Mail remains the only send surface. This package has no programmatic send or
 permanent-delete operation.

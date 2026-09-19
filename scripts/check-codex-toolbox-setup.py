@@ -2205,11 +2205,11 @@ def validate_apple_mail_tools_contract(
     plugin = json.loads(APPLE_MAIL_PLUGIN.read_text())
     mcp = json.loads(APPLE_MAIL_MCP.read_text())
     require(plugin.get("name") == "apple-mail-tools", "Apple Mail plugin name must be exact")
-    require(plugin.get("version") == "0.2.1", "apple-mail-tools must use version 0.2.1")
+    require(plugin.get("version") == "0.2.2", "apple-mail-tools must use version 0.2.2")
     for path, pattern in (
-        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.1"$'),
-        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.1"$'),
-        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.1"$'),
+        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.2"$'),
+        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.2"$'),
+        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.2"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,

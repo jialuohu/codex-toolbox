@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "apple-mail-tools"
-version = "0.2.1"
+version = "0.2.2"
 description = "Guarded local Apple Mail MCP server."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -26,6 +26,11 @@ dev = [
 [tool.pytest.ini_options]
 addopts = ["-ra", "--strict-config"]
 testpaths = ["tests"]
+
+[tool.uv]
+# setup-apple-mail-tools.sh derives this from every runtime source input.
+# Replacing a plugin cache with identical bytes must not stale its generation.
+cache-keys = [{ env = "APPLE_MAIL_RUNTIME_FINGERPRINT" }]
 
 [tool.ruff]
 target-version = "py312"

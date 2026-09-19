@@ -1,0 +1,37 @@
+name: Apple Mail Tools
+
+on:
+  pull_request:
+    paths: &apple_mail_paths
+      - "plugins/apple-mail-tools/**"
+      - "scripts/setup-apple-mail-tools.sh"
+      - "scripts/setup-codex-toolbox.sh"
+      - "scripts/check-codex-toolbox-setup.py"
+      - "tests/test_apple_mail_tools.py"
+      - "tests/test_setup_apple_mail_tools.py"
+      - "tests/test_apple_mail_uv_cache.py"
+      - ".github/workflows/apple-mail-tools.yml"
+  push:
+    branches: [main]
+    paths: *apple_mail_paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+      - name: Verify immutable runtime and offline uv refresh behavior
+        run: python -m unittest tests.test_apple_mail_tools tests.test_setup_apple_mail_tools tests.test_apple_mail_uv_cache
+      - name: Validate package lock
+        run: uv lock --check --directory plugins/apple-mail-tools/server
+      - name: Scan current tree for private paths and secrets
+        run: scripts/privacy-audit.sh current
