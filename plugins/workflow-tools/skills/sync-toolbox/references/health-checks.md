@@ -5,6 +5,14 @@ the current machine and current project, not scheduled monitoring or complete
 user workflows. The Python helper collects and validates evidence; Codex owns
 native calls and authorized repairs.
 
+Sidebar symptoms belong to `$recover-codex-sidebar` inspection, not the health
+helper's repair catalog. Report installation, tool availability, storage adapter
+compatibility, and verified sidebar recovery separately. Successful setup or a
+backend project listing cannot prove client registrations or task associations.
+Health-only may diagnose the selected sidebar Mac and project host; it must not
+import layouts, register projects, move sections, change trust, or write recovery
+metadata to the app. Require an explicit restore request for that workflow.
+
 ## Collect and verify
 
 1. Resolve the installed skill directory and use

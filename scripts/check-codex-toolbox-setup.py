@@ -4840,8 +4840,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.13.0",
-        "workflow-tools plugin version must reflect installation health checks",
+        workflow_plugin.get("version") == "0.14.0",
+        "workflow-tools plugin version must reflect reliable sidebar recovery",
     )
     require(
         "mcpServers" not in workflow_plugin,

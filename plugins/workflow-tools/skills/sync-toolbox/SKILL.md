@@ -15,6 +15,13 @@ read-only diagnostics without updates, repairs, sign-in flows, or permission
 prompts. A status-only request also remains read-only; report checkout currency
 separately from component health.
 
+For reported missing sidebar projects or sections, route read-only inspection to
+`$recover-codex-sidebar`. A successful sync, installed skill, or available project
+API does not establish restored sidebar mappings. Identify the sidebar Mac and
+project host separately; health-only never authorizes a recovery or folder trust
+change. Use the recovery skill's compatibility diagnostic before suggesting
+manual registration, and require an explicit restore request before repairs.
+
 ## Inspect first
 
 - Resolve the checkout from `CODEX_TOOLBOX_ROOT` or the user's repository

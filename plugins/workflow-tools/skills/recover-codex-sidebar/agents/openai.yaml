@@ -1,6 +1,6 @@
 interface:
   display_name: "Recover Codex Sidebar"
-  short_description: "Restore project mappings after a Codex account switch."
-  default_prompt: "Use $recover-codex-sidebar to inspect and restore my missing sidebar project mappings after switching Codex accounts."
+  short_description: "Recover sidebar mappings across accounts, connections, and Macs."
+  default_prompt: "Use $recover-codex-sidebar to inspect and restore my missing sidebar projects and sections after an account or connection change, or from a selected existing Mac's layout. Preserve my destination choices and verify existing task associations."
 policy:
   allow_implicit_invocation: true

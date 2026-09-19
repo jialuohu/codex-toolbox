@@ -52,7 +52,7 @@ jobs:
       - name: Validate setup contracts
         run: python scripts/check-codex-toolbox-setup.py
       - name: Check instructions, evaluator refusal, and privacy
-        run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup tests.test_recover_codex_sidebar tests.test_chatgpt_planner tests.test_toolbox_health tests.test_setup_toolbox_health tests.test_health_command
+        run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup tests.test_recover_codex_sidebar tests.test_recover_codex_sidebar_v2 tests.test_chatgpt_planner tests.test_toolbox_health tests.test_setup_toolbox_health tests.test_health_command
       - name: Check whitespace
         env:
           INSTRUCTION_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

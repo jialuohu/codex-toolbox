@@ -21,7 +21,7 @@ Commands run from the repository root. Guides cover setup and usage; the owning
 | [Inspect Coder workspaces](coder.md) | CLI authentication and read-only access |
 | [Plan or explain work](workflows.md) | Plan-mode Pro consultation, Claude second opinions, explanations |
 | [Evaluate public evidence with Jev](typesafe.md) | Optional TypeSafe skill, local plugin installation, spending gate, research pilot |
-| [Recover Codex sidebar mappings](../plugins/workflow-tools/skills/recover-codex-sidebar/SKILL.md) | On-request macOS account-switch recovery, preview, verification, rollback |
+| [Recover Codex sidebar mappings](../plugins/workflow-tools/skills/recover-codex-sidebar/SKILL.md) | On-request macOS recovery after account or connection changes, new-Mac layout import, preview, verification, rollback |
 | [Develop, validate, or publish](development.md) | Instruction audits, repository checks, explicit shipping |
 
 ## Source map

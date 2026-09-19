@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "profiles": [
+    {
+      "id": "macos-remote-registry-26.911.61220-9647",
+      "adapter": "client-remote-registry-v2",
+      "bundle_id": "com.openai.codex",
+      "version": "26.911.61220",
+      "build": "9647",
+      "implementation_sha256": "9f4ce005ae6422a85758fe1d8e8f26e049f85026dc65618f6901fa65b0be35c0"
+    }
+  ]
+}
