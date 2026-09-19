@@ -191,6 +191,7 @@ SYNC_TOOLBOX_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "sync-toolbox" / "SKILL.md"
 )
 SYNC_TOOLBOX_OPENAI = SYNC_TOOLBOX_SKILL.parent / "agents" / "openai.yaml"
+TOOLBOX_HEALTH_SETUP = ROOT / "scripts" / "setup-toolbox-health.sh"
 CLAUDE_COUNSELOR_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "claude-counselor" / "SKILL.md"
 )
@@ -2355,9 +2356,16 @@ def validate_apple_mail_tools_contract(
         > script.index('for plugin in "${DEFAULT_PLUGINS[@]}"')
         and 'APPLE_MAIL_SERVER_DIR="$APPLE_MAIL_INSTALLED_SERVER_DIR" "$APPLE_MAIL_SETUP" --install'
         in script
-        and 'APPLE_MAIL_SERVER_DIR="$APPLE_MAIL_INSTALLED_SERVER_DIR" "$APPLE_MAIL_SETUP" --status'
-        in script,
+        and 'check_apple_mail_readiness "$APPLE_MAIL_INSTALLED_SERVER_DIR"' in script,
         "toolbox setup must install and health-check Apple Mail from the active plugin",
+    )
+    readiness = shell_function_blocks(script, "check_apple_mail_readiness")
+    require(
+        len(readiness) == 1
+        and 'if [ "$NON_INTERACTIVE" -eq 1 ]; then' in readiness[0]
+        and 'APPLE_MAIL_SERVER_DIR="$server_dir" "$APPLE_MAIL_SETUP" --check' in readiness[0]
+        and 'APPLE_MAIL_SERVER_DIR="$server_dir" "$APPLE_MAIL_SETUP" --status' in readiness[0],
+        "non-interactive setup must defer permission-capable Apple Mail status checks",
     )
     require(
         '"$APPLE_MAIL_SETUP" --prune' not in script,
@@ -2733,6 +2741,15 @@ def validate_docmost_tools_contract(
         and 'ensure_docmost_ready ""' in script
         and 'ensure_docmost_ready "$DOCMOST_INSTALLED_SERVER_DIR"' in script,
         "toolbox setup must run the Docmost install/status/login sequence",
+    )
+    docmost_readiness = shell_function_blocks(script, "ensure_docmost_ready")
+    require(
+        len(docmost_readiness) == 1
+        and 'if [ "$NON_INTERACTIVE" -eq 1 ]; then' in docmost_readiness[0]
+        and "docmost auth_required" in docmost_readiness[0]
+        and docmost_readiness[0].index('if [ "$NON_INTERACTIVE" -eq 1 ]; then')
+        < docmost_readiness[0].index('docmost_setup_command "$server_dir" --login'),
+        "non-interactive setup must defer Docmost login while preserving install failures",
     )
     installed_blocks = shell_function_blocks(script, "installed_docmost_server_dir")
     require(len(installed_blocks) == 1, "toolbox setup must resolve one installed Docmost distribution")
@@ -4823,8 +4840,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.12.0",
-        "workflow-tools plugin version must reflect live Pro connection checks",
+        workflow_plugin.get("version") == "0.13.0",
+        "workflow-tools plugin version must reflect installation health checks",
     )
     require(
         "mcpServers" not in workflow_plugin,
@@ -4858,9 +4875,37 @@ def main() -> None:
         {
             path.relative_to(SYNC_TOOLBOX_SKILL.parent).as_posix()
             for path in SYNC_TOOLBOX_SKILL.parent.rglob("*")
-            if path.is_file()
-        } == {"SKILL.md", "agents/openai.yaml"},
-        "sync-toolbox must remain instruction-only with SKILL.md and agents/openai.yaml",
+            if path.is_file() and "__pycache__" not in path.parts
+        } == {
+            "SKILL.md", "agents/openai.yaml", "scripts/health_check.py",
+            "scripts/skill_validation.py", "scripts/requirements.txt",
+            "references/health-probes.json", "references/health-checks.md",
+        },
+        "sync-toolbox must contain exactly its reviewed health implementation and instructions",
+    )
+    sync_toolbox_text = SYNC_TOOLBOX_SKILL.read_text()
+    for expected in (
+        "health-only", "--non-interactive", "references/health-checks.md",
+        "at most one targeted non-interactive repair", "Missing evidence is unverified",
+        "Needs your action", "Other failures and coverage gaps",
+    ):
+        require(expected in sync_toolbox_text, f"sync-toolbox must preserve {expected}")
+    require(
+        '--non-interactive) [ "$#" -eq 1 ] || exit 2; NON_INTERACTIVE=1 ;;' in script
+        and '"$ROOT/scripts/setup-toolbox-health.sh" --install' in script,
+        "full setup must support non-interactive mode and provision health dependencies",
+    )
+    require(
+        TOOLBOX_HEALTH_SETUP.exists() and TOOLBOX_HEALTH_SETUP.stat().st_mode & 0o111,
+        "toolbox health setup must exist and be executable",
+    )
+    health_setup = TOOLBOX_HEALTH_SETUP.read_text()
+    require(
+        (SYNC_TOOLBOX_SKILL.parent / "scripts/requirements.txt").read_text().strip()
+        == "PyYAML==6.0.3"
+        and 'PyYAML==6.0.3' in health_setup
+        and '"$ACTION" = --install' in health_setup,
+        "health parser dependency must be pinned and installation explicitly gated",
     )
     require(
         "Plan Mode" in workflow_interface.get("longDescription", ""),

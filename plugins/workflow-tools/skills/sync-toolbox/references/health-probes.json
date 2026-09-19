@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "probes": [
+    {"id":"docmost-auth","kind":"mcp","target":"docmost","plugin":"docmost-tools","adapter":"docmost","scope":"authentication","safety":"read_only","timeout_seconds":120,"repair_id":null,"result_fields":["ok","error.code"]},
+    {"id":"overleaf-config","kind":"mcp","target":"overleaf","plugin":"overleaf-tools","adapter":"overleaf","scope":"configuration","safety":"read_only","timeout_seconds":30,"repair_id":null,"result_fields":["ok","data.configured","data.projectCount","data.configuredTokenCount","data.errorCode"]},
+    {"id":"typesafe-readiness","kind":"mcp","target":"typesafe","plugin":"typesafe-tools","adapter":"typesafe","scope":"configuration","safety":"read_only","timeout_seconds":30,"repair_id":null,"result_fields":["ok","status","credential_configured","block_reasons"]},
+    {"id":"apple-mail-permission","kind":"mcp","target":"apple_mail","plugin":"apple-mail-tools","adapter":"apple_mail","scope":"runtime","safety":"may_prompt","timeout_seconds":30,"repair_id":null,"result_fields":[]},
+    {"id":"mermaid-runtime","kind":"plugin","target":"diagram-tools","plugin":"diagram-tools","adapter":"mermaid","scope":"runtime","safety":"read_only","timeout_seconds":30,"repair_id":"mermaid-update","result_fields":["returncode"]},
+    {"id":"archify-runtime","kind":"plugin","target":"diagram-tools","plugin":"diagram-tools","adapter":"archify","scope":"runtime","safety":"read_only","timeout_seconds":30,"repair_id":"archify-install","result_fields":["returncode"]},
+    {"id":"drawio-runtime","kind":"plugin","target":"drawio-tools","plugin":"drawio-tools","adapter":"drawio","scope":"runtime","safety":"read_only","timeout_seconds":30,"repair_id":"drawio-install","result_fields":["returncode"]},
+    {"id":"health-runtime","kind":"plugin","target":"workflow-tools","plugin":"workflow-tools","adapter":"health","scope":"runtime","safety":"read_only","timeout_seconds":30,"repair_id":"health-install","result_fields":["returncode"]}
+  ]
+}

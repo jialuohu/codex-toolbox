@@ -16,11 +16,14 @@ on:
       - "plugins/photo-tools/**"
       - "plugins/workflow-tools/skills/recover-codex-sidebar/**"
       - "plugins/workflow-tools/skills/chatgpt-planner/**"
+      - "plugins/workflow-tools/skills/sync-toolbox/**"
       - ".agents/plugins/marketplace.json"
       - "scripts/audit_skill_instructions.py"
       - "scripts/eval_skill_routing.py"
       - "scripts/instruction-audit-requirements.txt"
       - "scripts/check-codex-toolbox-setup.py"
+      - "scripts/setup-codex-toolbox.sh"
+      - "scripts/setup-toolbox-health.sh"
       - "tests/**"
       - ".github/workflows/skill-instructions.yml"
   push:
@@ -42,14 +45,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install development-only YAML parser
+      - name: Install pinned YAML parser for instruction and health validation
         run: python -m pip install -r scripts/instruction-audit-requirements.txt
       - name: Audit metadata, references, and invocation policy
         run: python scripts/audit_skill_instructions.py --check
       - name: Validate setup contracts
         run: python scripts/check-codex-toolbox-setup.py
       - name: Check instructions, evaluator refusal, and privacy
-        run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup tests.test_recover_codex_sidebar tests.test_chatgpt_planner
+        run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup tests.test_recover_codex_sidebar tests.test_chatgpt_planner tests.test_toolbox_health tests.test_setup_toolbox_health tests.test_health_command
       - name: Check whitespace
         env:
           INSTRUCTION_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

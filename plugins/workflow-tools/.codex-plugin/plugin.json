@@ -1,6 +1,6 @@
 {
   "name": "workflow-tools",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "Codex planning, independent counsel, explanations, sidebar recovery, toolbox synchronization, and explicit shipping skills.",
   "author": {
     "name": "Jialuo Hu"
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Workflow Tools",
     "shortDescription": "Plan, explain, recover sidebars, sync, and ship.",
-    "longDescription": "Workflow Tools packages ChatGPT Planner for global GPT-6 Pro consultation with one conversation per Codex task in Plan Mode, live browser availability checks before new requests, browser creation and native messaging when available, Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial critique, Recover Codex Sidebar for on-request macOS project mapping recovery after account switches, Sync Toolbox for applying the published toolbox to this machine, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
+    "longDescription": "Workflow Tools packages ChatGPT Planner for global GPT-6 Pro consultation with one conversation per Codex task in Plan Mode, live browser availability checks before new requests, browser creation and native messaging when available, Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial critique, Recover Codex Sidebar for on-request macOS project mapping recovery after account switches, Sync Toolbox for applying the published toolbox and checking installed plugin, MCP, and skill health with actionable diagnostics, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -24,6 +24,7 @@
       "Use $claude-counselor for bounded independent planning and final code review on major work.",
       "Use $ship-toolbox to validate, commit, push, refresh, and verify the current toolbox changes.",
       "Use $sync-toolbox to update this machine from published main and verify the full managed setup.",
+      "Use $sync-toolbox in health-only mode to check installed plugins, MCP servers, and skills without updates or repairs.",
       "Review this Plan Mode request for assumptions, risks, and routing."
     ]
   }

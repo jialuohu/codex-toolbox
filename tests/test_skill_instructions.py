@@ -86,6 +86,17 @@ class DiscoveryContractTests(unittest.TestCase):
         )
         self.assertNotIn("document_store", evaluator.discovery(packet))
 
+    def test_sync_health_reference_is_reachable_and_selected_only_on_request(self):
+        by_name = {row["name"]: row for row in self.report["skills"]}
+        path = "plugins/workflow-tools/skills/sync-toolbox/references/health-checks.md"
+        self.assertIn(path, by_name["sync-toolbox"]["references"])
+        packet = evaluator.prepare(ROOT, CASES, "fixture-model", "fixture-effort", "candidate-short")
+        selected = evaluator.lookup(packet, "sync-toolbox", [path])
+        self.assertEqual(set(selected["references"]), {path})
+        self.assertIn("Health-only performs no repairs", selected["references"][path])
+        self.assertIn("auth_status: unsupported", selected["references"][path])
+        self.assertIn("unverified", selected["references"][path])
+
     def test_preserved_imports_are_verbatim_and_reachable(self):
         original = {r["name"]: r for r in json.loads(BASELINE.read_text())["skills"]}
         for row in self.report["skills"]:

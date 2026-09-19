@@ -1,6 +1,6 @@
 ---
 name: sync-toolbox
-description: "Sync and apply the latest published codex-toolbox to this machine, or check whether its checkout and installed setup are current."
+description: "Sync published codex-toolbox, or check installed plugins, MCP servers, and skills for health and actionable setup problems. Health-only checks do not update or repair the machine."
 ---
 
 # Sync Toolbox
@@ -8,6 +8,12 @@ description: "Sync and apply the latest published codex-toolbox to this machine,
 Apply published `jialuohu/codex-toolbox` through its existing full setup. A clear
 request to update this machine authorizes this local sequence. Sync never
 stages, commits, pushes, or invokes `ship-toolbox`; publishing is a separate task.
+
+For **health-only**, skip the Git and rollout gates below and follow
+[health checks](references/health-checks.md). A dirty checkout is allowed. Run
+read-only diagnostics without updates, repairs, sign-in flows, or permission
+prompts. A status-only request also remains read-only; report checkout currency
+separately from component health.
 
 ## Inspect first
 
@@ -40,12 +46,13 @@ stages, commits, pushes, or invokes `ship-toolbox`; publishing is a separate tas
 3. Recheck clean state and fast-forward with `git merge --ff-only <selected-sha>`
    when behind. When already current, skip the merge and still apply setup.
    Require `HEAD` to equal the selected revision before continuing.
-4. Run `scripts/setup-codex-toolbox.sh` from that committed checkout. Use the
+4. Run `scripts/setup-codex-toolbox.sh --non-interactive` from that committed checkout. Use the
    production Git-backed marketplace on `main`; do not silently accept a local
    development mode or a different source/ref override. The setup script owns
    managed instructions, pets, default plugins, runtime dependencies, stale
    configuration migrations, and third-party marketplace pins. Do not duplicate
-   those mechanisms or broaden them to unrelated plugins or accounts.
+   those mechanisms or broaden them to unrelated plugins or accounts. Defer
+   Docmost login and permission-capable Apple Mail checks to the health report.
 5. Compare the installed toolbox plugins with the selected revision's plugin
    manifests. Include previously installed optional plugins, not just setup
    defaults. Marketplace upgrade may already refresh them; only repair remaining
@@ -68,15 +75,29 @@ stages, commits, pushes, or invokes `ship-toolbox`; publishing is a separate tas
 - Run `scripts/sync-agents.sh --check`,
   `python3 scripts/sync-codex-pets.py --check`, third-party plugin listings for
   marketplaces refreshed by setup, and `codex mcp list`. A successful MCP listing
-  proves configuration discovery, not authentication or server health; report
-  runtime/authentication results separately using available setup evidence.
+  proves configuration discovery, not authentication or server health.
+- Follow [health checks](references/health-checks.md) automatically after setup,
+  including when setup fails. Inventory all installed plugins, effective MCP
+  servers, and discoverable skills on this machine and in the current project.
+  Keep installation, runtime availability, and authentication evidence separate.
+  Missing evidence is unverified, never passed. Do not test real user workflows.
+- In an authorized sync, attempt at most one targeted non-interactive repair per
+  affected Toolbox-managed component using an existing reviewed owner command.
+  All Git, CI, revision, runtime-lock, optional-plugin, and enabled-state gates
+  still apply. Re-inventory and recheck affected dependencies after a repair.
+  Diagnose external plugins without modifying them; health-only never repairs.
 - Report the before/after SHA, CI evidence, setup result, installed version
-  changes, instruction/pet checks, and remaining limitations. Never claim
-  completion from a successful Git update alone.
+  changes, instruction/pet checks, and health coverage. Lead with a summary,
+  then **Needs your action**, then **Other failures and coverage gaps**. Group
+  shared dependency problems while retaining affected components. Each action
+  includes the observed problem, affected capabilities, exact next step, and
+  recheck instruction. Distinguish sync completion from runtime health; never
+  claim completion from a successful Git update or static check alone.
 
 ## Interrupted setup
 
-Stop at a failed setup step and report completed stages separately. Keep the
+Stop installation at a failed setup step, collect independent read-only health
+diagnostics with sync outcome `failed`, and report completed stages separately. Keep the
 selected SHA and plugin receipt for recovery; rerun from that same committed
 revision after resolving the cause. If remote `main` has moved, reselect and
 verify its CI before a new attempt instead of mixing revisions. Never bypass

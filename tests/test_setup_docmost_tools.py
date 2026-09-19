@@ -1158,6 +1158,28 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.assertLess(final_status, first_plugin)
         self.assertEqual(log.count("sync --frozen --no-dev --no-editable"), 1)
 
+    def test_global_setup_noninteractive_defers_auth_and_keeps_refreshing(self) -> None:
+        self.install_fake_uv()
+        self.install_fake_codex()
+        self.write_env()
+        self.env["FAKE_DOCMOST_AUTH"] = "auth"
+
+        result = subprocess.run(
+            ["bash", str(ROOT / "scripts" / "setup-codex-toolbox.sh"), "--non-interactive"],
+            cwd=ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Installed Apple Mail MCP entry is unavailable", result.stderr)
+        self.assertIn("docmost auth_required", result.stdout)
+        log = self.log_file.read_text()
+        self.assertNotIn("docmost-auth-internal login", log)
+        self.assertIn("codex plugin add docmost-tools@jialuo-codex-toolbox", log)
+
     def test_global_setup_recovers_an_expired_existing_profile(self) -> None:
         self.install_fake_uv()
         self.install_fake_codex()

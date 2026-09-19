@@ -1,6 +1,6 @@
 interface:
   display_name: "Sync Toolbox"
-  short_description: "Apply and verify the published toolbox on this machine."
-  default_prompt: "Use $sync-toolbox to update this machine from published main and verify the full managed setup."
+  short_description: "Sync Toolbox and report plugin, MCP, and skill health."
+  default_prompt: "Use $sync-toolbox to update this machine from published main, verify installed plugins, MCP servers, and skills, and list problems that need my action."
 policy:
   allow_implicit_invocation: true

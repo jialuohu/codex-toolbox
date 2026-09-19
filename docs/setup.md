@@ -93,6 +93,17 @@ Setup covers instructions, pets, default plugins, runtime dependencies, managed
 migrations, and third-party marketplace pins. Sync also checks previously
 installed optional toolbox plugins, preserving their selection and enabled state.
 
+Sync runs setup with `--non-interactive`, deferring Docmost login and Apple Mail
+checks that can request permissions. It then checks all installed plugins, MCP
+servers, and discoverable skills, including external plugins. Checks distinguish
+installation integrity, runtime availability, and authentication. Static file
+checks and an MCP listing do not prove a working connection or valid login.
+
+The report summarizes coverage and repairs, lists **Needs your action** with
+specific next steps, and separates other failures and unverified checks. Safe
+probes never perform paid calls, grant permissions, or execute user workflows.
+Only Toolbox-managed components are eligible for a targeted repair during sync.
+
 Status-only requests inspect without changing the machine. An update stops on
 unsafe Git state, unavailable or failed required CI, setup failures, and live
 runtime locks; it does not repair history or stop services automatically.
@@ -101,7 +112,14 @@ Sync does not commit or publish changes. Use the explicitly invoked
 
 ```text
 Use $sync-toolbox to update this machine from published main and verify the full managed setup.
+Use $sync-toolbox in health-only mode to check installed plugins, MCP servers, and skills without updates or repairs.
 ```
+
+Health-only works from a dirty checkout and does not require rollout. Reports
+default to stdout; optional JSON and Markdown files must stay outside Git.
+Unsupported live probes remain unverified. See the
+[health-check contract](../plugins/workflow-tools/skills/sync-toolbox/references/health-checks.md)
+for evidence, time limits, safe probes, and report commands.
 
 ## AGENTS.md Sync
 

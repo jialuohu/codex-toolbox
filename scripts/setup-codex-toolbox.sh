@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Parse before prerequisite installs or any other mutation.
+NON_INTERACTIVE=0
+case "${1:-}" in
+  "") [ "$#" -eq 0 ] || exit 2 ;;
+  --non-interactive) [ "$#" -eq 1 ] || exit 2; NON_INTERACTIVE=1 ;;
+  --help|-h)
+    echo "Usage: scripts/setup-codex-toolbox.sh [--non-interactive]"
+    echo "--non-interactive defers Docmost login and Apple Mail permission checks."
+    exit 0
+    ;;
+  *) echo "Usage: scripts/setup-codex-toolbox.sh [--non-interactive]" >&2; exit 2 ;;
+esac
+readonly NON_INTERACTIVE
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREREQUISITES="$ROOT/scripts/setup-codex-prerequisites.py"
 export CODEX_LOCAL_BIN_DIR="${CODEX_LOCAL_BIN_DIR:-$HOME/.local/bin}"
@@ -321,6 +335,10 @@ ensure_docmost_ready() {
     docmost_status=$?
   fi
   if [ "$docmost_status" -eq 3 ]; then
+    if [ "$NON_INTERACTIVE" -eq 1 ]; then
+      echo "Toolbox readiness deferred: docmost auth_required; run setup-docmost-tools.sh --login, then recheck health."
+      return 0
+    fi
     docmost_setup_command "$server_dir" --login
     docmost_setup_command "$server_dir" --status
     return
@@ -518,6 +536,16 @@ PY
 }
 
 APPLE_MAIL_SETUP="$ROOT/scripts/setup-apple-mail-tools.sh"
+check_apple_mail_readiness() {
+  local server_dir="$1"
+  if [ "$NON_INTERACTIVE" -eq 1 ]; then
+    APPLE_MAIL_SERVER_DIR="$server_dir" "$APPLE_MAIL_SETUP" --check
+    echo "Toolbox readiness deferred: apple_mail permission_check; run setup-apple-mail-tools.sh --status explicitly, then recheck health."
+  else
+    APPLE_MAIL_SERVER_DIR="$server_dir" "$APPLE_MAIL_SETUP" --status
+  fi
+}
+
 installed_apple_mail_server_dir() {
   local mcp_json
   if ! mcp_json="$("$CODEX_BIN" mcp get apple_mail --json)"; then
@@ -796,7 +824,9 @@ ensure_docmost_ready "$DOCMOST_INSTALLED_SERVER_DIR"
 APPLE_MAIL_INSTALLED_SERVER_DIR="$(installed_apple_mail_server_dir)"
 readonly APPLE_MAIL_INSTALLED_SERVER_DIR
 APPLE_MAIL_SERVER_DIR="$APPLE_MAIL_INSTALLED_SERVER_DIR" "$APPLE_MAIL_SETUP" --install
-APPLE_MAIL_SERVER_DIR="$APPLE_MAIL_INSTALLED_SERVER_DIR" "$APPLE_MAIL_SETUP" --status
+check_apple_mail_readiness "$APPLE_MAIL_INSTALLED_SERVER_DIR"
+
+"$ROOT/scripts/setup-toolbox-health.sh" --install
 
 DRAWIO_SETUP_ARGS=(--install)
 case "${CODEX_TOOLBOX_INSTALL_DRAWIO_DESKTOP:-0}" in
