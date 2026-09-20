@@ -209,7 +209,7 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
         mcp = json.loads(RESEARCH_MCP.read_text())
         prompts = manifest["interface"]["defaultPrompt"]
 
-        self.assertEqual(manifest["version"], "0.8.3")
+        self.assertEqual(manifest["version"], "0.8.4")
         self.assertLessEqual(len(prompts), 3)
         self.assertTrue(all(len(prompt) <= 128 for prompt in prompts))
         prompt_text = " ".join(prompts)
@@ -233,7 +233,7 @@ class ZoteroTodoistReadingTasksContractTests(unittest.TestCase):
             (SKILL, "`note-missing`"),
             (SETUP_CHECKER, "ZOTERO_TODOIST_READING_TASKS_SKILL"),
             (SETUP_CHECKER, "ZOTERO_TODOIST_READING_TASKS_OPENAI"),
-            (SETUP_CHECKER, 'research_plugin.get("version") == "0.8.3"'),
+            (SETUP_CHECKER, 'research_plugin.get("version") == "0.8.4"'),
             (SETUP_CHECKER, "research-tools must declare obsidian_files as a dependency"),
             (SETUP_CHECKER, "research-tools must not duplicate the Obsidian MCP server"),
         ):

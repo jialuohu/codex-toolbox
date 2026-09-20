@@ -2048,7 +2048,7 @@ def validate_overleaf_tools_contract(
     plugin = json.loads(OVERLEAF_PLUGIN.read_text())
     mcp = json.loads(OVERLEAF_MCP.read_text())
     require(plugin.get("name") == "overleaf-tools", "Overleaf plugin name must be exact")
-    require(plugin.get("version") == "0.1.3", "overleaf-tools must use version 0.1.3")
+    require(plugin.get("version") == "0.1.4", "overleaf-tools must use version 0.1.4")
     require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "Overleaf manifest must use neutral publisher metadata",
@@ -2059,9 +2059,9 @@ def validate_overleaf_tools_contract(
         "Overleaf manifest must register its MCP config",
     )
     for path, pattern in (
-        (OVERLEAF_PYPROJECT, r'(?m)^version = "0\.1\.3"$'),
-        (OVERLEAF_UV_LOCK, r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.3"$'),
-        (OVERLEAF_PACKAGE_INIT, r'(?m)^__version__ = "0\.1\.3"$'),
+        (OVERLEAF_PYPROJECT, r'(?m)^version = "0\.1\.4"$'),
+        (OVERLEAF_UV_LOCK, r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.4"$'),
+        (OVERLEAF_PACKAGE_INIT, r'(?m)^__version__ = "0\.1\.4"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2208,11 +2208,11 @@ def validate_apple_mail_tools_contract(
     plugin = json.loads(APPLE_MAIL_PLUGIN.read_text())
     mcp = json.loads(APPLE_MAIL_MCP.read_text())
     require(plugin.get("name") == "apple-mail-tools", "Apple Mail plugin name must be exact")
-    require(plugin.get("version") == "0.2.3", "apple-mail-tools must use version 0.2.3")
+    require(plugin.get("version") == "0.2.4", "apple-mail-tools must use version 0.2.4")
     for path, pattern in (
-        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.3"$'),
-        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.3"$'),
-        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.3"$'),
+        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.4"$'),
+        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.4"$'),
+        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.4"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2469,11 +2469,11 @@ def validate_docmost_tools_contract(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
-    require(plugin.get("version") == "0.8.2", "docmost-tools must use version 0.8.2")
+    require(plugin.get("version") == "0.8.3", "docmost-tools must use version 0.8.3")
     for path, pattern in (
-        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.8\.2"$'),
-        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.8\.2"$'),
-        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.8\.2"$'),
+        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.8\.3"$'),
+        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.8\.3"$'),
+        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.8\.3"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -5397,7 +5397,7 @@ def main() -> None:
     )
 
     require(
-        research_plugin.get("version") == "0.8.3",
+        research_plugin.get("version") == "0.8.4",
         "research-tools must use the current plugin release version",
     )
     lab_skill = DOCMOST_LAB_WIKI_SKILL.read_text()
@@ -5878,7 +5878,7 @@ def check_typesafe_contract() -> None:
     plugin = ROOT / "plugins/typesafe-tools"
     manifest = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
     mcp = json.loads((plugin / ".mcp.json").read_text())
-    require(manifest["version"] == "0.1.3", "TypeSafe contract version must be 0.1.3")
+    require(manifest["version"] == "0.1.4", "TypeSafe contract version must be 0.1.4")
     require(set(mcp["mcpServers"]) == {"typesafe"}, "TypeSafe must own one MCP server")
     launch = mcp["mcpServers"]["typesafe"]
     require(launch["command"] == "uv" and "--frozen" in launch["args"]

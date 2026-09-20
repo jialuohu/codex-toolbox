@@ -7,7 +7,7 @@ import fcntl
 import json
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -178,7 +178,7 @@ def _backend(config: WikiConfig) -> FastEmbedBackend:
 
 
 @contextmanager
-def _exclusive_lock(config: WikiConfig) -> Iterator[None]:
+def _exclusive_lock(config: WikiConfig) -> Generator[None]:
     path = config.secrets_dir / "docmost-lab-wiki.lock"
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:

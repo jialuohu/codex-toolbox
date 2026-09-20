@@ -3,7 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import ClassVar
@@ -52,7 +52,7 @@ def inherited_runtime_lock(
     root: Path,
     mode: str,
     monkeypatch: pytest.MonkeyPatch,
-) -> Iterator[None]:
+) -> Generator[None]:
     runtime_parent = root / "runtime"
     runtime_parent.mkdir(exist_ok=True)
     descriptor = open_runtime_lock(runtime_parent)

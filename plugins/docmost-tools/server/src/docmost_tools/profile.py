@@ -6,7 +6,7 @@ import fcntl
 import os
 import shutil
 import stat
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -115,7 +115,7 @@ def profile_paths(secrets_dir: Path | str | None = None) -> ProfilePaths:
 
 
 @contextmanager
-def profile_lock(paths: ProfilePaths) -> Iterator[None]:
+def profile_lock(paths: ProfilePaths) -> Generator[None]:
     """Hold the profile's nonblocking, process-wide exclusive lock."""
 
     paths.prepare_lock_directory()

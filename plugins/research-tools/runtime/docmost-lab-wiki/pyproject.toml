@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling==1.28.0"]
+requires = ["hatchling==1.32.3"]
 build-backend = "hatchling.build"
 
 [project]
@@ -17,9 +17,9 @@ docmost-lab-wiki = "docmost_lab_wiki.cli:main"
 
 [dependency-groups]
 dev = [
-  "pyright==1.1.408",
+  "pyright==1.1.414",
   "pytest==9.1.1",
-  "ruff==0.14.10",
+  "ruff==0.16.8",
 ]
 
 [tool.pytest.ini_options]

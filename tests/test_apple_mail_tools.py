@@ -30,12 +30,12 @@ class AppleMailToolsContractTests(unittest.TestCase):
         setup = TOOLBOX_SETUP.read_text()
 
         self.assertEqual(manifest["name"], "apple-mail-tools")
-        self.assertEqual(manifest["version"], "0.2.3")
-        self.assertIn('version = "0.2.3"', PYPROJECT.read_text())
+        self.assertEqual(manifest["version"], "0.2.4")
+        self.assertIn('version = "0.2.4"', PYPROJECT.read_text())
         self.assertRegex(
-            UV_LOCK.read_text(), r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.3"$'
+            UV_LOCK.read_text(), r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.4"$'
         )
-        self.assertIn('__version__ = "0.2.3"', PACKAGE_INIT.read_text())
+        self.assertIn('__version__ = "0.2.4"', PACKAGE_INIT.read_text())
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         entry = next(item for item in marketplace["plugins"] if item["name"] == manifest["name"])

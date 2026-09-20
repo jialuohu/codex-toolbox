@@ -56,7 +56,7 @@ The local plugin installer exports only TypeSafe Tools under
 `$CODEX_HOME/local-marketplaces/typesafe-tools-local`, registers that separate
 marketplace, and installs with `codex plugin add`. It leaves the published
 `jialuo-codex-toolbox` registration and other plugins unchanged. Source remains
-version `0.1.3`; exported versions receive a content-derived Codex cachebuster.
+version `0.1.4`; exported versions receive a content-derived Codex cachebuster.
 Exports are immutable under `exports/<source-sha256>`; updates atomically move
 the marketplace catalog pointer and retain previous exports. A colliding or
 modified export is rejected without overwriting it. Repeated setup verifies the

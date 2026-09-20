@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unicodedata
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -272,7 +272,7 @@ class GitProject:
         self._harden_repository()
 
     @contextmanager
-    def _locked(self) -> Iterator[None]:
+    def _locked(self) -> Generator[None]:
         ensure_private_directory(self.private_root / "locks")
         lock = FileLock(str(self.lock_path), timeout=self.lock_timeout)
         try:
@@ -477,7 +477,7 @@ class GitProject:
             )
 
     @contextmanager
-    def _worktree(self, revision: str) -> Iterator[Path]:
+    def _worktree(self, revision: str) -> Generator[Path]:
         temporary = Path(tempfile.mkdtemp(prefix="worktree-", dir=self.worktree_root))
         temporary.rmdir()
         added = False

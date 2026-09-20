@@ -1,6 +1,6 @@
 {
   "name": "typesafe-tools",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Optional bounded Jev evaluations with offline readiness and configurable spending controls.",
   "author": {
     "name": "Codex Toolbox Contributors"

@@ -29,14 +29,14 @@ class OverleafToolsContractTests(unittest.TestCase):
         manifest = json.loads(MANIFEST.read_text())
         marketplace = json.loads(MARKETPLACE.read_text())
         self.assertEqual(manifest["name"], "overleaf-tools")
-        self.assertEqual(manifest["version"], "0.1.3")
+        self.assertEqual(manifest["version"], "0.1.4")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
-        self.assertIn('version = "0.1.3"', PYPROJECT.read_text())
+        self.assertIn('version = "0.1.4"', PYPROJECT.read_text())
         self.assertRegex(
-            UV_LOCK.read_text(), r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.3"$'
+            UV_LOCK.read_text(), r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.4"$'
         )
-        self.assertIn('__version__ = "0.1.3"', PACKAGE_INIT.read_text())
+        self.assertIn('__version__ = "0.1.4"', PACKAGE_INIT.read_text())
         entry = next(item for item in marketplace["plugins"] if item["name"] == manifest["name"])
         self.assertEqual(
             entry["source"], {"source": "local", "path": "./plugins/overleaf-tools"}

@@ -6,7 +6,7 @@ import hashlib
 import os
 import re
 import stat
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -114,7 +114,7 @@ class PdfUploadValidator:
         self._max_bytes = max_bytes
 
     @contextmanager
-    def open(self, raw_path: str, expected_sha256: str) -> Iterator[ValidatedPdf]:
+    def open(self, raw_path: str, expected_sha256: str) -> Generator[ValidatedPdf]:
         """Validate, hash, and retain one immutable file descriptor until upload completes."""
 
         if _SHA256_PATTERN.fullmatch(expected_sha256) is None:
