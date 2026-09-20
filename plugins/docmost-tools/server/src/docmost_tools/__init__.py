@@ -1,6 +1,6 @@
 """Private adapter package for the local Docmost MCP integration."""
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"
 
 from .client import DocmostReadClient
 from .config import ApiProfile, DocmostSettings, WriteProfile

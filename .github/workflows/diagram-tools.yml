@@ -17,6 +17,8 @@ on:
       - "scripts/setup-codex-toolbox.sh"
       - "scripts/setup-archify-tools.sh"
       - "scripts/setup-diagram-tools.sh"
+      - "scripts/setup-diagram-publish.sh"
+      - "tests/test_diagram_publish*.py"
       - "tests/test_instruction_readability.py"
   push:
     branches: [main]
@@ -35,6 +37,8 @@ on:
       - "scripts/setup-codex-toolbox.sh"
       - "scripts/setup-archify-tools.sh"
       - "scripts/setup-diagram-tools.sh"
+      - "scripts/setup-diagram-publish.sh"
+      - "tests/test_diagram_publish*.py"
       - "tests/test_instruction_readability.py"
   workflow_dispatch:
 
@@ -78,6 +82,14 @@ jobs:
       - name: Run unit tests
         working-directory: plugins/diagram-tools
         run: npm test
+      - name: Test diagram publishing without Cloudflare access
+        run: python3 -m unittest discover -s tests -p 'test_diagram_publish*.py'
+      - name: Verify pinned publisher runtime without credentials
+        if: matrix.node == 22
+        run: |
+          scripts/setup-diagram-publish.sh --install-launcher
+          "$CODEX_LOCAL_BIN_DIR/diagram-publish" setup --install-runtime
+          scripts/setup-diagram-publish.sh --check
       - name: Verify approved fallback contract
         working-directory: plugins/diagram-tools
         run: npm run test:contract

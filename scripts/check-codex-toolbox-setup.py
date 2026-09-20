@@ -191,6 +191,8 @@ SYNC_TOOLBOX_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "sync-toolbox" / "SKILL.md"
 )
 SYNC_TOOLBOX_OPENAI = SYNC_TOOLBOX_SKILL.parent / "agents" / "openai.yaml"
+UPGRADE_TOOLBOX_SKILL = ROOT / "plugins/workflow-tools/skills/upgrade-toolbox/SKILL.md"
+UPGRADE_TOOLBOX_OPENAI = UPGRADE_TOOLBOX_SKILL.parent / "agents/openai.yaml"
 TOOLBOX_HEALTH_SETUP = ROOT / "scripts" / "setup-toolbox-health.sh"
 CLAUDE_COUNSELOR_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "claude-counselor" / "SKILL.md"
@@ -240,8 +242,9 @@ ARCHIFY_SHOWCASE_FIXTURES = (
     DIAGRAM_TOOLS_DIR / "tests" / "fixtures" / "archify-showcase"
 )
 ARCHIFY_SETUP = ROOT / "scripts" / "setup-archify-tools.sh"
-ARCHIFY_VERSION = "2.16.0"
-ARCHIFY_SHA256 = "4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46"
+ARCHIFY_VERSION = "2.17.0-dev.1"
+ARCHIFY_COMMIT = "72c750bb070d95171dbb2244e5b62b1b7da69c12"
+ARCHIFY_SHA256 = "d2296515b0091fb8f00580ea9e0b665d91ca5839fde651abe3ecd57a3ca178ec"
 DIAGRAM_WORKFLOW = ROOT / ".github" / "workflows" / "diagram-tools.yml"
 DRAWIO_TOOLS_DIR = ROOT / "plugins" / "drawio-tools"
 DRAWIO_TOOLS_PLUGIN = DRAWIO_TOOLS_DIR / ".codex-plugin" / "plugin.json"
@@ -803,8 +806,8 @@ def validate_design_engineering_tools_contract(
         "design-engineering-tools manifest name must be exact",
     )
     require(
-        design_plugin.get("version") == "0.1.0",
-        "design-engineering-tools manifest version must be 0.1.0",
+        design_plugin.get("version") == "0.1.1",
+        "design-engineering-tools manifest version must be 0.1.1",
     )
     require(
         design_plugin.get("skills") == "./skills/",
@@ -864,7 +867,7 @@ def validate_design_engineering_tools_contract(
         "design-engineering-tools provenance must cite the upstream URL",
     )
     require(
-        "70744e3816f1d93eafb697161a8b880a7384c5ff" in provenance_text,
+        "85e8e2363b713506e1d5b6e07a0eb2da66be1bc3" in provenance_text,
         "design-engineering-tools provenance must cite the upstream commit",
     )
     require(
@@ -955,7 +958,7 @@ def validate_design_engineering_tools_contract(
             "Documentation design-engineering section must cite the upstream URL",
         ),
         (
-            "70744e3816f1d93eafb697161a8b880a7384c5ff",
+            "85e8e2363b713506e1d5b6e07a0eb2da66be1bc3",
             "Documentation design-engineering section must cite the upstream commit",
         ),
         (
@@ -2045,7 +2048,7 @@ def validate_overleaf_tools_contract(
     plugin = json.loads(OVERLEAF_PLUGIN.read_text())
     mcp = json.loads(OVERLEAF_MCP.read_text())
     require(plugin.get("name") == "overleaf-tools", "Overleaf plugin name must be exact")
-    require(plugin.get("version") == "0.1.2", "overleaf-tools must use version 0.1.2")
+    require(plugin.get("version") == "0.1.3", "overleaf-tools must use version 0.1.3")
     require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "Overleaf manifest must use neutral publisher metadata",
@@ -2056,9 +2059,9 @@ def validate_overleaf_tools_contract(
         "Overleaf manifest must register its MCP config",
     )
     for path, pattern in (
-        (OVERLEAF_PYPROJECT, r'(?m)^version = "0\.1\.2"$'),
-        (OVERLEAF_UV_LOCK, r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.2"$'),
-        (OVERLEAF_PACKAGE_INIT, r'(?m)^__version__ = "0\.1\.2"$'),
+        (OVERLEAF_PYPROJECT, r'(?m)^version = "0\.1\.3"$'),
+        (OVERLEAF_UV_LOCK, r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.3"$'),
+        (OVERLEAF_PACKAGE_INIT, r'(?m)^__version__ = "0\.1\.3"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2205,11 +2208,11 @@ def validate_apple_mail_tools_contract(
     plugin = json.loads(APPLE_MAIL_PLUGIN.read_text())
     mcp = json.loads(APPLE_MAIL_MCP.read_text())
     require(plugin.get("name") == "apple-mail-tools", "Apple Mail plugin name must be exact")
-    require(plugin.get("version") == "0.2.2", "apple-mail-tools must use version 0.2.2")
+    require(plugin.get("version") == "0.2.3", "apple-mail-tools must use version 0.2.3")
     for path, pattern in (
-        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.2"$'),
-        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.2"$'),
-        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.2"$'),
+        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.3"$'),
+        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.3"$'),
+        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.3"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2466,11 +2469,11 @@ def validate_docmost_tools_contract(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
-    require(plugin.get("version") == "0.8.1", "docmost-tools must use version 0.8.1")
+    require(plugin.get("version") == "0.8.2", "docmost-tools must use version 0.8.2")
     for path, pattern in (
-        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.8\.1"$'),
-        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.8\.1"$'),
-        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.8\.1"$'),
+        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.8\.2"$'),
+        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.8\.2"$'),
+        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.8\.2"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2851,7 +2854,18 @@ def validate_diagram_tools_contract(
 
     plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
-    require(plugin.get("version") == "0.4.3", "diagram-tools manifest version must be 0.4.3")
+    require(plugin.get("version") == "0.5.0", "diagram-tools manifest version must be 0.5.0")
+    publisher = DIAGRAM_TOOLS_DIR / "skills" / "diagram-publish"
+    publisher_runtime = DIAGRAM_TOOLS_DIR / "runtime" / "publisher"
+    for relative in ("SKILL.md", "agents/openai.yaml", "scripts/diagram_publish.py"):
+        require((publisher / relative).is_file(), f"publisher must provide {relative}")
+    publisher_package = json.loads((publisher_runtime / "package.json").read_text())
+    publisher_lock = json.loads((publisher_runtime / "package-lock.json").read_text())
+    require(publisher_package["dependencies"] == {"wrangler": "4.135.0"}, "publisher Wrangler must be pinned")
+    require(publisher_lock["packages"]["node_modules/wrangler"]["version"] == "4.135.0", "publisher lock must match pin")
+    require((ROOT / "scripts" / "setup-diagram-publish.sh").is_file(), "publisher launcher setup must exist")
+    require('setup-diagram-publish.sh" --install-launcher' in SETUP_SCRIPT.read_text(), "toolbox setup installs only publisher launcher")
+    require("diagram-publish/SKILL.md" in ARCHIFY_SKILL.read_text(), "Archify delegates publishing to its owning skill")
     require(plugin.get("skills") == "./skills/", "diagram-tools must expose its skills directory")
     require(plugin.get("license") == "MIT", "diagram-tools manifest must declare MIT")
     require("mcpServers" not in plugin, "diagram-tools must remain skill-only")
@@ -2917,7 +2931,9 @@ def validate_diagram_tools_contract(
         archify_release.get("schemaVersion") == 1
         and archify_release.get("name") == "archify"
         and archify_release.get("version") == ARCHIFY_VERSION
-        and archify_release.get("tag") == f"v{ARCHIFY_VERSION}",
+        and archify_release.get("channel") == "development"
+        and archify_release.get("sourceCommit") == ARCHIFY_COMMIT
+        and "tag" not in archify_release,
         "Archify release manifest must pin the approved release identity",
     )
     archify_archive = archify_release.get("archive", {})
@@ -2925,7 +2941,7 @@ def validate_diagram_tools_contract(
         archify_archive.get("name") == "archify.zip"
         and archify_archive.get("sha256") == ARCHIFY_SHA256
         and archify_archive.get("url")
-        == f"https://github.com/tt-a1i/archify/releases/download/v{ARCHIFY_VERSION}/archify.zip",
+        == f"https://raw.githubusercontent.com/tt-a1i/archify/{ARCHIFY_COMMIT}/archify.zip",
         "Archify archive must pin the approved URL and SHA-256",
     )
     require(
@@ -2986,8 +3002,8 @@ def validate_diagram_tools_contract(
         "$paper-figure-workflow",
         "Visualize",
         "notification-only update checker",
-        "fonts.googleapis.com",
-        "fonts.gstatic.com",
+        "JetBrains Mono",
+        "SIL Open Font License 1.1",
         "brands capture <url>",
     ):
         require(expected in archify_skill_text, f"Archify skill must mention {expected}")
@@ -3122,8 +3138,8 @@ def validate_diagram_tools_contract(
     bootstrap_lock = json.loads((DIAGRAM_BOOTSTRAP / "package-lock.json").read_text())
     diagram_package = json.loads(DIAGRAM_TOOLS_PACKAGE.read_text())
     require(
-        diagram_package.get("version") == "0.4.3",
-        "Diagram Tools test package must track plugin version 0.4.3",
+        diagram_package.get("version") == "0.5.0",
+        "Diagram Tools test package must track plugin version 0.5.0",
     )
     diagram_scripts = diagram_package.get("scripts", {})
     require(
@@ -3181,12 +3197,12 @@ def validate_diagram_tools_contract(
         "graphical default",
         "task-scoped temporary directory",
         "contract-gated rolling runtime",
-        "v2.16.0",
+        ARCHIFY_VERSION,
         "New workflows use schema v2",
         "archify visual-check",
         "https://tt-a1i.github.io/archify/skill-updates/archify/stable.json",
-        "fonts.googleapis.com",
-        "fonts.gstatic.com",
+        "JetBrains Mono",
+        "SIL Open Font License 1.1",
     ):
         require(expected in readme_normalized, f"Documentation Diagram Tools section must mention {expected}")
     for expected in (
@@ -3463,7 +3479,7 @@ def validate_drawio_tools_contract(
         "paper-figure-workflow must delegate Draw.io execution without giving up pipeline ownership",
     )
     require(
-        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.4.3",
+        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.5.0",
         "diagram-tools version must reflect the Archify and Draw.io routing boundaries",
     )
     require(
@@ -3848,6 +3864,8 @@ def main() -> None:
     require(SHIP_TOOLBOX_SKILL.exists(), "workflow-tools must include ship-toolbox skill")
     require(SYNC_TOOLBOX_SKILL.exists(), "workflow-tools must include sync-toolbox skill")
     require(SYNC_TOOLBOX_OPENAI.exists(), "sync-toolbox must include OpenAI agent metadata")
+    require(UPGRADE_TOOLBOX_SKILL.is_file(), "workflow-tools must include upgrade-toolbox")
+    require(UPGRADE_TOOLBOX_OPENAI.is_file(), "upgrade-toolbox must include OpenAI metadata")
     require(
         SHIP_TOOLBOX_OPENAI.exists(),
         "ship-toolbox must include OpenAI agent metadata",
@@ -3919,7 +3937,7 @@ def main() -> None:
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
 
     require(web_data_plugin.get("name") == "web-data-tools", "web-data-tools name must be exact")
-    require(web_data_plugin.get("version") == "0.5.1", "web-data-tools must use version 0.5.1")
+    require(web_data_plugin.get("version") == "0.5.2", "web-data-tools must use version 0.5.2")
     require(
         web_data_plugin.get("skills") == "./skills/",
         "web-data-tools manifest must expose its community-research skill",
@@ -4276,8 +4294,8 @@ def main() -> None:
         "setup script must define the upstream UI/UX Pro Max marketplace source",
     )
     require(
-        'UI_UX_MARKETPLACE_REF="v2.10.0"' in script,
-        "setup script must pin UI/UX Pro Max to v2.10.0",
+        'UI_UX_MARKETPLACE_REF="v2.15.0"' in script,
+        "setup script must pin UI/UX Pro Max to v2.15.0",
     )
     require(
         'CONTEXT7_MARKETPLACE_NAME="context7-marketplace"' in script,
@@ -4840,14 +4858,23 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.15.0",
-        "workflow-tools plugin version must reflect system default browser selection",
+        workflow_plugin.get("version") == "0.16.0",
+        "workflow-tools plugin version must reflect upstream maintenance",
     )
     require(
         "mcpServers" not in workflow_plugin,
         "workflow-tools must not expose an MCP server",
     )
     workflow_interface = workflow_plugin.get("interface", {})
+    require(
+        "Upgrade Toolbox" in workflow_interface.get("longDescription", "")
+        and any("$upgrade-toolbox" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools metadata must expose Upgrade Toolbox",
+    )
+    require(
+        "## Upgrade Toolbox" in readme_text and "$upgrade-toolbox" in readme_text,
+        "Documentation must document Upgrade Toolbox",
+    )
     require(
         (WORKFLOW_PLUGIN.parent.parent / "skills/recover-codex-sidebar/SKILL.md").exists()
         and any("$recover-codex-sidebar" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
@@ -5370,7 +5397,7 @@ def main() -> None:
     )
 
     require(
-        research_plugin.get("version") == "0.8.2",
+        research_plugin.get("version") == "0.8.3",
         "research-tools must use the current plugin release version",
     )
     lab_skill = DOCMOST_LAB_WIKI_SKILL.read_text()
@@ -5851,7 +5878,7 @@ def check_typesafe_contract() -> None:
     plugin = ROOT / "plugins/typesafe-tools"
     manifest = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
     mcp = json.loads((plugin / ".mcp.json").read_text())
-    require(manifest["version"] == "0.1.2", "TypeSafe contract version must be 0.1.2")
+    require(manifest["version"] == "0.1.3", "TypeSafe contract version must be 0.1.3")
     require(set(mcp["mcpServers"]) == {"typesafe"}, "TypeSafe must own one MCP server")
     launch = mcp["mcpServers"]["typesafe"]
     require(launch["command"] == "uv" and "--frozen" in launch["args"]

@@ -22,7 +22,7 @@ class Packaging(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["policy"]["installation"], "AVAILABLE")
         manifest = json.loads((ROOT / "plugins/typesafe-tools/.codex-plugin/plugin.json").read_text())
-        self.assertEqual(manifest["version"], "0.1.2")
+        self.assertEqual(manifest["version"], "0.1.3")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
 
     def test_runtime_is_plugin_owned_and_frozen(self):

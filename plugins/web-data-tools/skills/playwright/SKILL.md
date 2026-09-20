@@ -41,6 +41,11 @@ export PWCLI="/absolute/path/to/this/skill/scripts/playwright_cli.sh"
 
 Do not assume this skill is installed under `~/.codex/skills`; it may be loaded from a plugin cache.
 
+Run `"$PWCLI" --version` before using the command examples. They were verified
+against `@playwright/cli` 0.1.21. For another resolved version, check its `--help`
+before using `requests`, `run-code`, or the configuration path; do not assume
+an older cached CLI supports the documented syntax.
+
 ## Quick start
 
 Use the wrapper script:

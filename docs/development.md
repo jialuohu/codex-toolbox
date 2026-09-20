@@ -5,6 +5,7 @@
 Run shell commands from the repository root. Read the owning skill before using a workflow.
 
 - [Repository checks](#repository-checks)
+- [Upgrade Toolbox](#upgrade-toolbox)
 - [Instruction Development Checks](#instruction-development-checks)
 - [Ship Toolbox](#ship-toolbox)
 
@@ -30,6 +31,27 @@ Keep the root README short. Put setup and usage details in the relevant guide,
 link new guides from the [index](README.md), and keep execution rules in owning
 skills. If documentation moves, update `DOCUMENTATION_GUIDES` in the setup
 checker and tests that read or mutate that documentation.
+
+## Upgrade Toolbox
+
+Use [Upgrade Toolbox](../plugins/workflow-tools/skills/upgrade-toolbox/SKILL.md)
+to audit upstream plugin, skill, MCP, and managed-marketplace sources. A check
+request or bare invocation is read-only; an upgrade request prepares and tests
+compatible source changes. Prefer stable releases, retain reviewed wrappers and
+licenses, and report migrations or unknown upstreams separately. The audit
+records declared, locked, and resolved versions: a release tag, plugin label,
+and running package version need not be identical.
+
+```text
+Use $upgrade-toolbox to check upstream updates without changing anything.
+Use $upgrade-toolbox to upgrade compatible upstream components, then $ship-toolbox.
+```
+
+Shipping still requires explicit `$ship-toolbox` invocation. `$sync-toolbox`
+applies published changes; it does not discover or prepare upstream upgrades.
+Maintenance does not add optional capabilities or update independently managed
+installations. Reports remain outside Git and distinguish source validation,
+publication/CI, installed versions, and runtime verification.
 
 ## Instruction Development Checks
 

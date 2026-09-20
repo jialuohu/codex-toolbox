@@ -2,14 +2,17 @@
 set -euo pipefail
 umask 077
 
-readonly MINERU_VERSION="3.4.4"
+readonly MINERU_VERSION="3.4.5"
+# This patch changes the runtime, not the model cache generation. Keep existing
+# downloads reusable; configured models-dir paths remain authoritative.
+readonly MODEL_CACHE_GENERATION="3.4.4"
 readonly REQUIRED_PYTHON="3.12"
 readonly DEFAULT_MIN_DISK_GB="20"
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
 UV_TOOL_DIR="${MINERU_UV_TOOL_DIR:-${UV_TOOL_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/uv/tools}}"
 RUNTIME_DIR="$UV_TOOL_DIR/mineru"
-MODEL_CACHE_DIR="${MINERU_MODEL_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/mineru/models-${MINERU_VERSION}}"
+MODEL_CACHE_DIR="${MINERU_MODEL_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/mineru/models-${MODEL_CACHE_GENERATION}}"
 CONFIG_NAME="${MINERU_TOOLS_CONFIG_JSON:-mineru.json}"
 if [[ "$CONFIG_NAME" = /* ]]; then
   CONFIG_FILE="$CONFIG_NAME"
@@ -25,7 +28,7 @@ usage() {
 Usage: scripts/setup-mineru.sh --check|--install|--download-models
 
   --check            Read-only MinerU runtime doctor.
-  --install          Create the managed Python 3.12 runtime and install MinerU 3.4.4.
+  --install          Create the managed Python 3.12 runtime and install MinerU 3.4.5.
   --download-models  Download models outside every Git checkout and Obsidian vault.
 EOF
 }

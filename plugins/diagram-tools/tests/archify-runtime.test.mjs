@@ -21,7 +21,8 @@ import {
   rollbackRuntime,
   validateRuntimeState,
 } from '../skills/archify/scripts/lib/runtime-manager.mjs';
-import { validateReleasePin } from '../skills/archify/scripts/lib/release.mjs';
+import { runtimeInfo, validateReleasePin } from '../skills/archify/scripts/lib/release.mjs';
+import { resolveActiveRuntime } from '../skills/archify/scripts/lib/runtime-manager.mjs';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const pluginDirectory = resolve(testDirectory, '..');
@@ -94,6 +95,9 @@ if (command === 'doctor') {
 
 function fakeRelease(version, options = {}) {
   const updateManifestUrl = 'https://tt-a1i.github.io/archify/skill-updates/archify/stable.json';
+  const development = version.includes('-dev.');
+  const channel = development ? 'development' : 'stable';
+  const sourceCommit = options.sourceCommit ?? 'a'.repeat(40);
   const examples = {
     architecture: 'web-app.architecture.json',
     workflow: 'agent-tool-call.workflow.json',
@@ -103,13 +107,17 @@ function fakeRelease(version, options = {}) {
   };
   const entries = [
     { name: 'archify/LICENSE', contents: 'MIT License\nCopyright (c) 2026 tt-a1i (Archify)\nCopyright (c) 2025 Cocoon AI\n' },
-    { name: 'archify/SKILL.md', contents: '# Archify\n' },
+    { name: 'archify/SKILL.md', contents: `# Archify\n${options.marker ?? ''}` },
     { name: 'archify/bin/archify.mjs', contents: fakeCli(options) },
     { name: 'archify/package.json', contents: JSON.stringify({ name: 'archify', version, private: true, type: 'module', license: 'MIT' }) },
     { name: 'archify/schemas/common.schema.json', contents: '{}' },
     { name: 'archify/scripts/check-update.mjs', contents: 'export default true;\n' },
-    { name: 'archify/skill-release.json', contents: JSON.stringify({ schemaVersion: 1, skillId: 'archify', channel: 'stable', version, updateManifestUrl }) },
+    { name: 'archify/skill-release.json', contents: JSON.stringify({ schemaVersion: 1, skillId: 'archify', channel: options.packagedChannel ?? channel, version, updateManifestUrl }) },
   ];
+  if (development && !options.omitFontLicense) {
+    entries.push({ name: 'archify/assets/JetBrainsMono-OFL.txt', contents: 'SIL OPEN FONT LICENSE Version 1.1' });
+    entries.push({ name: 'archify/THIRD_PARTY_NOTICES.md', contents: '# Third-party notices\n' });
+  }
   for (const [type, example] of Object.entries(examples)) {
     entries.push({ name: `archify/schemas/${type}.schema.json`, contents: '{}' });
     entries.push({ name: `archify/examples/${example}`, contents: JSON.stringify({ schemaVersion: type === 'workflow' ? 2 : 1, type }) });
@@ -122,11 +130,13 @@ function fakeRelease(version, options = {}) {
       schemaVersion: 1,
       name: 'archify',
       version,
-      tag: `v${version}`,
-      releaseId: `archify-${version}-${sha256.slice(0, 12)}`,
+      ...(development ? { channel, sourceCommit } : { tag: `v${version}` }),
+      releaseId: `archify-${version}-${sha256.slice(0, 12)}${development ? `-${sourceCommit.slice(0, 12)}` : ''}`,
       archive: {
         name: 'archify.zip',
-        url: `https://github.com/tt-a1i/archify/releases/download/v${version}/archify.zip`,
+        url: development
+          ? `https://raw.githubusercontent.com/tt-a1i/archify/${sourceCommit}/archify.zip`
+          : `https://github.com/tt-a1i/archify/releases/download/v${version}/archify.zip`,
         bytes: archive.length,
         sha256,
         maxBytes: 1024 * 1024,
@@ -231,6 +241,81 @@ test('release pin binds the archive and stable update URLs to the exact release'
     }),
     /invalid update manifest URL/,
   );
+});
+
+test('development pins require immutable upstream commits and matching channels', () => {
+  const { pin } = fakeRelease('2.17.0-dev.1');
+  assert.equal(validateReleasePin(pin), pin);
+  for (const changed of [
+    { sourceCommit: 'main' },
+    { sourceCommit: 'a'.repeat(39) },
+    { channel: 'stable' },
+    { channel: undefined },
+    { tag: 'v2.17.0-dev.1' },
+    { version: '2.17.0' },
+    { archive: { ...pin.archive, url: pin.archive.url.replace('a'.repeat(40), 'main') } },
+    { archive: { ...pin.archive, url: pin.archive.url.replace('/tt-a1i/', '/another-owner/') } },
+  ]) assert.throws(() => validateReleasePin({ ...pin, ...changed }));
+  const stable = fakeRelease('2.16.0').pin;
+  assert.throws(() => validateReleasePin({ ...stable, sourceCommit: pin.sourceCommit }));
+  assert.equal(assertArchiveDownloadUrl(pin.archive.url).hostname, 'raw.githubusercontent.com');
+  for (const url of [
+    pin.archive.url.replace('a'.repeat(40), 'main'),
+    pin.archive.url.replace('archify.zip', 'other.zip'),
+    `${pin.archive.url}?ref=main`,
+    `${pin.archive.url}#fragment`,
+  ]) assert.throws(() => assertArchiveDownloadUrl(url));
+});
+
+test('stable to development upgrade retains rollback and exposes snapshot identity', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'archify-development-'));
+  const sources = await mkdtemp(join(tmpdir(), 'archify-development-source-'));
+  const stable = fakeRelease('2.16.0');
+  const snapshot = fakeRelease('2.17.0-dev.1');
+  const stablePath = await writeArchive(sources, 'stable.zip', stable.archive);
+  const snapshotPath = await writeArchive(sources, 'snapshot.zip', snapshot.archive);
+  await installRuntime({ root, pin: stable.pin, archivePath: stablePath });
+  const updated = await installRuntime({ root, pin: snapshot.pin, archivePath: snapshotPath });
+  assert.equal(updated.previousReleaseId, stable.pin.releaseId);
+  const info = runtimeInfo(await resolveActiveRuntime({ root }));
+  assert.equal(info.channel, 'development');
+  assert.equal(info.sourceCommit, snapshot.pin.sourceCommit);
+  assert.equal((await installRuntime({ root, pin: snapshot.pin, archivePath: snapshotPath })).status, 'current');
+  const identicalBytes = fakeRelease('2.17.0-dev.1', { sourceCommit: 'c'.repeat(40) });
+  assert.deepEqual(identicalBytes.archive, snapshot.archive);
+  assert.notEqual(identicalBytes.pin.releaseId, snapshot.pin.releaseId);
+  await installRuntime({ root, pin: identicalBytes.pin, archivePath: snapshotPath });
+  const identicalRelease = await resolveActiveRuntime({ root });
+  assert.equal(runtimeInfo(identicalRelease).sourceCommit, identicalBytes.pin.sourceCommit);
+  const manifestPath = join(identicalRelease.releaseDirectory, 'runtime.json');
+  const originalManifest = await readFile(manifestPath, 'utf8');
+  const tampered = JSON.parse(originalManifest);
+  tampered.sourceCommit = 'd'.repeat(40);
+  tampered.sourceUrl = tampered.sourceUrl.replace('c'.repeat(40), tampered.sourceCommit);
+  await writeFile(manifestPath, JSON.stringify(tampered));
+  await assert.rejects(resolveActiveRuntime({ root }), /receipts? .*disagree|receipt disagree/);
+  await writeFile(manifestPath, originalManifest);
+  assert.equal((await rollbackRuntime({ root })).releaseId, snapshot.pin.releaseId);
+  const changed = fakeRelease('2.17.0-dev.1', { sourceCommit: 'b'.repeat(40), marker: 'Updated upstream contents' });
+  const changedPath = await writeArchive(sources, 'changed.zip', changed.archive);
+  const next = await installRuntime({ root, pin: changed.pin, archivePath: changedPath });
+  assert.notEqual(next.releaseId, snapshot.pin.releaseId);
+  assert.equal(runtimeInfo(await resolveActiveRuntime({ root })).sourceCommit, changed.pin.sourceCommit);
+  assert.equal((await rollbackRuntime({ root })).releaseId, snapshot.pin.releaseId);
+  const wrongChannel = fakeRelease('2.17.0-dev.2', { packagedChannel: 'stable' });
+  await assert.rejects(installRuntime({ root, pin: wrongChannel.pin,
+    archivePath: await writeArchive(sources, 'wrong.zip', wrongChannel.archive) }),
+  /skill release identity is invalid/);
+  assert.equal((await resolveActiveRuntime({ root })).receipt.releaseId, snapshot.pin.releaseId);
+  const missingLicense = fakeRelease('2.17.0-dev.2', { omitFontLicense: true });
+  await assert.rejects(installRuntime({ root, pin: missingLicense.pin,
+    archivePath: await writeArchive(sources, 'missing-license.zip', missingLicense.archive) }), /font license or third-party notices are missing/);
+  // Reinstall stable to exercise channel switching; its original archive has
+  // no embedded-font assets and must remain a valid rollback generation.
+  await installRuntime({ root, pin: stable.pin, archivePath: stablePath });
+  await installRuntime({ root, pin: snapshot.pin, archivePath: snapshotPath });
+  assert.equal((await rollbackRuntime({ root })).releaseId, stable.pin.releaseId);
+  assert.equal(runtimeInfo(await resolveActiveRuntime({ root })).channel, 'stable');
 });
 
 test('runtime install is idempotent, rolls back, and retains the last good release', async () => {

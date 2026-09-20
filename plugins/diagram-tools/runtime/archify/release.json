@@ -1,14 +1,15 @@
 {
   "schemaVersion": 1,
   "name": "archify",
-  "version": "2.16.0",
-  "tag": "v2.16.0",
-  "releaseId": "archify-2.16.0-4c59fa6557a2",
+  "version": "2.17.0-dev.1",
+  "channel": "development",
+  "sourceCommit": "72c750bb070d95171dbb2244e5b62b1b7da69c12",
+  "releaseId": "archify-2.17.0-dev.1-d2296515b009-72c750bb070d",
   "archive": {
     "name": "archify.zip",
-    "url": "https://github.com/tt-a1i/archify/releases/download/v2.16.0/archify.zip",
-    "bytes": 1318273,
-    "sha256": "4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46",
+    "url": "https://raw.githubusercontent.com/tt-a1i/archify/72c750bb070d95171dbb2244e5b62b1b7da69c12/archify.zip",
+    "bytes": 1885058,
+    "sha256": "d2296515b0091fb8f00580ea9e0b665d91ca5839fde651abe3ecd57a3ca178ec",
     "maxBytes": 8388608,
     "maxExpandedBytes": 33554432,
     "maxEntries": 512

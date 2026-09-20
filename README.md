@@ -37,6 +37,7 @@ after setup.
 3. Open the owning `plugins/<plugin>/skills/<skill>/SKILL.md` for execution rules.
    Plugin manifests, `.mcp.json` files, and setup scripts define installed behavior.
 
-Use `$sync-toolbox` to apply published updates. Publishing requires an explicit
+Use [`$upgrade-toolbox`](docs/development.md#upgrade-toolbox) to check upstreams
+or prepare compatible upgrades. Use `$sync-toolbox` to apply published updates. Publishing requires an explicit
 `$ship-toolbox` request; see [sync](docs/setup.md#sync-toolbox) and
 [shipping](docs/development.md#ship-toolbox).

@@ -58,7 +58,7 @@ exit 1
     def install_fake_runtime(
         self,
         *,
-        mineru_version: str = "3.4.4",
+        mineru_version: str = "3.4.5",
         python_version: str = "3.12",
         machine: str = "arm64",
         mps_built: str = "yes",
@@ -95,7 +95,7 @@ exit 1
 
     def install_fake_uv_bootstrap(self, log_file: Path) -> None:
         runtime_dir = shlex.quote(str(self.runtime_dir))
-        probe = "3.4.4|3.12|arm64|yes|yes|yes|yes|yes|mlx-engine"
+        probe = "3.4.5|3.12|arm64|yes|yes|yes|yes|yes|mlx-engine"
         self.write_executable(
             "uv",
             f"""#!/bin/sh
@@ -138,7 +138,7 @@ fi
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("uv: missing", result.stdout)
         self.assertIn("MinerU runtime: missing", result.stdout)
-        self.assertIn("MinerU version: missing (expected 3.4.4)", result.stdout)
+        self.assertIn("MinerU version: missing (expected 3.4.5)", result.stdout)
         self.assertEqual(before, after, "--check must not create files or directories")
 
     def test_check_reports_version_mismatch(self) -> None:
@@ -149,7 +149,7 @@ fi
         result = self.run_script("--check")
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("MinerU version: mismatch (found 3.4.3; expected 3.4.4)", result.stdout)
+        self.assertIn("MinerU version: mismatch (found 3.4.3; expected 3.4.5)", result.stdout)
 
     def test_check_reports_unsupported_platform(self) -> None:
         self.env["FAKE_UNAME_S"] = "Linux"
@@ -174,7 +174,7 @@ fi
             "Platform: ready (macOS arm64)",
             "uv: ready",
             "MinerU runtime: ready",
-            "MinerU version: ready (3.4.4)",
+            "MinerU version: ready (3.4.5)",
             "Python compatibility: ready (CPython 3.12, arm64)",
             "Disk capacity: ready",
             "MPS: ready (built and available)",
@@ -269,7 +269,7 @@ fi
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         invocations = log_file.read_text()
-        self.assertIn("tool install --python 3.12 mineru[all]==3.4.4", invocations)
+        self.assertIn("tool install --python 3.12 mineru[all]==3.4.5", invocations)
         self.assertNotIn("venv", invocations)
         self.assertNotIn("pip install", invocations)
         self.assertFalse(self.cache_dir.exists(), "--install must not download models")
@@ -293,9 +293,26 @@ fi
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn(
-            "tool install --force --python 3.12 mineru[all]==3.4.4",
+            "tool install --force --python 3.12 mineru[all]==3.4.5",
             log_file.read_text(),
         )
+
+    def test_patch_upgrade_preserves_existing_models_and_configuration(self) -> None:
+        self.install_fake_runtime(mineru_version="3.4.4")
+        self.install_ready_models()
+        before = {path.relative_to(self.home): path.read_bytes()
+                  for path in self.cache_dir.rglob("*") if path.is_file()}
+        config_before = self.config_file.read_bytes()
+        log_file = self.home / "uv-upgrade.log"
+        self.install_fake_uv_bootstrap(log_file)
+
+        result = self.run_script("--install")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("tool install --force --python 3.12 mineru[all]==3.4.5", log_file.read_text())
+        self.assertEqual(self.config_file.read_bytes(), config_before)
+        self.assertEqual({path.relative_to(self.home): path.read_bytes()
+                          for path in self.cache_dir.rglob("*") if path.is_file()}, before)
 
     def test_download_models_rejects_an_incomplete_cache(self) -> None:
         self.install_fake_runtime()
@@ -304,6 +321,28 @@ fi
 
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("did not produce a ready pipeline and VLM model cache", result.stderr)
+
+    def test_patch_keeps_the_existing_default_model_cache_generation(self) -> None:
+        self.install_fake_runtime()
+        cache_home = self.home / "cache"
+        self.cache_dir = cache_home / "mineru" / "models-3.4.4"
+        self.env.pop("MINERU_MODEL_CACHE_DIR")
+        self.env["XDG_CACHE_HOME"] = str(cache_home)
+        self.install_ready_models()
+        log_file = self.home / "download-default.log"
+        downloader = self.runtime_dir / "bin" / "mineru-models-download"
+        downloader.write_text(
+            '#!/bin/sh\n'
+            f'printf "%s\\n" "$HF_HOME" "$MODELSCOPE_CACHE" > {shlex.quote(str(log_file))}\n'
+        )
+        downloader.chmod(0o755)
+
+        result = self.run_script("--download-models")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(log_file.read_text().splitlines(),
+                         [str(self.cache_dir / "huggingface"), str(self.cache_dir / "modelscope")])
+        self.assertFalse((cache_home / "mineru" / "models-3.4.5").exists())
 
     def test_download_models_uses_external_cache_and_noninteractive_flags(self) -> None:
         self.install_fake_runtime()

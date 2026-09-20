@@ -2,6 +2,8 @@ export const CONTRACT_VERSION = 1;
 export const RUNTIME_SCHEMA_VERSION = 1;
 export const MIN_NODE_MAJOR = 20;
 export const MAX_WORKERS = 16;
+// New generations include the approved dependency lock; legacy IDs remain valid.
+export const SUPPORT_IDENTITY_VERSION = 1;
 
 export const WRAPPER_DEPENDENCIES = Object.freeze([
   '@resvg/resvg-js',

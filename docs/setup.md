@@ -4,10 +4,21 @@
 
 Run shell commands from the repository root. Read the owning skill before using a workflow.
 
+- [Obsidian filesystem roots](#obsidian-filesystem-roots)
 - [New Device Setup](#new-device-setup)
 - [Sync Toolbox](#sync-toolbox)
 - [AGENTS.md Sync](#agentsmd-sync)
 - [Managed Codex Pet](#managed-codex-pet)
+
+## Obsidian filesystem roots
+
+`obsidian_files` uses Filesystem MCP `2026.1.14` with the configured vault as
+its command-line root; `move_file` remains disabled. This is not a fixed server
+confinement boundary: a client advertising MCP roots can replace that directory
+during initialization or a roots-change notification. The proposed `2026.8.31`
+upgrade has the same behavior and is deferred pending a separately reviewed
+confinement solution. See the isolated qualification in
+[`test_obsidian_filesystem_integration.py`](../tests/test_obsidian_filesystem_integration.py).
 
 ## New Device Setup
 

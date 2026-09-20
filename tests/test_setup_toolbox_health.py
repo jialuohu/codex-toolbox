@@ -198,6 +198,7 @@ esac
         for name in (
             "sync-agents.sh", "setup-docmost-tools.sh", "setup-diagram-tools.sh",
             "setup-archify-tools.sh", "setup-apple-mail-tools.sh",
+            "setup-diagram-publish.sh",
             "setup-toolbox-health.sh", "setup-drawio-tools.sh",
         ):
             self.executable(scripts / name, '''
@@ -233,6 +234,8 @@ fi
                                 env=self.env, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         commands = self.log.read_text().splitlines()
+        self.assertIn("setup-diagram-publish.sh --install-launcher", commands)
+        self.assertNotIn("setup-diagram-publish.sh --install-runtime", commands)
         apple_install = commands.index("setup-apple-mail-tools.sh --install")
         apple_check = commands.index("setup-apple-mail-tools.sh --check")
         health_install = commands.index("setup-toolbox-health.sh --install")

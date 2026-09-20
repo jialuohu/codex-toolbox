@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -19,7 +20,7 @@ SKILLS = (
     "review-animations",
 )
 EXPLICIT_ONLY = {"pick-ui-library", "prototype", "review-animations"}
-UPSTREAM_COMMIT = "70744e3816f1d93eafb697161a8b880a7384c5ff"
+UPSTREAM_COMMIT = "85e8e2363b713506e1d5b6e07a0eb2da66be1bc3"
 REQUIRED_SKILL_LINKS = {"references/upstream.md", "../../SHARED-BOUNDARIES.md"}
 
 
@@ -156,7 +157,7 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
         self.assertTrue(manifest_path.is_file(), "Task 1 plugin manifest is missing")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "design-engineering-tools")
-        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["version"], "0.1.1")
         self.assertRegex(manifest["version"], r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("mcpServers", manifest)
@@ -169,6 +170,26 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
         provenance = (PLUGIN / "PROVENANCE.md").read_text(encoding="utf-8")
         self.assertIn("https://github.com/emilkowalski/skills", provenance)
         self.assertIn(UPSTREAM_COMMIT, provenance)
+
+        receipt = json.loads((PLUGIN / "upstream.json").read_text())
+        self.assertEqual(receipt["repository"], "https://github.com/emilkowalski/skills")
+        self.assertEqual(receipt["commit"], UPSTREAM_COMMIT)
+        self.assertEqual(receipt["license"], "MIT")
+        self.assertEqual(len(receipt["files"]), len(SKILLS))
+        self.assertEqual(
+            {row["source_path"] for row in receipt["files"]},
+            {f"skills/{skill}/SKILL.md" for skill in SKILLS},
+        )
+        self.assertEqual(
+            {row["local_path"] for row in receipt["files"]},
+            {f"skills/{skill}/references/upstream.md" for skill in SKILLS},
+        )
+        for row in receipt["files"]:
+            self.assertRegex(row["source_sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(
+                hashlib.sha256((PLUGIN / row["local_path"]).read_bytes()).hexdigest(),
+                row["sha256"],
+            )
 
         inventory = git_path_inventory()
         actual_skills = {path.name for path in (PLUGIN / "skills").iterdir() if path.is_dir()}
@@ -238,6 +259,8 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
         self.assertRegex(picker, r"(?s)recommendation-only by default.*explicit implementation authorization")
 
         shared = (PLUGIN / "SHARED-BOUNDARIES.md").read_text(encoding="utf-8")
+        self.assertIn('Upstream "Initial Response" sections are reference material.', shared)
+        self.assertIn("Do not follow", shared)
         hierarchy = [
             "Explicit user direction",
             "Target project conventions and design system",

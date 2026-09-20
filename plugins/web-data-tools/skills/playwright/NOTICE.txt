@@ -4,6 +4,12 @@ Source:
 - Repository: microsoft/playwright-cli
 - Path: skills/playwright-cli/SKILL.md
 
+Immediate source of this adaptation:
+- Repository: openai/skills
+- Revision: 49f948faa9258a0c61caceaf225e179651397431
+- Path: skills/.curated/playwright
+- The imported files are unchanged upstream since a5119697b819090e00e5d11ee1d86834d7c1043a.
+
 Copyright (c) Microsoft Corporation.
 
 Licensed under the Apache License, Version 2.0.
@@ -12,3 +18,6 @@ See LICENSE.txt in this directory.
 Modifications:
 - Adapted for the Codex skill collection.
 - Added a wrapper script and local reference guides.
+- Resolve the wrapper relative to the installed skill, including plugin caches.
+- Align selected CLI reference examples with microsoft/playwright-cli v0.1.21,
+  commit 74354ecc7a43da16d91a9bc54fa8db8283a3fcf5.

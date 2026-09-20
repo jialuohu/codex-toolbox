@@ -13,7 +13,7 @@ usage() {
 Usage: scripts/setup-archify-tools.sh --check|--install|--rollback
 
   --check      Verify the active pinned runtime and owned launcher offline.
-  --install    Download, verify, smoke-test, and atomically promote v2.16.0.
+  --install    Verify and atomically promote the pinned 2.17.0-dev.1 snapshot.
   --rollback   Validate and reactivate the previous runtime release.
 EOF
 }

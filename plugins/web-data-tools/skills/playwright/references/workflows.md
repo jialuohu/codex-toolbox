@@ -40,7 +40,7 @@ Capture console messages and network activity after reproducing an issue:
 
 ```bash
 pwcli console warning
-pwcli network
+pwcli requests
 ```
 
 Record a trace around a suspicious flow:
@@ -71,7 +71,7 @@ pwcli open https://example.com/checkout
 
 ## Configuration file
 
-By default, the CLI reads `playwright-cli.json` from the current directory. Use `--config` to point at a specific file.
+By default, the CLI reads `.playwright/cli.config.json` from the current directory. Use `--config` to point at a specific file.
 
 Minimal example:
 

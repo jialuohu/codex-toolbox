@@ -66,7 +66,7 @@ class MineruWrapperTests(unittest.TestCase):
         return json.loads(path.read_text(encoding="utf-8"))
 
     def install_fake_mineru(
-        self, body: str, *, version: str = "3.4.4"
+        self, body: str, *, version: str = "3.4.5"
     ) -> tuple[Path, dict[str, str]]:
         bin_dir = self.root / "bin"
         bin_dir.mkdir(exist_ok=True)
@@ -316,7 +316,7 @@ class MineruWrapperTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "failure")
         self.assertEqual(manifest["error"]["code"], "parse_failed")
         self.assertEqual(manifest["process"]["exit_code"], 7)
-        self.assertEqual(manifest["mineru"]["version"], "3.4.4")
+        self.assertEqual(manifest["mineru"]["version"], "3.4.5")
         self.assertEqual(manifest["mineru"]["observed_device_engine"], "mlx-engine")
         self.assertEqual(manifest["request"]["backend"], "hybrid-engine")
         self.assertEqual(manifest["request"]["effort"], "high")
@@ -589,7 +589,7 @@ class MineruWrapperTests(unittest.TestCase):
         manifest = self.read_manifest()
         self.assertEqual(manifest["schema_version"], 1)
         self.assertEqual(manifest["status"], "success")
-        self.assertEqual(manifest["mineru"]["version"], "3.4.4")
+        self.assertEqual(manifest["mineru"]["version"], "3.4.5")
         self.assertEqual(manifest["mineru"]["observed_device_engine"], "mps")
         self.assertGreaterEqual(manifest["timing"]["duration_seconds"], 0)
         self.assertTrue(manifest["source"]["verified_unchanged"])

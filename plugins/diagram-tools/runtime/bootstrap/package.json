@@ -13,7 +13,7 @@
     "beautiful-mermaid": "1.1.3",
     "culori": "4.0.2",
     "pngjs": "7.0.0",
-    "postcss": "8.5.26",
+    "postcss": "8.5.28",
     "postcss-value-parser": "4.2.0"
   }
 }

@@ -1,9 +1,24 @@
 {
-  "schema_version": 1,
-  "source_repository": "https://github.com/jialuohu/codex-toolbox",
-  "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
-  "source_path": "plugins/obsidian-tools/skills/obsidian-bases/SKILL.md",
+  "schema_version": 2,
+  "source_repository": "https://github.com/kepano/obsidian-skills",
+  "source_revision": "3ccff5338ea700537839b21900aa5358a0402c98",
+  "source_path": "skills/obsidian-bases/SKILL.md",
   "sha256": "c0037f20926c7d8591cdd040365e4c0e4c0c4146386a506f28f241faee9a27d9",
   "preserved_file": "UPSTREAM.md",
-  "note": "Verbatim imported skill as present in the audited toolbox revision; earlier upstream revision was not recorded. The toolbox entrypoint owns routing."
+  "license": "MIT",
+  "license_sha256": "64c64d48361edfe8610016441bf593256ea9b67f133b00f47c55aa29ee878567",
+  "references": [
+    {
+      "source_path": "skills/obsidian-bases/references/FUNCTIONS_REFERENCE.md",
+      "local_path": "references/FUNCTIONS_REFERENCE.md",
+      "sha256": "208fd63aead9bca1975626fea52605e6ab9434dc0529d923feb36b18b8877d3b"
+    }
+  ],
+  "historical_import": {
+    "source_repository": "https://github.com/jialuohu/codex-toolbox",
+    "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
+    "source_path": "plugins/obsidian-tools/skills/obsidian-bases/SKILL.md",
+    "sha256": "c0037f20926c7d8591cdd040365e4c0e4c0c4146386a506f28f241faee9a27d9"
+  },
+  "note": "Current source is verified byte-for-byte against the immutable upstream revision. The historical import records the original Toolbox baseline; the Toolbox entrypoint continues to own routing."
 }

@@ -16,9 +16,11 @@ Success exits 0 and returns absolute, validated paths:
 {
   "ok": true,
   "status": "ready",
-  "version": "2.16.0",
+  "version": "2.17.0-dev.1",
+  "channel": "development",
+  "sourceCommit": "72c750bb070d95171dbb2244e5b62b1b7da69c12",
   "releaseDirectory": "/absolute/path/to/release",
-  "sha256": "4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46",
+  "sha256": "d2296515b0091fb8f00580ea9e0b665d91ca5839fde651abe3ecd57a3ca178ec",
   "cliPath": "/absolute/path/to/bin/archify.mjs",
   "skillPath": "/absolute/path/to/SKILL.md",
   "commonSchemaPath": "/absolute/path/to/common.schema.json",
@@ -40,6 +42,9 @@ Success exits 0 and returns absolute, validated paths:
   "updateManifestUrl": "https://tt-a1i.github.io/archify/skill-updates/archify/stable.json"
 }
 ```
+
+After rollback to the retained stable `2.16.0` generation, the response reports
+`channel: "stable"` and `sourceCommit: null`.
 
 Missing or extra `runtime-info` options are usage errors on stderr and exit 2.
 An unusable runtime exits 3 and returns
@@ -85,10 +90,35 @@ scripts/setup-archify-tools.sh --install
 scripts/setup-archify-tools.sh --rollback
 ```
 
-The installer pins upstream `v2.16.0` `archify.zip` by SHA-256, validates it in
-an isolated candidate, and promotes it atomically. The packaged checker may
+The installer pins the canonical `archify.zip` committed at
+`72c750bb070d95171dbb2244e5b62b1b7da69c12`, version `2.17.0-dev.1`, by SHA-256.
+This is a development snapshot, not the stable `2.16.0` release or a moving
+`main` download. It validates an isolated candidate and promotes it atomically.
+An upgrade from `2.16.0` retains that stable generation for `--rollback`; verify
+the restored version with `runtime-info --json`. Fresh installations have no
+previous generation. Rollback is not a persistent version preference: the next
+`scripts/setup-codex-toolbox.sh` run reinstalls the approved pin. To use the
+retained stable generation after setup, explicitly run
+`scripts/setup-archify-tools.sh --rollback` again. The packaged checker may
 contact only
 `https://tt-a1i.github.io/archify/skill-updates/archify/stable.json`; its notice
-does not change the installed runtime. Generated HTML may request JetBrains Mono
-CSS/font data from `fonts.googleapis.com` and `fonts.gstatic.com`, with local
-monospace fallbacks when those requests fail.
+does not change the installed runtime or follow development commits. This
+snapshot embeds JetBrains Mono variable font subsets and their OFL 1.1 notice in
+standalone HTML/SVG, with system fallbacks for uncovered characters. No Google
+Fonts request is needed to view a newly generated artifact.
+
+## Browser evidence and visual review
+
+`deliver` proves deterministic checks and specification/artifact byte identity.
+`visual-check` measures the exact HTML in Chrome/Chromium and creates its own
+artifact-bound receipt and screenshots. It always leaves perceptual
+`visualReview: "pending"`. Map exit 0 plus receipt `status: "pass"` to
+`browser_evidence: passed`, exit 1 to `failed`, and exit 2 plus receipt
+`status: "skipped"` to `skipped` only when the browser is unavailable.
+Incomplete runtime/capture evidence is failed, not skipped. Report an actual
+reviewer's `visual_review` judgment independently; a manual browser record cannot
+overwrite the automated status. For coverage and supplementary record fields,
+resolve the installed delivery contract from the directory containing the
+returned absolute `skillPath`, then its `references` directory and
+`delivery-contract.md` filename. This contract belongs to the active upstream
+runtime, not the toolbox wrapper directory.

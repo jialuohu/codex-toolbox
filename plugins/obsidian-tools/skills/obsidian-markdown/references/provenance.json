@@ -1,9 +1,34 @@
 {
-  "schema_version": 1,
-  "source_repository": "https://github.com/jialuohu/codex-toolbox",
-  "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
-  "source_path": "plugins/obsidian-tools/skills/obsidian-markdown/SKILL.md",
+  "schema_version": 2,
+  "source_repository": "https://github.com/kepano/obsidian-skills",
+  "source_revision": "3ccff5338ea700537839b21900aa5358a0402c98",
+  "source_path": "skills/obsidian-markdown/SKILL.md",
   "sha256": "7ad72e1f0a9081ed325e76b6402ad5de50a00e63e2341fd403a92f147234a007",
   "preserved_file": "UPSTREAM.md",
-  "note": "Verbatim imported skill as present in the audited toolbox revision; earlier upstream revision was not recorded. The toolbox entrypoint owns routing."
+  "license": "MIT",
+  "license_sha256": "64c64d48361edfe8610016441bf593256ea9b67f133b00f47c55aa29ee878567",
+  "references": [
+    {
+      "source_path": "skills/obsidian-markdown/references/CALLOUTS.md",
+      "local_path": "references/CALLOUTS.md",
+      "sha256": "9912ec2e3f8711f65b8ceb82cc19cbffc5e6f8ccf2ab627e18926c522c383d8b"
+    },
+    {
+      "source_path": "skills/obsidian-markdown/references/EMBEDS.md",
+      "local_path": "references/EMBEDS.md",
+      "sha256": "63b6205507e28fb58cf200bc348a2b139e50ae739743e2e6316732148973cb7a"
+    },
+    {
+      "source_path": "skills/obsidian-markdown/references/PROPERTIES.md",
+      "local_path": "references/PROPERTIES.md",
+      "sha256": "392953b5838c3ab3df135b5a914f100ae7b95e4501b6a2e5c8dc63da3ac7558b"
+    }
+  ],
+  "historical_import": {
+    "source_repository": "https://github.com/jialuohu/codex-toolbox",
+    "source_revision": "7ba1c3abcab39f942e10aab542c3824d6951dbe9",
+    "source_path": "plugins/obsidian-tools/skills/obsidian-markdown/SKILL.md",
+    "sha256": "7ad72e1f0a9081ed325e76b6402ad5de50a00e63e2341fd403a92f147234a007"
+  },
+  "note": "Current source is verified byte-for-byte against the immutable upstream revision. The historical import records the original Toolbox baseline; the Toolbox entrypoint continues to own routing."
 }

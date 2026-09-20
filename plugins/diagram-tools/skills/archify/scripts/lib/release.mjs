@@ -28,25 +28,39 @@ export const EXAMPLE_FILES = Object.freeze({
 });
 
 const STABLE_UPDATE_MANIFEST_URL = 'https://tt-a1i.github.io/archify/skill-updates/archify/stable.json';
+export const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-dev\.\d+)?$/;
+
+function sourceIdentity(pin) {
+  const channel = pin.channel ?? 'stable';
+  if (channel === 'development') {
+    if (!/^\d+\.\d+\.\d+-dev\.\d+$/.test(pin.version) ||
+        !/^[0-9a-f]{40}$/.test(pin.sourceCommit) || pin.tag !== undefined) {
+      throw new Error('Archify development pin requires an exact commit and development version');
+    }
+    return { channel, url: `https://raw.githubusercontent.com/tt-a1i/archify/${pin.sourceCommit}/archify.zip` };
+  }
+  if (channel !== 'stable' || !/^\d+\.\d+\.\d+$/.test(pin.version) ||
+      pin.tag !== `v${pin.version}` || pin.sourceCommit !== undefined) {
+    throw new Error('Archify release pin has an invalid version or tag');
+  }
+  return { channel, url: `https://github.com/tt-a1i/archify/releases/download/${pin.tag}/archify.zip` };
+}
 
 function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
-function expectedReleaseId(pin) {
-  return `archify-${pin.version}-${pin.archive.sha256.slice(0, 12)}`;
+export function runtimeReleaseId({ version, sha256, sourceCommit }) {
+  return `archify-${version}-${sha256.slice(0, 12)}${sourceCommit ? `-${sourceCommit.slice(0, 12)}` : ''}`;
 }
 
 export function validateReleasePin(pin) {
   if (pin?.schemaVersion !== 1 || pin.name !== 'archify') throw new Error('Invalid Archify release pin');
-  if (!/^\d+\.\d+\.\d+$/.test(pin.version) || pin.tag !== `v${pin.version}`) {
-    throw new Error('Archify release pin has an invalid version or tag');
-  }
-  if (pin.releaseId !== expectedReleaseId(pin)) throw new Error('Archify release pin has an invalid releaseId');
+  const source = sourceIdentity(pin);
   const archive = pin.archive;
   if (
     archive?.name !== 'archify.zip' ||
-    archive.url !== `https://github.com/tt-a1i/archify/releases/download/${pin.tag}/archify.zip` ||
+    archive.url !== source.url ||
     !/^[0-9a-f]{64}$/.test(archive.sha256) ||
     !Number.isSafeInteger(archive.bytes) || archive.bytes < 1 ||
     !Number.isSafeInteger(archive.maxBytes) || archive.maxBytes < archive.bytes ||
@@ -55,6 +69,7 @@ export function validateReleasePin(pin) {
   ) {
     throw new Error('Archify release pin has an invalid archive contract');
   }
+  if (pin.releaseId !== runtimeReleaseId({ ...pin, sha256: archive.sha256 })) throw new Error('Archify release pin has an invalid releaseId');
   if (pin.updateManifestUrl !== STABLE_UPDATE_MANIFEST_URL) {
     throw new Error('Archify release pin has an invalid update manifest URL');
   }
@@ -184,7 +199,7 @@ export async function verifyPackagedRelease(releaseDirectory, pin) {
   if (
     skillRelease.schemaVersion !== 1 ||
     skillRelease.skillId !== 'archify' ||
-    skillRelease.channel !== 'stable' ||
+    skillRelease.channel !== (pin.channel ?? 'stable') ||
     skillRelease.version !== pin.version ||
     skillRelease.updateManifestUrl !== pin.updateManifestUrl
   ) {
@@ -200,6 +215,19 @@ export async function verifyPackagedRelease(releaseDirectory, pin) {
   ]) {
     if (!license.includes(notice)) throw new Error(`Archify packaged LICENSE is missing: ${notice}`);
   }
+  if (pin.channel === 'development') {
+    try {
+      const fontLicense = await readFile(await regularFileWithin(
+        releaseDirectory, join(releaseDirectory, 'assets', 'JetBrainsMono-OFL.txt'), 'JetBrains Mono license'), 'utf8');
+      if (!fontLicense.includes('SIL OPEN FONT LICENSE Version 1.1')) {
+        throw new Error('Archify embedded font license is missing');
+      }
+      await regularFileWithin(releaseDirectory, join(releaseDirectory, 'THIRD_PARTY_NOTICES.md'), 'Third-party notices');
+    } catch (error) {
+      if (error.code === 'ENOENT') throw new Error('Archify embedded font license or third-party notices are missing');
+      throw error;
+    }
+  }
   return { packageJson, skillRelease };
 }
 
@@ -208,9 +236,11 @@ export async function resolveRelease(receipt, root, options = {}) {
   if (
     receipt?.schemaVersion !== 1 ||
     typeof receipt.releaseId !== 'string' ||
-    !/^archify-\d+\.\d+\.\d+-[0-9a-f]{12}$/.test(receipt.releaseId) ||
+    !/^archify-\d+\.\d+\.\d+(?:-dev\.\d+)?-[0-9a-f]{12}(?:-[0-9a-f]{12})?$/.test(receipt.releaseId) ||
     typeof receipt.version !== 'string' ||
-    !/^[0-9a-f]{64}$/.test(receipt.sha256)
+    !VERSION_PATTERN.test(receipt.version) ||
+    !/^[0-9a-f]{64}$/.test(receipt.sha256) ||
+    receipt.releaseId !== runtimeReleaseId(receipt)
   ) {
     throw new Error('Archify runtime receipt is invalid');
   }
@@ -229,10 +259,14 @@ export async function resolveRelease(receipt, root, options = {}) {
     manifest.releaseId !== receipt.releaseId ||
     manifest.version !== receipt.version ||
     manifest.sha256 !== receipt.sha256 ||
+    manifest.sourceCommit !== receipt.sourceCommit ||
     manifest.treeSha256 !== receipt.treeSha256
   ) {
     throw new Error('Archify active receipt and immutable release receipt disagree');
   }
+  const source = sourceIdentity(manifest);
+  if (manifest.releaseId !== runtimeReleaseId(manifest)) throw new Error('Archify immutable release identity is invalid');
+  if (manifest.sourceUrl !== source.url) throw new Error('Archify immutable source identity is invalid');
   if (options.verifyTree) await verifyReleaseTree(canonicalRelease, manifest);
 
   const cliPath = await regularFileWithin(canonicalRelease, join(canonicalRelease, 'bin', 'archify.mjs'), 'Archify CLI');
@@ -263,6 +297,7 @@ export async function resolveRelease(receipt, root, options = {}) {
   }
   await verifyPackagedRelease(canonicalRelease, {
     version: receipt.version,
+    channel: source.channel,
     updateManifestUrl: manifest.updateManifestUrl,
   });
   if (options.doctor) await runDoctor(cliPath, canonicalRelease);
@@ -284,6 +319,8 @@ export function runtimeInfo(release) {
     ok: true,
     status: 'ready',
     version: release.receipt.version,
+    channel: release.manifest.channel ?? 'stable',
+    sourceCommit: release.manifest.sourceCommit ?? null,
     releaseDirectory: release.releaseDirectory,
     sha256: release.receipt.sha256,
     cliPath: release.cliPath,

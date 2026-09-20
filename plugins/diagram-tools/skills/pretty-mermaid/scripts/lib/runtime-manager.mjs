@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   open,
+  readFile,
   readdir,
   rename,
   rm,
@@ -17,6 +18,7 @@ import {
   CONTRACT_VERSION,
   MIN_NODE_MAJOR,
   RUNTIME_SCHEMA_VERSION,
+  SUPPORT_IDENTITY_VERSION,
   WRAPPER_DEPENDENCIES,
 } from './constants.mjs';
 import { readJson, readJsonOrNull, safeError, writeJsonAtomic } from './io.mjs';
@@ -142,9 +144,11 @@ async function cleanupInterruptedState(paths) {
   }
 }
 
-async function bootstrapReceipt() {
+export async function bootstrapReceipt() {
   const packageJson = await readJson(join(bootstrapDirectory, 'package.json'));
-  const lock = await readJson(join(bootstrapDirectory, 'package-lock.json'));
+  const lockBytes = await readFile(join(bootstrapDirectory, 'package-lock.json'));
+  const lock = JSON.parse(lockBytes.toString('utf8'));
+  const bootstrapLockSha256 = createHash('sha256').update(lockBytes).digest('hex');
   const version = packageJson.dependencies?.['beautiful-mermaid'];
   const locked = lock.packages?.['node_modules/beautiful-mermaid'];
   if (!locked || locked.version !== version) {
@@ -152,7 +156,7 @@ async function bootstrapReceipt() {
   }
   validateStableVersion(version);
   validateIntegrity(locked.integrity);
-  return { version, integrity: locked.integrity, packageJson, lock };
+  return { version, integrity: locked.integrity, packageJson, lock, bootstrapLockSha256 };
 }
 
 async function supportDependenciesCurrent(releaseDirectory, bootstrap) {
@@ -189,9 +193,14 @@ async function latestReceipt() {
   return { version: metadata.version, integrity: metadata['dist.integrity'] };
 }
 
-function releaseId(receipt) {
+export function releaseId(receipt, bootstrapLockSha256 = null) {
   const digest = createHash('sha256').update(receipt.integrity).digest('hex').slice(0, 12);
-  return `beautiful-mermaid-${receipt.version}-${digest}`;
+  const legacy = `beautiful-mermaid-${receipt.version}-${digest}`;
+  if (bootstrapLockSha256 === null) return legacy;
+  if (!/^[0-9a-f]{64}$/.test(bootstrapLockSha256)) {
+    throw new Error('Invalid bootstrap dependency lock identity');
+  }
+  return `${legacy}-s${SUPPORT_IDENTITY_VERSION}-${bootstrapLockSha256.slice(0, 12)}`;
 }
 
 async function installedReceipt(directory) {
@@ -256,7 +265,7 @@ async function stageRelease(paths, receipt, channel) {
     const bootstrap = await bootstrapReceipt();
     const packageJson = structuredClone(bootstrap.packageJson);
     packageJson.dependencies['beautiful-mermaid'] = receipt.version;
-    const packageLock = await readJson(join(bootstrapDirectory, 'package-lock.json'));
+    const packageLock = structuredClone(bootstrap.lock);
     packageLock.packages[''].dependencies['beautiful-mermaid'] = receipt.version;
     await writeFile(join(candidate, 'package.json'), `${JSON.stringify(packageJson, null, 2)}\n`, {
       mode: 0o600,
@@ -282,13 +291,15 @@ async function stageRelease(paths, receipt, channel) {
     }
     const audit = await runAudit(candidate);
     const conformance = await runContractSubprocess(candidate);
-    const id = releaseId(receipt);
+    const { bootstrapLockSha256 } = bootstrap;
+    const id = releaseId(receipt, bootstrapLockSha256);
     const destination = join(paths.releases, id);
     const manifest = {
       schemaVersion: RUNTIME_SCHEMA_VERSION,
       releaseId: id,
       version: receipt.version,
       integrity: receipt.integrity,
+      bootstrapLockSha256,
       contractVersion: CONTRACT_VERSION,
       installedAt: new Date().toISOString(),
       channel,
@@ -303,8 +314,13 @@ async function stageRelease(paths, receipt, channel) {
       mode: 0o600,
     });
 
+    let existing;
     try {
-      const existing = await lstat(destination);
+      existing = await lstat(destination);
+    } catch (error) {
+      if (!error || error.code !== 'ENOENT') throw error;
+    }
+    if (existing) {
       if (!existing.isDirectory() || existing.isSymbolicLink()) {
         throw new Error(`Refusing to replace unsafe release path: ${destination}`);
       }
@@ -316,9 +332,14 @@ async function stageRelease(paths, receipt, channel) {
       ) {
         throw new Error(`Refusing to replace release not owned by diagram-tools: ${destination}`);
       }
-      await rm(destination, { recursive: true, force: false });
-    } catch (error) {
-      if (!error || error.code !== 'ENOENT') throw error;
+      // A previously installed generation may be active or available for
+      // rollback. Reuse it only after revalidation; never delete it in place.
+      const retained = await validateRelease(existingManifest, paths.root);
+      if (!await supportDependenciesCurrent(destination, bootstrap)) {
+        throw new Error('Existing generation has different support dependencies');
+      }
+      await rm(candidate, { recursive: true, force: false });
+      return retained;
     }
     await rename(candidate, destination);
     return { manifest, releaseDirectory: destination, conformance };
@@ -366,14 +387,20 @@ async function pruneReleases(paths, fallbackVersion) {
   const candidates = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
-    if (!/^beautiful-mermaid-\d+\.\d+\.\d+-[0-9a-f]{12}$/.test(entry.name)) continue;
+    const ownedPattern = new RegExp(
+      `^beautiful-mermaid-\\d+\\.\\d+\\.\\d+-[0-9a-f]{12}(?:-s${SUPPORT_IDENTITY_VERSION}-[0-9a-f]{12})?$`,
+    );
+    if (!ownedPattern.test(entry.name)) continue;
     const directory = join(paths.releases, entry.name);
     const manifest = await readJsonOrNull(join(directory, 'runtime.json'));
     if (
       manifest?.releaseId !== entry.name ||
       typeof manifest.version !== 'string' ||
       typeof manifest.integrity !== 'string' ||
-      releaseId({ version: manifest.version, integrity: manifest.integrity }) !== entry.name
+      (manifest.bootstrapLockSha256 !== undefined &&
+        !/^[0-9a-f]{64}$/.test(manifest.bootstrapLockSha256)) ||
+      releaseId({ version: manifest.version, integrity: manifest.integrity },
+        manifest.bootstrapLockSha256 ?? null) !== entry.name
     ) {
       continue;
     }

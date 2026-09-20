@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import test from 'node:test';
+import { releaseId } from '../skills/pretty-mermaid/scripts/lib/runtime-manager.mjs';
 
 const enabled = process.env.DIAGRAM_TOOLS_INTEGRATION === '1';
 const manager = resolve('skills/pretty-mermaid/scripts/runtime-manager.mjs');
@@ -140,7 +142,7 @@ test('fresh install uses approved fallback after a rejected candidate', {
   assert.notEqual(active.version, 'not-a-stable-version');
 });
 
-test('updates support dependencies when the renderer version is unchanged', {
+test('support-only updates preserve the previous generation and legacy rollback', {
   skip: !enabled,
   timeout: 120_000,
 }, async () => {
@@ -151,24 +153,58 @@ test('updates support dependencies when the renderer version is unchanged', {
   const release = join(root, 'releases', before.releaseId);
   // Reproduce an existing installation made with the previous support pin.
   await execFileAsync('npm', [
-    'install', '@xmldom/xmldom@0.9.10', '--save-exact', '--ignore-scripts',
+    'install', 'postcss@8.5.26', '--save-exact', '--ignore-scripts',
     '--no-audit', '--no-fund',
   ], { cwd: release, timeout: 60_000 });
-  const installedPath = join(release, 'node_modules/@xmldom/xmldom/package.json');
-  assert.equal(JSON.parse(await readFile(installedPath, 'utf8')).version, '0.9.10');
+  const legacy = { ...before, releaseId: releaseId(before) };
+  delete legacy.bootstrapLockSha256;
+  const legacyDirectory = join(root, 'releases', legacy.releaseId);
+  await rename(release, legacyDirectory);
+  await writeFile(activePath, `${JSON.stringify(legacy, null, 2)}\n`);
+  await writeFile(join(legacyDirectory, 'runtime.json'), `${JSON.stringify(legacy, null, 2)}\n`);
+  const installedPath = join(legacyDirectory, 'node_modules/postcss/package.json');
+  const oldPackage = await readFile(installedPath, 'utf8');
+  assert.equal(JSON.parse(oldPackage).version, '8.5.26');
 
   const upgraded = await runManager(root);
   assert.equal(upgraded.status, 'promoted');
   const after = JSON.parse(await readFile(activePath, 'utf8'));
   assert.equal(after.version, before.version);
+  assert.equal(after.bootstrapLockSha256, createHash('sha256')
+    .update(await readFile(resolve('runtime/bootstrap/package-lock.json'))).digest('hex'));
+  assert.notEqual(after.releaseId, legacy.releaseId);
+  assert.equal(await readFile(installedPath, 'utf8'), oldPackage);
+  assert.equal(JSON.parse(await readFile(join(root, 'previous.json'), 'utf8')).releaseId, legacy.releaseId);
   const expected = JSON.parse(await readFile(resolve('runtime/bootstrap/package.json'), 'utf8'));
   assert.equal(
-    JSON.parse(await readFile(installedPath, 'utf8')).version,
-    expected.dependencies['@xmldom/xmldom'],
+    JSON.parse(await readFile(join(root, 'releases', after.releaseId, 'node_modules/postcss/package.json'), 'utf8')).version,
+    expected.dependencies.postcss,
   );
   assert.equal(after.audit.high, 0);
   assert.equal(after.audit.critical, 0);
   assert.equal((await runManager(root)).status, 'current');
+  const rolledBack = await runManager(root, {}, 'rollback');
+  assert.equal(rolledBack.releaseId, legacy.releaseId);
+  assert.equal(await readFile(installedPath, 'utf8'), oldPackage);
+  assert.equal((await runManager(root)).status, 'promoted');
+  assert.equal(await readFile(installedPath, 'utf8'), oldPackage);
+
+  // An existing destination with a missing receipt file is corruption, not a
+  // missing destination. Retain the valid active generation without renaming
+  // a new candidate over the damaged generation or masking its original error.
+  assert.equal((await runManager(root, {}, 'rollback')).releaseId, legacy.releaseId);
+  const damaged = join(root, 'releases', after.releaseId);
+  const receiptBefore = await readFile(join(damaged, 'runtime.json'), 'utf8');
+  await unlink(join(damaged, 'package-lock.json'));
+  const rejected = await runCli(root, ['update', '--strict']);
+  assert.equal(rejected.code, 5);
+  const rejection = JSON.parse(rejected.stdout);
+  assert.equal(rejection.status, 'retained-active');
+  assert.equal(rejection.error.code, 'ENOENT');
+  assert.match(rejection.error.message, /package-lock\.json/);
+  assert.equal(JSON.parse(await readFile(activePath, 'utf8')).releaseId, legacy.releaseId);
+  assert.equal(await readFile(join(damaged, 'runtime.json'), 'utf8'), receiptBefore);
+  assert.equal(await readFile(installedPath, 'utf8'), oldPackage);
 });
 
 test('a live updater lock is never stolen, even when its timestamp is old', {

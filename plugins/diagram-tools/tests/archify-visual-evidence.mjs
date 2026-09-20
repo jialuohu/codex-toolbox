@@ -7,8 +7,8 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const EXPECTED_VERSION = '2.16.0';
-const EXPECTED_SHA256 = '4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46';
+const EXPECTED_VERSION = '2.17.0-dev.1';
+const EXPECTED_SHA256 = 'd2296515b0091fb8f00580ea9e0b665d91ca5839fde651abe3ecd57a3ca178ec';
 const TYPES = Object.freeze(['architecture', 'workflow', 'sequence', 'dataflow', 'lifecycle']);
 const VIEWPORTS = Object.freeze([
   Object.freeze({ width: 1440, height: 900 }),

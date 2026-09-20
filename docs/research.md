@@ -203,8 +203,9 @@ runtime before extraction:
 scripts/setup-mineru.sh --check
 ```
 
-If local setup is wanted, install the isolated runtime and opt in to model
-downloads as separate steps:
+General toolbox setup does not install or upgrade this optional runtime. For
+local use, install or upgrade MinerU 3.4.5, then opt in to model downloads
+separately:
 
 ```bash
 scripts/setup-mineru.sh --install
@@ -218,7 +219,7 @@ mode across retries for a known scan, use a fresh `<review-directory>` for each
 attempt, and do not silently replace MinerU with a simple reader when the
 document needs layout reconstruction.
 
-The wrapper requires the managed MinerU 3.4.4 runtime, processes a private
+The wrapper requires the managed runtime, processes a private
 read-only copy instead of the original, uses configured local models with
 offline hub behavior, and writes private checksum-verified artifacts.
 

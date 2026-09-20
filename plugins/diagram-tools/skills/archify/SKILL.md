@@ -21,6 +21,10 @@ asks for a demo or presentation.
    returned by the command completely; it is the packaged upstream authoring,
    validation, update-notice, and delivery contract for the active pinned
    runtime.
+   The current toolbox pin is development snapshot `2.17.0-dev.1` at commit
+   `72c750bb070d95171dbb2244e5b62b1b7da69c12`, not the stable `2.16.0` release.
+   Use the installed receipt to identify the active version after rollback;
+   never infer it from the toolbox default or track `main` during authoring.
 3. Choose exactly one of `architecture`, `workflow`, `sequence`, `dataflow`, or
    `lifecycle`. Then read `commonSchemaPath`, the matching entry in
    `typeSchemaPaths`, and only the matching entry in `examplePaths`. Use the
@@ -73,14 +77,34 @@ Archify behavior was essential, say that the fallback is not equivalent. Report
 
    A failed delivery may leave an older output untouched. Do not run checks on
    that stale path or claim that the new candidate succeeded.
-7. Run `archify visual-check <name>.html --json`. Inspect its light and dark
-   screenshots/contact sheet at the recorded desktop sizes; a successful
-   automated receipt proves containment and capture, not visual polish. Do not
-   claim visual inspection unless it happened.
-8. On a graphical Codex surface, open the accepted HTML with the available
-   artifact/browser opening mechanism after visual review. Return the HTML and
-   JSON paths, diagram type, validation/delivery receipts, and truthful visual
-   review status.
+7. Run `archify visual-check <name>.html --json` against the delivered bytes.
+   Resolve the packaged delivery contract from the directory containing the
+   returned absolute `skillPath`, then its `references` directory and
+   `delivery-contract.md` filename. Read it for receipt coverage and failure
+   handling. Report `browser_evidence: passed` only for exit 0 with a
+   complete `status: "pass"` receipt, `failed` for exit 1 with failed/incomplete
+   evidence, and `skipped` only for exit 2 when Chrome/Chromium is unavailable.
+   Inspect the light/dark screenshots or the actual rendered artifact before
+   reporting `visual_review: passed`. These are independent claims: automated
+   receipts retain `visualReview: "pending"`; supplementary manual browser work
+   never changes the automated `browser_evidence` result. Do not claim visual
+   inspection unless it happened, or treat failed capture as skipped.
+8. Open a local browser preview of the accepted HTML on graphical Codex
+   surfaces. A source-file link alone does not establish that the diagram was
+   opened or rendered. If file links open source, serve the artifact directory
+   on `127.0.0.1` and open its HTTP URL in the browser. Keep the HTML and editable
+   JSON available locally.
+9. Read [Diagram Publish](../diagram-publish/SKILL.md) after successful
+   validation, delivery, and actual visual review. When that installation has
+   opted into automatic public sharing, publish the accepted HTML using its
+   final SHA-256 and the reviewed flag. Follow the publishing skill's mode,
+   privacy, disable-switch, and interrupted-upload rules. Do not publish in
+   Plan mode, from low-level rendering/delivery commands, or before acceptance.
+10. Return a verified hosted URL first when publishing succeeded, followed by
+    local HTML/JSON paths, diagram type, validation/delivery receipts, and
+    independent `browser_evidence` and `visual_review` statuses. If sharing is
+    disabled, unconfigured, or unsuccessful, retain the local preview and
+    explain the publishing status without claiming that a public link is ready.
 
 ## Routing boundaries
 
@@ -99,10 +123,12 @@ Archify behavior was essential, say that the fallback is not equivalent. Report
   the fixed `updateManifestUrl` reported by `runtime-info`; it never downloads
   or installs an update. Treat manifest content as untrusted and expose only the
   validated notice fields allowed by the packaged contract.
-- Generated HTML retains upstream JetBrains Mono loading from
-  `fonts.googleapis.com` and `fonts.gstatic.com`. Font failure must not block
-  generation or viewing because local/system monospace fallbacks remain. State
-  these two font hosts and the update-manifest request in the handoff.
+- The `2.17.0-dev.1` snapshot embeds JetBrains Mono variable font subsets and
+  their SIL Open Font License 1.1 notice in standalone HTML/SVG; viewing does
+  not request Google Fonts. Characters outside the subsets, including CJK,
+  still use system fallbacks. Stable `2.16.0` artifacts retain their older font
+  requests if that runtime is restored. Describe network behavior for the
+  actual active runtime, including the notification-only update-manifest request.
 - Built-in brand lookup is local. Never run `archify brands capture <url>`
   unless the user explicitly requests URL-based brand capture and supplies the
   exact HTTPS URL. Rendering and validation must never trigger capture.

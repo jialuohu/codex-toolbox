@@ -188,8 +188,8 @@ class ReadabilityContractTests(unittest.TestCase):
         diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
-        self.assertEqual(workflow_manifest["version"], "0.15.0")
-        self.assertEqual(diagram_manifest["version"], "0.4.3")
+        self.assertEqual(workflow_manifest["version"], "0.16.0")
+        self.assertEqual(diagram_manifest["version"], "0.5.0")
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
     def test_claude_counselor_is_bounded_and_implicitly_available(self) -> None:

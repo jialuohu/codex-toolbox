@@ -1,7 +1,7 @@
 {
   "name": "diagram-tools",
-  "version": "0.4.3",
-  "description": "Validated interactive Archify system maps plus polished Mermaid rendering with editable source.",
+  "version": "0.5.0",
+  "description": "Validated Archify maps with opt-in Cloudflare Pages sharing, plus Mermaid rendering with editable source.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -17,13 +17,15 @@
     "diagram",
     "svg",
     "png",
-    "ascii"
+    "ascii",
+    "cloudflare",
+    "sharing"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Diagram Tools",
-    "shortDescription": "Create interactive system maps and Mermaid diagrams.",
-    "longDescription": "Diagram Tools makes Archify the graphical default for validated interactive architecture and workflow maps while preserving Pretty Mermaid for explicit Mermaid, compact static diagrams, and terminal ASCII. Both lanes retain editable source and use guarded local runtimes.",
+    "shortDescription": "Create diagrams and share accepted Archify maps.",
+    "longDescription": "Diagram Tools makes Archify the graphical default for validated interactive architecture and workflow maps while preserving Pretty Mermaid for explicit Mermaid, compact static diagrams, and terminal ASCII. Both lanes retain editable source and use guarded local runtimes. Installation-specific opt-in enables automatic Cloudflare Pages sharing after Archify visual review, with local previews retained.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [

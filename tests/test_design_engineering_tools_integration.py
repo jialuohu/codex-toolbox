@@ -138,7 +138,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             rewrite_manifest(root, lambda manifest: manifest.update({"name": "wrong-tools"}))
 
         def change_manifest_version(root: Path) -> None:
-            rewrite_manifest(root, lambda manifest: manifest.update({"version": "0.1.1"}))
+            rewrite_manifest(root, lambda manifest: manifest.update({"version": "0.1.2"}))
 
         def change_manifest_skills_path(root: Path) -> None:
             rewrite_manifest(root, lambda manifest: manifest.update({"skills": "./wrong-skills/"}))
@@ -204,7 +204,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             path = root / "plugins" / "design-engineering-tools" / "PROVENANCE.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "70744e3816f1d93eafb697161a8b880a7384c5ff",
+                    "85e8e2363b713506e1d5b6e07a0eb2da66be1bc3",
                     "missing-commit",
                     1,
                 ),
@@ -403,7 +403,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             path = root / "docs/design.md"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "70744e3816f1d93eafb697161a8b880a7384c5ff", "missing-commit", 1
+                    "85e8e2363b713506e1d5b6e07a0eb2da66be1bc3", "missing-commit", 1
                 ),
                 encoding="utf-8",
             )
@@ -435,7 +435,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
 
         cases: tuple[tuple[Callable[[Path], None], str], ...] = (
             (change_manifest_name, "design-engineering-tools manifest name must be exact"),
-            (change_manifest_version, "design-engineering-tools manifest version must be 0.1.0"),
+            (change_manifest_version, "design-engineering-tools manifest version must be 0.1.1"),
             (change_manifest_skills_path, "design-engineering-tools manifest must expose ./skills/"),
             (change_manifest_capabilities, "design-engineering-tools manifest capabilities must be Read, Write, and Interactive"),
             (add_manifest_mcp_declaration, "design-engineering-tools manifest must not declare MCP servers"),

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/openai/skills",
+  "commit": "49f948faa9258a0c61caceaf225e179651397431",
+  "license": "Apache-2.0",
+  "runtime_reference": {
+    "repository": "https://github.com/microsoft/playwright-cli",
+    "tag": "v0.1.21",
+    "commit": "74354ecc7a43da16d91a9bc54fa8db8283a3fcf5"
+  },
+  "files": [
+    {
+      "source_path": "skills/.curated/playwright/SKILL.md",
+      "source_sha256": "0ffaabcc8e0990627c4725f18bf1c7955534a796c1c199e872909de2013ce6a8",
+      "local_path": "SKILL.md",
+      "sha256": "9f1fdb77153bf4b1e9565ca1ba4747ae1ffb5ccafa353da5df98bd1399ffb49d"
+    },
+    {
+      "source_path": "skills/.curated/playwright/scripts/playwright_cli.sh",
+      "source_sha256": "aa3fdff5d0e4556177f4dfd5f04117e772aa54f94b6a2e34b6c0edf629c6b9b5",
+      "local_path": "scripts/playwright_cli.sh",
+      "sha256": "aa3fdff5d0e4556177f4dfd5f04117e772aa54f94b6a2e34b6c0edf629c6b9b5"
+    },
+    {
+      "source_path": "skills/.curated/playwright/references/cli.md",
+      "source_sha256": "7c069a8206ba20b9ddbdc42436b04de30bb3aa4a825ba98680757ee62e954900",
+      "local_path": "references/cli.md",
+      "sha256": "87581a48fbcbcc1ada46c7e2dd5d8ff9bed91734a3275bdcd812a85389098ae1"
+    },
+    {
+      "source_path": "skills/.curated/playwright/references/workflows.md",
+      "source_sha256": "a2b5835a00ebee3906c146adf7f764f7718ea3f89a8702d86eaa135dfe0fc8c2",
+      "local_path": "references/workflows.md",
+      "sha256": "1c059543c497757a5bfa738656313608f606e2426faccb51572e56547418bac2"
+    }
+  ]
+}

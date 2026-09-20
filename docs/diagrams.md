@@ -5,6 +5,7 @@
 Run shell commands from the repository root. Read the owning skill before using a workflow.
 
 - [Diagram Tools](#diagram-tools)
+- [Cloudflare Pages sharing](#cloudflare-pages-sharing)
 - [Draw.io Tools](#drawio-tools)
 - [OmniGraffle Tools](#omnigraffle-tools)
 - [Paper Figure Workflow](#paper-figure-workflow)
@@ -23,18 +24,32 @@ adjustable, inspectable spatial views in the conversation.
 Archify retains editable `<name>.<type>.json` beside a validated standalone
 `<name>.html`. New workflows use schema v2; architecture, sequence, data-flow,
 and lifecycle sources use schema v1. Showcase delivery validates every source,
-commits the HTML atomically, then captures light/dark containment evidence at
-1440×900, 1600×1000, 1920×1080, and 2048×1320. Static presentation is the
-default; trace motion is enabled only for a requested demo or presentation.
+commits the HTML atomically. `visual-check` measures light-theme containment at
+1440×900, 1600×1000, 1920×1080, and 2048×1320, then captures both themes at the
+smallest and largest sizes. Report deterministic delivery, automated
+`browser_evidence`, and perceptual `visual_review` separately: automated
+screenshots are evidence to inspect, not approval of visual polish. Static
+presentation is the default; trace motion is enabled only for a requested demo
+or presentation.
 Without a requested destination, artifacts go in a task-scoped temporary
 directory.
 
-The immutable Archify runtime is pinned to upstream `v2.16.0` `archify.zip`
-(SHA-256
-`4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46`)
+The immutable Archify runtime is pinned to development snapshot
+`2.17.0-dev.1` at commit `72c750bb070d95171dbb2244e5b62b1b7da69c12`, using
+that commit's canonical
+[`archify.zip`](https://raw.githubusercontent.com/tt-a1i/archify/72c750bb070d95171dbb2244e5b62b1b7da69c12/archify.zip)
+(1,885,058 bytes; SHA-256
+`d2296515b0091fb8f00580ea9e0b665d91ca5839fde651abe3ecd57a3ca178ec`)
 under `${CODEX_HOME:-$HOME/.codex}/runtime/diagram-tools/archify`. Installation
 validates the archive, upstream license, runtime paths, `doctor`, and fixtures
-before atomic promotion; rollback retains the last good generation. The
+before atomic promotion; rollback retains the last good generation. This is an
+explicit development pin, not the stable `2.16.0` release and not a moving
+`main` download. Upgrading an existing `2.16.0` installation retains that stable
+generation for `--rollback`; fresh installations have no previous generation.
+Rollback is not a persistent version preference: the next toolbox setup
+reinstalls the approved pin. After setup, explicitly run
+`scripts/setup-archify-tools.sh --rollback` to use the retained stable generation again.
+Confirm the restored version with `runtime-info --json`. The
 collision-safe launcher passes through the upstream CLI and adds runtime
 inspection:
 
@@ -52,9 +67,10 @@ scripts/setup-archify-tools.sh --rollback
 Archify preserves upstream's notification-only update checker. It may request
 the fixed manifest at
 `https://tt-a1i.github.io/archify/skill-updates/archify/stable.json`, but never
-downloads or installs an update. Generated HTML may load JetBrains Mono from
-`fonts.googleapis.com` and `fonts.gstatic.com`; local/system monospace fallback
-keeps the artifact usable when those requests fail. URL-based brand capture is
+downloads or installs an update. This snapshot embeds JetBrains Mono variable
+font subsets and their SIL Open Font License 1.1 notice in standalone artifacts;
+viewing does not request Google Fonts. Characters outside the subsets, including
+CJK, still use system fallbacks. URL-based brand capture is
 explicit-only and never runs during rendering or validation.
 
 Pretty Mermaid preserves editable `.mmd` and exports self-contained SVG, real
@@ -79,7 +95,7 @@ scripts/setup-diagram-tools.sh --update --strict
 scripts/setup-diagram-tools.sh --rollback
 ```
 
-Toolbox setup installs both stable launchers in `CODEX_LOCAL_BIN_DIR`, defaulting
+Toolbox setup installs the stable rendering launchers in `CODEX_LOCAL_BIN_DIR`, defaulting
 to `~/.local/bin`. Pretty Mermaid commands include:
 
 ```bash
@@ -93,6 +109,90 @@ pretty-mermaid batch --input-dir diagrams --output-dir rendered --format svg --w
 Beautiful Mermaid intentionally supports a subset of Mermaid syntax. The
 active capability report names the tested diagram families and available
 themes; unsupported syntax fails without rewriting the `.mmd` source.
+
+## Cloudflare Pages sharing
+
+`diagram-tools` includes the reusable
+[$diagram-publish skill](../plugins/diagram-tools/skills/diagram-publish/SKILL.md).
+After installation-specific opt-in, Archify automatically publishes the final
+HTML only after validation, successful delivery, and actual visual review. The
+hosted link accompanies a local browser preview and retained editable JSON.
+Pretty Mermaid, draw.io, OmniGraffle, and paper figures keep their existing local
+delivery behavior in v1. Low-level rendering and `archify deliver` never publish.
+
+Sharing uses one dedicated Cloudflare Pages Direct Upload project and a distinct
+preview deployment per finalized version. Return the immutable deployment URL;
+subsequent drawings do not replace it. There is no public gallery, custom domain,
+or production-site deployment. Anyone with the URL can read the HTML, including
+embedded diagram data. Current Archify artifacts include their font subsets;
+older artifacts may retain the font requests from the runtime that generated
+them. `noindex` headers do not provide access control.
+
+### One-time setup
+
+Publishing is disabled on new installations. For an authorized setup, install
+the launcher and pinned runtime (Node 22 or newer, Wrangler `4.135.0` with locked
+dependencies):
+
+```bash
+scripts/setup-diagram-publish.sh
+diagram-publish setup --install-runtime
+diagram-publish status
+```
+
+Create an account-scoped **Cloudflare Pages Edit** token and save it in a
+protected file beneath `CODEX_SECRETS_DIR`, defaulting to
+`${CODEX_HOME:-$HOME/.codex}/secrets`. Do not paste the token into chat or shell
+arguments. This token can edit Pages projects throughout the selected account;
+the helper restricts its operations to the recorded dedicated project.
+Configure the account and reference the file to create a dedicated
+`codex-diagrams-<random suffix>` project and enable automatic sharing:
+
+```bash
+diagram-publish setup --account-id ACCOUNT_ID --token-file TOKEN_FILE --auto
+diagram-publish status --online
+```
+
+Account configuration, attempts, and receipts are stored outside repositories
+under `${CODEX_HOME:-$HOME/.codex}/diagram-publish`. The credential remains in its
+protected file. Ordinary drawing work does not install runtimes or initiate
+setup. The default `status` is local and read-only; `--online` explicitly checks
+Cloudflare. See [Cloudflare's token setup](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/).
+
+### Accepted HTML and publication history
+
+The generic helper accepts the exact visually reviewed HTML and its final
+SHA-256. All commands emit JSON by default:
+
+```bash
+diagram-publish publish-html --file ACCEPTED_HTML --expect-sha256 SHA256 --reviewed
+diagram-publish list
+```
+
+Only `index.html` and generated `_headers` enter an isolated staging directory;
+sibling sources, screenshots, and receipts stay local. Changed hashes,
+symlinks, local resource references, and oversized files are rejected. A link is
+reported ready only after project identity and preview success are checked and
+an unauthenticated HTTPS response matches the accepted HTML hash. Interrupted
+attempts are reconciled before retrying; local artifacts survive failures.
+An upload whose outcome remains unknown is reconciliation-only until the
+provider exposes its result; it is never silently reset and uploaded again.
+Known deployment IDs remain available for explicit removal even if public
+response verification fails.
+
+Set `CODEX_TOOLBOX_NO_PUBLISH=1` to disable publication, or add `--local-only`
+for a single local result. Agent workflows do not publish in Plan mode, CI,
+private/confidential tasks, or before final acceptance. The helper cannot infer
+conversation mode; the owning skill enforces it. Existing public deployments
+remain until explicitly removed. To remove one specifically requested recorded
+deployment:
+
+```bash
+diagram-publish unpublish --deployment-id DEPLOYMENT_ID --confirm
+```
+
+There is no automatic deletion or expiry. See the owning skill for authorization,
+verification, interruption handling, and the complete handoff contract.
 
 ## Draw.io Tools
 

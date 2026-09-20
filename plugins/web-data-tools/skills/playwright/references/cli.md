@@ -1,5 +1,8 @@
 # Playwright CLI Reference
 
+Examples are aligned with `@playwright/cli` 0.1.21. The wrapper and Toolbox
+entrypoint retain the OpenAI curated skill's workflow.
+
 Use the wrapper script unless the CLI is already installed globally:
 
 Resolve `scripts/playwright_cli.sh` relative to this skill directory, then export that absolute path:
@@ -94,10 +97,20 @@ pwcli tab-select 0
 ```bash
 pwcli console
 pwcli console warning
-pwcli network
-pwcli run-code "await page.waitForTimeout(1000)"
+pwcli requests
+pwcli run-code "async page => await page.title()"
 pwcli tracing-start
 pwcli tracing-stop
+```
+
+## Theme and media inspection
+
+```bash
+pwcli set-color-scheme dark
+pwcli set-reduced-motion reduce
+pwcli screenshot
+pwcli clear-color-scheme
+pwcli clear-reduced-motion
 ```
 
 ## Sessions

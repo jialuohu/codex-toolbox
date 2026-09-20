@@ -63,7 +63,7 @@ class WebRoutingContractTests(unittest.TestCase):
         manifest = json.loads(WEB_PLUGIN.read_text(encoding="utf-8"))
 
         self.assertIn("allow_implicit_invocation: true", agent_text)
-        self.assertEqual(manifest["version"], "0.5.1")
+        self.assertEqual(manifest["version"], "0.5.2")
         self.assertIn("community research", manifest["description"].lower())
 
 

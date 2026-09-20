@@ -20,7 +20,7 @@ official documentation override imported opinions.
 
 The skills adapt the MIT-licensed
 [emilkowalski/skills](https://github.com/emilkowalski/skills) snapshot at commit
-`70744e3816f1d93eafb697161a8b880a7384c5ff`; they are an unofficial,
+`85e8e2363b713506e1d5b6e07a0eb2da66be1bc3`; they are an unofficial,
 non-affiliated adaptation. Start a fresh Codex task after installing or
 upgrading so the plugin is available to the task from its start.
 

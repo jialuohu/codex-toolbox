@@ -26,7 +26,7 @@ TOOLBOX_MARKETPLACE_MODE="${CODEX_TOOLBOX_MARKETPLACE_MODE:-git}"
 declare -a OLD_MARKETPLACE_NAMES=()
 UI_UX_MARKETPLACE_NAME="ui-ux-pro-max-skill"
 UI_UX_MARKETPLACE_SOURCE="nextlevelbuilder/ui-ux-pro-max-skill"
-UI_UX_MARKETPLACE_REF="v2.10.0"
+UI_UX_MARKETPLACE_REF="v2.15.0"
 UI_UX_MARKETPLACE_SPARSE_PATHS=(
   ".claude/skills/ui-ux-pro-max"
   ".claude-plugin"
@@ -816,6 +816,7 @@ done
 
 "$ROOT/scripts/setup-diagram-tools.sh" --update
 "$ROOT/scripts/setup-archify-tools.sh" --install
+"$ROOT/scripts/setup-diagram-publish.sh" --install-launcher
 
 DOCMOST_INSTALLED_SERVER_DIR="$(installed_docmost_server_dir)"
 readonly DOCMOST_INSTALLED_SERVER_DIR

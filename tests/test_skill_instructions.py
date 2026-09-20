@@ -110,9 +110,50 @@ class DiscoveryContractTests(unittest.TestCase):
             # guidance must not introduce a second, even nested, entrypoint.
             self.assertEqual(list(entry.parent.rglob("SKILL.md")), [entry])
             self.assertNotEqual(upstream.name, "SKILL.md")
-            self.assertEqual(audit.digest(upstream.read_bytes()), original[row["name"]]["sha256"])
-            self.assertEqual(data["sha256"], original[row["name"]]["sha256"])
+            self.assertEqual(audit.digest(upstream.read_bytes()), data["sha256"])
+            # Intentional upstream refreshes record a new current receipt,
+            # while preserving the original instruction-audit baseline.
+            historical = data.get("historical_import", data)
+            self.assertEqual(historical["sha256"], original[row["name"]]["sha256"])
+            self.assertEqual(historical["source_repository"], "https://github.com/jialuohu/codex-toolbox")
+            self.assertEqual(historical["source_revision"], "7ba1c3abcab39f942e10aab542c3824d6951dbe9")
+            self.assertEqual(historical["source_path"], row["path"])
+            if data["schema_version"] == 2:
+                self.assertEqual(data["source_repository"], "https://github.com/kepano/obsidian-skills")
+                self.assertEqual(data["source_revision"], "3ccff5338ea700537839b21900aa5358a0402c98")
+                self.assertEqual(data["source_path"], f"skills/{row['name']}/SKILL.md")
+                self.assertEqual(data["license"], "MIT")
+                license_path = (entry.parent / "references/LICENSE" if row["name"] == "defuddle"
+                                else entry.parents[2] / "LICENSE")
+                self.assertEqual(audit.digest(license_path.read_bytes()), data["license_sha256"])
+                imported_references = {reference["local_path"] for reference in data["references"]}
+                self.assertEqual(imported_references, {
+                    str(path.relative_to(entry.parent))
+                    for path in (entry.parent / "references").glob("*.md")
+                })
+                for reference in data["references"]:
+                    self.assertEqual(reference["source_path"], f"skills/{row['name']}/{reference['local_path']}")
+                    self.assertEqual(audit.digest((entry.parent / reference["local_path"]).read_bytes()),
+                                     reference["sha256"])
             self.assertIn(str(upstream.relative_to(ROOT)), row["references"])
+
+    def test_playwright_source_receipt_covers_the_adapted_documents_and_wrapper(self):
+        skill = ROOT / "plugins/web-data-tools/skills/playwright"
+        receipt = json.loads((skill / "upstream.json").read_text())
+        self.assertEqual(receipt["repository"], "https://github.com/openai/skills")
+        self.assertEqual(receipt["commit"], "49f948faa9258a0c61caceaf225e179651397431")
+        self.assertEqual(receipt["license"], "Apache-2.0")
+        self.assertEqual(receipt["runtime_reference"]["tag"], "v0.1.21")
+        self.assertEqual(receipt["runtime_reference"]["commit"], "74354ecc7a43da16d91a9bc54fa8db8283a3fcf5")
+        self.assertEqual({item["local_path"] for item in receipt["files"]}, {
+            "SKILL.md", "scripts/playwright_cli.sh", "references/cli.md", "references/workflows.md",
+        })
+        for item in receipt["files"]:
+            self.assertEqual(item["source_path"], "skills/.curated/playwright/" + item["local_path"])
+            self.assertRegex(item["source_sha256"], r"^[0-9a-f]{64}$")
+            self.assertEqual(audit.digest((skill / item["local_path"]).read_bytes()), item["sha256"])
+            if item["local_path"] == "scripts/playwright_cli.sh":
+                self.assertEqual(item["sha256"], item["source_sha256"])
 
     def test_wechat_moved_sections_keep_the_complete_original_contract(self):
         preservation = json.loads((ROOT / "tests/fixtures/instruction-preservation.json").read_text())

@@ -21,10 +21,12 @@ import {
   smokeRelease,
   validateReleasePin,
   verifyPackagedRelease,
+  VERSION_PATTERN,
+  runtimeReleaseId,
 } from './release.mjs';
 
 const MIN_NODE_MAJOR = 20;
-const ALLOWED_DOWNLOAD_HOSTS = new Set(['github.com', 'release-assets.githubusercontent.com']);
+const ALLOWED_DOWNLOAD_HOSTS = new Set(['github.com', 'release-assets.githubusercontent.com', 'raw.githubusercontent.com']);
 const MAX_DOWNLOAD_REDIRECTS = 3;
 
 function assertNodeVersion() {
@@ -74,15 +76,16 @@ function validateRuntimeReceipt(receipt, label) {
     !receipt ||
     receipt.schemaVersion !== 1 ||
     typeof receipt.releaseId !== 'string' ||
-    !/^archify-\d+\.\d+\.\d+-[0-9a-f]{12}$/.test(receipt.releaseId) ||
+    !/^archify-\d+\.\d+\.\d+(?:-dev\.\d+)?-[0-9a-f]{12}(?:-[0-9a-f]{12})?$/.test(receipt.releaseId) ||
     typeof receipt.version !== 'string' ||
-    !/^\d+\.\d+\.\d+$/.test(receipt.version) ||
+    !VERSION_PATTERN.test(receipt.version) ||
     !/^[0-9a-f]{64}$/.test(receipt.sha256) ||
-    receipt.releaseId !== `archify-${receipt.version}-${receipt.sha256.slice(0, 12)}` ||
+    (receipt.sourceCommit !== undefined && !/^[0-9a-f]{40}$/.test(receipt.sourceCommit)) ||
+    receipt.releaseId !== runtimeReleaseId(receipt) ||
     !/^[0-9a-f]{64}$/.test(receipt.treeSha256) ||
     !validTimestamp(receipt.activatedAt) ||
     Object.keys(receipt).some((key) => ![
-      'schemaVersion', 'releaseId', 'version', 'sha256', 'treeSha256', 'activatedAt',
+      'schemaVersion', 'releaseId', 'version', 'sha256', 'treeSha256', 'activatedAt', 'sourceCommit',
     ].includes(key))
   ) {
     throw new Error(`${label} is invalid`);
@@ -216,7 +219,9 @@ export function assertArchiveDownloadUrl(value) {
     (url.port && url.port !== '443') ||
     url.username ||
     url.password ||
-    !ALLOWED_DOWNLOAD_HOSTS.has(url.hostname)
+    !ALLOWED_DOWNLOAD_HOSTS.has(url.hostname) ||
+    (url.hostname === 'raw.githubusercontent.com' &&
+      (!/^\/tt-a1i\/archify\/[0-9a-f]{40}\/archify\.zip$/.test(url.pathname) || url.search || url.hash))
   ) {
     throw new Error(`Archify download redirect is not allowed: ${url.origin}`);
   }
@@ -233,6 +238,10 @@ async function downloadArchive(url, maxBytes) {
       signal: AbortSignal.timeout(60_000),
     });
     if (![301, 302, 303, 307, 308].includes(response.status)) break;
+    if (current.hostname === 'raw.githubusercontent.com') {
+      await response.body?.cancel();
+      throw new Error('Archify commit archive must not redirect');
+    }
     if (redirects === MAX_DOWNLOAD_REDIRECTS) {
       await response.body?.cancel();
       throw new Error('Archify download exceeded the redirect limit');
@@ -278,6 +287,7 @@ function runtimeReceipt(manifest) {
     schemaVersion: 1,
     releaseId: manifest.releaseId,
     version: manifest.version,
+    ...(manifest.sourceCommit ? { sourceCommit: manifest.sourceCommit } : {}),
     sha256: manifest.sha256,
     treeSha256: manifest.treeSha256,
     activatedAt: new Date().toISOString(),
@@ -298,7 +308,8 @@ async function stageRelease(paths, pin, archivePath) {
       schemaVersion: 1,
       releaseId: pin.releaseId,
       version: pin.version,
-      tag: pin.tag,
+      channel: pin.channel ?? 'stable',
+      ...(pin.sourceCommit ? { sourceCommit: pin.sourceCommit } : { tag: pin.tag }),
       sourceUrl: pin.archive.url,
       archiveName: pin.archive.name,
       sha256: pin.archive.sha256,

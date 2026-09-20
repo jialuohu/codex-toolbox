@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 
 MANIFEST_NAME = "mineru-run.json"
-MINERU_VERSION = "3.4.4"
+MINERU_VERSION = "3.4.5"
 STDOUT_LOG = "mineru-stdout.log"
 STDERR_LOG = "mineru-stderr.log"
 SUPPORTED_SUFFIXES = {

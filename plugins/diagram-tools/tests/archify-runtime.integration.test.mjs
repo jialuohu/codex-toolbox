@@ -88,8 +88,10 @@ for (const moduleName of ['node:http', 'node:https']) {
   const infoResult = await run(launcher, ['runtime-info', '--json'], blockedEnv);
   assert.equal(infoResult.code, 0, infoResult.stderr);
   const info = JSON.parse(infoResult.stdout);
-  assert.equal(info.version, '2.16.0');
-  assert.equal(info.sha256, '4c59fa6557a2385beaaef8c7219cc414573acc9f0c30a932d5053b0b20689a46');
+  assert.equal(info.version, '2.17.0-dev.1');
+  assert.equal(info.channel, 'development');
+  assert.equal(info.sourceCommit, '72c750bb070d95171dbb2244e5b62b1b7da69c12');
+  assert.equal(info.sha256, 'd2296515b0091fb8f00580ea9e0b665d91ca5839fde651abe3ecd57a3ca178ec');
   const output = join(root, 'integration.architecture.html');
   const delivered = await run(launcher, [
     'deliver',
@@ -134,9 +136,10 @@ process.stdout.write(JSON.stringify(result) + '\\n');
   const discoveredOrigins = fetchCapableOrigins(await readFile(output, 'utf8'));
   assert.deepEqual(
     discoveredOrigins,
-    ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'],
+    [],
     `discovered fetch-capable origins: ${discoveredOrigins.join(', ')}`,
   );
+  assert.match(await readFile(output, 'utf8'), /data:font\/woff2;base64,/);
 
   const brokenInput = join(root, 'broken.architecture.json');
   await writeFile(brokenInput, '{"schema_version":');
