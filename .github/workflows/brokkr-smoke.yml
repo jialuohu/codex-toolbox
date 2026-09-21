@@ -1,5 +1,5 @@
 {
-  "name": "Brokkr initialization validation: baseline",
+  "name": "Brokkr initialization validation: hook-path",
   "on": {
     "workflow_dispatch": {
       "inputs": {
@@ -34,7 +34,8 @@
       ],
       "timeout-minutes": 10,
       "env": {
-        "MARKER_NONCE": "${{ inputs.marker_nonce }}"
+        "MARKER_NONCE": "${{ inputs.marker_nonce }}",
+        "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/etc/brokkr/initialization/hook-override.sh"
       },
       "defaults": {
         "run": {
@@ -71,7 +72,8 @@
       ],
       "timeout-minutes": 10,
       "env": {
-        "MARKER_NONCE": "${{ inputs.marker_nonce }}"
+        "MARKER_NONCE": "${{ inputs.marker_nonce }}",
+        "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/etc/brokkr/initialization/hook-override.sh"
       },
       "defaults": {
         "run": {
