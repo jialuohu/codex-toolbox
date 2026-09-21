@@ -1,0 +1,42 @@
+name: Brokkr smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      validate_runner:
+        description: Run only this smoke job on Brokkr before enabling CI routing
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    # Explicit pilot input keeps ordinary CI hosted while validation runs.
+    # Host admission checks still apply; this input never authorizes a runner.
+    if: github.event_name == 'workflow_dispatch' && (vars.BROKKR_ENABLED == 'true' || inputs.validate_runner == true)
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - brokkr
+      - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
+    timeout-minutes: 10
+    steps:
+      - name: Check disposable guest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" -ne 0
+          test "$(uname -m)" = x86_64
+          test -z "$(find "$RUNNER_TEMP" -name brokkr-previous-job -print -quit)"
+          python3 --version
+          node --version
+          printf '%s\n' "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/brokkr-previous-job"
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify checked-out source
+        run: git diff --exit-code
