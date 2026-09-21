@@ -1,5 +1,5 @@
 {
-  "name": "Brokkr initialization validation: baseline",
+  "name": "Brokkr initialization validation: bash-env",
   "on": {
     "workflow_dispatch": {
       "inputs": {
@@ -34,7 +34,9 @@
       ],
       "timeout-minutes": 10,
       "env": {
-        "MARKER_NONCE": "${{ inputs.marker_nonce }}"
+        "MARKER_NONCE": "${{ inputs.marker_nonce }}",
+        "BASH_ENV": "/etc/brokkr/initialization/startup.sh",
+        "ENV": "/etc/brokkr/initialization/startup.sh"
       },
       "defaults": {
         "run": {
@@ -71,7 +73,9 @@
       ],
       "timeout-minutes": 10,
       "env": {
-        "MARKER_NONCE": "${{ inputs.marker_nonce }}"
+        "MARKER_NONCE": "${{ inputs.marker_nonce }}",
+        "BASH_ENV": "/etc/brokkr/initialization/startup.sh",
+        "ENV": "/etc/brokkr/initialization/startup.sh"
       },
       "defaults": {
         "run": {
