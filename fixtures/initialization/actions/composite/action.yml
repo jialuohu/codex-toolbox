@@ -1,0 +1,13 @@
+{
+  "name": "Brokkr composite marker",
+  "description": "Validation-only composite shell marker.",
+  "runs": {
+    "using": "composite",
+    "steps": [
+      {
+        "shell": "bash",
+        "run": "set -euo pipefail\n[[ \"$MARKER_NONCE\" =~ ^[0-9a-f]{64}$ ]]\n[[ \"$GITHUB_RUN_ID\" =~ ^[1-9][0-9]*$ && \"$GITHUB_RUN_ATTEMPT\" =~ ^[1-9][0-9]*$ ]]\nprintf '\\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:initialization-composite\\n' \"$MARKER_NONCE\" \"$GITHUB_RUN_ID\" \"$GITHUB_RUN_ATTEMPT\" > /dev/ttyS0\n"
+      }
+    ]
+  }
+}
