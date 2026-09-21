@@ -6,7 +6,7 @@ on:
     inputs:
       case:
         type: choice
-        options: [positive, wrong-job]
+        options: [positive, wrong-job, cancel-authorization]
         required: true
       marker_nonce:
         description: Fresh 64-character lowercase hexadecimal validation nonce
@@ -22,7 +22,7 @@ jobs:
       - x64
       - brokkr
       - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
-      - ${{ inputs.case == 'wrong-job' && format('brokkr-never-{0}', inputs.marker_nonce) || 'brokkr' }}
+      - ${{ inputs.case != 'positive' && format('brokkr-never-{0}', inputs.marker_nonce) || 'brokkr' }}
     timeout-minutes: 10
     steps:
       - name: External execution marker
@@ -39,7 +39,7 @@ jobs:
           [[ "$MARKER_NONCE" =~ ^[0-9a-f]{64}$ ]]
           printf '\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:smoke-always\n' "$MARKER_NONCE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > /dev/ttyS0
   forged:
-    if: inputs.case == 'wrong-job'
+    if: inputs.case != 'positive'
     runs-on:
       - self-hosted
       - linux
