@@ -1,43 +1,175 @@
-name: Brokkr smoke
-
-on:
-  workflow_dispatch:
-    inputs:
-      validate_runner:
-        description: Run only this smoke job on Brokkr before enabling CI routing
-        type: boolean
-        required: false
-        default: false
-
-permissions:
-  contents: read
-
-jobs:
-  smoke:
-    # Explicit pilot input keeps ordinary CI hosted while validation runs.
-    # Host admission checks still apply; this input never authorizes a runner.
-    if: github.event_name == 'workflow_dispatch' && (vars.BROKKR_ENABLED == 'true' || inputs.validate_runner == true)
-    # A rerun exercises the hosted fallback instead of waiting for Brokkr.
-    runs-on: ${{ github.run_attempt == '1' && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-smoke"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
-    timeout-minutes: 10
-    steps:
-      - name: Show selected runner
-        env:
-          RUNNER_LOCATION: ${{ runner.environment }}
-        run: |
-          printf 'Runner environment: %s\n' "$RUNNER_LOCATION"
-      - name: Check disposable guest
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(id -u)" -ne 0
-          test "$(uname -m)" = x86_64
-          test -z "$(find "$RUNNER_TEMP" -name brokkr-previous-job -print -quit)"
-          python3 --version
-          node --version
-          printf '%s\n' "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/brokkr-previous-job"
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Verify checked-out source
-        run: git diff --exit-code
+{
+  "name": "Diagram Tools workload validation",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "target": {
+          "description": "Execution target for the reviewed candidate only",
+          "required": true,
+          "type": "choice",
+          "options": [
+            "hosted",
+            "local"
+          ],
+          "default": "hosted"
+        },
+        "trial": {
+          "description": "Trial identifier for evidence only",
+          "required": true,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "conformance": {
+      "name": "${{ matrix.os }} / Node ${{ matrix.node }}",
+      "runs-on": "${{ inputs.target == 'local' && ((matrix.os == 'ubuntu-latest' && matrix.node == 20) || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && matrix.os == 'ubuntu-latest' && fromJSON(format('[\"self-hosted\",\"linux\",\"x64\",\"brokkr\",\"brokkr-{0}-{1}-diagram-tools-conformance-linux-node-{2}\"]', github.run_id, github.run_attempt, matrix.node)) || matrix.os }}",
+      "timeout-minutes": 25,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": [
+            "ubuntu-latest",
+            "macos-latest"
+          ],
+          "node": [
+            20,
+            22
+          ]
+        }
+      },
+      "env": {
+        "ARCHIFY_RUNTIME_ROOT": "${{ github.workspace }}/.tmp/archify-runtime",
+        "CODEX_HOME": "${{ github.workspace }}/.tmp/codex-home",
+        "CODEX_LOCAL_BIN_DIR": "${{ github.workspace }}/.tmp/bin",
+        "PRETTY_MERMAID_RUNTIME_ROOT": "${{ github.workspace }}/.tmp/pretty-mermaid-runtime"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "a061c084b43978be68f5d0bf25a5fd2191300820"
+          }
+        },
+        {
+          "uses": "actions/setup-node@v4",
+          "with": {
+            "node-version": "${{ matrix.node }}",
+            "cache": "npm",
+            "cache-dependency-path": "plugins/diagram-tools/runtime/bootstrap/package-lock.json"
+          }
+        },
+        {
+          "name": "Install approved bootstrap dependencies",
+          "working-directory": "plugins/diagram-tools/runtime/bootstrap",
+          "run": "npm ci --ignore-scripts --no-audit --no-fund"
+        },
+        {
+          "name": "Audit approved runtime",
+          "working-directory": "plugins/diagram-tools/runtime/bootstrap",
+          "run": "npm audit --omit=dev --audit-level=high"
+        },
+        {
+          "name": "Validate toolbox integration",
+          "run": "python3 scripts/check-codex-toolbox-setup.py"
+        },
+        {
+          "name": "Validate visual routing instructions",
+          "run": "python3 -m unittest tests.test_instruction_readability"
+        },
+        {
+          "name": "Scan current tree for private paths and secrets",
+          "run": "scripts/privacy-audit.sh current"
+        },
+        {
+          "name": "Run unit tests",
+          "working-directory": "plugins/diagram-tools",
+          "run": "npm test"
+        },
+        {
+          "name": "Test diagram publishing without Cloudflare access",
+          "run": "python3 -m unittest discover -s tests -p 'test_diagram_publish*.py'"
+        },
+        {
+          "name": "Verify pinned publisher runtime without credentials",
+          "if": "matrix.node == 22",
+          "run": "scripts/setup-diagram-publish.sh --install-launcher\n\"$CODEX_LOCAL_BIN_DIR/diagram-publish\" setup --install-runtime\nscripts/setup-diagram-publish.sh --check\n"
+        },
+        {
+          "name": "Verify approved fallback contract",
+          "working-directory": "plugins/diagram-tools",
+          "run": "npm run test:contract"
+        },
+        {
+          "name": "Exercise isolated Archify runtime manager",
+          "working-directory": "plugins/diagram-tools",
+          "run": "npm run test:archify:integration"
+        },
+        {
+          "name": "Stage and verify newest stable renderer",
+          "run": "scripts/setup-diagram-tools.sh --update --strict"
+        },
+        {
+          "name": "Install and check pinned Archify runtime",
+          "run": "scripts/setup-archify-tools.sh --install\nscripts/setup-archify-tools.sh --check\n"
+        },
+        {
+          "name": "Smoke all Archify diagram modes",
+          "shell": "bash",
+          "run": "artifact_dir=\"${{ runner.temp }}/archify-artifacts\"\nruntime_info=\"$artifact_dir/runtime-info.json\"\nshowcase_fixture_dir=\"$GITHUB_WORKSPACE/plugins/diagram-tools/tests/fixtures/archify-showcase\"\nmkdir -p \"$artifact_dir\"\n\"$CODEX_LOCAL_BIN_DIR/archify\" runtime-info --json > \"$runtime_info\"\n\"$CODEX_LOCAL_BIN_DIR/archify\" doctor\n\nfor diagram_type in architecture workflow sequence dataflow lifecycle; do\n  case \"$diagram_type\" in\n    sequence|dataflow|lifecycle)\n      example_path=\"$showcase_fixture_dir/$diagram_type.$diagram_type.json\"\n      ;;\n    *)\n      example_path=\"$(node -e '\n        const fs = require(\"node:fs\");\n        const info = JSON.parse(fs.readFileSync(process.argv[1], \"utf8\"));\n        const example = info.examplePaths?.[process.argv[2]];\n        if (typeof example !== \"string\" || example.length === 0) {\n          throw new Error(`Missing examplePaths.${process.argv[2]}`);\n        }\n        process.stdout.write(example);\n      ' \"$runtime_info\" \"$diagram_type\")\"\n      ;;\n  esac\n  output_path=\"$artifact_dir/$diagram_type.html\"\n  \"$CODEX_LOCAL_BIN_DIR/archify\" validate \\\n    \"$diagram_type\" \"$example_path\" --json --quality showcase\n  \"$CODEX_LOCAL_BIN_DIR/archify\" deliver \\\n    \"$diagram_type\" \"$example_path\" \"$output_path\" --json --quality showcase\ndone\n"
+        },
+        {
+          "name": "Gate Archify artifacts with upstream visual-check",
+          "shell": "bash",
+          "run": "artifact_dir=\"${{ runner.temp }}/archify-artifacts\"\nfor output_path in \"$artifact_dir\"/{architecture,workflow,sequence,dataflow,lifecycle}.html; do\n  \"$CODEX_LOCAL_BIN_DIR/archify\" visual-check \"$output_path\" --json\ndone\n"
+        },
+        {
+          "name": "Capture complete Archify theme and viewport matrix",
+          "run": "node plugins/diagram-tools/tests/archify-visual-evidence.mjs \"${{ runner.temp }}/archify-artifacts/runtime-info.json\" \"${{ runner.temp }}/archify-artifacts\""
+        },
+        {
+          "name": "Render SVG and PNG contact sheets",
+          "run": "node plugins/diagram-tools/skills/pretty-mermaid/scripts/contact-sheet.mjs \"${{ runner.temp }}/diagram-artifacts\""
+        },
+        {
+          "uses": "actions/upload-artifact@v4",
+          "with": {
+            "name": "diagram-tools-${{ matrix.os }}-node-${{ matrix.node }}",
+            "path": "${{ runner.temp }}/diagram-artifacts\n${{ runner.temp }}/archify-artifacts\n",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    },
+    "runtime-manager": {
+      "runs-on": "${{ inputs.target == 'local' && (true) && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && fromJSON(format('[\"self-hosted\",\"linux\",\"x64\",\"brokkr\",\"brokkr-{0}-{1}-diagram-tools-runtime-manager\"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "a061c084b43978be68f5d0bf25a5fd2191300820"
+          }
+        },
+        {
+          "uses": "actions/setup-node@v4",
+          "with": {
+            "node-version": 22,
+            "cache": "npm",
+            "cache-dependency-path": "plugins/diagram-tools/runtime/bootstrap/package-lock.json"
+          }
+        },
+        {
+          "name": "Exercise promotion, idempotency, and fallback",
+          "working-directory": "plugins/diagram-tools",
+          "run": "npm run test:integration"
+        }
+      ]
+    }
+  },
+  "run-name": "Brokkr workload / ${{ inputs.target }} / ${{ inputs.trial }}"
+}
