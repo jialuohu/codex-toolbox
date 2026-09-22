@@ -1,42 +1,214 @@
-name: Brokkr smoke
-
+# Diagnostic branch fixture; do not replace normal CI with this workflow.
+name: Brokkr toolchain validation
 on:
   workflow_dispatch:
-    inputs:
-      validate_runner:
-        description: Run only this smoke job on Brokkr before enabling CI routing
-        type: boolean
-        required: false
-        default: false
-
 permissions:
   contents: read
-
 jobs:
   smoke:
-    # Explicit pilot input keeps ordinary CI hosted while validation runs.
-    # Host admission checks still apply; this input never authorizes a runner.
-    if: github.event_name == 'workflow_dispatch' && (vars.BROKKR_ENABLED == 'true' || inputs.validate_runner == true)
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
-      - brokkr
-      - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
+    runs-on: ${{ fromJSON(github.run_attempt == '1' && format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-smoke"]', github.run_id, github.run_attempt) || '["ubuntu-24.04"]') }}
     timeout-minutes: 10
-    steps:
-      - name: Check disposable guest
+    defaults:
+      run:
         shell: bash
+    steps:
+      - name: Verify non-root user and writable tool cache
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
           set -euo pipefail
           test "$(id -u)" -ne 0
           test "$(uname -m)" = x86_64
-          test -z "$(find "$RUNNER_TEMP" -name brokkr-previous-job -print -quit)"
-          python3 --version
-          node --version
-          printf '%s\n' "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/brokkr-previous-job"
-      - uses: actions/checkout@v7
+          if test "$RUNNER_ENVIRONMENT" = self-hosted; then
+            test "$(id -un)" = gha
+          fi
+          mkdir -p "${RUNNER_TOOL_CACHE:?}"
+          cache_probe=$(mktemp "$RUNNER_TOOL_CACHE/brokkr-toolchain.XXXXXX")
+          trap 'rm -f "$cache_probe"' EXIT
+          printf '%s\n' "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" > "$cache_probe"
+          test "$(cat "$cache_probe")" = "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT"
+          test "$(stat -c %u "$cache_probe")" = "$(id -u)"
+          printf 'BROKKR_TOOLCHAIN_IDENTITY uid=%s user=%s environment=%s cache=%s\n' \
+            "$(id -u)" "$(id -un)" "$RUNNER_ENVIRONMENT" "$RUNNER_TOOL_CACHE"
+          test_dir=$(mktemp -d "$RUNNER_TEMP/brokkr-toolchain.XXXXXX")
+          printf 'BROKKR_TOOLCHAIN_DIR=%s\n' "$test_dir" >> "$GITHUB_ENV"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          persist-credentials: false
-      - name: Verify checked-out source
-        run: git diff --exit-code
+          node-version: '20'
+      - name: Execute Node 20
+        run: |
+          node -e "const a=require('node:assert/strict'); a.equal(process.versions.node.split('.')[0],'20'); a.equal(require('node:vm').runInNewContext('6 * 7'),42); console.log('BROKKR_TOOLCHAIN_NODE '+process.version+' '+process.execPath);"
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Execute Node 22
+        run: |
+          node -e "const a=require('node:assert/strict'); a.equal(process.versions.node.split('.')[0],'22'); a.equal(require('node:vm').runInNewContext('6 * 7'),42); console.log('BROKKR_TOOLCHAIN_NODE '+process.version+' '+process.execPath);"
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Execute Node 24
+        run: |
+          node -e "const a=require('node:assert/strict'); a.equal(process.versions.node.split('.')[0],'24'); a.equal(require('node:vm').runInNewContext('6 * 7'),42); console.log('BROKKR_TOOLCHAIN_NODE '+process.version+' '+process.execPath);"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: Execute Python 3.11 with SSL and SQLite
+        run: |
+          python - <<'PY'
+          import sqlite3, ssl, sys
+          assert sys.version_info[:2] == (3, 11)
+          ssl.create_default_context()
+          with sqlite3.connect(':memory:') as connection:
+              assert connection.execute('select 6 * 7').fetchone()[0] == 42
+          print('BROKKR_TOOLCHAIN_PYTHON', sys.version.split()[0], sys.executable)
+          PY
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Execute Python 3.12 with SSL and SQLite
+        run: |
+          python - <<'PY'
+          import sqlite3, ssl, sys
+          assert sys.version_info[:2] == (3, 12)
+          ssl.create_default_context()
+          with sqlite3.connect(':memory:') as connection:
+              assert connection.execute('select 6 * 7').fetchone()[0] == 42
+          print('BROKKR_TOOLCHAIN_PYTHON', sys.version.split()[0], sys.executable)
+          PY
+
+      - name: Compile C with make and check binary and shell tools
+        run: |
+          set -euo pipefail
+          cc --version
+          make --version
+          objdump --version
+          shellcheck --version
+          cd "$BROKKR_TOOLCHAIN_DIR"
+          cat > hello.c <<'C'
+          #include <stdio.h>
+          int main(void) { puts("42"); return 0; }
+          C
+          printf 'hello: hello.c\n\t$(CC) -Wall -Wextra -Werror -o hello hello.c\n' > Makefile
+          make CC=cc
+          test "$(./hello)" = 42
+          objdump -f hello
+          cat > check.sh <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          printf '%s\n' 'brokkr-toolchain'
+          SH
+          shellcheck check.sh
+          test "$(bash check.sh)" = brokkr-toolchain
+
+      - name: Set up Go 1.27
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.27.0'
+          cache: false
+      - name: Compile and execute CGO
+        env:
+          CGO_ENABLED: '1'
+          CC: cc
+          GOTOOLCHAIN: local
+          GOPROXY: 'off'
+          GOSUMDB: 'off'
+          GO111MODULE: 'off'
+        run: |
+          set -euo pipefail
+          test "$(go env GOVERSION)" = go1.27.0
+          test "$(go env CGO_ENABLED)" = 1
+          go version
+          cd "$BROKKR_TOOLCHAIN_DIR"
+          cat > main.go <<'GO'
+          package main
+          /* static int answer(void) { return 42; } */
+          import "C"
+          import "fmt"
+          func main() { fmt.Println(int(C.answer())) }
+          GO
+          go build -o cgo-smoke main.go
+          test "$(./cgo-smoke)" = 42
+          go version -m cgo-smoke
+          objdump -f cgo-smoke
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: '0.12.17'
+          python-version: '3.12'
+          enable-cache: false
+          ignore-empty-workdir: true
+      - name: Run an offline frozen uv project
+        env:
+          UV_PYTHON_DOWNLOADS: never
+        run: |
+          set -euo pipefail
+          uv --version
+          mkdir "$BROKKR_TOOLCHAIN_DIR/uv-project"
+          cd "$BROKKR_TOOLCHAIN_DIR/uv-project"
+          cat > pyproject.toml <<'TOML'
+          [project]
+          name = "brokkr-toolchain-smoke"
+          version = "0.0.0"
+          requires-python = ">=3.12,<3.13"
+          dependencies = []
+          [tool.uv]
+          package = false
+          TOML
+          cat > test_smoke.py <<'PY'
+          import sys
+          import unittest
+          class ToolchainSmoke(unittest.TestCase):
+              def test_isolated_interpreter(self):
+                  self.assertEqual(sys.version_info[:2], (3, 12))
+                  self.assertNotEqual(sys.prefix, sys.base_prefix)
+                  self.assertEqual(6 * 7, 42)
+          PY
+          uv lock --offline --python python
+          sha256sum uv.lock > uv.lock.sha256
+          uv sync --frozen --offline --python python
+          uv run --frozen --offline python -m unittest -v test_smoke
+          sha256sum --check uv.lock.sha256
+
+      - name: Set up Helm 3.18.6
+        uses: Azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+        with:
+          version: v3.18.6
+      - name: Render a local Helm chart
+        run: |
+          set -euo pipefail
+          test "$(helm version --template '{{.Version}}')" = v3.18.6
+          helm version --short
+          mkdir -p "$BROKKR_TOOLCHAIN_DIR/chart/templates"
+          cd "$BROKKR_TOOLCHAIN_DIR/chart"
+          cat > Chart.yaml <<'YAML'
+          apiVersion: v2
+          name: brokkr-toolchain-smoke
+          version: 0.0.0
+          type: application
+          YAML
+          cat > templates/configmap.yaml <<'YAML'
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: {{ .Release.Name }}
+          data:
+            answer: {{ .Values.answer | quote }}
+          YAML
+          helm template brokkr . --set-string answer=42 > rendered.yaml
+          python - <<'PY'
+          from pathlib import Path
+          rendered = Path('rendered.yaml').read_text()
+          assert 'kind: ConfigMap' in rendered
+          assert 'name: brokkr' in rendered
+          assert 'answer: "42"' in rendered
+          print('BROKKR_TOOLCHAIN_HELM_RENDER passed')
+          PY
