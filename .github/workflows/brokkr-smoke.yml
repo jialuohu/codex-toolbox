@@ -1,43 +1,104 @@
-name: Brokkr smoke
-
-on:
-  workflow_dispatch:
-    inputs:
-      validate_runner:
-        description: Run only this smoke job on Brokkr before enabling CI routing
-        type: boolean
-        required: false
-        default: false
-
-permissions:
-  contents: read
-
-jobs:
-  smoke:
-    # Explicit pilot input keeps ordinary CI hosted while validation runs.
-    # Host admission checks still apply; this input never authorizes a runner.
-    if: github.event_name == 'workflow_dispatch' && (vars.BROKKR_ENABLED == 'true' || inputs.validate_runner == true)
-    # A rerun exercises the hosted fallback instead of waiting for Brokkr.
-    runs-on: ${{ github.run_attempt == '1' && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-smoke"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
-    timeout-minutes: 10
-    steps:
-      - name: Show selected runner
-        env:
-          RUNNER_LOCATION: ${{ runner.environment }}
-        run: |
-          printf 'Runner environment: %s\n' "$RUNNER_LOCATION"
-      - name: Check disposable guest
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(id -u)" -ne 0
-          test "$(uname -m)" = x86_64
-          test -z "$(find "$RUNNER_TEMP" -name brokkr-previous-job -print -quit)"
-          python3 --version
-          node --version
-          printf '%s\n' "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/brokkr-previous-job"
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Verify checked-out source
-        run: git diff --exit-code
+{
+  "name": "Overleaf Tools workload validation",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "target": {
+          "description": "Execution target for the reviewed candidate only",
+          "required": true,
+          "type": "choice",
+          "options": [
+            "hosted",
+            "local"
+          ],
+          "default": "hosted"
+        },
+        "trial": {
+          "description": "Trial identifier for evidence only",
+          "required": true,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "package": {
+      "name": "${{ matrix.os }} / Python 3.12",
+      "runs-on": "${{ inputs.target == 'local' && ((matrix.os == 'ubuntu-latest')) && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && matrix.os == 'ubuntu-latest' && fromJSON(format('[\"self-hosted\",\"linux\",\"x64\",\"brokkr\",\"brokkr-{0}-{1}-overleaf-tools-package-linux-python-312\"]', github.run_id, github.run_attempt)) || matrix.os }}",
+      "timeout-minutes": 15,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": [
+            "ubuntu-latest",
+            "macos-latest",
+            "windows-latest"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "a061c084b43978be68f5d0bf25a5fd2191300820"
+          }
+        },
+        {
+          "uses": "astral-sh/setup-uv@v7",
+          "with": {
+            "python-version": "3.12",
+            "enable-cache": true,
+            "cache-dependency-glob": "plugins/overleaf-tools/server/uv.lock"
+          }
+        },
+        {
+          "name": "Install frozen development environment",
+          "run": "uv sync --frozen --project plugins/overleaf-tools/server"
+        },
+        {
+          "name": "Run package tests",
+          "working-directory": "plugins/overleaf-tools/server",
+          "run": "uv run --frozen pytest -q"
+        },
+        {
+          "name": "Lint package",
+          "working-directory": "plugins/overleaf-tools/server",
+          "run": "uv run --frozen ruff check src tests"
+        },
+        {
+          "name": "Type-check package",
+          "working-directory": "plugins/overleaf-tools/server",
+          "run": "uv run --frozen pyright"
+        }
+      ]
+    },
+    "toolbox-contract": {
+      "runs-on": "${{ inputs.target == 'local' && (true) && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && fromJSON(format('[\"self-hosted\",\"linux\",\"x64\",\"brokkr\",\"brokkr-{0}-{1}-overleaf-tools-toolbox-contract\"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "a061c084b43978be68f5d0bf25a5fd2191300820"
+          }
+        },
+        {
+          "name": "Validate toolbox integration",
+          "run": "python3 scripts/check-codex-toolbox-setup.py"
+        },
+        {
+          "name": "Run repository contract test",
+          "run": "python3 -m unittest tests.test_overleaf_tools"
+        },
+        {
+          "name": "Scan current tree for private paths and secrets",
+          "run": "scripts/privacy-audit.sh current"
+        }
+      ]
+    }
+  },
+  "run-name": "Brokkr workload / ${{ inputs.target }} / ${{ inputs.trial }}"
+}
