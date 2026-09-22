@@ -1,5 +1,5 @@
 {
-  "name": "Brokkr initialization validation: baseline",
+  "name": "Brokkr initialization validation: default-shell",
   "on": {
     "workflow_dispatch": {
       "inputs": {
@@ -38,7 +38,7 @@
       },
       "defaults": {
         "run": {
-          "shell": "bash"
+          "shell": "bash --noprofile --norc -e -o pipefail {0}"
         }
       },
       "steps": [
@@ -75,7 +75,7 @@
       },
       "defaults": {
         "run": {
-          "shell": "bash"
+          "shell": "bash --noprofile --norc -e -o pipefail {0}"
         }
       },
       "steps": [
