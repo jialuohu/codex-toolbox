@@ -1,43 +1,88 @@
-name: Brokkr smoke
-
-on:
-  workflow_dispatch:
-    inputs:
-      validate_runner:
-        description: Run only this smoke job on Brokkr before enabling CI routing
-        type: boolean
-        required: false
-        default: false
-
-permissions:
-  contents: read
-
-jobs:
-  smoke:
-    # Explicit pilot input keeps ordinary CI hosted while validation runs.
-    # Host admission checks still apply; this input never authorizes a runner.
-    if: github.event_name == 'workflow_dispatch' && (vars.BROKKR_ENABLED == 'true' || inputs.validate_runner == true)
-    # A rerun exercises the hosted fallback instead of waiting for Brokkr.
-    runs-on: ${{ github.run_attempt == '1' && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-smoke"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
-    timeout-minutes: 10
-    steps:
-      - name: Show selected runner
-        env:
-          RUNNER_LOCATION: ${{ runner.environment }}
-        run: |
-          printf 'Runner environment: %s\n' "$RUNNER_LOCATION"
-      - name: Check disposable guest
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(id -u)" -ne 0
-          test "$(uname -m)" = x86_64
-          test -z "$(find "$RUNNER_TEMP" -name brokkr-previous-job -print -quit)"
-          python3 --version
-          node --version
-          printf '%s\n' "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/brokkr-previous-job"
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Verify checked-out source
-        run: git diff --exit-code
+{
+  "name": "TypeSafe Tools workload validation",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "target": {
+          "description": "Execution target for the reviewed candidate only",
+          "required": true,
+          "type": "choice",
+          "options": [
+            "hosted",
+            "local"
+          ],
+          "default": "hosted"
+        },
+        "trial": {
+          "description": "Trial identifier for evidence only",
+          "required": true,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "package": {
+      "runs-on": "${{ inputs.target == 'local' && ((matrix.os == 'ubuntu-latest')) && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && matrix.os == 'ubuntu-latest' && fromJSON(format('[\"self-hosted\",\"linux\",\"x64\",\"brokkr\",\"brokkr-{0}-{1}-typesafe-tools-package-linux\"]', github.run_id, github.run_attempt)) || matrix.os }}",
+      "timeout-minutes": 15,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": [
+            "ubuntu-latest",
+            "macos-latest"
+          ]
+        }
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "a061c084b43978be68f5d0bf25a5fd2191300820"
+          }
+        },
+        {
+          "uses": "astral-sh/setup-uv@v7",
+          "with": {
+            "python-version": "3.12",
+            "enable-cache": true,
+            "cache-dependency-glob": "plugins/typesafe-tools/server/uv.lock"
+          }
+        },
+        {
+          "name": "Install frozen development environment",
+          "run": "uv sync --frozen --project plugins/typesafe-tools/server"
+        },
+        {
+          "name": "Run offline runtime tests",
+          "run": "uv run --frozen --project plugins/typesafe-tools/server pytest plugins/typesafe-tools/server/tests -q"
+        },
+        {
+          "name": "Verify package and installation contracts",
+          "run": "python3 -m unittest tests.test_typesafe_tools"
+        },
+        {
+          "name": "Verify frozen pilot and offline scorer",
+          "run": "python3 plugins/typesafe-tools/pilot/pilot.py validate\npython3 -m unittest discover -s plugins/typesafe-tools/pilot -p 'test_*.py'\n"
+        },
+        {
+          "name": "Check runtime lint and types",
+          "working-directory": "plugins/typesafe-tools/server",
+          "run": "uv run --frozen ruff check src tests\nuv run --frozen pyright\n"
+        },
+        {
+          "name": "Validate toolbox integration",
+          "run": "python3 scripts/check-codex-toolbox-setup.py"
+        },
+        {
+          "name": "Scan current tree",
+          "run": "scripts/privacy-audit.sh current"
+        }
+      ]
+    }
+  },
+  "run-name": "Brokkr workload / ${{ inputs.target }} / ${{ inputs.trial }}"
+}
