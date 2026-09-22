@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   portable:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-omnigraffle-tools-portable"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

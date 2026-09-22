@@ -17,14 +17,15 @@ jobs:
     # Explicit pilot input keeps ordinary CI hosted while validation runs.
     # Host admission checks still apply; this input never authorizes a runner.
     if: github.event_name == 'workflow_dispatch' && (vars.BROKKR_ENABLED == 'true' || inputs.validate_runner == true)
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
-      - brokkr
-      - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
+    # A rerun exercises the hosted fallback instead of waiting for Brokkr.
+    runs-on: ${{ github.run_attempt == '1' && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-smoke"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
+      - name: Show selected runner
+        env:
+          RUNNER_LOCATION: ${{ runner.environment }}
+        run: |
+          printf 'Runner environment: %s\n' "$RUNNER_LOCATION"
       - name: Check disposable guest
         shell: bash
         run: |
