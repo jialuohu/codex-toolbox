@@ -30,7 +30,7 @@ permissions:
 jobs:
   package:
     name: ${{ matrix.os }} / Python 3.12
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && matrix.os == 'ubuntu-latest' && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-overleaf-tools-package-linux-python-312"]', github.run_id, github.run_attempt)) || matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -56,7 +56,7 @@ jobs:
         run: uv run --frozen pyright
 
   toolbox-contract:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-overleaf-tools-toolbox-contract"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

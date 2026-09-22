@@ -1,4 +1,3 @@
-import asyncio
 import json
 import sqlite3
 from datetime import timedelta
@@ -73,13 +72,12 @@ def test_invalid_answer_still_records_usage(tmp_path):
     assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 0
 
 
-def test_timeout_keeps_unknown_usage_across_months(tmp_path, monkeypatch):
+def test_timeout_keeps_unknown_usage_across_months(tmp_path):
     calls = []
     async def handler(request):
         calls.append(request)
-        await asyncio.sleep(1)
+        raise httpx.ReadTimeout("synthetic timeout after dispatch", request=request)
     item = uncapped(tmp_path, handler)
-    monkeypatch.setattr("typesafe_tools.service.DEADLINE_SECONDS", 0.05)
     result = run(item.evaluate("synthetic", QUESTIONS, "synthetic"))
     assert result["error"]["code"] == "deadline_exceeded" and len(calls) == 1
     status = item.ledger.unlimited_status(NOW + timedelta(days=2))
