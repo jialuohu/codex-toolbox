@@ -1,42 +1,43 @@
-name: Brokkr smoke
-
+# Copy only to .github/workflows/brokkr-smoke.yml on a temporary validation branch.
+# No Brokkr admission label is present: the first attempt must remain unassigned.
+name: Brokkr fallback validation
+run-name: Brokkr fallback validation (${{ inputs.case }})
 on:
   workflow_dispatch:
     inputs:
-      validate_runner:
-        description: Run only this smoke job on Brokkr before enabling CI routing
-        type: boolean
-        required: false
-        default: false
-
-permissions:
-  contents: read
-
+      case:
+        type: choice
+        options: [fallback, intentional-failure]
+        required: true
+permissions: {}
 jobs:
   smoke:
-    # Explicit pilot input keeps ordinary CI hosted while validation runs.
-    # Host admission checks still apply; this input never authorizes a runner.
-    if: github.event_name == 'workflow_dispatch' && (vars.BROKKR_ENABLED == 'true' || inputs.validate_runner == true)
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
-      - brokkr
-      - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
-    timeout-minutes: 10
+    name: Fallback validation
+    runs-on: ${{ fromJSON(inputs.case == 'fallback' && github.run_attempt == '1' && format('["self-hosted","brokkr-fallback-unavailable-{0}"]', github.run_id) || '["ubuntu-24.04"]') }}
+    timeout-minutes: 3
     steps:
-      - name: Check disposable guest
-        shell: bash
+      - name: Verify hosted execution and preserve test failures
+        env:
+          VALIDATION_CASE: ${{ inputs.case }}
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
         run: |
-          set -euo pipefail
-          test "$(id -u)" -ne 0
-          test "$(uname -m)" = x86_64
-          test -z "$(find "$RUNNER_TEMP" -name brokkr-previous-job -print -quit)"
-          python3 --version
-          node --version
-          printf '%s\n' "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/brokkr-previous-job"
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Verify checked-out source
-        run: git diff --exit-code
+          python3 - <<'PY'
+          import json
+          import os
+
+          evidence = {
+              key: os.environ.get(key)
+              for key in (
+                  "VALIDATION_CASE", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT",
+                  "GITHUB_SHA", "GITHUB_REF", "RUNNER_NAME", "RUNNER_ENVIRONMENT",
+              )
+          }
+          print("BROKKR_FALLBACK_VALIDATION=" + json.dumps(evidence, sort_keys=True), flush=True)
+          assert evidence["RUNNER_ENVIRONMENT"] == "github-hosted"
+          if evidence["VALIDATION_CASE"] == "fallback":
+              assert int(evidence["GITHUB_RUN_ATTEMPT"]) > 1
+          elif evidence["VALIDATION_CASE"] == "intentional-failure":
+              raise AssertionError("Intentional negative control: test failures must remain failed")
+          else:
+              raise AssertionError("Unknown validation case")
+          PY
