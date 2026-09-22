@@ -1,43 +1,72 @@
-name: Brokkr smoke
-
-on:
-  workflow_dispatch:
-    inputs:
-      validate_runner:
-        description: Run only this smoke job on Brokkr before enabling CI routing
-        type: boolean
-        required: false
-        default: false
-
-permissions:
-  contents: read
-
-jobs:
-  smoke:
-    # Explicit pilot input keeps ordinary CI hosted while validation runs.
-    # Host admission checks still apply; this input never authorizes a runner.
-    if: github.event_name == 'workflow_dispatch' && (vars.BROKKR_ENABLED == 'true' || inputs.validate_runner == true)
-    # A rerun exercises the hosted fallback instead of waiting for Brokkr.
-    runs-on: ${{ github.run_attempt == '1' && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-smoke"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
-    timeout-minutes: 10
-    steps:
-      - name: Show selected runner
-        env:
-          RUNNER_LOCATION: ${{ runner.environment }}
-        run: |
-          printf 'Runner environment: %s\n' "$RUNNER_LOCATION"
-      - name: Check disposable guest
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(id -u)" -ne 0
-          test "$(uname -m)" = x86_64
-          test -z "$(find "$RUNNER_TEMP" -name brokkr-previous-job -print -quit)"
-          python3 --version
-          node --version
-          printf '%s\n' "$GITHUB_RUN_ID/$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/brokkr-previous-job"
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Verify checked-out source
-        run: git diff --exit-code
+{
+  "name": "Skill Instructions workload validation",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "target": {
+          "description": "Execution target for the reviewed candidate only",
+          "required": true,
+          "type": "choice",
+          "options": [
+            "hosted",
+            "local"
+          ],
+          "default": "hosted"
+        },
+        "trial": {
+          "description": "Trial identifier for evidence only",
+          "required": true,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "offline": {
+      "runs-on": "${{ inputs.target == 'local' && (true) && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && fromJSON(format('[\"self-hosted\",\"linux\",\"x64\",\"brokkr\",\"brokkr-{0}-{1}-skill-instructions-offline\"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "uses": "actions/checkout@v4",
+          "with": {
+            "fetch-depth": 0,
+            "ref": "a061c084b43978be68f5d0bf25a5fd2191300820"
+          }
+        },
+        {
+          "uses": "actions/setup-python@v5",
+          "with": {
+            "python-version": "3.12"
+          }
+        },
+        {
+          "name": "Install pinned YAML parser for instruction and health validation",
+          "run": "python -m pip install -r scripts/instruction-audit-requirements.txt"
+        },
+        {
+          "name": "Audit metadata, references, and invocation policy",
+          "run": "python scripts/audit_skill_instructions.py --check"
+        },
+        {
+          "name": "Validate setup contracts",
+          "run": "python scripts/check-codex-toolbox-setup.py"
+        },
+        {
+          "name": "Check instructions, evaluator refusal, and privacy",
+          "run": "python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup tests.test_recover_codex_sidebar tests.test_recover_codex_sidebar_v2 tests.test_chatgpt_planner tests.test_toolbox_health tests.test_setup_toolbox_health tests.test_health_command"
+        },
+        {
+          "name": "Check whitespace",
+          "env": {
+            "INSTRUCTION_DIFF_BASE": "${{ github.event.pull_request.base.sha || github.event.before }}"
+          },
+          "run": "if [ -n \"$INSTRUCTION_DIFF_BASE\" ] && [ \"$INSTRUCTION_DIFF_BASE\" != \"0000000000000000000000000000000000000000\" ]; then\n  git diff --check \"$INSTRUCTION_DIFF_BASE\" HEAD\nelse\n  git show --format= --check HEAD\nfi\n"
+        }
+      ]
+    }
+  },
+  "run-name": "Brokkr workload / ${{ inputs.target }} / ${{ inputs.trial }}"
+}
