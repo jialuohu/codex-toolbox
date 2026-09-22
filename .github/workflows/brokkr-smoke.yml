@@ -1,5 +1,5 @@
 {
-  "name": "Brokkr initialization validation: baseline",
+  "name": "Brokkr initialization validation: python-startup",
   "on": {
     "workflow_dispatch": {
       "inputs": {
@@ -34,7 +34,8 @@
       ],
       "timeout-minutes": 10,
       "env": {
-        "MARKER_NONCE": "${{ inputs.marker_nonce }}"
+        "MARKER_NONCE": "${{ inputs.marker_nonce }}",
+        "PYTHONSTARTUP": "/etc/brokkr/initialization/startup.py"
       },
       "defaults": {
         "run": {
@@ -55,6 +56,10 @@
           "uses": "jialuohu/codex-toolbox/fixtures/initialization/actions/composite@b0a66751f05c751c9de964ed4360ec103da7298a"
         },
         {
+          "name": "Exercise system Python after admission",
+          "run": "/usr/bin/python3 -c 'import sys; assert sys.version_info.major == 3'"
+        },
+        {
           "name": "External always marker",
           "if": "always()",
           "run": "set -euo pipefail\n[[ \"$MARKER_NONCE\" =~ ^[0-9a-f]{64}$ ]]\n[[ \"$GITHUB_RUN_ID\" =~ ^[1-9][0-9]*$ && \"$GITHUB_RUN_ATTEMPT\" =~ ^[1-9][0-9]*$ ]]\nprintf '\\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:smoke-always\\n' \"$MARKER_NONCE\" \"$GITHUB_RUN_ID\" \"$GITHUB_RUN_ATTEMPT\" > /dev/ttyS0\n"
@@ -71,7 +76,8 @@
       ],
       "timeout-minutes": 10,
       "env": {
-        "MARKER_NONCE": "${{ inputs.marker_nonce }}"
+        "MARKER_NONCE": "${{ inputs.marker_nonce }}",
+        "PYTHONSTARTUP": "/etc/brokkr/initialization/startup.py"
       },
       "defaults": {
         "run": {
@@ -90,6 +96,10 @@
         {
           "name": "Composite marker",
           "uses": "jialuohu/codex-toolbox/fixtures/initialization/actions/composite@b0a66751f05c751c9de964ed4360ec103da7298a"
+        },
+        {
+          "name": "Exercise system Python after admission",
+          "run": "/usr/bin/python3 -c 'import sys; assert sys.version_info.major == 3'"
         },
         {
           "name": "External always marker",
