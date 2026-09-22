@@ -1,19 +1,17 @@
-# Validation fixture: copy to this same path on an explicitly reviewed temporary
-# same-repository branch. Do not replace default-branch normal CI workflows.
-name: Brokkr admission validation
+# Copy only to a reviewed temporary same-repository branch at this exact path:
+# .github/workflows/brokkr-smoke.yml. No checkout, actions, or secrets are used.
+name: Brokkr registered lifecycle validation
 on:
   workflow_dispatch:
     inputs:
-      case:
+      behavior:
         type: choice
-        options: [positive, wrong-job, cancel-authorization]
+        options: [positive, hold, failure, timeout]
         required: true
       marker_nonce:
-        description: Fresh 64-character lowercase hexadecimal validation nonce
         type: string
         required: true
-permissions:
-  contents: read
+permissions: {}
 jobs:
   smoke:
     runs-on:
@@ -22,42 +20,27 @@ jobs:
       - x64
       - brokkr
       - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
-      - ${{ inputs.case != 'positive' && format('brokkr-never-{0}', inputs.marker_nonce) || 'brokkr' }}
-    timeout-minutes: 10
+    timeout-minutes: 1
     steps:
-      - name: External execution marker
+      - name: Observable reviewed operation
         env:
           MARKER_NONCE: ${{ inputs.marker_nonce }}
+          BEHAVIOR: ${{ inputs.behavior }}
+        shell: bash
         run: |
           [[ "$MARKER_NONCE" =~ ^[0-9a-f]{64}$ ]]
           printf '\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:smoke-step\n' "$MARKER_NONCE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > /dev/ttyS0
-      - name: External always marker
+          case "$BEHAVIOR" in
+            positive) : ;;
+            failure) exit 17 ;;
+            timeout|hold) sleep 180 ;;
+            *) exit 64 ;;
+          esac
+      - name: Observable always operation
         if: always()
         env:
           MARKER_NONCE: ${{ inputs.marker_nonce }}
+        shell: bash
         run: |
           [[ "$MARKER_NONCE" =~ ^[0-9a-f]{64}$ ]]
           printf '\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:smoke-always\n' "$MARKER_NONCE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > /dev/ttyS0
-  forged:
-    if: inputs.case != 'positive'
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
-      - brokkr
-      - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
-    timeout-minutes: 10
-    steps:
-      - name: Forbidden external execution marker
-        env:
-          MARKER_NONCE: ${{ inputs.marker_nonce }}
-        run: |
-          [[ "$MARKER_NONCE" =~ ^[0-9a-f]{64}$ ]]
-          printf '\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:forged-step\n' "$MARKER_NONCE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > /dev/ttyS0
-      - name: Forbidden always marker
-        if: always()
-        env:
-          MARKER_NONCE: ${{ inputs.marker_nonce }}
-        run: |
-          [[ "$MARKER_NONCE" =~ ^[0-9a-f]{64}$ ]]
-          printf '\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:forged-always\n' "$MARKER_NONCE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > /dev/ttyS0
