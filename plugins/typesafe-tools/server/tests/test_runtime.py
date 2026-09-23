@@ -104,14 +104,24 @@ def test_failure_single_dispatch_retains_reservation(tmp_path, code):
 
 def test_total_timeout_single_dispatch(tmp_path, monkeypatch):
     calls = []
+    deadlines = []
+    real_timeout = asyncio.timeout
+    def record_timeout(delay):
+        deadline = real_timeout(delay)
+        deadlines.append(deadline)
+        return deadline
+    monkeypatch.setattr("typesafe_tools.service.asyncio.timeout", record_timeout)
     async def handler(request):
         calls.append(request)
-        await asyncio.sleep(1)
-        return httpx.Response(200, json=ANSWER)
-    monkeypatch.setattr("typesafe_tools.service.DEADLINE_SECONDS", 0.05)
+        # Expire the real enclosing deadline after dispatch. Configuration and
+        # SQLite work may legitimately take more than 50 ms on a busy runner.
+        deadlines[0].reschedule(asyncio.get_running_loop().time())
+        await asyncio.Event().wait()
+        pytest.fail("the total deadline did not cancel the request")
     item = service(tmp_path, handler)
     result = run(item.evaluate("synthetic", QUESTIONS, "synthetic"))
     assert result["error"]["code"] == "deadline_exceeded"
+    assert len(deadlines) == 1 and deadlines[0].expired()
     assert len(calls) == 1
     assert item.ledger.status(NOW)["unsettled_reservations"] == 1
 
