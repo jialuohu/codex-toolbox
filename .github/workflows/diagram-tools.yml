@@ -135,6 +135,18 @@ jobs:
             "$CODEX_LOCAL_BIN_DIR/archify" deliver \
               "$diagram_type" "$example_path" "$output_path" --json --quality showcase
           done
+      - name: Install Chromium in the prepared guest
+        if: runner.environment == 'self-hosted'
+        shell: bash
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/archify-browsers
+        run: |
+          browser_runtime="$RUNNER_TEMP/archify-browser-runtime"
+          npm install --prefix "$browser_runtime" --ignore-scripts --no-audit --no-fund --save-exact playwright-core@1.62.1
+          node "$browser_runtime/node_modules/playwright-core/cli.js" install --no-shell chromium
+          chrome_path="$(node -e 'process.stdout.write(require(process.argv[1]).chromium.executablePath())' "$browser_runtime/node_modules/playwright-core")"
+          test -x "$chrome_path"
+          printf 'ARCHIFY_CHROME=%s\n' "$chrome_path" >> "$GITHUB_ENV"
       - name: Gate Archify artifacts with upstream visual-check
         shell: bash
         run: |
