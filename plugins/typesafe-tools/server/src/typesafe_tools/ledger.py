@@ -132,7 +132,7 @@ class Ledger:
             if db.execute("SELECT 1 FROM sqlite_master WHERE name='uncapped_requests'").fetchone():
                 if db.execute("SELECT 1 FROM uncapped_requests WHERE month=? LIMIT 1",
                               (month,)).fetchone():
-                    # Unpriced usage cannot become a claimed hard cap by changing configuration.
+                    # Historical capped mode cannot account for newer usage records.
                     raise EvaluationError("accounting_unavailable")
             used = db.execute(
                 "SELECT COALESCE(SUM(COALESCE(charged,reserved)),0)"
@@ -198,7 +198,7 @@ class Ledger:
                 "unpriced_requests_this_month": unpriced}
 
     def start_unlimited(self, now: datetime, metadata: dict) -> str:
-        """Durably record dispatch without reserving or estimating any monetary cost."""
+        """Durably record a request and its eventual token usage."""
         identifier = uuid.uuid4().hex
         with self._database(initialize=True) as db:
             db.execute("""CREATE TABLE IF NOT EXISTS uncapped_requests (
@@ -235,8 +235,7 @@ class Ledger:
     def unlimited_status(self, now: datetime) -> dict:
         legacy = self.status(now)
         result = {"initialized": legacy["initialized"], "requests_this_month": 0,
-                  "input_tokens": 0, "output_tokens": 0, "unresolved_requests": 0,
-                  "charged_nanousd": None, "legacy_capped_accounting": legacy}
+                  "input_tokens": 0, "output_tokens": 0, "unresolved_requests": 0}
         if not legacy["initialized"]:
             return result
         with self._database(readonly=True) as db:

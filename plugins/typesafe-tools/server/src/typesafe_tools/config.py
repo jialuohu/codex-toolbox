@@ -4,10 +4,9 @@ import json
 import os
 import stat
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from .billing import MODEL, MONTHLY_CAP, NANOUSD
+from .billing import MODEL
 from .errors import EvaluationError
 from .schema import _unique
 
@@ -57,10 +56,10 @@ def protected_read(path: Path, limit: int) -> bytes:
 @dataclass(frozen=True)
 class Settings:
     model: str = MODEL
-    monthly_limit: int | None = MONTHLY_CAP
-    billing_evidence_id: str = ""
     pilot_evidence_id: str = ""
     automatic_research: bool = False
+    routing_pilot: bool = False
+    automatic_routing: bool = True
 
 
 class ConfigStore:
@@ -81,27 +80,25 @@ class ConfigStore:
         try:
             raw = json.loads(data, object_pairs_hook=_unique)
             if not isinstance(raw, dict) or not set(raw) <= {
-                "model", "monthly_budget_usd", "billing_evidence_id",
-                "pilot_evidence_id", "automatic_research",
+                "model", "pilot_evidence_id", "automatic_research", "routing_pilot",
+                "automatic_routing",
             }:
-                raise ValueError
-            configured_budget = raw.get("monthly_budget_usd", "5")
-            budget = (None if configured_budget is None
-                      else Decimal(str(configured_budget)) * NANOUSD)
-            if budget is not None and (not budget.is_finite()
-                    or budget != budget.to_integral_value() or not 0 < budget <= MONTHLY_CAP):
                 raise ValueError
             if raw.get("model", MODEL) != MODEL:
                 raise ValueError
-            for name in ("billing_evidence_id", "pilot_evidence_id"):
-                if not isinstance(raw.get(name, ""), str) or len(raw.get(name, "")) > 128:
-                    raise ValueError
-            if type(raw.get("automatic_research", False)) is not bool:
+            if (not isinstance(raw.get("pilot_evidence_id", ""), str)
+                    or len(raw.get("pilot_evidence_id", "")) > 128):
                 raise ValueError
-            return Settings(MODEL, None if budget is None else int(budget),
-                            raw.get("billing_evidence_id", ""),
-                            raw.get("pilot_evidence_id", ""), raw.get("automatic_research", False))
-        except (ValueError, TypeError, InvalidOperation, UnicodeError) as exc:
+            if any(type(raw.get(name, False)) is not bool for name in (
+                    "automatic_research", "routing_pilot")):
+                raise ValueError
+            if type(raw.get("automatic_routing", True)) is not bool:
+                raise ValueError
+            return Settings(model=MODEL, pilot_evidence_id=raw.get("pilot_evidence_id", ""),
+                            automatic_research=raw.get("automatic_research", False),
+                            routing_pilot=raw.get("routing_pilot", False),
+                            automatic_routing=raw.get("automatic_routing", True))
+        except (ValueError, TypeError, UnicodeError) as exc:
             raise EvaluationError("configuration_invalid") from exc
 
     def api_key(self) -> str:

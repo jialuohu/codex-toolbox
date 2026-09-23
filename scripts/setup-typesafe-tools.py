@@ -301,7 +301,7 @@ def main() -> int:
     if args.status and (args.install or args.install_upstream):
         parser.error("--status cannot be combined with installation")
     home, codex = Path.home(), codex_home()
-    result = {"paid_ready": None, "readiness": "Check typesafe_status for runtime readiness and spending mode"}
+    result = {"runtime_checked": False, "readiness": "Check typesafe_status for credential and routing readiness"}
     try:
         result["upstream"] = (install_upstream(home, codex, ROOT) if args.install_upstream
                               else upstream_status(home, codex, ROOT))
@@ -311,10 +311,10 @@ def main() -> int:
             result["plugin"] = {"local_export_present": (codex / "local-marketplaces" / MARKETPLACE / "source-sha256").is_file(),
                                 "discovery": "not checked in offline status"}
     except SetupError as error:
-        print(json.dumps({"error": str(error), "paid_ready": None}))
+        print(json.dumps({"error": str(error), "runtime_checked": False}))
         return 1
     except (OSError, ValueError, TypeError, KeyError):
-        print(json.dumps({"error": "Local installation state is invalid or unavailable; runtime readiness was not checked", "paid_ready": None}))
+        print(json.dumps({"error": "Local installation state is invalid or unavailable; runtime readiness was not checked", "runtime_checked": False}))
         return 1
     print(json.dumps(result, indent=2))
     return 0

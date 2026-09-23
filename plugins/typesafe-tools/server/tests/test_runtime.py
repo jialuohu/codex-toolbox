@@ -30,14 +30,14 @@ ANSWER = {"model": MODEL, "answers": {"valid": {"type": "noul", "noul": 0.75}},
 
 class FakeConfig:
     def settings(self):
-        return Settings(billing_evidence_id=BOUND.evidence_id)
+        return Settings()
 
     def api_key(self):
         return "synthetic-key"
 
 
 def service(tmp_path, handler, **kwargs):
-    return Service(FakeConfig(), Ledger(tmp_path / "state"), {BOUND.evidence_id: BOUND},
+    return Service(FakeConfig(), Ledger(tmp_path / "state"),
                    httpx.MockTransport(handler), lambda: NOW, **kwargs)
 
 
@@ -45,22 +45,19 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_production_gate_has_no_dispatch(tmp_path):
-    def forbidden(request):
-        pytest.fail("network attempted")
-    item = service(tmp_path, forbidden)
-    item.bounds = {}
+def test_no_billing_setting_is_required_for_dispatch(tmp_path):
+    item = service(tmp_path, lambda request: httpx.Response(200, json=ANSWER))
     result = run(item.evaluate("synthetic", QUESTIONS, "synthetic"))
-    assert result["error"]["code"] == "hard_cap_unverified"
-    assert not (tmp_path / "state").exists()
+    assert result["ok"] and result["usage"] == ANSWER["usage"]
+    assert "billing_mode" not in result and "charged_nanousd" not in result
 
 
 def test_offline_status_no_initialization(tmp_path):
     item = Service(ConfigStore(tmp_path / "secrets"), Ledger(tmp_path / "state"))
     status = item.status()
     assert status["status"] == "blocked"
-    assert "hard_cap_unverified" in status["block_reasons"]
     assert "credential_missing" in status["block_reasons"]
+    assert "monthly_budget_usd" not in status and "billing_status" not in status
     assert not list(tmp_path.iterdir())
 
 
@@ -78,18 +75,18 @@ def test_success_fixed_endpoint_and_reconciliation(tmp_path):
     result = run(item.evaluate("synthetic payload", QUESTIONS, "synthetic"))
     assert result["ok"] and len(calls) == 1
     assert result["usage"] == ANSWER["usage"]
-    assert item.ledger.status(NOW)["used_nanousd"] == 200_000_000
-    assert item.ledger.status(NOW)["unsettled_reservations"] == 0
+    assert item.ledger.unlimited_status(NOW)["input_tokens"] == 20
+    assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 0
     assert b"synthetic payload" not in item.ledger.path.read_bytes()
     assert b"synthetic-key" not in item.ledger.path.read_bytes()
     with sqlite3.connect(item.ledger.path) as db:
         audit = db.execute(
-            "SELECT classification,invocation,question_count FROM reservations").fetchone()
+            "SELECT classification,invocation,question_count FROM uncapped_requests").fetchone()
         assert audit == ("synthetic", "explicit", 1)
 
 
 @pytest.mark.parametrize("code", [301, 302, 307, 400, 401, 429, 500, 503])
-def test_failure_single_dispatch_retains_reservation(tmp_path, code):
+def test_failure_single_dispatch_retains_unresolved_request(tmp_path, code):
     calls = []
     def handler(request):
         calls.append(request)
@@ -99,7 +96,7 @@ def test_failure_single_dispatch_retains_reservation(tmp_path, code):
     assert result["error"]["code"] == "provider_unavailable"
     assert "example.org" not in str(result)
     assert len(calls) == 1
-    assert item.ledger.status(NOW)["used_nanousd"] == BOUND.reservation
+    assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 1
 
 
 def test_total_timeout_single_dispatch(tmp_path, monkeypatch):
@@ -123,10 +120,10 @@ def test_total_timeout_single_dispatch(tmp_path, monkeypatch):
     assert result["error"]["code"] == "deadline_exceeded"
     assert len(deadlines) == 1 and deadlines[0].expired()
     assert len(calls) == 1
-    assert item.ledger.status(NOW)["unsettled_reservations"] == 1
+    assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 1
 
 
-def test_cancellation_retains_reservation(tmp_path):
+def test_cancellation_retains_unresolved_request(tmp_path):
     async def scenario():
         entered = asyncio.Event()
         async def handler(request):
@@ -138,17 +135,17 @@ def test_cancellation_retains_reservation(tmp_path):
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert item.ledger.status(NOW)["unsettled_reservations"] == 1
+        assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 1
     run(scenario())
 
 
 def test_deadline_includes_accounting_and_never_dispatches_late(tmp_path, monkeypatch):
     item = service(tmp_path, lambda request: pytest.fail("late network dispatch"))
-    reserve = item.ledger.reserve
-    def slow_reserve(*args):
+    record = item.ledger.start_unlimited
+    def slow_record(*args):
         time.sleep(0.1)
-        return reserve(*args)
-    monkeypatch.setattr(item.ledger, "reserve", slow_reserve)
+        return record(*args)
+    monkeypatch.setattr(item.ledger, "start_unlimited", slow_record)
     monkeypatch.setattr("typesafe_tools.service.DEADLINE_SECONDS", 0.03)
     async def scenario():
         before = time.monotonic()
@@ -156,33 +153,33 @@ def test_deadline_includes_accounting_and_never_dispatches_late(tmp_path, monkey
         assert time.monotonic() - before < 0.09
         assert result["error"]["code"] == "deadline_exceeded"
     run(scenario())
-    assert item.ledger.status(NOW)["unsettled_reservations"] == 1
+    assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 1
 
 
-def test_status_reports_exhausted_budget(tmp_path):
+def test_status_does_not_consider_historical_reservations(tmp_path):
     item = service(tmp_path, lambda request: pytest.fail("network attempted"))
     for _ in range(5):
         item.ledger.reserve(BOUND, MONTHLY_CAP, NOW)
-    assert "budget_exhausted" in item.status()["block_reasons"]
+    assert item.status()["status"] == "ready"
 
 
-def test_month_change_before_dispatch_keeps_reservation_without_sending(tmp_path):
+def test_month_change_before_dispatch_keeps_request_without_sending(tmp_path):
     item = service(tmp_path, lambda request: pytest.fail("late-month dispatch"))
-    times = iter([NOW, NOW, NOW + timedelta(minutes=2)])
+    times = iter([NOW, NOW + timedelta(minutes=2)])
     item.clock = lambda: next(times)
     result = run(item.evaluate("synthetic", QUESTIONS, "synthetic"))
     assert result["error"]["code"] == "submission_window_changed"
-    assert item.ledger.status(NOW)["unsettled_reservations"] == 1
+    assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 1
 
 
 @pytest.mark.parametrize("body", [b"{}", b"X" * (MAX_RESPONSE_BYTES + 1),
                                    b'{"secret":"https://private.example/hidden"}'])
-def test_bad_response_retains_reservation(tmp_path, body):
+def test_bad_response_retains_unresolved_request(tmp_path, body):
     item = service(tmp_path, lambda request: httpx.Response(200, content=body))
     result = run(item.evaluate("synthetic", QUESTIONS, "synthetic"))
     assert result["error"]["code"] == "invalid_response"
     assert "private.example" not in str(result)
-    assert item.ledger.status(NOW)["unsettled_reservations"] == 1
+    assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 1
 
 
 def test_invalid_answer_reconciles_independently_valid_usage(tmp_path):
@@ -191,8 +188,8 @@ def test_invalid_answer_reconciles_independently_valid_usage(tmp_path):
     result = run(item.evaluate("synthetic", QUESTIONS, "synthetic"))
     assert result["error"]["code"] == "invalid_response"
     assert result["usage"] == ANSWER["usage"]
-    assert result["charged_nanousd"] == 200_000_000
-    assert item.ledger.status(NOW)["unsettled_reservations"] == 0
+    assert "charged_nanousd" not in result
+    assert item.ledger.unlimited_status(NOW)["unresolved_requests"] == 0
 
 
 def test_credential_cannot_be_embedded_in_payload(tmp_path):
@@ -352,17 +349,19 @@ def test_mcp_discovery_and_offline_call(tmp_path):
         async with create_connected_server_and_client_session(server._mcp_server) as client:
             listed = await client.list_tools()
             tools = {tool.name: tool for tool in listed.tools}
-            assert set(tools) == {"typesafe_status", "typesafe_evaluate"}
+            assert set(tools) == {"typesafe_status", "typesafe_evaluate", "typesafe_route"}
             status_annotations = tools["typesafe_status"].annotations
             evaluation_annotations = tools["typesafe_evaluate"].annotations
+            routing_annotations = tools["typesafe_route"].annotations
             assert status_annotations is not None and status_annotations.readOnlyHint
             assert evaluation_annotations is not None and not evaluation_annotations.idempotentHint
+            assert routing_annotations is not None and not routing_annotations.idempotentHint
             status = await client.call_tool("typesafe_status", {})
             assert status.structuredContent is not None
-            assert status.structuredContent["billing_status"] == "blocked: hard cap unverified"
+            assert status.structuredContent["block_reasons"] == ["credential_missing"]
             response = await client.call_tool("typesafe_evaluate", {
                 "state": "synthetic", "questions": QUESTIONS, "classification": "synthetic",
             })
             assert response.structuredContent is not None
-            assert response.structuredContent["error"]["code"] == "hard_cap_unverified"
+            assert response.structuredContent["error"]["code"] == "credential_missing"
     run(scenario())

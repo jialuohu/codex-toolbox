@@ -7,8 +7,14 @@ MESSAGES = {
     "invalid_request": "Request does not meet the documented question or payload limits.",
     "data_ineligible": "Only reviewed public or synthetic payloads are eligible.",
     "automatic_use_unverified": "Automatic research use has not passed its pilot.",
+    "routing_disabled": "Capability routing is disabled; no provider request was sent.",
+    "routing_suspended": (
+        "Capability routing is suspended after repeated provider failures."
+    ),
     "budget_exhausted": "The monthly wrapper budget has insufficient unreserved funds.",
-    "accounting_unavailable": "Budget accounting is unavailable; no further calls are allowed.",
+    "accounting_unavailable": (
+        "Private usage accounting is unavailable; no further calls are allowed."
+    ),
     "billing_bound_exceeded": "Reported usage exceeded the verified bound; paid calls halted.",
     "provider_unavailable": "Provider request failed; no automatic retry was made.",
     "invalid_response": "Response validation failed; unresolved usage remains recorded.",

@@ -5874,19 +5874,25 @@ def main() -> None:
 
 
 def check_typesafe_contract() -> None:
-    """The opt-in wrapper owns its MCP; ordinary setup must not enable it."""
+    """The opt-in installation owns its MCP and routes eligible tasks by default."""
     plugin = ROOT / "plugins/typesafe-tools"
     manifest = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
     mcp = json.loads((plugin / ".mcp.json").read_text())
-    require(manifest["version"] == "0.1.4", "TypeSafe contract version must be 0.1.4")
+    require(manifest["version"] == "0.3.0", "TypeSafe contract version must be 0.3.0")
     require(set(mcp["mcpServers"]) == {"typesafe"}, "TypeSafe must own one MCP server")
     launch = mcp["mcpServers"]["typesafe"]
     require(launch["command"] == "uv" and "--frozen" in launch["args"]
             and "--no-env-file" in launch["args"], "TypeSafe runtime must be locked")
     require((plugin / "server/.python-version").read_text().strip() == "3.12.13",
             "TypeSafe Python runtime must be pinned")
-    require("typesafe" not in GLOBAL_AGENTS.read_text().lower(),
-            "TypeSafe routing belongs in its owning skill, not global instructions")
+    global_agents = GLOBAL_AGENTS.read_text()
+    for expected in (
+        "If installed and ready, use `$typesafe-routing` by default",
+        "Honor opt-outs and required skills",
+        "keep private or uncertain data local",
+    ):
+        require(expected in global_agents,
+                f"global AGENTS must preserve the narrow TypeSafe routing rule: {expected}")
     require((plugin / "server/uv.lock").is_file(), "TypeSafe dependency lock is required")
 
 

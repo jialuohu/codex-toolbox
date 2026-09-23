@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "typesafe-tools"
-version = "0.1.4"
-description = "Bounded TypeSafe evaluations with configurable spending controls for Codex."
+version = "0.3.0"
+description = "Bounded Jev evidence evaluation and capability routing for Codex."
 requires-python = ">=3.12,<3.13"
 dependencies = ["filelock==4.0.1", "httpx==0.28.1", "mcp==1.30.0"]
 

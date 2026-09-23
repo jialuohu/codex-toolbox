@@ -1,0 +1,6 @@
+interface:
+  display_name: "TypeSafe Capability Routing"
+  short_description: "Rank optional skills and tools for eligible tasks"
+  default_prompt: "Use $typesafe-routing by default when a public or synthetic task has a material choice among optional skills or tools."
+policy:
+  allow_implicit_invocation: true
