@@ -1,0 +1,8 @@
+name: Brokkr container admission fixture
+description: Fixed pre, main, and post entrypoints for a denied worker probe.
+runs:
+  using: docker
+  image: Dockerfile
+  pre-entrypoint: /pre.sh
+  entrypoint: /main.sh
+  post-entrypoint: /post.sh
