@@ -42,6 +42,7 @@ DEFAULT_PLUGINS=(
   "game-asset-tools"
   "design-engineering-tools"
   "workflow-tools"
+  "codex-task-tools"
   "coder-tools"
   "diagram-tools"
   "drawio-tools"
@@ -70,6 +71,7 @@ RETIRED_PLUGINS=(
 MANAGED_MCP_SERVERS=(
   "alpaca"
   "coder"
+  "codex_task_tools"
   "firecrawl"
   "obsidian_files"
   "paper_search_mcp"
@@ -827,6 +829,7 @@ readonly APPLE_MAIL_INSTALLED_SERVER_DIR
 APPLE_MAIL_SERVER_DIR="$APPLE_MAIL_INSTALLED_SERVER_DIR" "$APPLE_MAIL_SETUP" --install
 check_apple_mail_readiness "$APPLE_MAIL_INSTALLED_SERVER_DIR"
 
+"$ROOT/scripts/setup-codex-task-tools.sh" --install
 "$ROOT/scripts/setup-toolbox-health.sh" --install
 
 DRAWIO_SETUP_ARGS=(--install)

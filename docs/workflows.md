@@ -5,6 +5,7 @@
 Run shell commands from the repository root. Read the owning skill before using a workflow.
 
 - [Execution Routing](#execution-routing)
+- [Local Codex task creation](#local-codex-task-creation)
 - [ChatGPT Planner](#chatgpt-planner)
 - [Deep Planning](#deep-planning)
 - [Claude Counselor](#claude-counselor)
@@ -23,6 +24,14 @@ execution lane. Tiny changes stay in the main task. Independent, testable work
 can run through native Codex subagents. Other implementation work uses normal
 Codex behavior. Use OpenSpec when durable requirements, acceptance criteria, or
 spec governance should be settled before implementation.
+
+## Local Codex task creation
+
+For an explicit request to start a separate, durable task in an existing project,
+use [Codex Task Tools](codex-tasks.md). Its project lookup returns a backend
+project reference; the creator sets the title, submits the initial prompt once,
+and gives back a task ID and separate status evidence. It reports Desktop
+project membership only when a supported client read confirms the exact task.
 
 ## ChatGPT Planner
 

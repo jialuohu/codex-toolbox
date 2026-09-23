@@ -77,6 +77,18 @@
       "category": "Productivity"
     },
     {
+      "name": "codex-task-tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-task-tools"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
       "name": "coder-tools",
       "source": {
         "source": "local",

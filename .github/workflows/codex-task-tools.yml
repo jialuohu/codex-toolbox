@@ -1,0 +1,55 @@
+name: Codex Task Tools
+
+on:
+  pull_request:
+    paths: &codex_task_paths
+      - "plugins/codex-task-tools/**"
+      - "scripts/setup-codex-task-tools.sh"
+      - "scripts/setup-codex-toolbox.sh"
+      - "scripts/check-codex-toolbox-setup.py"
+      - "docs/codex-tasks.md"
+      - "docs/workflows.md"
+      - "docs/README.md"
+      - ".agents/plugins/marketplace.json"
+      - ".github/workflows/codex-task-tools.yml"
+  push:
+    branches: [main]
+    paths: *codex_task_paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+      - name: Validate plugin metadata and setup
+        run: |
+          python3 -m json.tool plugins/codex-task-tools/.codex-plugin/plugin.json >/dev/null
+          python3 -m json.tool plugins/codex-task-tools/.mcp.json >/dev/null
+          python3 -m json.tool .agents/plugins/marketplace.json >/dev/null
+          bash -n scripts/setup-codex-task-tools.sh scripts/setup-codex-toolbox.sh
+          python3 scripts/check-codex-toolbox-setup.py
+      - name: Check dependency lock
+        run: uv lock --check --directory plugins/codex-task-tools/server
+      - name: Install locked test dependencies
+        run: uv sync --locked --group dev --project plugins/codex-task-tools/server
+      - name: Test package and broker fault handling
+        working-directory: plugins/codex-task-tools/server
+        run: uv run --locked --group dev pytest
+      - name: Lint and type check
+        working-directory: plugins/codex-task-tools/server
+        run: |
+          uv run --locked --group dev ruff check src tests
+          uv run --locked --group dev pyright
+      - name: Privacy audit
+        run: |
+          python3 -m unittest tests.test_privacy_audit
+          scripts/privacy-audit.sh current

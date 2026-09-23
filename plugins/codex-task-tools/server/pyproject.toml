@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling==1.32.3"]
+build-backend = "hatchling.build"
+
+[project]
+name = "codex-task-tools"
+version = "0.1.0"
+description = "Local, durable Codex project task creation with fail-closed retries."
+requires-python = ">=3.12,<3.13"
+dependencies = ["mcp==1.30.0", "websockets==15.0.1"]
+
+[project.scripts]
+codex-task-tools-mcp = "codex_task_tools.mcp_server:main"
+codex-task-tools-broker = "codex_task_tools.broker:main"
+codex-task-tools-service = "codex_task_tools.service:main"
+codex-task-tools-recover = "codex_task_tools.recover:main"
+
+[dependency-groups]
+dev = ["pytest==9.1.1", "pytest-asyncio==1.3.0", "ruff==0.16.8", "pyright==1.1.414"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-config"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"

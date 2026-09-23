@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "codex_task_tools": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--frozen",
+        "--no-dev",
+        "--no-editable",
+        "--no-env-file",
+        "--project",
+        "server",
+        "codex-task-tools-mcp"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "CODEX_HOME"
+      ],
+      "startup_timeout_sec": 120,
+      "tool_timeout_sec": 120,
+      "default_tools_approval_mode": "auto"
+    }
+  }
+}

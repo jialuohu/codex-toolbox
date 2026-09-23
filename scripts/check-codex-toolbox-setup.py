@@ -31,6 +31,7 @@ DOCUMENTATION_GUIDES = (
     "docs/web.md",
     "docs/coder.md",
     "docs/workflows.md",
+    "docs/codex-tasks.md",
     "docs/development.md",
     "docs/typesafe.md",
     "docs/typesafe-computer-use.md",
@@ -174,6 +175,13 @@ PAPER_READ_REVIEW_OPENAI = PAPER_READ_REVIEW_SKILL.parent / "agents" / "openai.y
 WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
 CODER_PLUGIN = ROOT / "plugins" / "coder-tools" / ".codex-plugin" / "plugin.json"
 CODER_MCP = ROOT / "plugins" / "coder-tools" / ".mcp.json"
+CODEX_TASK_DIR = ROOT / "plugins" / "codex-task-tools"
+CODEX_TASK_PLUGIN = CODEX_TASK_DIR / ".codex-plugin" / "plugin.json"
+CODEX_TASK_MCP = CODEX_TASK_DIR / ".mcp.json"
+CODEX_TASK_SKILL = CODEX_TASK_DIR / "skills" / "codex-task-creation" / "SKILL.md"
+CODEX_TASK_OPENAI = CODEX_TASK_SKILL.parent / "agents" / "openai.yaml"
+CODEX_TASK_SERVER = CODEX_TASK_DIR / "server"
+CODEX_TASK_SETUP = ROOT / "scripts" / "setup-codex-task-tools.sh"
 DEEP_PLANNING_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "SKILL.md"
 )
@@ -3854,6 +3862,10 @@ def main() -> None:
     require(OBSIDIAN_MCP.exists(), "obsidian-tools must define an MCP config")
     require(CODER_PLUGIN.exists(), "coder-tools plugin manifest must exist")
     require(CODER_MCP.exists(), "coder-tools must define an MCP config")
+    require(CODEX_TASK_PLUGIN.exists(), "codex-task-tools plugin manifest must exist")
+    require(CODEX_TASK_MCP.exists(), "codex-task-tools MCP config must exist")
+    require(CODEX_TASK_SKILL.exists(), "codex-task-creation skill must exist")
+    require(CODEX_TASK_OPENAI.exists(), "codex-task-creation OpenAI metadata must exist")
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
     require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
@@ -3920,6 +3932,8 @@ def main() -> None:
     research_mcp = json.loads(RESEARCH_MCP.read_text())
     coder_plugin = json.loads(CODER_PLUGIN.read_text())
     coder_mcp = json.loads(CODER_MCP.read_text())
+    codex_task_plugin = json.loads(CODEX_TASK_PLUGIN.read_text())
+    codex_task_mcp = json.loads(CODEX_TASK_MCP.read_text())
     workflow_plugin = json.loads(WORKFLOW_PLUGIN.read_text())
     paper_figure_plugin = json.loads(PAPER_FIGURE_PLUGIN.read_text())
     productivity_plugin = json.loads(PRODUCTIVITY_PLUGIN.read_text())
@@ -3935,6 +3949,7 @@ def main() -> None:
     robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
     todoist_server = productivity_mcp.get("mcpServers", {}).get("todoist")
     coder_server = coder_mcp.get("mcpServers", {}).get("coder")
+    codex_task_server = codex_task_mcp.get("mcpServers", {}).get("codex_task_tools")
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
 
     require(web_data_plugin.get("name") == "web-data-tools", "web-data-tools name must be exact")
@@ -4342,6 +4357,14 @@ def main() -> None:
         "setup script must install the coder-tools plugin",
     )
     require(
+        '  "codex-task-tools"' in default_plugins,
+        "setup script must install the codex-task-tools plugin",
+    )
+    require(
+        '"$ROOT/scripts/setup-codex-task-tools.sh" --install' in script,
+        "setup script must install the codex-task-tools broker",
+    )
+    require(
         '  "paper-figure-tools"' in default_plugins,
         "setup script must install the paper-figure-tools plugin",
     )
@@ -4360,6 +4383,10 @@ def main() -> None:
     require(
         '  "coder"' in managed_mcp_servers,
         "setup script must manage the coder MCP server cleanup list",
+    )
+    require(
+        '  "codex_task_tools"' in managed_mcp_servers,
+        "setup script must manage the codex-task-tools MCP server cleanup list",
     )
     require(
         any(
@@ -4393,6 +4420,73 @@ def main() -> None:
         ),
         "marketplace must include coder-tools",
     )
+    require(
+        any(
+            plugin.get("name") == "codex-task-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/codex-task-tools"
+            for plugin in marketplace.get("plugins", [])
+        ),
+        "marketplace must include codex-task-tools",
+    )
+    require(codex_task_plugin.get("name") == "codex-task-tools", "codex-task-tools name must be exact")
+    require(codex_task_plugin.get("version") == "0.1.0", "codex-task-tools must start at 0.1.0")
+    require(codex_task_plugin.get("skills") == "./skills/", "codex-task-tools must expose its skill")
+    require(codex_task_plugin.get("mcpServers") == "./.mcp.json", "codex-task-tools must expose its MCP config")
+    require(
+        set(codex_task_mcp.get("mcpServers", {})) == {"codex_task_tools"},
+        "codex-task-tools must own exactly one MCP server",
+    )
+    require(isinstance(codex_task_server, dict), "codex-task-tools MCP server must be configured")
+    require(codex_task_server.get("command") == "uv", "codex-task-tools MCP must use uv")
+    require(
+        codex_task_server.get("args") == [
+            "run", "--frozen", "--no-dev", "--no-editable", "--no-env-file",
+            "--project", "server", "codex-task-tools-mcp",
+        ],
+        "codex-task-tools MCP must launch the frozen local package",
+    )
+    require(codex_task_server.get("cwd") == ".", "codex-task-tools MCP must use its plugin root")
+    require(
+        codex_task_server.get("env_vars") == ["CODEX_HOME"],
+        "codex-task-tools MCP may forward only CODEX_HOME",
+    )
+    require(
+        codex_task_server.get("default_tools_approval_mode") == "auto",
+        "codex-task-tools MCP must rely on explicit user requests without a second tool prompt",
+    )
+    require(
+        "tools" not in codex_task_server,
+        "codex-task-tools MCP must use the owning skill's explicit user request",
+    )
+    task_skill_text = CODEX_TASK_SKILL.read_text()
+    require(
+        "explicitly asks" in task_skill_text
+        and "matching directory" in task_skill_text
+        and "idempotencyKey" in task_skill_text,
+        "codex-task-creation skill must preserve explicit request and project identity gates",
+    )
+    require(
+        (CODEX_TASK_SERVER / "pyproject.toml").exists()
+        and (CODEX_TASK_SERVER / "uv.lock").exists(),
+        "codex-task-tools must include its locked Python package",
+    )
+    require(CODEX_TASK_SETUP.exists(), "codex-task-tools service setup must exist")
+    task_setup_text = CODEX_TASK_SETUP.read_text()
+    for expected in (
+        "codex mcp get codex_task_tools --json",
+        "codex-task-tools-service",
+        "lock --check",
+        "sync --active --locked --no-dev --no-editable",
+        '"$SERVICE_BIN" status',
+        '"$SERVICE_BIN" stop',
+        '"$SERVICE_BIN" start',
+        "activeTaskCount",
+        "pendingApprovalCount",
+    ):
+        require(
+            expected in task_setup_text or expected.replace("codex mcp", '"$CODEX_BIN" mcp') in task_setup_text,
+            f"codex-task-tools service setup must include {expected}",
+        )
     require(
         coder_plugin.get("mcpServers") == "./.mcp.json",
         "coder-tools must expose its MCP config",

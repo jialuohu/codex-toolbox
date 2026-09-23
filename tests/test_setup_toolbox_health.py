@@ -200,6 +200,7 @@ esac
             "setup-archify-tools.sh", "setup-apple-mail-tools.sh",
             "setup-diagram-publish.sh",
             "setup-toolbox-health.sh", "setup-drawio-tools.sh",
+            "setup-codex-task-tools.sh",
         ):
             self.executable(scripts / name, '''
 printf '%s %s\\n' "${0##*/}" "$*" >> "$TEST_LOG"
