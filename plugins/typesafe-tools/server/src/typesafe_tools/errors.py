@@ -11,6 +11,9 @@ MESSAGES = {
     "routing_suspended": (
         "Capability routing is suspended after repeated provider failures."
     ),
+    "computer_use_disabled": "Automatic computer-use advice is disabled for this surface.",
+    "computer_use_unverified": "Automatic computer-use advice lacks reviewed evidence.",
+    "duplicate_decision": "This unchanged computer-use decision was already evaluated.",
     "budget_exhausted": "The monthly wrapper budget has insufficient unreserved funds.",
     "accounting_unavailable": (
         "Private usage accounting is unavailable; no further calls are allowed."

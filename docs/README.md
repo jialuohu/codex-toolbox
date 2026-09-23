@@ -20,7 +20,7 @@ Commands run from the repository root. Guides cover setup and usage; the owning
 | [Extract public pages](web.md) | Firecrawl routing and credit limits |
 | [Inspect Coder workspaces](coder.md) | CLI authentication and read-only access |
 | [Plan or explain work](workflows.md) | Plan-mode Pro consultation, Claude second opinions, explanations |
-| [TypeSafe and Jev](typesafe.md) | Evidence evaluation, default routing for eligible public or synthetic tasks, and effort compatibility |
+| [TypeSafe and Jev](typesafe.md) | Evidence evaluation, capability routing, computer-use advice, and effort compatibility |
 | [Recover Codex sidebar mappings](../plugins/workflow-tools/skills/recover-codex-sidebar/SKILL.md) | On-request macOS recovery after account or connection changes, new-Mac layout import, preview, verification, rollback |
 | [Develop, validate, or publish](development.md) | Instruction audits, repository checks, explicit shipping |
 

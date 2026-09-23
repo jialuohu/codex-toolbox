@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "license": "CC0-1.0",
+  "origin": "Original synthetic GUI scenarios authored for codex-toolbox; no private interface, user data, or measured result is represented.",
+  "repetitions": 3,
+  "conditions": {
+    "A": "Current Codex computer use with ordinary observations and action calls.",
+    "B": "Codex computer use with compact observations and safe action-plus-observation batching, without Jev.",
+    "C": "Condition B with selective Jev action recommendations; Codex verifies and executes every action."
+  },
+  "variants": [
+    {"target": "Quartz", "section": "Research", "status": "Ready", "tab": "Pending", "group": "Alpha", "decoy": "Cedar"},
+    {"target": "Cedar", "section": "Operations", "status": "Active", "tab": "Archive", "group": "Beta", "decoy": "Nimbus"},
+    {"target": "Nimbus", "section": "Design", "status": "Review", "tab": "Current", "group": "Gamma", "decoy": "Orchid"},
+    {"target": "Orchid", "section": "Reports", "status": "Hold", "tab": "Later", "group": "Delta", "decoy": "Quartz"}
+  ],
+  "families": [
+    {
+      "surface": "browser", "category": "navigation", "jev_eligible": true, "decision_stage": "initial",
+      "objective": "In the browser, open the {section} section and then the {target} record.",
+      "observation": "Navigation currently shows the {section} button and other section buttons. No record row is visible yet.",
+      "actions": [{"id": "Research", "description": "Open Research"}, {"id": "Operations", "description": "Open Operations"}, {"id": "Design", "description": "Open Design"}, {"id": "Reports", "description": "Open Reports"}],
+      "expected_action_id": "{section}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "search", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the browser, search for {target} and open its result.",
+      "observation": "Search field is empty; record results are not visible until a search is submitted.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "filter", "jev_eligible": true, "decision_stage": "status_options_open",
+      "objective": "In the browser, filter to {status} and open {target}.",
+      "observation": "Status options are open: All, Ready, Active, Review, and Hold. The {target} row was visible in the All view with status {status}.",
+      "actions": [{"id": "All", "description": "Choose All"}, {"id": "Ready", "description": "Choose Ready"}, {"id": "Active", "description": "Choose Active"}, {"id": "Review", "description": "Choose Review"}, {"id": "Hold", "description": "Choose Hold"}],
+      "expected_action_id": "{status}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "tabs", "jev_eligible": true, "decision_stage": "initial",
+      "objective": "In the browser, choose the {tab} tab and open {target}.",
+      "observation": "Four tab buttons are visible: Pending, Archive, Current, Later. The currently selected tab shows non-target {decoy}.",
+      "actions": [{"id": "Pending", "description": "Choose Pending"}, {"id": "Archive", "description": "Choose Archive"}, {"id": "Current", "description": "Choose Current"}, {"id": "Later", "description": "Choose Later"}, {"id": "open_current", "description": "Open currently visible {decoy}"}],
+      "expected_action_id": "{tab}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "expand", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the browser, expand group {group} and open {target}.",
+      "observation": "Expand buttons for group {group} and three other groups are visible. The {target} row appears after expanding its group.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "duplicate_label", "jev_eligible": true, "decision_stage": "initial",
+      "objective": "In the browser, use the Open control in the {target} row, where {decoy} has an identical Open label.",
+      "observation": "Four row-scoped Open controls are visible in the Quartz, Cedar, Nimbus, and Orchid rows; {target} is the target.",
+      "actions": [{"id": "Quartz", "description": "Open in the Quartz row"}, {"id": "Cedar", "description": "Open in the Cedar row"}, {"id": "Nimbus", "description": "Open in the Nimbus row"}, {"id": "Orchid", "description": "Open in the Orchid row"}],
+      "expected_action_id": "{target}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "stale_index", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the browser, reorder the list and then open {target} using its current row, not {decoy}'s former position.",
+      "observation": "A Reorder list control changes row positions; indexes from before reorder cannot identify {target} afterward.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "missing_target", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the browser, refresh state to reveal missing {target}, then open it rather than {decoy}.",
+      "observation": "The {target} record is absent from the current view; Refresh state can reveal it. {decoy} is visible.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "recovery", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the browser, search for {target}, retry after the first No results state, then open it.",
+      "observation": "The search field is visible. A first search for {target} later produces No results and a Retry search control.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "browser", "category": "dialog", "jev_eligible": true, "decision_stage": "picker_open",
+      "objective": "In the browser, open the picker dialog and choose {target}, not {decoy}.",
+      "observation": "The picker dialog is open with row-scoped Open buttons for Quartz, Cedar, Nimbus, and Orchid, plus Close picker. {target} is the target.",
+      "actions": [{"id": "Quartz", "description": "Open in the Quartz row"}, {"id": "Cedar", "description": "Open in the Cedar row"}, {"id": "Nimbus", "description": "Open in the Nimbus row"}, {"id": "Orchid", "description": "Open in the Orchid row"}, {"id": "close", "description": "Close picker"}],
+      "expected_action_id": "{target}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "navigation", "jev_eligible": true, "decision_stage": "initial",
+      "objective": "In the native app, open the {section} section and then the {target} record.",
+      "observation": "Horizontal section buttons include {section} and three other sections. No record row is visible yet.",
+      "actions": [{"id": "Research", "description": "Open Research"}, {"id": "Operations", "description": "Open Operations"}, {"id": "Design", "description": "Open Design"}, {"id": "Reports", "description": "Open Reports"}],
+      "expected_action_id": "{section}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "search", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the native app, search for {target} and open its result.",
+      "observation": "Native search field is empty; record results are not yet visible.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "filter", "jev_eligible": true, "decision_stage": "status_options_open",
+      "objective": "In the native app, filter to {status} and open {target}.",
+      "observation": "Status picker options are open: All, Ready, Active, Review, and Hold. The {target} row was visible in the All view with status {status}.",
+      "actions": [{"id": "All", "description": "Choose All"}, {"id": "Ready", "description": "Choose Ready"}, {"id": "Active", "description": "Choose Active"}, {"id": "Review", "description": "Choose Review"}, {"id": "Hold", "description": "Choose Hold"}],
+      "expected_action_id": "{status}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "tabs", "jev_eligible": true, "decision_stage": "initial",
+      "objective": "In the native app, choose the {tab} tab and open {target}.",
+      "observation": "Horizontal tab buttons include Pending, Archive, Current, and Later; non-target {decoy} is currently visible.",
+      "actions": [{"id": "Pending", "description": "Choose Pending"}, {"id": "Archive", "description": "Choose Archive"}, {"id": "Current", "description": "Choose Current"}, {"id": "Later", "description": "Choose Later"}, {"id": "open_current", "description": "Open currently visible {decoy}"}],
+      "expected_action_id": "{tab}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "expand", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the native app, expand group {group} and open {target}.",
+      "observation": "Expand buttons for group {group} and three other groups are visible. The {target} row appears after expansion.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "duplicate_label", "jev_eligible": true, "decision_stage": "initial",
+      "objective": "In the native app, use Open in the {target} row, where {decoy} also has Open.",
+      "observation": "Four identically labeled Open buttons are scoped to the Quartz, Cedar, Nimbus, and Orchid rows; {target} is the target.",
+      "actions": [{"id": "Quartz", "description": "Open in the Quartz row"}, {"id": "Cedar", "description": "Open in the Cedar row"}, {"id": "Nimbus", "description": "Open in the Nimbus row"}, {"id": "Orchid", "description": "Open in the Orchid row"}],
+      "expected_action_id": "{target}", "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "stale_index", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the native app, reorder the list and then open {target} from its current row, not {decoy}'s old position.",
+      "observation": "Reorder list changes accessibility element positions; a prior index cannot identify {target} afterward.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "missing_target", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the native app, refresh state to reveal missing {target}, then open it rather than {decoy}.",
+      "observation": "The current native list omits {target}; Refresh state can reveal it. {decoy} is visible.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "recovery", "jev_eligible": false, "decision_stage": "none",
+      "objective": "In the native app, search for {target}, retry after the first No results state, then open it.",
+      "observation": "Native search field is visible. Searching for {target} later shows transient No results with Retry search.",
+      "actions": [], "expected_action_id": null, "expected_result": "PASS {case_id}"
+    },
+    {
+      "surface": "native", "category": "dialog", "jev_eligible": true, "decision_stage": "picker_open",
+      "objective": "In the native app, open the picker dialog and choose {target}, not {decoy}.",
+      "observation": "The native picker sheet is open with row-scoped Open buttons for Quartz, Cedar, Nimbus, and Orchid, plus Close picker. {target} is the target.",
+      "actions": [{"id": "Quartz", "description": "Open in the Quartz row"}, {"id": "Cedar", "description": "Open in the Cedar row"}, {"id": "Nimbus", "description": "Open in the Nimbus row"}, {"id": "Orchid", "description": "Open in the Orchid row"}, {"id": "close", "description": "Close picker"}],
+      "expected_action_id": "{target}", "expected_result": "PASS {case_id}"
+    }
+  ]
+}

@@ -60,6 +60,12 @@ class Settings:
     automatic_research: bool = False
     routing_pilot: bool = False
     automatic_routing: bool = True
+    automatic_browser_use: bool = False
+    browser_evidence_id: str = ""
+    browser_user_opt_in: bool = False
+    automatic_native_use: bool = False
+    native_evidence_id: str = ""
+    native_user_opt_in: bool = False
 
 
 class ConfigStore:
@@ -81,7 +87,9 @@ class ConfigStore:
             raw = json.loads(data, object_pairs_hook=_unique)
             if not isinstance(raw, dict) or not set(raw) <= {
                 "model", "pilot_evidence_id", "automatic_research", "routing_pilot",
-                "automatic_routing",
+                "automatic_routing", "automatic_browser_use", "browser_evidence_id",
+                "browser_user_opt_in", "automatic_native_use", "native_evidence_id",
+                "native_user_opt_in",
             }:
                 raise ValueError
             if raw.get("model", MODEL) != MODEL:
@@ -94,10 +102,24 @@ class ConfigStore:
                 raise ValueError
             if type(raw.get("automatic_routing", True)) is not bool:
                 raise ValueError
+            if any(type(raw.get(name, False)) is not bool for name in (
+                    "automatic_browser_use", "browser_user_opt_in",
+                    "automatic_native_use", "native_user_opt_in")):
+                raise ValueError
+            if any(not isinstance(raw.get(name, ""), str)
+                   or len(raw.get(name, "")) > 128 for name in (
+                       "browser_evidence_id", "native_evidence_id")):
+                raise ValueError
             return Settings(model=MODEL, pilot_evidence_id=raw.get("pilot_evidence_id", ""),
                             automatic_research=raw.get("automatic_research", False),
                             routing_pilot=raw.get("routing_pilot", False),
-                            automatic_routing=raw.get("automatic_routing", True))
+                            automatic_routing=raw.get("automatic_routing", True),
+                            automatic_browser_use=raw.get("automatic_browser_use", False),
+                            browser_evidence_id=raw.get("browser_evidence_id", ""),
+                            browser_user_opt_in=raw.get("browser_user_opt_in", False),
+                            automatic_native_use=raw.get("automatic_native_use", False),
+                            native_evidence_id=raw.get("native_evidence_id", ""),
+                            native_user_opt_in=raw.get("native_user_opt_in", False))
         except (ValueError, TypeError, UnicodeError) as exc:
             raise EvaluationError("configuration_invalid") from exc
 

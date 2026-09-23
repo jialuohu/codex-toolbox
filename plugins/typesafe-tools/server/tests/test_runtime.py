@@ -349,13 +349,18 @@ def test_mcp_discovery_and_offline_call(tmp_path):
         async with create_connected_server_and_client_session(server._mcp_server) as client:
             listed = await client.list_tools()
             tools = {tool.name: tool for tool in listed.tools}
-            assert set(tools) == {"typesafe_status", "typesafe_evaluate", "typesafe_route"}
+            assert set(tools) == {
+                "typesafe_status", "typesafe_evaluate", "typesafe_route", "typesafe_choose_action",
+            }
             status_annotations = tools["typesafe_status"].annotations
             evaluation_annotations = tools["typesafe_evaluate"].annotations
             routing_annotations = tools["typesafe_route"].annotations
+            computer_use_annotations = tools["typesafe_choose_action"].annotations
             assert status_annotations is not None and status_annotations.readOnlyHint
             assert evaluation_annotations is not None and not evaluation_annotations.idempotentHint
             assert routing_annotations is not None and not routing_annotations.idempotentHint
+            assert (computer_use_annotations is not None
+                    and not computer_use_annotations.idempotentHint)
             status = await client.call_tool("typesafe_status", {})
             assert status.structuredContent is not None
             assert status.structuredContent["block_reasons"] == ["credential_missing"]

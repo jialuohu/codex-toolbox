@@ -3,13 +3,24 @@
 import asyncio
 import time
 import uuid
+from collections import deque
 from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
 
 from .billing import MODEL, VERIFIED_PILOTS
-from .config import ConfigStore, codex_home
+from .computer_use import (
+    COMPUTER_USE_DEADLINE_SECONDS,
+    VERIFIED_COMPUTER_USE_EVIDENCE,
+)
+from .computer_use import (
+    prepare as prepare_computer_use,
+)
+from .computer_use import (
+    select as select_computer_use,
+)
+from .config import ConfigStore, Settings, codex_home
 from .errors import EvaluationError, unavailable
 from .ledger import Ledger
 from .routing import ROUTING_DEADLINE_SECONDS, prepare, rank
@@ -17,6 +28,25 @@ from .schema import MAX_RESPONSE_BYTES, json_bytes, question_body, response_body
 
 ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 DEADLINE_SECONDS = 30
+
+
+def computer_use_activation_basis(settings: Settings, surface: Literal["browser", "native"]
+                                  ) -> Literal["measured_benefit", "user_opt_in"] | None:
+    if surface == "browser":
+        enabled = settings.automatic_browser_use
+        evidence_id = settings.browser_evidence_id
+        user_opt_in = settings.browser_user_opt_in
+    else:
+        enabled = settings.automatic_native_use
+        evidence_id = settings.native_evidence_id
+        user_opt_in = settings.native_user_opt_in
+    if not enabled:
+        return None
+    if evidence_id in VERIFIED_COMPUTER_USE_EVIDENCE[surface]:
+        return "measured_benefit"
+    if user_opt_in:
+        return "user_opt_in"
+    return None
 
 
 class Service:
@@ -27,6 +57,8 @@ class Service:
         self.clock = clock or (lambda: datetime.now(UTC))
         self._routing_session_id = uuid.uuid4().hex
         self.routing_failures = 0
+        self._computer_use_decisions: set[str] = set()
+        self._computer_use_order: deque[str] = deque()
 
     def status(self) -> dict:
         reasons = []
@@ -46,6 +78,10 @@ class Service:
             accounting = self.ledger.unlimited_status(self.clock())
         except EvaluationError as exc:
             reasons.append(exc.code)
+        browser_basis = (computer_use_activation_basis(settings, "browser")
+                         if settings and not reasons else None)
+        native_basis = (computer_use_activation_basis(settings, "native")
+                        if settings and not reasons else None)
         return {
             "ok": True, "status": "blocked" if reasons else "ready", "model": MODEL,
             "credential_configured": credential, "block_reasons": list(dict.fromkeys(reasons)),
@@ -55,6 +91,10 @@ class Service:
             "routing_pilot_enabled": bool(settings and settings.routing_pilot and not reasons),
             "automatic_routing_enabled": bool(settings and settings.automatic_routing
                 and not reasons),
+            "automatic_browser_use_enabled": browser_basis is not None,
+            "automatic_browser_use_basis": browser_basis,
+            "automatic_native_use_enabled": native_basis is not None,
+            "automatic_native_use_basis": native_basis,
         }
 
     async def _dispatch(self, payload: bytes, key: str,
@@ -111,13 +151,46 @@ class Service:
             self.routing_failures += 1
             return unavailable("invalid_response")
 
+    async def choose_action(self, surface: Literal["browser", "native"], objective: str,
+                            observation: str, snapshot_id: str, task_scope_id: str,
+                            candidates: list[dict],
+                            classification: Literal["public", "synthetic"],
+                            invocation: Literal["explicit", "automatic"]) -> dict:
+        try:
+            state, questions, decision_digest = prepare_computer_use(
+                surface, objective, observation, snapshot_id, task_scope_id, candidates)
+        except EvaluationError as exc:
+            return unavailable(exc.code)
+        evaluation = await self._evaluate_with_deadline(
+            state, questions, classification, invocation,
+            COMPUTER_USE_DEADLINE_SECONDS, "computer_use",
+            surface=surface, decision_digest=decision_digest)
+        if not evaluation.get("ok"):
+            return {**evaluation, "surface": surface, "snapshot_id": snapshot_id}
+        try:
+            return select_computer_use(evaluation, surface, snapshot_id)
+        except EvaluationError as exc:
+            return {**unavailable(exc.code), "surface": surface,
+                    "snapshot_id": snapshot_id}
+
+    def _remember_computer_use_decision(self, digest: str) -> None:
+        # No await occurs between checking and recording this key in one event loop.
+        if digest in self._computer_use_decisions:
+            raise EvaluationError("duplicate_decision")
+        self._computer_use_decisions.add(digest)
+        self._computer_use_order.append(digest)
+        if len(self._computer_use_order) > 256:
+            self._computer_use_decisions.remove(self._computer_use_order.popleft())
+
     async def _evaluate_with_deadline(self, state, questions, classification,
-                                      invocation, deadline, purpose) -> dict:
+                                      invocation, deadline, purpose, *, surface=None,
+                                      decision_digest=None) -> dict:
         started = time.monotonic()
         try:
             async with asyncio.timeout(deadline):
                 return await self._evaluate(
-                    state, questions, classification, invocation, started, deadline, purpose)
+                    state, questions, classification, invocation, started, deadline, purpose,
+                    surface=surface, decision_digest=decision_digest)
         except EvaluationError as exc:
             return unavailable(exc.code)
         except (TimeoutError, httpx.TimeoutException):
@@ -128,13 +201,20 @@ class Service:
             return unavailable("internal_error")
 
     async def _evaluate(self, state, questions, classification, invocation,
-                        started, deadline=DEADLINE_SECONDS, purpose="research"):
+                        started, deadline=DEADLINE_SECONDS, purpose="research", *,
+                        surface=None, decision_digest=None):
         if classification not in {"public", "synthetic"}:
             raise EvaluationError("data_ineligible")
         if ((purpose == "research" and invocation not in {"explicit", "automatic"})
                 or (purpose == "routing" and invocation not in {"pilot", "automatic"})
-                or purpose not in {"research", "routing"}):
+                or (purpose == "computer_use" and invocation not in {
+                    "explicit", "automatic"})
+                or purpose not in {"research", "routing", "computer_use"}):
             raise EvaluationError("invalid_request")
+        if purpose == "computer_use":
+            if (not isinstance(surface, str) or surface not in {"browser", "native"}
+                    or not isinstance(decision_digest, str)):
+                raise EvaluationError("invalid_request")
         payload = question_body(state, questions)
         settings = await asyncio.to_thread(self.config.settings)
         if purpose == "routing" and invocation == "pilot" and not settings.routing_pilot:
@@ -144,17 +224,31 @@ class Service:
         if purpose == "research" and invocation == "automatic" and not (
                 settings.automatic_research and settings.pilot_evidence_id in VERIFIED_PILOTS):
             raise EvaluationError("automatic_use_unverified")
+        if purpose == "computer_use" and invocation == "automatic":
+            assert surface in ("browser", "native")
+            enabled = (settings.automatic_browser_use if surface == "browser"
+                       else settings.automatic_native_use)
+            if not enabled:
+                raise EvaluationError("computer_use_disabled")
+            if computer_use_activation_basis(settings, surface) is None:
+                raise EvaluationError("computer_use_unverified")
         key = await asyncio.to_thread(self.config.api_key)
         protected_values = [key]
         if isinstance(self.config, ConfigStore):
             protected_values.append(str(self.config.secrets))
         if any(json_bytes(value)[1:-1] in payload for value in protected_values):
             raise EvaluationError("data_ineligible")
+        if purpose == "computer_use":
+            assert isinstance(decision_digest, str)
+            self._remember_computer_use_decision(decision_digest)
         # Workers may finish after cancellation; their usage record stays unresolved.
         # The coroutine cannot dispatch until the record is committed.
         submitted = self.clock()
         metadata = {"classification": classification,
-                    "invocation": invocation if purpose == "research" else "routing_" + invocation,
+                    "invocation": (
+                        invocation if purpose == "research" else
+                        "routing_" + invocation if purpose == "routing" else
+                        f"computer_use_{surface}_{invocation}"),
                     "question_count": len(questions), "payload_bytes": len(payload)}
         request_id = await asyncio.to_thread(self.ledger.start_unlimited, submitted, metadata)
         dispatch_time = self.clock()

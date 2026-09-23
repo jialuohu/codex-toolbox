@@ -254,6 +254,25 @@ def test_private_key_and_routing_config(config: ConfigStore) -> None:
     assert not config.settings().automatic_routing
 
 
+def test_computer_use_config_requires_separate_evidence_fields(config: ConfigStore) -> None:
+    write_private(config.root / "config.json", json.dumps({
+        "automatic_browser_use": True, "browser_evidence_id": "browser-v1",
+        "automatic_native_use": False, "native_evidence_id": "native-v1",
+        "browser_user_opt_in": True, "native_user_opt_in": False,
+    }))
+    settings = config.settings()
+    assert settings.automatic_browser_use and settings.browser_evidence_id == "browser-v1"
+    assert not settings.automatic_native_use and settings.native_evidence_id == "native-v1"
+    assert settings.browser_user_opt_in and not settings.native_user_opt_in
+
+
+def test_computer_use_user_opt_in_defaults_off(config: ConfigStore) -> None:
+    assert not Settings().browser_user_opt_in and not Settings().native_user_opt_in
+    write_private(config.root / "config.json", "{}")
+    settings = config.settings()
+    assert not settings.browser_user_opt_in and not settings.native_user_opt_in
+
+
 @pytest.mark.parametrize("mode", [0o644, 0o640, 0o666, 0o604])
 def test_key_mode_rejected(config: ConfigStore, mode: int) -> None:
     path = config.root / "api-key"
@@ -323,6 +342,9 @@ def test_protected_size_limit(config: ConfigStore) -> None:
     '{"monthly_budget_usd":null}', '{"billing_evidence_id":"old"}',
     '{"routing_pilot_evidence_id":"old"}', '{"model":"other"}',
     '{"pilot_evidence_id":3}', '{"automatic_routing":"true"}',
+    '{"automatic_browser_use":"true"}', '{"automatic_native_use":1}',
+    '{"browser_user_opt_in":"true"}', '{"native_user_opt_in":1}',
+    '{"browser_evidence_id":1}', '{"native_evidence_id":1}',
     '{"automatic_research":"true"}', '{"verified":true}',
     '{"hard_cap_verified":true}', '{"endpoint":"https://example.invalid"}',
     '[]', 'null', 'not json',

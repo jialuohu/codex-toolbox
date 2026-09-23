@@ -1,4 +1,4 @@
-"""Three-tool stdio MCP. Startup and status perform no network calls."""
+"""Stdio MCP for bounded Jev advice. Startup and status perform no network calls."""
 
 import json
 import logging
@@ -75,6 +75,35 @@ def create_server(service: Service | None = None) -> FastMCP:
             return await get_service().route(
                 task, candidates, catalog_digest, classification,
                 session_id=session_id, turn_id=turn_id, invocation=invocation)
+        except EvaluationError as exc:
+            return unavailable(exc.code)
+        except Exception:
+            return unavailable("internal_error")
+
+    @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
+                                          idempotentHint=False, openWorldHint=True))
+    async def typesafe_choose_action(surface: Literal["browser", "native"], objective: str,
+                                     observation: str, snapshot_id: str, task_scope_id: str,
+                                     candidates: list[dict],
+                                     classification: Literal["public", "synthetic"],
+                                     invocation: Literal["explicit", "automatic"]
+                                     ) -> dict[str, Any]:
+        """Recommend one semantic computer-use action or abstain; never execute it.
+
+        Codex must review every outgoing field as public or synthetic. Supply
+        one to 15 candidates with id, target, operation, arguments,
+        preconditions, and intended_result string fields. Keep executable UI
+        bindings local. Task scope and snapshot IDs are opaque local values;
+        reuse the task scope only within one Codex task. Echoed snapshot IDs
+        help Codex correlate advice; it must reacquire and check the target
+        before acting. The caller must identify explicit user-requested or
+        enabled automatic use. Automatic use requires that surface's protected
+        user opt-in or separately reviewed evidence.
+        """
+        try:
+            return await get_service().choose_action(
+                surface, objective, observation, snapshot_id, task_scope_id, candidates,
+                classification, invocation)
         except EvaluationError as exc:
             return unavailable(exc.code)
         except Exception:

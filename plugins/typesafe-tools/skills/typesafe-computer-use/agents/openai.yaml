@@ -1,0 +1,6 @@
+interface:
+  display_name: "TypeSafe Computer Use"
+  short_description: "Compact UI observations and optional Jev action advice"
+  default_prompt: "Use $typesafe-computer-use for a browser or native Computer Use task; consult Jev only when its eligibility and activation rules permit it."
+policy:
+  allow_implicit_invocation: true

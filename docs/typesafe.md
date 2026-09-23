@@ -2,13 +2,15 @@
 
 [Documentation](README.md) · [Owning skill](../plugins/typesafe-tools/skills/typesafe-judgment/SKILL.md)
 
-TypeSafe Tools is an optional research-evidence integration. `typesafe_status`
-checks local readiness; `typesafe_evaluate` accepts bounded typed evaluations.
-Version 0.3.0 also exposes `typesafe_route` for capability ranking. Automatic
+TypeSafe Tools is an optional Jev integration. `typesafe_status` checks local
+readiness; `typesafe_evaluate` accepts bounded typed research evaluations.
+Version 0.4.0 exposes `typesafe_route` for capability ranking and a separately
+gated computer-use action advisor. Automatic
 routing is enabled by default when the credential is ready and the supplied task
 is eligible; set `automatic_routing` to `false` in protected configuration to
 opt out. Research evaluation retains its separate automatic-use pilot gate.
-See [capability routing](typesafe-routing.md) and the
+See [capability routing](typesafe-routing.md),
+[computer-use advice](typesafe-computer-use.md), and the
 [reasoning-effort compatibility report](typesafe-effort.md). The wrapper no longer
 has a spending cap or billing configuration. A route call may incur provider
 charges; plugin installation alone does not send one.
@@ -59,7 +61,7 @@ The local plugin installer exports only TypeSafe Tools under
 `$CODEX_HOME/local-marketplaces/typesafe-tools-local`, registers that separate
 marketplace, and installs with `codex plugin add`. It leaves the published
 `jialuo-codex-toolbox` registration and other plugins unchanged. Source remains
-version `0.3.0`; exported versions receive a content-derived Codex cachebuster.
+version `0.4.0`; exported versions receive a content-derived Codex cachebuster.
 Exports are immutable under `exports/<source-sha256>`; updates atomically move
 the marketplace catalog pointer and retain previous exports. A colliding or
 modified export is rejected without overwriting it. Repeated setup verifies the
@@ -90,6 +92,26 @@ configuration field to `false`:
 ```json
 {"automatic_routing": false}
 ```
+
+Computer-use advice has separate, default-off settings. An evaluated surface
+requires both its protected automatic-use switch and either explicit user
+opt-in for that surface or a reviewed evidence ID registered in plugin source.
+The [computer-use guide](typesafe-computer-use.md) defines the benefit gate and
+the separate browser/native review. A user who explicitly accepts automatic
+advice without measured benefit can enable both surfaces with:
+
+```json
+{"automatic_browser_use": true, "browser_user_opt_in": true,
+ "automatic_native_use": true, "native_user_opt_in": true}
+```
+
+`typesafe_status` reports `user_opt_in` as the activation basis in this case;
+it does not report a verified latency or token improvement. Requests consume
+Jev usage only when the owning skill finds an eligible ambiguous decision.
+
+The settings do not prove that the current Codex task has a connected Computer
+Use surface or that its UI text is eligible for Jev. The owning skill checks
+those conditions on each attempted use.
 
 The former `monthly_budget_usd`, `billing_evidence_id`, and
 `routing_pilot_evidence_id` keys are obsolete and rejected. Remove them from

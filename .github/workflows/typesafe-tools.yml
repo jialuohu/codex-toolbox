@@ -15,6 +15,7 @@ on:
       - "tests/test_typesafe_tools.py"
       - "tests/test_capability_routing_benchmark.py"
       - "tests/fixtures/capability-routing-benchmark.json"
+      - "tests/test_computer_use_benchmark.py"
   push:
     branches: [main]
     paths:
@@ -30,6 +31,7 @@ on:
       - "tests/test_typesafe_tools.py"
       - "tests/test_capability_routing_benchmark.py"
       - "tests/fixtures/capability-routing-benchmark.json"
+      - "tests/test_computer_use_benchmark.py"
   workflow_dispatch:
 
 permissions:
@@ -63,16 +65,19 @@ jobs:
           python3 -m unittest discover -s plugins/typesafe-tools/effort -p 'test_*.py'
           python3 -m unittest discover -s plugins/typesafe-tools/routing -p 'test_*.py'
           python3 -m unittest tests.test_capability_routing_benchmark
+          python3 -m unittest tests.test_computer_use_benchmark
       - name: Check runtime lint and types
         working-directory: plugins/typesafe-tools/server
         run: |
           uv run --frozen ruff check src tests
           uv run --frozen pyright
-      - name: Check offline routing and effort lint
+      - name: Check offline routing, effort, and benchmark lint
         run: >-
           uv run --frozen --project plugins/typesafe-tools/server ruff check
           plugins/typesafe-tools/routing plugins/typesafe-tools/effort
+          plugins/typesafe-tools/computer_use_benchmark
           scripts/eval_skill_routing.py tests/test_capability_routing_benchmark.py
+          tests/test_computer_use_benchmark.py
       - name: Validate toolbox integration
         run: python3 scripts/check-codex-toolbox-setup.py
       - name: Scan current tree

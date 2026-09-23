@@ -1,15 +1,15 @@
 {
   "name": "typesafe-tools",
-  "version": "0.3.0",
-  "description": "Bounded Jev evidence evaluation and default capability routing for eligible tasks.",
+  "version": "0.4.0",
+  "description": "Bounded Jev evaluation, capability routing, and computer-use action advice for eligible tasks.",
   "author": {
     "name": "Codex Toolbox Contributors"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "TypeSafe Tools",
-    "shortDescription": "Route eligible tasks with Jev judgments.",
-    "longDescription": "Jev ranks available skills and tools by default for eligible public or synthetic tasks with a material capability choice. Typed research evaluations remain separately gated. Codex retains final tool and action decisions.",
+    "shortDescription": "Route eligible tasks and advise on computer-use actions.",
+    "longDescription": "Jev ranks available skills and tools for eligible public or synthetic tasks. A separate, initially disabled computer-use workflow advises on bounded browser and native-app action choices. Codex retains execution and verification.",
     "developerName": "Codex Toolbox Contributors",
     "category": "Productivity",
     "capabilities": ["Read"],

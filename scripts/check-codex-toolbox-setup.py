@@ -33,6 +33,7 @@ DOCUMENTATION_GUIDES = (
     "docs/workflows.md",
     "docs/development.md",
     "docs/typesafe.md",
+    "docs/typesafe-computer-use.md",
 )
 STINKY_PENGUIN_DIR = ROOT / "config" / "codex" / "pets" / "stinky-penguin"
 STINKY_PENGUIN_MANIFEST = STINKY_PENGUIN_DIR / "pet.json"
@@ -5878,7 +5879,7 @@ def check_typesafe_contract() -> None:
     plugin = ROOT / "plugins/typesafe-tools"
     manifest = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
     mcp = json.loads((plugin / ".mcp.json").read_text())
-    require(manifest["version"] == "0.3.0", "TypeSafe contract version must be 0.3.0")
+    require(manifest["version"] == "0.4.0", "TypeSafe contract version must be 0.4.0")
     require(set(mcp["mcpServers"]) == {"typesafe"}, "TypeSafe must own one MCP server")
     launch = mcp["mcpServers"]["typesafe"]
     require(launch["command"] == "uv" and "--frozen" in launch["args"]
@@ -5890,10 +5891,13 @@ def check_typesafe_contract() -> None:
         "If installed and ready, use `$typesafe-routing` by default",
         "Honor opt-outs and required skills",
         "keep private or uncertain data local",
+        "If installed, use `$typesafe-computer-use` for GUI observation; gate Jev calls.",
     ):
         require(expected in global_agents,
                 f"global AGENTS must preserve the narrow TypeSafe routing rule: {expected}")
     require((plugin / "server/uv.lock").is_file(), "TypeSafe dependency lock is required")
+    require((plugin / "skills/typesafe-computer-use/SKILL.md").is_file(),
+            "TypeSafe computer-use skill is required")
 
 
 if __name__ == "__main__":

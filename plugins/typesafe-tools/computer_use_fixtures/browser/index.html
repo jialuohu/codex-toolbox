@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Computer Use Browser Fixture</title>
+  <style>
+    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+    body { max-width: 62rem; margin: 2rem auto; padding: 0 1.25rem; }
+    h1 { font-size: 1.6rem; margin-bottom: .25rem; }
+    h2 { font-size: 1.15rem; }
+    button, input, select { font: inherit; }
+    button, select { cursor: pointer; }
+    button { padding: .35rem .7rem; }
+    input, select { padding: .35rem; }
+    .panel { border: 1px solid #8888; border-radius: .5rem; padding: 1rem; margin: 1rem 0; }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin: .75rem 0; }
+    .row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; border-top: 1px solid #8885; padding: .6rem 0; }
+    .row:first-child { border-top: 0; }
+    .label { font-weight: 600; }
+    .meta { color: #666; font-size: .9rem; }
+    #result[data-result="pass"] { color: #16723a; font-weight: 700; }
+    #result[data-result="pending"] { color: #555; }
+    dialog { min-width: min(90vw, 34rem); border: 1px solid #888; border-radius: .5rem; padding: 1rem; }
+    dialog::backdrop { background: #0008; }
+    @media (prefers-color-scheme: dark) { .meta, #result[data-result="pending"] { color: #bbb; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Computer Use Browser Fixture</h1>
+    <p>Synthetic records for repeatable UI tasks.</p>
+    <p id="case-label"></p>
+    <p id="goal"></p>
+  </header>
+  <main id="workspace" class="panel" aria-label="Fixture workspace"></main>
+  <section class="panel" aria-label="Task result">
+    <output id="result" role="status" aria-live="polite" data-result="pending">Task incomplete</output>
+    <p id="wrong-actions">Wrong actions: 0</p>
+  </section>
+  <script>
+    (() => {
+      "use strict";
+
+      const categories = [
+        "navigation", "search", "filter", "tabs", "expand", "duplicate_label",
+        "stale_index", "missing_target", "recovery", "dialog"
+      ];
+      const records = [
+        { name: "Quartz", section: "Research", status: "Ready", tab: "Pending", group: "Alpha" },
+        { name: "Cedar", section: "Operations", status: "Active", tab: "Archive", group: "Beta" },
+        { name: "Nimbus", section: "Design", status: "Review", tab: "Current", group: "Gamma" },
+        { name: "Orchid", section: "Reports", status: "Hold", tab: "Later", group: "Delta" }
+      ];
+      const requested = new URLSearchParams(location.search).get("case_id") || "browser-navigation-0";
+      const match = /^browser-(navigation|search|filter|tabs|expand|duplicate_label|stale_index|missing_target|recovery|dialog)-([0-3])$/.exec(requested);
+      const caseLabel = document.getElementById("case-label");
+      const goal = document.getElementById("goal");
+      const workspace = document.getElementById("workspace");
+      const result = document.getElementById("result");
+      const wrongActions = document.getElementById("wrong-actions");
+
+      if (!match) {
+        caseLabel.textContent = `Invalid case ID: ${requested}`;
+        goal.textContent = `Use browser-<category>-<0..3>, where category is ${categories.join(", ")}.`;
+        workspace.textContent = "No task loaded.";
+        return;
+      }
+
+      const category = match[1];
+      const variant = Number(match[2]);
+      const caseId = match[0];
+      const target = records[variant];
+      const state = {
+        section: null, query: "", submittedQuery: "", filter: "All",
+        tab: records[(variant + 1) % records.length].tab, expandedGroup: null,
+        reordered: false, revealed: false, firstSearch: false, retried: false,
+        completed: false, mistakes: 0, message: ""
+      };
+
+      const goals = {
+        navigation: `Open the ${target.section} section, then open ${target.name}.`,
+        search: `Search for ${target.name}, then open its record.`,
+        filter: `Set status to ${target.status}, then open ${target.name}.`,
+        tabs: `Choose the ${target.tab} tab, then open ${target.name}.`,
+        expand: `Expand ${target.group}, then open ${target.name}.`,
+        duplicate_label: `Use the Open button in the ${target.name} row.`,
+        stale_index: `Reorder the list, then use the Open button in the ${target.name} row.`,
+        missing_target: `Refresh state to reveal ${target.name}, then open it.`,
+        recovery: `Search for ${target.name}; after the first empty result, retry and open it.`,
+        dialog: `Open the picker and select ${target.name} in the dialog.`
+      };
+      caseLabel.textContent = `Case ID: ${caseId}`;
+      goal.textContent = `Goal: ${goals[category]}`;
+
+      function el(tag, text, attrs = {}) {
+        const node = document.createElement(tag);
+        if (text !== undefined) node.textContent = text;
+        for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+        return node;
+      }
+
+      function button(label, handler, attrs = {}) {
+        const node = el("button", label, { type: "button", ...attrs });
+        node.addEventListener("click", handler);
+        return node;
+      }
+
+      function updateResult() {
+        result.textContent = state.completed ? `PASS ${caseId}` : (state.message || "Task incomplete");
+        result.dataset.result = state.completed ? "pass" : "pending";
+        wrongActions.textContent = `Wrong actions: ${state.mistakes}`;
+      }
+
+      function openRecord(record, allowed = true) {
+        if (record.name === target.name && allowed) {
+          state.completed = true;
+          state.message = "";
+        } else {
+          state.mistakes += 1;
+          state.message = `Opened ${record.name} before reaching the requested state.`;
+        }
+        updateResult();
+      }
+
+      function row(record, identicalButton = false, action = null) {
+        const container = el("div", undefined, { class: "row" });
+        const info = el("div");
+        info.append(el("div", record.name, { class: "label" }));
+        info.append(el("div", `${record.section} · ${record.status}`, { class: "meta" }));
+        container.append(info);
+        container.append(button(identicalButton ? "Open" : `Open ${record.name}`, action || (() => openRecord(record))));
+        return container;
+      }
+
+      function controls(...children) {
+        const container = el("div", undefined, { class: "controls" });
+        container.append(...children);
+        return container;
+      }
+
+      function render() {
+        workspace.replaceChildren();
+        workspace.append(el("h2", category.replaceAll("_", " ")));
+
+        if (category === "navigation") {
+          workspace.append(controls(...records.map(record => button(record.section, () => {
+            state.section = record.section;
+            render();
+          }, { "aria-pressed": String(state.section === record.section) }))));
+          if (state.section) {
+            const record = records.find(item => item.section === state.section);
+            workspace.append(row(record, false, () => openRecord(record, state.section === target.section)));
+          } else workspace.append(el("p", "Choose a section."));
+        }
+
+        if (category === "search" || category === "recovery") {
+          const input = el("input", undefined, { type: "search", "aria-label": "Record name", value: state.query });
+          input.value = state.query;
+          input.addEventListener("input", () => { state.query = input.value; });
+          workspace.append(controls(input, button("Search", () => {
+            state.submittedQuery = state.query.trim();
+            if (category === "recovery") {
+              state.firstSearch = state.submittedQuery.toLowerCase() === target.name.toLowerCase();
+              state.retried = false;
+              state.message = state.firstSearch ? "No results. Retry search." : "No results for that name.";
+              updateResult();
+            }
+            render();
+          })));
+          if (category === "search") {
+            const found = records.filter(record => state.submittedQuery && record.name.toLowerCase().includes(state.submittedQuery.toLowerCase()));
+            if (!found.length) workspace.append(el("p", state.submittedQuery ? "No results." : "Enter a name and select Search."));
+            for (const record of found) workspace.append(row(record));
+          } else {
+            if (state.firstSearch && !state.retried) {
+              workspace.append(el("p", "No results. The index is stale."));
+              workspace.append(button("Retry search", () => { state.retried = true; state.message = "Results refreshed."; updateResult(); render(); }));
+            } else if (state.retried) {
+              workspace.append(row(target, false, () => openRecord(target, state.firstSearch && state.retried)));
+            } else workspace.append(el("p", "Search for the requested record."));
+          }
+        }
+
+        if (category === "filter") {
+          const label = el("label", "Status: ");
+          const select = el("select", undefined, { "aria-label": "Status" });
+          for (const option of ["All", ...records.map(record => record.status)]) {
+            const item = el("option", option, { value: option });
+            if (option === state.filter) item.selected = true;
+            select.append(item);
+          }
+          select.addEventListener("change", () => { state.filter = select.value; render(); });
+          label.append(select);
+          workspace.append(label);
+          for (const record of records.filter(item => state.filter === "All" || item.status === state.filter)) {
+            workspace.append(row(record, false, () => openRecord(record, state.filter === target.status)));
+          }
+        }
+
+        if (category === "tabs") {
+          workspace.append(controls(...records.map(record => button(record.tab, () => {
+            state.tab = record.tab;
+            render();
+          }, { role: "tab", "aria-selected": String(state.tab === record.tab) }))));
+          const record = records.find(item => item.tab === state.tab);
+          workspace.append(row(record, false, () => openRecord(record, state.tab === target.tab)));
+        }
+
+        if (category === "expand") {
+          for (const record of records) {
+            workspace.append(button(`${state.expandedGroup === record.group ? "Collapse" : "Expand"} ${record.group}`, () => {
+              state.expandedGroup = state.expandedGroup === record.group ? null : record.group;
+              render();
+            }, { "aria-expanded": String(state.expandedGroup === record.group) }));
+            if (state.expandedGroup === record.group) workspace.append(row(record, false, () => openRecord(record, state.expandedGroup === target.group)));
+          }
+        }
+
+        if (category === "duplicate_label") {
+          for (const record of records) workspace.append(row(record, true));
+        }
+
+        if (category === "stale_index") {
+          workspace.append(button("Reorder list", () => { state.reordered = true; render(); }));
+          const order = state.reordered ? [2, 0, 3, 1] : [0, 1, 2, 3];
+          for (const index of order) {
+            const record = records[index];
+            workspace.append(row(record, true, () => openRecord(record, state.reordered)));
+          }
+        }
+
+        if (category === "missing_target") {
+          workspace.append(button("Refresh state", () => { state.revealed = true; render(); }));
+          for (const record of records.filter(item => state.revealed || item.name !== target.name)) {
+            workspace.append(row(record, false, () => openRecord(record, state.revealed)));
+          }
+        }
+
+        if (category === "dialog") {
+          workspace.append(button("Open picker", () => {
+            const dialog = el("dialog", undefined, { "aria-label": "Record picker" });
+            dialog.append(el("h2", "Select a record"));
+            for (const record of records) {
+              dialog.append(row(record, true, () => {
+                openRecord(record);
+                if (state.completed) dialog.close();
+              }));
+            }
+            dialog.append(button("Close picker", () => dialog.close()));
+            dialog.addEventListener("close", () => dialog.remove());
+            document.body.append(dialog);
+            dialog.showModal();
+          }));
+        }
+
+        updateResult();
+      }
+
+      render();
+    })();
+  </script>
+</body>
+</html>
