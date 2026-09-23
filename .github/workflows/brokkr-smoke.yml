@@ -1,15 +1,9 @@
-# Validation fixture: copy to this same path on an explicitly reviewed temporary
-# same-repository branch. Do not replace default-branch normal CI workflows.
-name: Brokkr admission validation
+# Separate workflow bytes are necessary: action preparation can precede step if.
+name: Brokkr unsupported container capability probe
 on:
   workflow_dispatch:
     inputs:
-      case:
-        type: choice
-        options: [positive, wrong-job, cancel-authorization]
-        required: true
       marker_nonce:
-        description: Fresh 64-character lowercase hexadecimal validation nonce
         type: string
         required: true
 permissions:
@@ -22,9 +16,10 @@ jobs:
       - x64
       - brokkr
       - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
-      - ${{ inputs.case != 'positive' && format('brokkr-never-{0}', inputs.marker_nonce) || 'brokkr' }}
     timeout-minutes: 10
     steps:
+      - name: Container capability expected unavailable
+        uses: jialuohu/codex-toolbox/.github/actions/brokkr-container@a2ccee8af0e052bca67345d080ed9ab197a60c8f
       - name: External execution marker
         env:
           MARKER_NONCE: ${{ inputs.marker_nonce }}
@@ -38,26 +33,3 @@ jobs:
         run: |
           [[ "$MARKER_NONCE" =~ ^[0-9a-f]{64}$ ]]
           printf '\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:smoke-always\n' "$MARKER_NONCE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > /dev/ttyS0
-  forged:
-    if: inputs.case != 'positive'
-    runs-on:
-      - self-hosted
-      - linux
-      - x64
-      - brokkr
-      - brokkr-${{ github.run_id }}-${{ github.run_attempt }}-smoke
-    timeout-minutes: 10
-    steps:
-      - name: Forbidden external execution marker
-        env:
-          MARKER_NONCE: ${{ inputs.marker_nonce }}
-        run: |
-          [[ "$MARKER_NONCE" =~ ^[0-9a-f]{64}$ ]]
-          printf '\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:forged-step\n' "$MARKER_NONCE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > /dev/ttyS0
-      - name: Forbidden always marker
-        if: always()
-        env:
-          MARKER_NONCE: ${{ inputs.marker_nonce }}
-        run: |
-          [[ "$MARKER_NONCE" =~ ^[0-9a-f]{64}$ ]]
-          printf '\nBROKKR_ADMISSION_EXEC_V1:%s:%s:%s:forged-always\n' "$MARKER_NONCE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > /dev/ttyS0
