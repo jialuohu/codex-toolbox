@@ -123,16 +123,27 @@ def test_invalid_and_ineligible_requests_never_dispatch(tmp_path):
 
 def test_routing_timeout_does_not_retry_and_keeps_unknown_usage(tmp_path, monkeypatch):
     calls = []
+    deadlines = []
+    real_timeout = asyncio.timeout
+
+    def record_timeout(delay):
+        deadline = real_timeout(delay)
+        deadlines.append(deadline)
+        return deadline
+
+    monkeypatch.setattr("typesafe_tools.service.asyncio.timeout", record_timeout)
 
     async def handler(request):
         calls.append(request)
-        await asyncio.sleep(0.05)
-        return httpx.Response(200, json=reply())
+        # Expire the real deadline after dispatch, independently of runner load.
+        deadlines[0].reschedule(asyncio.get_running_loop().time())
+        await asyncio.Event().wait()
+        pytest.fail("the routing deadline did not cancel the request")
 
-    monkeypatch.setattr("typesafe_tools.service.ROUTING_DEADLINE_SECONDS", 0.01)
     item = Service(PilotConfig(), Ledger(tmp_path / "state"),
                    httpx.MockTransport(handler))
     assert route(item)["error"]["code"] == "deadline_exceeded"
+    assert len(deadlines) == 1 and deadlines[0].expired()
     assert len(calls) == 1
     assert item.ledger.unlimited_status(item.clock())["unresolved_requests"] == 1
 

@@ -308,33 +308,53 @@ def test_disabled_automatic_use_does_not_block_explicit_pilot(tmp_path):
 
 def test_timeout_is_one_dispatch_with_unresolved_usage(tmp_path, monkeypatch):
     calls = []
+    deadlines = []
+    real_timeout = asyncio.timeout
+
+    def record_timeout(delay):
+        deadline = real_timeout(delay)
+        deadlines.append(deadline)
+        return deadline
+
+    monkeypatch.setattr("typesafe_tools.service.asyncio.timeout", record_timeout)
 
     async def handler(request):
         calls.append(request)
-        await asyncio.sleep(0.05)
-        return httpx.Response(200, json=answer())
+        deadlines[0].reschedule(asyncio.get_running_loop().time())
+        await asyncio.Event().wait()
+        pytest.fail("the total deadline did not cancel the request")
 
-    monkeypatch.setattr("typesafe_tools.service.COMPUTER_USE_DEADLINE_SECONDS", 0.01)
     item = Service(ReadyConfig(), Ledger(tmp_path / "state"), httpx.MockTransport(handler))
     result = choose(item)
     assert result["error"]["code"] == "deadline_exceeded" and len(calls) == 1
+    assert len(deadlines) == 1 and deadlines[0].expired()
     assert item.ledger.unlimited_status(item.clock())["unresolved_requests"] == 1
 
 
 def test_user_opt_in_timeout_does_not_retry_and_reports_unresolved_usage(tmp_path, monkeypatch):
     calls = []
+    deadlines = []
+    real_timeout = asyncio.timeout
+
+    def record_timeout(delay):
+        deadline = real_timeout(delay)
+        deadlines.append(deadline)
+        return deadline
+
+    monkeypatch.setattr("typesafe_tools.service.asyncio.timeout", record_timeout)
 
     async def handler(request):
         calls.append(request)
-        await asyncio.sleep(0.05)
-        return httpx.Response(200, json=answer())
+        deadlines[0].reschedule(asyncio.get_running_loop().time())
+        await asyncio.Event().wait()
+        pytest.fail("the total deadline did not cancel the request")
 
-    monkeypatch.setattr("typesafe_tools.service.COMPUTER_USE_DEADLINE_SECONDS", 0.01)
     settings = Settings(automatic_browser_use=True, browser_user_opt_in=True)
     item = Service(ReadyConfig(settings), Ledger(tmp_path / "state"),
                    httpx.MockTransport(handler))
     result = choose(item, invocation="automatic")
     assert result["error"]["code"] == "deadline_exceeded" and len(calls) == 1
+    assert len(deadlines) == 1 and deadlines[0].expired()
     status = item.status()
     assert status["accounting"]["unresolved_requests"] == 1
     assert status["automatic_browser_use_enabled"]
