@@ -4859,8 +4859,8 @@ def main() -> None:
         "workflow-tools must expose bundled planning skills",
     )
     require(
-        workflow_plugin.get("version") == "0.17.0",
-        "workflow-tools plugin version must reflect app-owned sidebar recovery",
+        workflow_plugin.get("version") == "0.18.0",
+        "workflow-tools plugin version must reflect ChatGPT Planner recovery",
     )
     require(
         "mcpServers" not in workflow_plugin,

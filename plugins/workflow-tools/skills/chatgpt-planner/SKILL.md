@@ -1,6 +1,6 @@
 ---
 name: chatgpt-planner
-description: "Automatically consult GPT-6 Pro in Codex Plan mode across workspaces, with one ChatGPT conversation per Codex task. Use for global setup or status when requested. Skip execution-mode consultation."
+description: "Consult GPT-6 Pro automatically in Codex Plan mode, with one active ChatGPT conversation per task and guarded replacement after access denial. Use for global setup or status on request; skip execution-mode consultation."
 ---
 
 # ChatGPT Planner
@@ -43,7 +43,7 @@ Plan mode. The UI toggle alone starts no work; consult on the next planning turn
    retry only after the connection changes or the user requests another check.
 2. Follow [browser and native transport](references/transport.md). Use the persistent
    Codex task ID, never a turn/process ID or workspace path. Each task has one
-   dedicated conversation; returning to Plan mode or changing directories reuses it.
+   active dedicated conversation; returning to Plan mode or changing directories reuses it.
 3. Assemble bounded context: objective, requirements, inspected evidence, relevant
    revision/dirty changes, and acceptance tests. Exclude credentials, authentication
    state, confidential documents, user records, and unrelated work. Tell the user
@@ -51,7 +51,9 @@ Plan mode. The UI toggle alone starts no work; consult on the next planning turn
 4. Use supported browser tools to select and visibly confirm **GPT-6 Pro** before
    each new consultation. Create the task's conversation with the first request.
    Prefer native access only after matching that exact conversation and request.
-   If native tools fail, continue through the same browser conversation.
+   If native tools fail, continue through the same browser conversation. When
+   ChatGPT explicitly denies access to the saved conversation, follow the
+   guarded [recovery procedure](references/transport.md#recovery).
 5. Validate the complete response through the helper, then verify substantive
    advice against source evidence. Remain in the current collaboration mode.
 
@@ -59,6 +61,11 @@ Clarifications reuse the same objective key and requirements. Material changes
 allow a new request in the same conversation after the previous request resolves.
 Changed evidence requires local revalidation before reuse. Never create another
 conversation or resend because a response is slow, missing, or a tool errored.
+A fresh browser-visible access denial for the exact saved conversation authorizes
+one replacement in Plan mode without another user confirmation, even if its old
+request remains unresolved. Rebuild bounded context and visibly verify GPT-6 Pro
+in a blank chat before recovery. Uncertain replacement creation or send must be
+reconciled against its existing reservation; never dispatch it a second time.
 
 ## Boundaries
 
@@ -84,4 +91,4 @@ Login/model unavailability, incomplete replies, quota, and timeout must be discl
 continue Codex planning with the available evidence. Never claim Pro participated
 without an accepted reply. Do not create scheduled tasks or background workers.
 Uncertain creation/send stays reserved until reconciled. Follow
-[explicit recovery](references/transport.md#recovery) rather than silently retrying.
+[recovery](references/transport.md#recovery) rather than silently retrying.

@@ -28,7 +28,7 @@ spec governance should be settled before implementation.
 
 `$chatgpt-planner` consults GPT-6 Pro automatically in actual Codex Plan mode,
 across workspaces. One global setup configures this installation;
-each persistent Codex task gets its own ChatGPT conversation. Codex checks the
+each persistent Codex task gets one active ChatGPT conversation. Codex checks the
 advice and owns the final plan, implementation, and verification.
 
 | Mode and objective | Pro consultation |
@@ -36,6 +36,7 @@ advice and owns the final plan, implementation, and verification.
 | Plan mode, new task | Create a dedicated Pro chat and consult after gathering context |
 | Plan mode, unchanged requirements | Reuse accepted advice in that task's conversation |
 | Plan mode, material requirements change | Send a new request in the same conversation |
+| Plan mode, saved conversation explicitly inaccessible | Verify the browser error and GPT-6 Pro, then create one replacement without another confirmation |
 | Execution of an approved plan | None |
 | Direct execution, including major work | None |
 
@@ -83,9 +84,13 @@ unresolved legacy requests block activation.
 
 The [owning skill](../plugins/workflow-tools/skills/chatgpt-planner/SKILL.md)
 defines bounded context, duplicate prevention, exact reply validation, and a
-15-minute deadline. Uncertain sends are reconciled, never resent via another
-transport. Execution mode stops consultation. Unavailable login, model, or
-transport produces a clear disclosure and ordinary Codex planning continues.
+15-minute deadline. A fresh, signed-in browser error saying “You don’t have access
+to this conversation” for the exact saved conversation permits one replacement,
+even when the old request is unresolved. The helper reserves it before dispatch
+and saves its new UUID only after verifying the exact submitted prompt. Timeouts,
+native errors, and uncertain sends are reconciled without another dispatch.
+Execution mode stops consultation. Unavailable login, model, or transport produces
+a clear disclosure and ordinary Codex planning continues.
 The existing Claude Counselor policy remains separate.
 
 ## Deep Planning

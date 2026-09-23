@@ -113,7 +113,10 @@ identity. Recheck visible model selection before each later consultation.
 
 `status` reads version-1 state without changing it. A deliberately requested setup
 probe migrates resolved state under a lock, writing a private, durable
-`state.v1.backup.json` before creating version-2 global state. Existing project
+`state.v1.backup.json` before creating version-3 global state. Version-2 state is
+also migrated on the first write, with a private `state.v2.backup.json` that
+preserves setup, task mappings, and request history. Status and connection checks
+remain read-only. Older helpers must reject version-3 state. Existing project
 bindings are not promoted to task conversations or global readiness.
 
 Pending legacy requests block migration. Inspect and reconcile through the old

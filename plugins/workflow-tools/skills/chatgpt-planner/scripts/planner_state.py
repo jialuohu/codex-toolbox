@@ -30,6 +30,10 @@ CONNECTION_MAX_AGE_SECONDS = 120
 BROWSERS = ("iab", "brave", "chrome", "edge", "opera", "vivaldi")
 BROWSER_PREFERENCES = ("system-default", *BROWSERS)
 MODEL = "GPT-6 Pro"
+RECOVERY_FIELDS = {
+    "from_conversation_id", "from_generation", "to_generation",
+    "replacement_request_id", "reason", "observed_at"
+}
 
 RECOVERY = {
     "global_setup_required": "Run explicit global setup in the selected browser.",
@@ -87,7 +91,7 @@ ObjC.unwrap($.NSBundle.bundleWithURL(app).bundleIdentifier);
 
 
 def browser_preference(state: dict) -> str:
-    if state["version"] != 2:
+    if state["version"] not in (2, 3):
         return "system-default"
     # Preserve previously configured choices until the user requests a change.
     preference = state.get("browser_preference", (state.get("setup") or {}).get("browser", "system-default"))
@@ -235,7 +239,7 @@ class Store:
 
     @staticmethod
     def empty():
-        return {"version": 2, "setup": None, "tasks": {}, "requests": {}}
+        return {"version": 3, "setup": None, "tasks": {}, "requests": {}}
 
     def _read(self):
         if self.root.exists() and self.root.stat().st_mode & 0o077:
@@ -253,17 +257,49 @@ class Store:
             raise PlannerError("INVALID_STATE")
         if state.get("version") == 1 and isinstance(state.get("bindings"), dict):
             return state
-        if state.get("version") != 2 or not isinstance(state.get("tasks"), dict):
+        if state.get("version") not in (2, 3) or not isinstance(state.get("tasks"), dict):
             raise PlannerError("INVALID_STATE")
+        if state["version"] == 3:
+            records = (*state["tasks"].values(), *state["requests"].values())
+            if any(not isinstance(record, dict)
+                   or type(record.get("generation")) is not int
+                   or record["generation"] < 0 for record in records):
+                raise PlannerError("INVALID_STATE")
+            for task in state["tasks"].values():
+                recoveries = task.get("recoveries")
+                if not isinstance(recoveries, list):
+                    raise PlannerError("INVALID_STATE")
+                for recovery in recoveries:
+                    if (not isinstance(recovery, dict)
+                            or set(recovery) != RECOVERY_FIELDS
+                            or type(recovery["from_generation"]) is not int
+                            or recovery["from_generation"] < 0
+                            or type(recovery["to_generation"]) is not int
+                            or recovery["to_generation"] != recovery["from_generation"] + 1
+                            or recovery["reason"] != "conversation_access_denied"
+                            or type(recovery["observed_at"]) not in (int, float)
+                            or (type(recovery["observed_at"]) is float
+                                and not math.isfinite(recovery["observed_at"]))
+                            or recovery["observed_at"] < 0):
+                        raise PlannerError("INVALID_STATE")
+                    try:
+                        if (identifier(recovery["from_conversation_id"])
+                                != recovery["from_conversation_id"]
+                                or identifier(recovery["replacement_request_id"])
+                                != recovery["replacement_request_id"]):
+                            raise PlannerError("INVALID_STATE")
+                    except PlannerError:
+                        raise PlannerError("INVALID_STATE") from None
         return state
 
     def _migrate(self, state):
-        if state["version"] == 2:
+        if state["version"] == 3:
             return
-        if any(r.get("status") == "pending" for r in state["requests"].values()):
+        if state["version"] == 1 and any(
+                r.get("status") == "pending" for r in state["requests"].values()):
             raise PlannerError("LEGACY_REQUESTS_PENDING")
         # Backup is durable before replacement, and is never overwritten.
-        backup = self.root / "state.v1.backup.json"
+        backup = self.root / f"state.v{state['version']}.backup.json"
         raw = json.dumps(state, sort_keys=True)
         try:
             fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -277,8 +313,16 @@ class Store:
                 handle.write(raw)
                 handle.flush()
                 os.fsync(handle.fileno())
-        state.clear()
-        state.update(self.empty())
+        if state["version"] == 1:
+            state.clear()
+            state.update(self.empty())
+            return
+        for task in state["tasks"].values():
+            task["generation"] = 0
+            task["recoveries"] = []
+        for request in state["requests"].values():
+            request["generation"] = 0
+        state["version"] = 3
 
     @contextlib.contextmanager
     def transaction(self):
@@ -322,7 +366,7 @@ class Store:
 
     def browser(self, preference=None):
         state = self._read()
-        if state["version"] != 2:
+        if state["version"] not in (2, 3):
             return {**self.status(), "action": "browser"}
         selection = select_browser(preference or browser_preference(state))
         result = {"action": "browser", "available": None, **selection}
@@ -340,7 +384,7 @@ class Store:
 
     def _connection(self, state, observation):
         """Validate caller-observed UI facts, never infer or cache browser availability."""
-        configured = state["version"] == 2 and bool(state.get("setup"))
+        configured = state["version"] in (2, 3) and bool(state.get("setup"))
         reason = None
         if not configured and not self.probe:
             reason = "global_setup_required"
@@ -388,6 +432,17 @@ class Store:
             raise PlannerError("UNKNOWN_REQUEST")
         return request
 
+    @staticmethod
+    def _generation(record):
+        generation = record.get("generation", 0)
+        if type(generation) is not int or generation < 0:
+            raise PlannerError("INVALID_STATE")
+        return generation
+
+    def _active_request(self, state, request):
+        task = state["tasks"].get(self.task_key)
+        return task is not None and self._generation(request) == self._generation(task)
+
     def plan(self, mode, packet, model_confirmed=False):
         if not can_consult(mode, self.probe):
             return {"action": "skip", "reason": "not_plan_mode" if not self.probe else "not_setup_mode"}
@@ -395,7 +450,7 @@ class Store:
             raise PlannerError("TASK_ID_REQUIRED")
         if not self.probe:
             current = self._read()
-            if current["version"] != 2 or not current.get("setup"):
+            if current["version"] not in (2, 3) or not current.get("setup"):
                 return {**self._connection(current, None), "action": "unavailable"}
         connection = packet.get("connection") if isinstance(packet, dict) else None
         packet = packet_fields({k: v for k, v in packet.items() if k != "connection"}
@@ -409,19 +464,27 @@ class Store:
             if not self.probe and not state.get("setup"):
                 return {**self._connection(state, None), "action": "unavailable"}
             task = state["tasks"].get(self.task_key)
-            candidates = [r for r in state["requests"].values() if r["key"] == key]
+            generation = self._generation(task) if task else 0
+            pending = [r for r in state["requests"].values()
+                       if r["task_key"] == self.task_key and r["status"] == "pending"
+                       and self._generation(r) == generation]
+            if len(pending) > 1:
+                raise PlannerError("INVALID_STATE")
+            candidates = [r for r in state["requests"].values()
+                          if r["task_key"] == self.task_key and r["key"] == key
+                          and self._generation(r) == generation]
             if candidates:
-                request = candidates[-1]
+                if len(candidates) != 1:
+                    raise PlannerError("INVALID_STATE")
+                request = candidates[0]
                 if request["status"] == "complete":
                     return {"action": "reuse" if request["snapshot"] == digest(packet["snapshot"])
                             else "revalidate", "request": request}
                 if request["status"] != "pending":
                     return {"action": "unavailable", "reason": request["status"], "request": request}
                 return self._waiting(request, "reconcile")
-            pending = next((r for r in state["requests"].values()
-                            if r["task_key"] == self.task_key and r["status"] == "pending"), None)
             if pending:
-                return {"action": "unavailable", "reason": "conversation_busy", "request": pending}
+                return {"action": "unavailable", "reason": "conversation_busy", "request": pending[0]}
             # An abandoned creation whose URL is unknown must not create another chat.
             if task and not task.get("conversation_id"):
                 return {"action": "unavailable", "reason": "creation_unresolved"}
@@ -432,6 +495,7 @@ class Store:
                 return {**connection_result, "action": "unavailable"}
             request = {"id": str(uuid.uuid4()), "task_id": self.task_id,
                        "task_key": self.task_key, "key": key,
+                       "generation": generation,
                        "conversation_id": task.get("conversation_id") if task else None,
                        "snapshot": digest(packet["snapshot"]), "probe": self.probe,
                        "status": "pending", "created_at": self.now(),
@@ -446,12 +510,117 @@ class Store:
             if task is None:
                 state["tasks"][self.task_key] = {
                     "task_id": self.task_id, "conversation_id": None,
+                    "generation": 0, "recoveries": [],
                     "transport": "browser", "creation_request": request["id"]}
             action = "create_browser" if task is None else "send_" + task["transport"]
             result = {"action": action, "request": request, "prompt": prompt}
             if action == "send_native":
                 result["send_arguments"] = {"threadId": request["conversation_id"], "prompt": prompt}
             return result
+
+    def recover(self, mode, payload, model_confirmed=False):
+        """Reserve one replacement after a caller-observed ChatGPT access denial."""
+        if mode != "plan" or self.probe:
+            return {"action": "skip", "reason": "not_plan_mode"}
+        if not self.task_id:
+            raise PlannerError("TASK_ID_REQUIRED")
+        if not isinstance(payload, dict) or set(payload) != {
+                "expected_conversation_id", "expected_generation", "denial",
+                "replacement_url", "planning", "connection"}:
+            raise PlannerError("INVALID_RECOVERY_OBSERVATION")
+        expected_id = conversation_id(payload["expected_conversation_id"])
+        expected_generation = payload["expected_generation"]
+        if type(expected_generation) is not int or expected_generation < 0:
+            raise PlannerError("INVALID_RECOVERY_OBSERVATION")
+        planning = packet_fields(payload["planning"])
+        denial = payload["denial"]
+        connection = payload["connection"]
+        if (not isinstance(denial, dict) or set(denial) != {
+                "attempted_conversation_id", "final_url", "browser", "signed_in",
+                "error", "observed_at"}
+                or denial["attempted_conversation_id"] != expected_id
+                or denial["final_url"] not in (
+                    "https://chatgpt.com/", f"https://chatgpt.com/c/{expected_id}")
+                or denial["browser"] not in BROWSERS
+                or denial["signed_in"] is not True
+                or denial["error"] != "conversation_access_denied"
+                or payload["replacement_url"] != "https://chatgpt.com/"
+                or not isinstance(connection, dict)
+                or connection.get("browser") != denial["browser"]):
+            raise PlannerError("INVALID_RECOVERY_OBSERVATION")
+        with self.transaction() as state:
+            if state["version"] == 1:
+                raise PlannerError("LEGACY_REQUESTS_PENDING")
+            task = state["tasks"].get(self.task_key)
+            if not task:
+                raise PlannerError("CONVERSATION_NOT_MAPPED")
+            generation = self._generation(task)
+            if generation == expected_generation + 1:
+                last = (task.get("recoveries") or [None])[-1]
+                if (last and last["from_generation"] == expected_generation
+                        and last["from_conversation_id"] == expected_id):
+                    request = self._request(state, last["replacement_request_id"])
+                    if (last.get("to_generation") != generation
+                            or task.get("creation_request") != request["id"]
+                            or self._generation(request) != generation
+                            or request.get("replaces_conversation_id") != expected_id):
+                        raise PlannerError("INVALID_STATE")
+                    if request["status"] == "complete":
+                        return {"action": "retrieve", "request": request}
+                    if request["status"] == "pending":
+                        return {"action": "reconcile", "request": request}
+                    return {"action": "unavailable", "reason": request["status"], "request": request}
+            if generation != expected_generation or task.get("conversation_id") != expected_id:
+                raise PlannerError("RECOVERY_STATE_CHANGED")
+            if (type(denial["observed_at"]) not in (int, float)
+                    or (type(denial["observed_at"]) is float
+                        and not math.isfinite(denial["observed_at"]))
+                    or not 0 <= denial["observed_at"] <= self.now()
+                    or self.now() - denial["observed_at"] > CONNECTION_MAX_AGE_SECONDS
+                    or type(connection.get("observed_at")) not in (int, float)
+                    or (type(connection["observed_at"]) is float
+                        and not math.isfinite(connection["observed_at"]))
+                    or connection["observed_at"] < denial["observed_at"]):
+                raise PlannerError("INVALID_RECOVERY_OBSERVATION")
+            if not model_confirmed:
+                return {"action": "unavailable", "reason": "model_not_confirmed"}
+            available = self._connection(state, connection)
+            if not available["available"]:
+                return {**available, "action": "unavailable"}
+            mapped = [r for r in state["requests"].values()
+                      if r["task_key"] == self.task_key
+                      and self._generation(r) == generation
+                      and r.get("conversation_id") == expected_id]
+            if not mapped:
+                raise PlannerError("CONVERSATION_NOT_MAPPED")
+            self._migrate(state)
+            request = {"id": str(uuid.uuid4()), "task_id": self.task_id,
+                       "task_key": self.task_key,
+                       "key": digest([self.task_key, planning["objective_key"],
+                                      planning["objective"], planning["requirements"]]),
+                       "generation": generation + 1,
+                       "replaces_conversation_id": expected_id,
+                       "conversation_id": None,
+                       "snapshot": digest(planning["snapshot"]), "probe": False,
+                       "status": "pending", "created_at": self.now(),
+                       "deadline": self.now() + DEADLINE_SECONDS,
+                       "transport": "browser", "browser": connection["browser"]}
+            prompt = make_prompt(request, planning)
+            if native_text_length(prompt) > MAX_PROMPT_CHARS:
+                raise PlannerError("PROMPT_TOO_LARGE")
+            request["prompt_hash"] = digest(prompt)
+            state["requests"][request["id"]] = request
+            task.setdefault("recoveries", []).append({
+                "from_conversation_id": expected_id,
+                "from_generation": generation,
+                "to_generation": generation + 1,
+                "replacement_request_id": request["id"],
+                "reason": "conversation_access_denied",
+                "observed_at": denial["observed_at"]})
+            task.update(generation=generation + 1, conversation_id=None,
+                        creation_request=request["id"], transport="browser")
+            task.pop("model_observed_at", None)
+            return {"action": "create_browser", "request": request, "prompt": prompt}
 
     def _waiting(self, request, action):
         if request["status"] == "complete":
@@ -500,9 +669,13 @@ class Store:
             snapshot = self._browser_snapshot(snapshot)
         validate_snapshot(snapshot)
         with self.transaction() as state:
-            if state["version"] != 2:
+            if state["version"] == 1:
                 raise PlannerError("LEGACY_REQUESTS_PENDING")
+            self._migrate(state)
             request = self._request(state, rid)
+            task = state["tasks"].get(self.task_key)
+            if not task or not self._active_request(state, request):
+                return {"action": "unavailable", "reason": "retired_conversation", "request": request}
             if request["status"] not in ("pending", "complete"):
                 return {"action": "unavailable", "reason": request["status"]}
             cid = conversation_id(snapshot["thread"].get("id"))
@@ -527,10 +700,15 @@ class Store:
             if not matches:
                 return self._waiting(request, "reconcile")
             match = matches[0]
-            task = state["tasks"][self.task_key]
+            if task.get("conversation_id") not in (None, cid):
+                raise PlannerError("WRONG_CONVERSATION")
             if any(t.get("conversation_id") == cid and k != self.task_key
                    for k, t in state["tasks"].items()):
                 raise PlannerError("CONVERSATION_ALREADY_ASSIGNED")
+            if any(recovery["from_conversation_id"] == cid
+                   for t in state["tasks"].values()
+                   for recovery in t.get("recoveries", [])):
+                raise PlannerError("RETIRED_CONVERSATION")
             request["conversation_id"] = cid
             task["conversation_id"] = cid
             if transport == "browser":
@@ -605,7 +783,12 @@ class Store:
         if not can_consult(mode, self.probe):
             return {"action": "skip", "reason": "not_plan_mode"}
         with self.transaction() as state:
+            if state["version"] == 1:
+                raise PlannerError("LEGACY_REQUESTS_PENDING")
+            self._migrate(state)
             request = self._request(state, rid)
+            if not self._active_request(state, request):
+                return {"action": "unavailable", "reason": "retired_conversation", "request": request}
             state["tasks"][self.task_key]["transport"] = "browser"
             # Never return another send directive; uncertainty always reconciles.
             return {"action": "reconcile", "request": request}
@@ -621,7 +804,10 @@ class Store:
                 if not request:
                     raise PlannerError("UNKNOWN_REQUEST")
             else:
+                self._migrate(state)
                 request = self._request(state, rid)
+                if not self._active_request(state, request):
+                    return {"action": "noop", "reason": "retired_conversation"}
             if request["status"] != "pending":
                 return {"action": "noop", "reason": request["status"]}
             request.update(status="abandoned", abandoned_at=self.now())
@@ -643,7 +829,7 @@ def read_input() -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("status", "browser", "prefer-browser", "check", "plan", "observe", "setup", "fallback", "abandon"))
+    parser.add_argument("action", choices=("status", "browser", "prefer-browser", "check", "plan", "recover", "observe", "setup", "fallback", "abandon"))
     parser.add_argument("--state-dir", type=Path, default=default_state_dir())
     parser.add_argument("--mode", choices=("plan", "default", "unknown"), default="unknown")
     parser.add_argument("--task-id")
@@ -658,7 +844,9 @@ def main():
     if args.action == "prefer-browser" and args.browser is None:
         parser.error("prefer-browser requires --browser")
     try:
-        if args.action in ("plan", "observe", "fallback") and not can_consult(args.mode, args.setup_probe):
+        if args.action == "recover" and (args.mode != "plan" or args.setup_probe):
+            result = {"action": "skip", "reason": "not_plan_mode"}
+        elif args.action in ("plan", "observe", "fallback") and not can_consult(args.mode, args.setup_probe):
             result = {"action": "skip", "reason": "not_plan_mode" if not args.setup_probe else "not_setup_mode"}
         elif args.action in ("setup", "prefer-browser", "abandon") and args.mode != "default":
             result = {"action": "skip", "reason": "setup_requires_execution_mode"}
@@ -674,6 +862,8 @@ def main():
                 result = store.check(read_input())
             elif args.action == "plan":
                 result = store.plan(args.mode, read_input(), args.model_confirmed)
+            elif args.action == "recover":
+                result = store.recover(args.mode, read_input(), args.model_confirmed)
             elif args.action == "observe":
                 result = store.observe(args.mode, args.request_id, read_input(), args.transport)
             elif args.action == "setup":
