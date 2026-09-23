@@ -136,7 +136,7 @@ jobs:
               "$diagram_type" "$example_path" "$output_path" --json --quality showcase
           done
       - name: Install Chromium in the prepared guest
-        if: runner.environment == 'self-hosted'
+        if: runner.environment == 'self-hosted' && startsWith(runner.name, 'brokkr-')
         shell: bash
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/archify-browsers
@@ -147,6 +147,9 @@ jobs:
           chrome_path="$(node -e 'process.stdout.write(require(process.argv[1]).chromium.executablePath())' "$browser_runtime/node_modules/playwright-core")"
           test -x "$chrome_path"
           printf 'ARCHIFY_CHROME=%s\n' "$chrome_path" >> "$GITHUB_ENV"
+          # Fixed local CI artifacts run inside one disposable VM per job.
+          # Guest NoNewPrivileges/AppArmor prevent Chromium's nested sandbox.
+          printf 'ARCHIFY_CHROME_NO_SANDBOX=1\n' >> "$GITHUB_ENV"
       - name: Gate Archify artifacts with upstream visual-check
         shell: bash
         run: |
