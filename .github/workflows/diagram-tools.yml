@@ -155,7 +155,26 @@ jobs:
         run: |
           artifact_dir="${{ runner.temp }}/archify-artifacts"
           for output_path in "$artifact_dir"/{architecture,workflow,sequence,dataflow,lifecycle}.html; do
-            "$CODEX_LOCAL_BIN_DIR/archify" visual-check "$output_path" --json
+            for attempt in 1 2; do
+              if "$CODEX_LOCAL_BIN_DIR/archify" visual-check "$output_path" --json; then
+                break
+              fi
+              if [ "$attempt" -eq 2 ]; then
+                exit 1
+              fi
+              receipt_path="${output_path%.html}.visual-check.json"
+              node - "$receipt_path" <<'NODE'
+          const fs = require('node:fs');
+          const receipt = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (receipt.command !== 'visual-check'
+              || receipt.error !== 'Target.getTargets: timed out after 15000ms'
+              || receipt.containment?.viewports?.length !== 0) {
+            process.exit(1);
+          }
+          NODE
+              echo "Retrying Chrome startup after Target.getTargets timeout" >&2
+              sleep 2
+            done
           done
       - name: Capture complete Archify theme and viewport matrix
         run: >-
