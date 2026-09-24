@@ -5,7 +5,10 @@ MESSAGES = {
     "configuration_invalid": "Private configuration is invalid or not protected.",
     "credential_missing": "The protected TypeSafe API key is unavailable.",
     "invalid_request": "Request does not meet the documented question or payload limits.",
-    "data_ineligible": "Only reviewed public or synthetic payloads are eligible.",
+    "data_ineligible": (
+        "Payload is ineligible: review its classification, private-data opt-in, "
+        "and protected content."
+    ),
     "automatic_use_unverified": "Automatic research use has not passed its pilot.",
     "routing_disabled": "Capability routing is disabled; no provider request was sent.",
     "routing_suspended": (

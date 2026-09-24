@@ -115,7 +115,7 @@ def test_invalid_and_ineligible_requests_never_dispatch(tmp_path):
     for candidate in invalid:
         assert route(item, candidates=[candidate])["error"]["code"] == "invalid_request"
     assert route(item, candidates=CANDIDATES * 9)["error"]["code"] == "invalid_request"
-    assert run(item.route("Private task", CANDIDATES, DIGEST, "private",  # pyright: ignore[reportArgumentType]
+    assert run(item.route("Private task", CANDIDATES, DIGEST, "private",
                           "session_1",
                           "turn_1"))["error"]["code"] == "data_ineligible"
     assert not item.ledger.root.exists()

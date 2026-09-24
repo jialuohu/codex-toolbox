@@ -211,6 +211,7 @@ class HookTests(unittest.TestCase):
                          "UserPromptSubmit")
         context = output["hookSpecificOutput"]["additionalContext"]
         self.assertIn("Review capability routing", context)
+        self.assertIn("private_data_enabled: true in fresh status", context)
         event_path = self.state / "events.jsonl"
         text = event_path.read_text(encoding="utf-8")
         for private in ("private task", "secret-value", "secret-transcript", "/private/project"):

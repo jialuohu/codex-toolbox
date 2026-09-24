@@ -22,7 +22,7 @@ class Packaging(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["policy"]["installation"], "AVAILABLE")
         manifest = json.loads((ROOT / "plugins/typesafe-tools/.codex-plugin/plugin.json").read_text())
-        self.assertEqual(manifest["version"], "0.5.0")
+        self.assertEqual(manifest["version"], "0.6.0")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         self.assertTrue((ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use/SKILL.md").is_file())
         skill = ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use"

@@ -5973,7 +5973,7 @@ def check_typesafe_contract() -> None:
     plugin = ROOT / "plugins/typesafe-tools"
     manifest = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
     mcp = json.loads((plugin / ".mcp.json").read_text())
-    require(manifest["version"] == "0.5.0", "TypeSafe contract version must be 0.5.0")
+    require(manifest["version"] == "0.6.0", "TypeSafe contract version must be 0.6.0")
     require(set(mcp["mcpServers"]) == {"typesafe"}, "TypeSafe must own one MCP server")
     launch = mcp["mcpServers"]["typesafe"]
     require(launch["command"] == "uv" and "--frozen" in launch["args"]
@@ -5984,7 +5984,8 @@ def check_typesafe_contract() -> None:
     for expected in (
         "If installed and ready, use `$typesafe-routing` by default",
         "Honor opt-outs and required skills",
-        "keep private or uncertain data local",
+        "private data requires fresh `private_data_enabled: true` status",
+        "Keep credentials and uncertain-origin content local",
         "If installed, use `$typesafe-computer-use` for GUI observation; gate Jev calls.",
     ):
         require(expected in global_agents,

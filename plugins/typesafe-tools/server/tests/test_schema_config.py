@@ -254,6 +254,18 @@ def test_private_key_and_routing_config(config: ConfigStore) -> None:
     assert not config.settings().automatic_routing
 
 
+def test_private_data_opt_in_defaults_off_and_is_independent(config: ConfigStore) -> None:
+    assert not config.settings().allow_private_data
+    write_private(config.root / "config.json", '{"allow_private_data":true}')
+    settings = config.settings()
+    assert settings.allow_private_data
+    assert settings.automatic_routing
+    assert not settings.automatic_research
+    assert not settings.automatic_browser_use and not settings.automatic_native_use
+    write_private(config.root / "config.json", '{"allow_private_data":false}')
+    assert not config.settings().allow_private_data
+
+
 def test_computer_use_config_requires_separate_evidence_fields(config: ConfigStore) -> None:
     write_private(config.root / "config.json", json.dumps({
         "automatic_browser_use": True, "browser_evidence_id": "browser-v1",
@@ -344,6 +356,9 @@ def test_protected_size_limit(config: ConfigStore) -> None:
     '{"pilot_evidence_id":3}', '{"automatic_routing":"true"}',
     '{"automatic_browser_use":"true"}', '{"automatic_native_use":1}',
     '{"browser_user_opt_in":"true"}', '{"native_user_opt_in":1}',
+    '{"allow_private_data":"true"}', '{"allow_private_data":1}',
+    '{"allow_private_data":null}', '{"allow_private_data":[]}',
+    '{"allow_private_data":false,"allow_private_data":true}',
     '{"browser_evidence_id":1}', '{"native_evidence_id":1}',
     '{"automatic_research":"true"}', '{"verified":true}',
     '{"hard_cap_verified":true}', '{"endpoint":"https://example.invalid"}',

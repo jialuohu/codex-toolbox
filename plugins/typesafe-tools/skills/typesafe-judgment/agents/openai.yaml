@@ -1,6 +1,6 @@
 interface:
   display_name: "TypeSafe Research Judgment"
   short_description: "Bounded Jev ranking and claim-source evaluations"
-  default_prompt: "Use $typesafe-judgment to check readiness and evaluate public research evidence when the research pilot gate permits it."
+  default_prompt: "Use $typesafe-judgment to check readiness and evaluate eligible research evidence; private content requires private_data_enabled: true in fresh status, and research invocation gates still apply."
 policy:
   allow_implicit_invocation: true

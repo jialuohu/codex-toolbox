@@ -45,7 +45,7 @@ Automatically use `$chatgpt-planner` only in Plan mode.
 
 Use owning MCPs/apps/skills, `tool_search` for hidden tools, and `rg`/Git/tests for repos. Browser automation follows failed higher-level routes; Computer Use requires Mac GUI control. Use the default browser unless overridden; report missing access.
 
-If installed and ready, use `$typesafe-routing` by default for public/synthetic tasks with competing skills or tools. Honor opt-outs and required skills; keep private or uncertain data local.
+If installed and ready, use `$typesafe-routing` by default for capability choices. Honor opt-outs and required skills; private data requires fresh `private_data_enabled: true` status. Keep credentials and uncertain-origin content local.
 If installed, use `$typesafe-computer-use` for GUI observation; gate Jev calls.
 
 - OpenAI/Codex: official docs first; versioned APIs: Context7. Use built-in Codex web search for ordinary public discovery, current facts, documentation, news, and citations; use `$community-research` for public community or forum discussions, user reports, sentiment, or community troubleshooting, alongside official or canonical corroboration.

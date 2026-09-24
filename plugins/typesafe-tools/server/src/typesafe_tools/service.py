@@ -91,6 +91,8 @@ class Service:
             "routing_pilot_enabled": bool(settings and settings.routing_pilot and not reasons),
             "automatic_routing_enabled": bool(settings and settings.automatic_routing
                 and not reasons),
+            "private_data_enabled": bool(settings and settings.allow_private_data
+                and not reasons),
             "automatic_browser_use_enabled": browser_basis is not None,
             "automatic_browser_use_basis": browser_basis,
             "automatic_native_use_enabled": native_basis is not None,
@@ -118,13 +120,13 @@ class Service:
                 return bytes(data)
 
     async def evaluate(self, state: object, questions: dict,
-                       classification: Literal["public", "synthetic"],
+                       classification: Literal["public", "synthetic", "private"],
                        invocation: Literal["explicit", "automatic"] = "explicit") -> dict:
         return await self._evaluate_with_deadline(
             state, questions, classification, invocation, DEADLINE_SECONDS, "research")
 
     async def route(self, task: str, candidates: list[dict], catalog_digest: str,
-                    classification: Literal["public", "synthetic"],
+                    classification: Literal["public", "synthetic", "private"],
                     session_id: str | None = None, turn_id: str | None = None,
                     invocation: Literal["pilot", "automatic"] = "automatic") -> dict:
         # Correlation IDs stay local. They are not trusted as circuit-breaker keys.
@@ -154,7 +156,7 @@ class Service:
     async def choose_action(self, surface: Literal["browser", "native"], objective: str,
                             observation: str, snapshot_id: str, task_scope_id: str,
                             candidates: list[dict],
-                            classification: Literal["public", "synthetic"],
+                            classification: Literal["public", "synthetic", "private"],
                             invocation: Literal["explicit", "automatic"]) -> dict:
         try:
             state, questions, decision_digest = prepare_computer_use(
@@ -203,7 +205,8 @@ class Service:
     async def _evaluate(self, state, questions, classification, invocation,
                         started, deadline=DEADLINE_SECONDS, purpose="research", *,
                         surface=None, decision_digest=None):
-        if classification not in {"public", "synthetic"}:
+        if not isinstance(classification, str) or classification not in {
+                "public", "synthetic", "private"}:
             raise EvaluationError("data_ineligible")
         if ((purpose == "research" and invocation not in {"explicit", "automatic"})
                 or (purpose == "routing" and invocation not in {"pilot", "automatic"})
@@ -217,6 +220,8 @@ class Service:
                 raise EvaluationError("invalid_request")
         payload = question_body(state, questions)
         settings = await asyncio.to_thread(self.config.settings)
+        if classification == "private" and not settings.allow_private_data:
+            raise EvaluationError("data_ineligible")
         if purpose == "routing" and invocation == "pilot" and not settings.routing_pilot:
             raise EvaluationError("routing_disabled")
         if purpose == "routing" and invocation == "automatic" and not settings.automatic_routing:

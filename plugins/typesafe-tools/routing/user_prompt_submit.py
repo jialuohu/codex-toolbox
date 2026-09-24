@@ -25,8 +25,10 @@ _REASONS = frozenset((
     "timeout", "stale", "duplicate", "other",
 ))
 _REMINDER = (
-    "Review capability routing for this turn. Send Jev only public or synthetic "
-    "task and candidate fields after checking eligibility and current tool "
+    "Review capability routing for this turn. Send Jev reviewed public, synthetic, "
+    "or authorized private content in task and candidate fields; private content requires "
+    "private_data_enabled: true in fresh status. Exclude credentials and unknown-origin "
+    "content. Check eligibility and current tool "
     "availability. Respect explicit skill and permission rules. If routing is "
     "disabled, unsuitable, or unavailable, use ordinary Codex selection and "
     "record a local outcome."

@@ -60,6 +60,7 @@ class Settings:
     automatic_research: bool = False
     routing_pilot: bool = False
     automatic_routing: bool = True
+    allow_private_data: bool = False
     automatic_browser_use: bool = False
     browser_evidence_id: str = ""
     browser_user_opt_in: bool = False
@@ -89,7 +90,7 @@ class ConfigStore:
                 "model", "pilot_evidence_id", "automatic_research", "routing_pilot",
                 "automatic_routing", "automatic_browser_use", "browser_evidence_id",
                 "browser_user_opt_in", "automatic_native_use", "native_evidence_id",
-                "native_user_opt_in",
+                "native_user_opt_in", "allow_private_data",
             }:
                 raise ValueError
             if raw.get("model", MODEL) != MODEL:
@@ -98,7 +99,7 @@ class ConfigStore:
                     or len(raw.get("pilot_evidence_id", "")) > 128):
                 raise ValueError
             if any(type(raw.get(name, False)) is not bool for name in (
-                    "automatic_research", "routing_pilot")):
+                    "automatic_research", "routing_pilot", "allow_private_data")):
                 raise ValueError
             if type(raw.get("automatic_routing", True)) is not bool:
                 raise ValueError
@@ -114,6 +115,7 @@ class ConfigStore:
                             automatic_research=raw.get("automatic_research", False),
                             routing_pilot=raw.get("routing_pilot", False),
                             automatic_routing=raw.get("automatic_routing", True),
+                            allow_private_data=raw.get("allow_private_data", False),
                             automatic_browser_use=raw.get("automatic_browser_use", False),
                             browser_evidence_id=raw.get("browser_evidence_id", ""),
                             browser_user_opt_in=raw.get("browser_user_opt_in", False),
