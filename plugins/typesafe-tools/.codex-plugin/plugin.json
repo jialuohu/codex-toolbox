@@ -1,6 +1,6 @@
 {
   "name": "typesafe-tools",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Bounded Jev evaluation, capability routing, and computer-use action advice for eligible tasks.",
   "author": {
     "name": "Codex Toolbox Contributors"
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "TypeSafe Tools",
     "shortDescription": "Route eligible tasks and advise on computer-use actions.",
-    "longDescription": "Jev ranks available skills and tools for eligible public or synthetic tasks. A separate, initially disabled computer-use workflow advises on bounded browser and native-app action choices. Codex retains execution and verification.",
+    "longDescription": "Jev ranks available skills and tools for eligible public or synthetic tasks. An optional computer-use pilot reuses bounded browser and native-app action code while Codex reviews advice and verifies results.",
     "developerName": "Codex Toolbox Contributors",
     "category": "Productivity",
     "capabilities": ["Read"],

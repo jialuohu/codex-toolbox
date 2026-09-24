@@ -17,6 +17,17 @@ private let records = [
     FixtureRecord(name: "Orchid", section: "Reports", status: "Hold", tab: "Later", group: "Delta"),
 ]
 
+private let longTreeRecords: [FixtureRecord] = {
+    var values = (1...36).map { number in
+        FixtureRecord(name: String(format: "Request %02d", number),
+                      section: records[(number - 1) % records.count].section,
+                      status: records[((number - 1) / records.count) % records.count].status,
+                      tab: "", group: "")
+    }
+    values.insert(records[0], at: 25)
+    return values
+}()
+
 private enum FixtureCategory: String {
     case navigation
     case search
@@ -28,6 +39,7 @@ private enum FixtureCategory: String {
     case missing_target
     case recovery
     case dialog
+    case long_tree
 }
 
 private struct FixtureCase {
@@ -41,7 +53,7 @@ private struct FixtureCase {
               parts[0] == "native",
               let category = FixtureCategory(rawValue: String(parts[1])),
               let variant = Int(parts[2]),
-              (0...3).contains(variant) else { return nil }
+              (category == .long_tree ? variant == 0 : (0...3).contains(variant)) else { return nil }
         return FixtureCase(id: raw, category: category, variant: variant)
     }
 
@@ -59,6 +71,7 @@ private struct FixtureCase {
         case .missing_target: return "Refresh state to reveal \(target.name), then open it."
         case .recovery: return "Search for \(target.name); after the first empty result, retry and open it."
         case .dialog: return "Open the picker and select \(target.name) in the dialog."
+        case .long_tree: return "Choose the \(target.section) queue and \(target.status) status, then use Open in the \(target.name) row."
         }
     }
 }
@@ -124,7 +137,7 @@ private struct FixtureView: View {
                     .accessibilityIdentifier("fixture-result")
                 Text("Wrong actions: \(mistakes)")
             } else {
-                Text("Invalid case ID. Use native-<category>-<0..3>.")
+                Text("Invalid case ID. Use native-<category>-<0..3>; long_tree uses variant 0 only.")
             }
         }
         .padding(20)
@@ -175,7 +188,8 @@ private struct FixtureView: View {
     }
 
     private func recordRow(_ record: FixtureRecord, identicalButton: Bool = false,
-                           allowed: Bool = true, closeOnSuccess: Bool = false) -> some View {
+                           allowed: Bool = true, closeOnSuccess: Bool = false,
+                           enabled: Bool = true) -> some View {
         HStack {
             VStack(alignment: .leading) {
                 Text(record.name).fontWeight(.semibold)
@@ -185,6 +199,7 @@ private struct FixtureView: View {
             Button(identicalButton ? "Open" : "Open \(record.name)") {
                 openRecord(record, allowed: allowed, closeOnSuccess: closeOnSuccess)
             }
+            .disabled(!enabled)
         }
         .padding(.vertical, 5)
     }
@@ -280,8 +295,38 @@ private struct FixtureView: View {
 
             case .dialog:
                 Button("Open picker") { pickerOpen = true }
+
+            case .long_tree:
+                Text("Selected queue: \(selectedSection ?? "None")")
+                HStack {
+                    ForEach(records) { record in
+                        Button(record.section) { selectedSection = record.section }
+                            .accessibilityValue(selectedSection == record.section ? "Selected" : "Not selected")
+                    }
+                }
+                Picker("Status", selection: $statusFilter) {
+                    Text("All").tag("All")
+                    ForEach(records) { record in Text(record.status).tag(record.status) }
+                }
+                .frame(maxWidth: 280)
+                ForEach(orderedLongTreeRecords(), id: \.id) { record in
+                    let ready = selectedSection == task.target.section && statusFilter == task.target.status
+                    recordRow(record, identicalButton: true, allowed: ready,
+                              enabled: record.name != task.target.name || ready)
+                }
             }
         }
+    }
+
+    private func orderedLongTreeRecords() -> [FixtureRecord] {
+        func rank(_ record: FixtureRecord) -> Int {
+            (selectedSection != nil && record.section == selectedSection ? 1 : 0) +
+            (statusFilter != "All" && record.status == statusFilter ? 1 : 0)
+        }
+        return longTreeRecords.enumerated().sorted { left, right in
+            let difference = rank(left.element) - rank(right.element)
+            return difference == 0 ? left.offset < right.offset : difference > 0
+        }.map(\.element)
     }
 
     private func searchControls(recovery: Bool, target: FixtureRecord) -> some View {

@@ -4,8 +4,9 @@
 
 TypeSafe Tools is an optional Jev integration. `typesafe_status` checks local
 readiness; `typesafe_evaluate` accepts bounded typed research evaluations.
-Version 0.4.0 exposes `typesafe_route` for capability ranking and a separately
-gated computer-use action advisor. Automatic
+Version 0.5.0 exposes `typesafe_route` for capability ranking, a separately
+gated computer-use action advisor, and an opt-in repeated-task controller
+pilot. Automatic
 routing is enabled by default when the credential is ready and the supplied task
 is eligible; set `automatic_routing` to `false` in protected configuration to
 opt out. Research evaluation retains its separate automatic-use pilot gate.
@@ -61,7 +62,7 @@ The local plugin installer exports only TypeSafe Tools under
 `$CODEX_HOME/local-marketplaces/typesafe-tools-local`, registers that separate
 marketplace, and installs with `codex plugin add`. It leaves the published
 `jialuo-codex-toolbox` registration and other plugins unchanged. Source remains
-version `0.4.0`; exported versions receive a content-derived Codex cachebuster.
+version `0.5.0`; exported versions receive a content-derived Codex cachebuster.
 Exports are immutable under `exports/<source-sha256>`; updates atomically move
 the marketplace catalog pointer and retain previous exports. A colliding or
 modified export is rejected without overwriting it. Repeated setup verifies the

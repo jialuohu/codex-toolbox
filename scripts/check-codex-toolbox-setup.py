@@ -5973,7 +5973,7 @@ def check_typesafe_contract() -> None:
     plugin = ROOT / "plugins/typesafe-tools"
     manifest = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
     mcp = json.loads((plugin / ".mcp.json").read_text())
-    require(manifest["version"] == "0.4.0", "TypeSafe contract version must be 0.4.0")
+    require(manifest["version"] == "0.5.0", "TypeSafe contract version must be 0.5.0")
     require(set(mcp["mcpServers"]) == {"typesafe"}, "TypeSafe must own one MCP server")
     launch = mcp["mcpServers"]["typesafe"]
     require(launch["command"] == "uv" and "--frozen" in launch["args"]
@@ -5992,6 +5992,14 @@ def check_typesafe_contract() -> None:
     require((plugin / "server/uv.lock").is_file(), "TypeSafe dependency lock is required")
     require((plugin / "skills/typesafe-computer-use/SKILL.md").is_file(),
             "TypeSafe computer-use skill is required")
+    require((plugin / "skills/typesafe-computer-use/scripts/helpers.js").is_file(),
+            "TypeSafe computer-use helper source is required")
+    require((plugin / "skills/typesafe-computer-use/scripts/controller.js").is_file(),
+            "TypeSafe computer-use controller source is required")
+    require((plugin / "skills/typesafe-computer-use/scripts/controller.compact.js").is_file(),
+            "TypeSafe computer-use compact controller is required")
+    require((plugin / "skills/typesafe-computer-use/scripts/build-controller-compact.py").is_file(),
+            "TypeSafe computer-use compact controller generator is required")
 
 
 if __name__ == "__main__":

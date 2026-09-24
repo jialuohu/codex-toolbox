@@ -23,11 +23,19 @@ variant is `0` through `3`, and category is one of:
 | `missing_target` | Refresh state to reveal the target, then open it. |
 | `recovery` | Search, retry after the first empty result, then open the record. |
 | `dialog` | Open the picker and select the target inside the dialog. |
+| `long_tree` | Choose the requested queue and status, then select the target among 37 rows with identical `Open` buttons. |
 
 Variant targets are `0` Quartz, `1` Cedar, `2` Nimbus, and `3` Orchid. The UI
 shows the exact goal, so a runner can use the case ID and verify the goal text
 without hard-coding the target. Use variant `0` for tuning and variants `1`–`3`
 for held-out cases.
+
+`browser-long_tree-0` and `native-long_tree-0` are additional diagnostic
+cases, separate from the frozen benchmark. They support only variant `0` and
+require three decisions: queue, status, and row. The target button is disabled
+until the queue and status are correct, while other `Open` buttons remain
+available and count as wrong actions. The rows reorder as the selections
+change, so the final button must be located from a fresh UI observation.
 
 ## Browser
 

@@ -44,7 +44,7 @@
 
       const categories = [
         "navigation", "search", "filter", "tabs", "expand", "duplicate_label",
-        "stale_index", "missing_target", "recovery", "dialog"
+        "stale_index", "missing_target", "recovery", "dialog", "long_tree"
       ];
       const records = [
         { name: "Quartz", section: "Research", status: "Ready", tab: "Pending", group: "Alpha" },
@@ -52,17 +52,23 @@
         { name: "Nimbus", section: "Design", status: "Review", tab: "Current", group: "Gamma" },
         { name: "Orchid", section: "Reports", status: "Hold", tab: "Later", group: "Delta" }
       ];
+      const longTreeRecords = Array.from({ length: 36 }, (_, index) => ({
+        name: `Request ${String(index + 1).padStart(2, "0")}`,
+        section: records[index % records.length].section,
+        status: records[Math.floor(index / records.length) % records.length].status
+      }));
+      longTreeRecords.splice(25, 0, records[0]);
       const requested = new URLSearchParams(location.search).get("case_id") || "browser-navigation-0";
-      const match = /^browser-(navigation|search|filter|tabs|expand|duplicate_label|stale_index|missing_target|recovery|dialog)-([0-3])$/.exec(requested);
+      const match = /^browser-(navigation|search|filter|tabs|expand|duplicate_label|stale_index|missing_target|recovery|dialog|long_tree)-([0-3])$/.exec(requested);
       const caseLabel = document.getElementById("case-label");
       const goal = document.getElementById("goal");
       const workspace = document.getElementById("workspace");
       const result = document.getElementById("result");
       const wrongActions = document.getElementById("wrong-actions");
 
-      if (!match) {
+      if (!match || (match[1] === "long_tree" && match[2] !== "0")) {
         caseLabel.textContent = `Invalid case ID: ${requested}`;
-        goal.textContent = `Use browser-<category>-<0..3>, where category is ${categories.join(", ")}.`;
+        goal.textContent = `Use browser-<category>-<0..3>, where category is ${categories.join(", ")}; long_tree uses variant 0 only.`;
         workspace.textContent = "No task loaded.";
         return;
       }
@@ -88,7 +94,8 @@
         stale_index: `Reorder the list, then use the Open button in the ${target.name} row.`,
         missing_target: `Refresh state to reveal ${target.name}, then open it.`,
         recovery: `Search for ${target.name}; after the first empty result, retry and open it.`,
-        dialog: `Open the picker and select ${target.name} in the dialog.`
+        dialog: `Open the picker and select ${target.name} in the dialog.`,
+        long_tree: `Choose the ${target.section} queue and ${target.status} status, then use Open in the ${target.name} row.`
       };
       caseLabel.textContent = `Case ID: ${caseId}`;
       goal.textContent = `Goal: ${goals[category]}`;
@@ -123,13 +130,13 @@
         updateResult();
       }
 
-      function row(record, identicalButton = false, action = null) {
+      function row(record, identicalButton = false, action = null, disabled = false) {
         const container = el("div", undefined, { class: "row" });
         const info = el("div");
         info.append(el("div", record.name, { class: "label" }));
         info.append(el("div", `${record.section} · ${record.status}`, { class: "meta" }));
         container.append(info);
-        container.append(button(identicalButton ? "Open" : `Open ${record.name}`, action || (() => openRecord(record))));
+        container.append(button(identicalButton ? "Open" : `Open ${record.name}`, action || (() => openRecord(record)), disabled ? { disabled: "" } : {}));
         return container;
       }
 
@@ -252,6 +259,37 @@
             document.body.append(dialog);
             dialog.showModal();
           }));
+        }
+
+        if (category === "long_tree") {
+          workspace.append(el("p", `Selected queue: ${state.section || "None"}`));
+          const queueTabs = controls(...records.map(record => button(record.section, () => {
+            state.section = record.section;
+            render();
+          }, { role: "tab", "aria-selected": String(state.section === record.section) })));
+          queueTabs.setAttribute("role", "tablist");
+          queueTabs.setAttribute("aria-label", "Queue");
+          workspace.append(queueTabs);
+
+          const label = el("label", "Status: ");
+          const select = el("select", undefined, { "aria-label": "Status" });
+          for (const option of ["All", ...records.map(record => record.status)]) {
+            const item = el("option", option, { value: option });
+            if (option === state.filter) item.selected = true;
+            select.append(item);
+          }
+          select.addEventListener("change", () => { state.filter = select.value; render(); });
+          label.append(select);
+          workspace.append(label);
+
+          const rank = record => Number(state.section !== null && record.section === state.section) +
+            Number(state.filter !== "All" && record.status === state.filter);
+          const ordered = longTreeRecords.map((record, index) => ({ record, index }))
+            .sort((a, b) => rank(b.record) - rank(a.record) || a.index - b.index);
+          for (const { record } of ordered) {
+            const ready = state.section === target.section && state.filter === target.status;
+            workspace.append(row(record, true, () => openRecord(record, ready), record.name === target.name && !ready));
+          }
         }
 
         updateResult();
