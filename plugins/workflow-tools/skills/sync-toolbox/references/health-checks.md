@@ -100,6 +100,14 @@ file failure. Missing discovery sources make overall coverage incomplete.
 | Runtime | Successful reviewed tool call or startup/connectivity probe | Authentication unless explicitly tested; catalog presence proves discovery only |
 | Authentication | Reviewed read-only probe with explicit authentication result | Authorization for writes, paid calls, or unrelated accounts |
 
+The file check accepts `.codex-plugin/plugin.json` for all installed plugins and
+`.claude-plugin/plugin.json` for external plugins. Toolbox-owned plugins must
+retain their Codex manifest. For external skills, installed backticked file
+paths are followed from the skill root, while absent examples and absolute or
+extensionless documentation routes are not treated as local files. Broken
+relative Markdown links to named files remain publisher-owned findings; the
+health check does not edit them.
+
 Each check records owning component, scope, timestamp, reason, and one of
 `passed`, `failed`, `unverified`, `disabled`, or `not_applicable`. A stored token,
 configured URL, successful listing, or `auth_status: unsupported` never proves

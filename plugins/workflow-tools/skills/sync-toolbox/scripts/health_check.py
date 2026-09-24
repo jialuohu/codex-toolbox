@@ -27,7 +27,7 @@ from collections import Counter
 
 sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
-VERSION = "0.13.0"
+VERSION = "0.13.1"
 MAX_BYTES = 4 * 1024 * 1024
 MAX_ITEMS = 10000
 STATUSES = {"passed", "failed", "unverified", "disabled", "not_applicable"}
@@ -310,7 +310,14 @@ class Collector:
                 continue
             self.plugin_roots[row["id"]] = root
             try:
-                manifest = read_json(root / ".codex-plugin/plugin.json")
+                manifest_path = root / ".codex-plugin/plugin.json"
+                if not manifest_path.resolve().is_relative_to(root):
+                    raise ValueError("manifest outside package")
+                if not manifest_path.exists() and not owned:
+                    manifest_path = root / ".claude-plugin/plugin.json"
+                if not manifest_path.resolve().is_relative_to(root):
+                    raise ValueError("manifest outside package")
+                manifest = read_json(manifest_path)
                 if not isinstance(manifest, dict) or manifest.get("name") != name:
                     raise ValueError("metadata")
                 check(row, "files", "installation", "passed", "ok", self.now)
@@ -386,7 +393,9 @@ class Collector:
             meta = self.validation.frontmatter(raw.decode())
             row["name"] = label(meta["name"])
             check(row, "metadata", "installation", "passed", "ok", self.now)
-            _, errors = self.validation.reference_graph(path, package_root)
+            _, errors = self.validation.reference_graph(
+                path, package_root, external=row["owner"] == "external"
+            )
             only_outside = errors and all("reference escapes repository" in error for error in errors)
             check(row, "references", "installation", "unverified" if only_outside else "failed" if errors else "passed",
                   "reference_scope_unverified" if only_outside else "missing_reference" if errors else "ok", self.now)
