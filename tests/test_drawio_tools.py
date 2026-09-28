@@ -40,15 +40,16 @@ class DrawioToolsContractTests(unittest.TestCase):
         self.assertEqual(server["default_tools_approval_mode"], "auto")
         self.assertEqual(server["tools"], {"set_page": {"approval_mode": "prompt"}})
 
-        self.assertEqual(lock["packages"][""]["dependencies"]["@drawio/mcp"], "1.4.0")
+        self.assertEqual(lock["packages"][""]["dependencies"]["@drawio/mcp"], "1.6.0")
         package = lock["packages"]["node_modules/@drawio/mcp"]
-        self.assertEqual(package["version"], "1.4.0")
+        self.assertEqual(package["version"], "1.6.0")
         self.assertEqual(
             package["integrity"],
-            "sha512-DRg8oveMZSN5rgH6TAtkfaGSm364GzJV53uqJE9ug4EYCORjCgEpapFr0XLi037kq2OXdM2Z/vgAyj7N6vbjiA==",
+            "sha512-4gVsfbkYAc1HzhPEQEsEk7cWPr5i6HIn/syjc6OUYnqDZOCP7pYsVSgiOq49IjNY5BvARSN2uPejQ8Bk8GY/og==",
         )
         self.assertEqual(lock["packages"]["node_modules/fast-uri"]["version"], "3.1.7")
         self.assertEqual(lock["packages"]["node_modules/qs"]["version"], "6.16.0")
+        self.assertEqual(lock["packages"]["node_modules/hono"]["version"], "4.13.10")
 
     def test_check_fails_closed_when_runtime_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as codex_home:

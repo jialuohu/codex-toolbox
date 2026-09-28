@@ -5,9 +5,9 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const EXPECTED = Object.freeze({
-  packageVersion: "1.4.0",
-  packageIntegrity: "sha512-DRg8oveMZSN5rgH6TAtkfaGSm364GzJV53uqJE9ug4EYCORjCgEpapFr0XLi037kq2OXdM2Z/vgAyj7N6vbjiA==",
-  packageTreeSha256: "9b8fed587fd1bc61041c4a57ec536ad653673e8f413141d7ff6ef0b03754ac6d",
+  packageVersion: "1.6.0",
+  packageIntegrity: "sha512-4gVsfbkYAc1HzhPEQEsEk7cWPr5i6HIn/syjc6OUYnqDZOCP7pYsVSgiOq49IjNY5BvARSN2uPejQ8Bk8GY/og==",
+  packageTreeSha256: "8ec16714a64760022d45737080e8702030f12a2c307c6fe93a5d8ec202224c73",
   shapeIndexCommit: "9ce8dc19caa8861315337ec91f3ac7c0df8e0978",
   shapeIndexSha256: "09b84516025e46238e5dd47465cc96ecfd96134ea853ace1063e1ca19dd34601",
   shapeIndexBytes: 4_776_086,
@@ -105,7 +105,7 @@ try {
   requireDirectory(packageDir, "@drawio/mcp package directory");
   requireRegular(packagePath, "@drawio/mcp package manifest");
   requireRegular(`${packageDir}/src/index.js`, "@drawio/mcp entrypoint");
-  requireRegular(`${packageDir}/src/libavoid-routing.js`, "vendored routing adapter");
+  requireRegular(`${packageDir}/vendor/libavoid/libavoid-routing.js`, "vendored routing adapter");
   requireRegular(`${packageDir}/vendor/libavoid/libavoid.wasm`, "vendored libavoid runtime");
   requireRegular(`${packageDir}/vendor/libavoid/LICENSE`, "vendored libavoid license");
   requireRegular(shapeIndexPath, "offline shape index");
@@ -114,6 +114,13 @@ try {
 
   if (existsSync(`${packageDir}/src/routing-core-cache.js`)) {
     fail("unexpected downloaded routing-core cache is present");
+  }
+  // Upstream's in-repository fallbacks prefer these sibling locations. They
+  // are outside the pinned npm package and must not shadow verified assets.
+  for (const sibling of ["shared", "shape-search"]) {
+    if (existsSync(`${runtimeDir}/node_modules/@drawio/${sibling}`)) {
+      fail(`unexpected @drawio/${sibling} can shadow verified package assets`);
+    }
   }
 
   const lockSha256 = sha256(sourceLock);
@@ -128,7 +135,9 @@ try {
 
   const packageJson = readJson(packagePath, "@drawio/mcp manifest");
   if (packageJson.version !== EXPECTED.packageVersion) fail("installed @drawio/mcp version is unexpected");
-  if (packageJson.scripts?.postinstall) fail("installed @drawio/mcp unexpectedly defines postinstall");
+  // npm ci always disables lifecycle scripts. The reviewed script remains in
+  // the immutable package tree; accepting its presence does not execute it.
+  if (packageJson.scripts?.postinstall !== "node src/postinstall.js") fail("installed @drawio/mcp postinstall differs from the reviewed script");
   if (packageTreeSha256(packageDir) !== EXPECTED.packageTreeSha256) fail("installed @drawio/mcp package tree hash is unexpected");
 
   const shapeStat = lstatSync(shapeIndexPath);

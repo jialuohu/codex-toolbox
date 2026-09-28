@@ -229,11 +229,16 @@ The MCP exposes exactly `open_drawio_xml`, `open_drawio_csv`,
 mutates a local file. `DRAWIO_BASE_URL` may select a trusted self-hosted editor
 instead of the default `https://app.diagrams.net/`.
 
-Toolbox setup installs exact `@drawio/mcp@1.4.0` dependencies under
+Toolbox setup installs exact `@drawio/mcp@1.6.0` dependencies under
 `${CODEX_HOME:-$HOME/.codex}/runtime/drawio-tools/active` with lifecycle
 scripts disabled. It audits the production tree and installs a SHA-256-checked
 shape index pinned to an upstream commit before atomic promotion. Normal MCP
 startup validates this receipt and uses no `npm`, `npx`, or network access.
+The MCP process keeps shape queries local and uses only verified bundled
+libavoid routing code. Remote icon supplementation and server-side XML ELK
+layout are disabled; an ELK request reports that the supplied coordinates were
+retained. The requested editor can still lay out Mermaid. Upstream's new
+postinstall and per-user CDN code caches are never used by the toolbox runtime.
 
 Use the focused setup helper directly with:
 

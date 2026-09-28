@@ -2,9 +2,16 @@
 
 ## Setup
 
-The toolbox installs the exact `@drawio/mcp@1.4.0` runtime under
+The toolbox installs the exact `@drawio/mcp@1.6.0` runtime under
 `${CODEX_HOME:-$HOME/.codex}/runtime/drawio-tools/active`. Normal MCP startup
 does not invoke `npm`, `npx`, or the network.
+
+The toolbox disables npm lifecycle scripts and remote icon supplementation.
+`routing: "libavoid"` uses the verified bundled routing source and WASM,
+ignoring per-user CDN caches. Server-side XML `postLayout: "elk"` is unavailable:
+the tool reports that layout did not run and retains the supplied coordinates.
+Mermaid ELK selection only transforms source for the requested editor.
+Inherited `DRAWIO_ICON_SERVICE_URL` and `DRAWIO_ELK_URL` cannot override this policy.
 
 ```bash
 scripts/setup-drawio-tools.sh --check

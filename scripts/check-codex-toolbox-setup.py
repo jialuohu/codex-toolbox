@@ -3311,18 +3311,18 @@ def validate_drawio_tools_contract(
     dependencies = bootstrap.get("dependencies", {})
     locked_package = lock.get("packages", {}).get("node_modules/@drawio/mcp", {})
     expected_integrity = (
-        "sha512-DRg8oveMZSN5rgH6TAtkfaGSm364GzJV53uqJE9ug4EYCORjCgEpapFr0XLi037kq2OXdM2Z/"
-        "vgAyj7N6vbjiA=="
+        "sha512-4gVsfbkYAc1HzhPEQEsEk7cWPr5i6HIn/syjc6OUYnqDZOCP7pYsVSgiOq49IjNY5BvARSN2u"
+        "PejQ8Bk8GY/og=="
     )
-    require(dependencies == {"@drawio/mcp": "1.4.0"}, "Draw.io runtime must pin one exact direct dependency")
+    require(dependencies == {"@drawio/mcp": "1.6.0"}, "Draw.io runtime must pin one exact direct dependency")
     require(
         lock.get("packages", {}).get("", {}).get("dependencies") == dependencies,
         "Draw.io bootstrap lock root must match package.json",
     )
     require(
-        locked_package.get("version") == "1.4.0"
+        locked_package.get("version") == "1.6.0"
         and locked_package.get("integrity") == expected_integrity,
-        "Draw.io runtime lock must preserve the audited 1.4.0 package integrity",
+        "Draw.io runtime lock must preserve the audited 1.6.0 package integrity",
     )
     require(
         lock.get("packages", {}).get("node_modules/fast-uri", {}).get("version") == "3.1.7",
@@ -3332,12 +3332,16 @@ def validate_drawio_tools_contract(
         lock.get("packages", {}).get("node_modules/qs", {}).get("version") == "6.16.0",
         "Draw.io runtime lock must pin the audited qs 6.16.0 release",
     )
+    require(
+        lock.get("packages", {}).get("node_modules/hono", {}).get("version") == "4.13.10",
+        "Draw.io runtime lock must pin the audited hono 4.13.10 release",
+    )
 
     setup_helper = DRAWIO_SETUP.read_text()
     for expected in (
-        'PACKAGE_VERSION="1.4.0"',
+        'PACKAGE_VERSION="1.6.0"',
         expected_integrity,
-        'PACKAGE_TREE_SHA256="9b8fed587fd1bc61041c4a57ec536ad653673e8f413141d7ff6ef0b03754ac6d"',
+        'PACKAGE_TREE_SHA256="8ec16714a64760022d45737080e8702030f12a2c307c6fe93a5d8ec202224c73"',
         'SHAPE_INDEX_COMMIT="9ce8dc19caa8861315337ec91f3ac7c0df8e0978"',
         'SHAPE_INDEX_SHA256="09b84516025e46238e5dd47465cc96ecfd96134ea853ace1063e1ca19dd34601"',
         'SHAPE_INDEX_BYTES="4776086"',
@@ -3360,12 +3364,28 @@ def validate_drawio_tools_contract(
 
     launcher_text = DRAWIO_LAUNCHER.read_text()
     for expected in (
+        "unset NODE_OPTIONS NODE_PATH",
         "verify-drawio-runtime.mjs",
         "DRAWIO_SHAPE_INDEX_URL",
         "invalid.invalid/drawio-tools-offline-index",
-        "node_modules/@drawio/mcp/src/index.js",
+        '"$PLUGIN_ROOT/scripts/drawio-runtime.mjs" "$RUNTIME_DIR"',
     ):
         require(expected in launcher_text, f"Draw.io MCP launcher must preserve {expected}")
+    entrypoint_text = (DRAWIO_TOOLS_DIR / "scripts" / "drawio-runtime.mjs").read_text()
+    for expected in (
+        "realpathSync",
+        'process.env.DRAWIO_ICON_SERVICE_URL = "off"',
+        "delete process.env.DRAWIO_ELK_URL",
+        "globalThis.fetch = async",
+        'await import(moduleUrl("cdn-cache.js"))',
+        '"vendor", "libavoid", "libavoid-routing.js"',
+        "Object.freeze(ROUTING_CORE)",
+        'Object.defineProperty(ELK_BUNDLE, "url"',
+        "Object.freeze(ELK_BUNDLE)",
+        "process.argv = [process.argv[0]",
+        'await import(moduleUrl("index.js"))',
+    ):
+        require(expected in entrypoint_text, f"Draw.io offline entrypoint must preserve {expected}")
     verifier_text = DRAWIO_VERIFIER.read_text()
     for expected in (
         "packageIntegrity",
@@ -3446,7 +3466,7 @@ def validate_drawio_tools_contract(
 
     for expected in (
         "## Draw.io Tools",
-        "@drawio/mcp@1.4.0",
+        "@drawio/mcp@1.6.0",
         "CODEX_TOOLBOX_INSTALL_DRAWIO_DESKTOP=1",
         "DRAWIO_BASE_URL",
         "DRAWIO_DESKTOP_BIN",
@@ -3467,6 +3487,7 @@ def validate_drawio_tools_contract(
         "scripts/setup-drawio-tools.sh --install",
         "scripts/setup-drawio-tools.sh --check",
         "mcp-smoke.mjs",
+        "runtime-verifier.mjs",
         "test_drawio_tools",
     ):
         require(expected in workflow_text, f"Draw.io CI must include {expected}")
