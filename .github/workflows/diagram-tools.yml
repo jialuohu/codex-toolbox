@@ -48,7 +48,7 @@ permissions:
 jobs:
   conformance:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
-    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && matrix.os == 'ubuntu-latest' && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-diagram-tools-conformance-linux-node-{2}"]', github.run_id, github.run_attempt, matrix.node)) || matrix.os }}
+    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && matrix.os == 'ubuntu-latest' && fromJSON('["self-hosted","linux","x64","brokkr"]') || matrix.os }}
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -135,8 +135,8 @@ jobs:
             "$CODEX_LOCAL_BIN_DIR/archify" deliver \
               "$diagram_type" "$example_path" "$output_path" --json --quality showcase
           done
-      - name: Install Chromium in the prepared guest
-        if: runner.environment == 'self-hosted' && startsWith(runner.name, 'brokkr-')
+      - name: Install Chromium on Brokkr
+        if: runner.environment == 'self-hosted'
         shell: bash
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/archify-browsers
@@ -147,8 +147,8 @@ jobs:
           chrome_path="$(node -e 'process.stdout.write(require(process.argv[1]).chromium.executablePath())' "$browser_runtime/node_modules/playwright-core")"
           test -x "$chrome_path"
           printf 'ARCHIFY_CHROME=%s\n' "$chrome_path" >> "$GITHUB_ENV"
-          # Fixed local CI artifacts run inside one disposable VM per job.
-          # Guest NoNewPrivileges/AppArmor prevent Chromium's nested sandbox.
+          # Ubuntu's AppArmor user-namespace restrictions block this downloaded
+          # Chromium sandbox. This opt-out applies only to the Brokkr job.
           printf 'ARCHIFY_CHROME_NO_SANDBOX=1\n' >> "$GITHUB_ENV"
       - name: Gate Archify artifacts with upstream visual-check
         shell: bash
@@ -194,7 +194,7 @@ jobs:
           if-no-files-found: error
 
   runtime-manager:
-    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && github.run_attempt == '1' && ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref_type == 'branch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && fromJSON(format('["self-hosted","linux","x64","brokkr","brokkr-{0}-{1}-diagram-tools-runtime-manager"]', github.run_id, github.run_attempt)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","brokkr"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
