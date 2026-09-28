@@ -50,7 +50,7 @@ configuration, runtime readiness, and verified remote access in the response.
 For an authorized first setup:
 
 1. Install the launcher with the repository's
-   `scripts/setup-diagram-publish.sh`. Install pinned Wrangler `4.135.0` and
+   `scripts/setup-diagram-publish.sh`. Install pinned Wrangler `4.140.0` and
    locked dependencies in the isolated runtime with:
 
    ```bash

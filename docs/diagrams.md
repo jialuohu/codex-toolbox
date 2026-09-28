@@ -149,7 +149,7 @@ them. `noindex` headers do not provide access control.
 ### One-time setup
 
 Publishing is disabled on new installations. For an authorized setup, install
-the launcher and pinned runtime (Node 22 or newer, Wrangler `4.135.0` with locked
+the launcher and pinned runtime (Node 22 or newer, Wrangler `4.140.0` with locked
 dependencies):
 
 ```bash

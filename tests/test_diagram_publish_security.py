@@ -287,7 +287,8 @@ class PublisherSecurityTests(unittest.TestCase):
             stage = Path(kwargs["cwd"])
             package = stage / "node_modules/wrangler/package.json"
             package.parent.mkdir(parents=True)
-            package.write_text(json.dumps({"version": publisher.WRANGLER_VERSION}))
+            pinned = json.loads((stage / "package.json").read_text())["dependencies"]["wrangler"]
+            package.write_text(json.dumps({"version": pinned}))
             binary = package.parent / "bin/wrangler.js"
             binary.parent.mkdir()
             binary.write_text("// synthetic runtime fixture\n")

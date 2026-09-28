@@ -6,7 +6,7 @@ upstream renderers.
 ## Optional Cloudflare Pages publisher
 
 The toolbox-owned Diagram Publish helper stages accepted HTML and invokes
-Wrangler `4.135.0`, installed from `runtime/publisher/package-lock.json` into a
+Wrangler `4.140.0`, installed from `runtime/publisher/package-lock.json` into a
 versioned runtime outside the checkout. Wrangler is distributed by Cloudflare
 under MIT / Apache-2.0 licenses; its dependencies retain their installed license
 files. The helper uses the documented Pages REST API to verify target identity,

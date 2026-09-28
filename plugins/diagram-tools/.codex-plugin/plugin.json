@@ -1,6 +1,6 @@
 {
   "name": "diagram-tools",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Validated Archify maps and editable Mermaid rendering with research figure composition guidance.",
   "author": {
     "name": "Jialuo Hu",
