@@ -52,7 +52,9 @@ try {
   for (const sibling of ["shared", "shape-search"]) {
     const shadow = join(runtime, "node_modules", "@drawio", sibling);
     await mkdir(shadow);
-    assert.match(verify().stderr, /can shadow verified package assets/);
+    const result = verify();
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /can shadow verified package assets/);
     await rm(shadow, { recursive: true });
   }
   const modulePath = join(packageDir, "src", "cdn-cache.js");

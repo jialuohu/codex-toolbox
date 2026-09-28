@@ -135,8 +135,9 @@ try {
 
   const packageJson = readJson(packagePath, "@drawio/mcp manifest");
   if (packageJson.version !== EXPECTED.packageVersion) fail("installed @drawio/mcp version is unexpected");
-  // npm ci always disables lifecycle scripts. The reviewed script remains in
-  // the immutable package tree; accepting its presence does not execute it.
+  // Toolbox setup passes --ignore-scripts to npm ci, enforced by the setup
+  // checker. The reviewed script remains in the pinned package tree;
+  // accepting its presence here does not execute it.
   if (packageJson.scripts?.postinstall !== "node src/postinstall.js") fail("installed @drawio/mcp postinstall differs from the reviewed script");
   if (packageTreeSha256(packageDir) !== EXPECTED.packageTreeSha256) fail("installed @drawio/mcp package tree hash is unexpected");
 

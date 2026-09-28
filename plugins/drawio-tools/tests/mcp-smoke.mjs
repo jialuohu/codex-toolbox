@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmod, copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
@@ -51,6 +52,12 @@ appendFileSync(${JSON.stringify(policyLog)}, "inherited preload executed\\n");
 `);
 const cacheHome = join(tempRoot, "cache");
 const upstreamCache = join(cacheHome, "drawio-mcp");
+const isolatedHome = {
+  HOME: tempRoot,
+  USERPROFILE: tempRoot,
+  LOCALAPPDATA: cacheHome,
+  XDG_CACHE_HOME: cacheHome,
+};
 await mkdir(upstreamCache, { recursive: true });
 const hostileSource = "globalThis.recordUnsafeCode(); throw new Error('unreviewed code');";
 const hostileElk = join(tempRoot, "unreviewed-elk.js");
@@ -58,6 +65,33 @@ await writeFile(hostileElk, hostileSource);
 for (const filename of ["libavoid-routing.json", "drawio-elk.json"]) {
   await writeFile(join(upstreamCache, filename), JSON.stringify({ src: hostileSource, etag: "hostile" }));
 }
+
+// Positive control: the exact upstream loader must find both hostile seeds in
+// this isolated home. Validate their bytes without evaluating them; replace
+// fetch before invoking the loader so even its revalidation cannot use I/O.
+const cacheModule = pathToFileURL(join(runtimeRoot, "node_modules", "@drawio", "mcp", "src", "cdn-cache.js")).href;
+const control = spawnSync(process.execPath, ["--input-type=module", "--eval", `
+import assert from "node:assert/strict";
+let deniedRequests = 0;
+globalThis.fetch = async () => { deniedRequests++; throw new Error("Positive control forbids network"); };
+const { cacheDir, loadCachedSource, ROUTING_CORE, ELK_BUNDLE } = await import(${JSON.stringify(cacheModule)});
+assert.equal(cacheDir(), ${JSON.stringify(upstreamCache)});
+let validatedSeeds = 0;
+for (const source of [ROUTING_CORE, ELK_BUNDLE]) {
+  const cached = await loadCachedSource(source, (bytes) => {
+    assert.equal(bytes, ${JSON.stringify(hostileSource)});
+    validatedSeeds++;
+  });
+  assert.equal(cached, ${JSON.stringify(hostileSource)});
+}
+assert.equal(validatedSeeds, 2);
+assert.equal(deniedRequests, 2);
+`], {
+  env: { ...process.env, ...isolatedHome, DRAWIO_ELK_URL: "", NODE_OPTIONS: "", NODE_PATH: "" },
+  encoding: "utf8",
+  timeout: 10000,
+});
+assert.equal(control.status, 0, `hostile cache positive control failed: ${control.stderr}`);
 
 const pageOne = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="a" value="Uncompressed" parent="1" vertex="1"><mxGeometry x="10" y="10" width="120" height="40" as="geometry"/></mxCell></root></mxGraphModel>';
 const pageTwo = '<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="b" value="Compressed" parent="1" vertex="1"><mxGeometry x="20" y="20" width="120" height="40" as="geometry"/></mxCell></root></mxGraphModel>';
@@ -74,11 +108,11 @@ const transportOptions = {
   cwd: pluginRoot,
   env: {
     ...process.env,
+    ...isolatedHome,
     PATH: `${fakeBin}${delimiter}${process.env.PATH || ""}`,
     DRAWIO_BASE_URL: "https://app.diagrams.net/",
     DRAWIO_ICON_SERVICE_URL: "http://127.0.0.1:1/private-query-must-not-leave",
     DRAWIO_ELK_URL: hostileElk,
-    XDG_CACHE_HOME: cacheHome,
     NODE_OPTIONS: `--import=${pathToFileURL(hostilePreload).href}`,
     NODE_PATH: join(tempRoot, "unreviewed-modules"),
   },
