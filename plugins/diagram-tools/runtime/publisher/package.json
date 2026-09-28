@@ -3,5 +3,5 @@
   "version": "0.5.2",
   "private": true,
   "engines": { "node": ">=22" },
-  "dependencies": { "wrangler": "4.135.0" }
+  "dependencies": { "wrangler": "4.140.0" }
 }
