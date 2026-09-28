@@ -6,12 +6,12 @@ description: Use when searching, reading, drafting, replying to, or forwarding G
 # Gmail through isolated gws
 
 **REQUIRED:** Apply [gws-shared](../gws-shared/SKILL.md) before every command.
-Use its validated `profile`, isolated environment, and absolute `$gws_bin`; do
+Use its account helper, explicit alias, and verified `expected_email`; do
 not use guessed `--profile` or `--config` flags. Reads and searches may proceed
 only after successful preflight.
 
 Raw Gmail resource access is read-only: restrict messages, threads, drafts, and
-labels to list/get/search. Inspect those methods with `"$gws_bin" schema` in the
+labels to list/get/search. Inspect those methods with `/bin/bash "$gws_account" run --alias "$gws_alias" --expected-email "$expected_email" -- schema` in the
 same isolated environment.
 
 - [Read](../gws-gmail-read/SKILL.md) and [triage](../gws-gmail-triage/SKILL.md) are read-only after preflight.

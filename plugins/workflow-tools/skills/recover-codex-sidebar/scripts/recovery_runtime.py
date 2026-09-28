@@ -34,6 +34,58 @@ def hardware_id():
         raise EvidenceError("Physical Mac identity unavailable")
     return hashlib.sha256(lines[0]).hexdigest()
 
+
+def probe_paths_local(paths):
+    """Physical Mac and directory identity only; no Codex CLI or app state."""
+    result = {'machine': hardware_id(), 'paths': {}}
+    for path in paths:
+        p = Path(path)
+        if not p.is_absolute() or not p.is_dir():
+            result['paths'][path] = None
+            continue
+        canonical = p.resolve(strict=True)
+        st = canonical.stat()
+        result['paths'][path] = {'canonical': str(canonical),
+                                 'file_id': [st.st_dev, st.st_ino]}
+    return result
+
+
+def probe_paths(host, paths):
+    """Read only physical/path identity on the selected local or SSH Mac."""
+    if host == 'local':
+        return probe_paths_local(paths)
+    if not isinstance(host, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.@-]*', host):
+        raise EvidenceError('Invalid explicitly selected SSH alias')
+    marker = 'CODEX_SIDEBAR_PATHS:'
+    program = '''import hashlib,json,pathlib,subprocess
+paths=''' + repr(paths) + '''
+raw=subprocess.check_output(['ioreg','-rd1','-c','IOPlatformExpertDevice'],timeout=10)
+lines=[x.strip() for x in raw.splitlines() if b'"IOPlatformUUID"' in x]
+if len(lines)!=1: raise ValueError('Physical Mac identity unavailable')
+result={'machine':hashlib.sha256(lines[0]).hexdigest(),'paths':{}}
+for path in paths:
+ p=pathlib.Path(path)
+ if not p.is_absolute() or not p.is_dir():
+  result['paths'][path]=None
+  continue
+ q=p.resolve(strict=True); st=q.stat()
+ result['paths'][path]={'canonical':str(q),'file_id':[st.st_dev,st.st_ino]}
+print(''' + repr(marker) + '''+json.dumps(result))
+'''
+    result = subprocess.run(['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--',
+                             host, "/bin/zsh -lc 'python3 -'"],
+                            input=program, text=True, encoding='utf-8',
+                            capture_output=True, timeout=45)
+    if result.returncode:
+        raise EvidenceError('Project-host path probe failed; verify the selected Mac and read access')
+    payloads = [line[len(marker):] for line in result.stdout.splitlines() if line.startswith(marker)]
+    if len(payloads) != 1:
+        raise EvidenceError('Project-host path evidence framing failed')
+    try:
+        return unique_json(payloads[0])
+    except (ValueError, TypeError) as exc:
+        raise EvidenceError('Project-host path evidence JSON is invalid') from exc
+
 def desktop(app_path=None):
     candidates = [Path(app_path)] if app_path else [
         p for p in (Path('/Applications/ChatGPT.app'), Path('/Applications/Codex.app')) if p.exists()]

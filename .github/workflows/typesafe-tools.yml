@@ -5,19 +5,39 @@ on:
     paths:
       - ".agents/plugins/marketplace.json"
       - ".github/workflows/typesafe-tools.yml"
+      - "config/codex/AGENTS.global.md"
+      - "docs/typesafe*.md"
+      - "docs/README.md"
       - "plugins/typesafe-tools/**"
       - "scripts/setup-typesafe-tools.py"
       - "scripts/check-codex-toolbox-setup.py"
+      - "scripts/eval_skill_routing.py"
       - "tests/test_typesafe_tools.py"
+      - "tests/test_capability_routing_benchmark.py"
+      - "tests/fixtures/capability-routing-benchmark.json"
+      - "tests/test_computer_use_*.py"
+      - "tests/test_typesafe_computer_use_*.py"
+      - "tests/fixture_long_tree_dom.cjs"
+      - "tests/typesafe_computer_use_controller.cjs"
   push:
     branches: [main]
     paths:
       - ".agents/plugins/marketplace.json"
       - ".github/workflows/typesafe-tools.yml"
+      - "config/codex/AGENTS.global.md"
+      - "docs/typesafe*.md"
+      - "docs/README.md"
       - "plugins/typesafe-tools/**"
       - "scripts/setup-typesafe-tools.py"
       - "scripts/check-codex-toolbox-setup.py"
+      - "scripts/eval_skill_routing.py"
       - "tests/test_typesafe_tools.py"
+      - "tests/test_capability_routing_benchmark.py"
+      - "tests/fixtures/capability-routing-benchmark.json"
+      - "tests/test_computer_use_*.py"
+      - "tests/test_typesafe_computer_use_*.py"
+      - "tests/fixture_long_tree_dom.cjs"
+      - "tests/typesafe_computer_use_controller.cjs"
   workflow_dispatch:
 
 permissions:
@@ -25,7 +45,7 @@ permissions:
 
 jobs:
   package:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && matrix.os == 'ubuntu-latest' && fromJSON('["self-hosted","linux","x64","brokkr"]') || matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -33,6 +53,9 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
@@ -48,11 +71,23 @@ jobs:
         run: |
           python3 plugins/typesafe-tools/pilot/pilot.py validate
           python3 -m unittest discover -s plugins/typesafe-tools/pilot -p 'test_*.py'
+          python3 -m unittest discover -s plugins/typesafe-tools/effort -p 'test_*.py'
+          python3 -m unittest discover -s plugins/typesafe-tools/routing -p 'test_*.py'
+          python3 -m unittest tests.test_capability_routing_benchmark
+          python3 -m unittest discover -s tests -p 'test_computer_use_*.py'
+          python3 -m unittest discover -s tests -p 'test_typesafe_computer_use_*.py'
       - name: Check runtime lint and types
         working-directory: plugins/typesafe-tools/server
         run: |
           uv run --frozen ruff check src tests
           uv run --frozen pyright
+      - name: Check offline routing, effort, and benchmark lint
+        run: >-
+          uv run --frozen --project plugins/typesafe-tools/server ruff check
+          plugins/typesafe-tools/routing plugins/typesafe-tools/effort
+          plugins/typesafe-tools/computer_use_benchmark
+          scripts/eval_skill_routing.py tests/test_capability_routing_benchmark.py
+          tests/test_computer_use_benchmark.py
       - name: Validate toolbox integration
         run: python3 scripts/check-codex-toolbox-setup.py
       - name: Scan current tree

@@ -60,9 +60,16 @@ one authenticated Todoist surface, and a local compiler available through
 `$latex-compile`. It accepts a Canvas assignment, configured Overleaf project,
 user-supplied public problem-source URL, and selected problem numbers. It copies
 the selected statements exactly, imports their original figures, compiles a
-temporary snapshot, performs guarded sequential Overleaf writes, and adds one
-canonical Overleaf link to the matching Todoist task. When no matching task
-exists, an explicit Todoist-linking request creates one from the Canvas record.
+temporary snapshot, and performs guarded sequential Overleaf writes. An explicit
+Todoist-linking request adds one canonical Overleaf link to the matching task,
+or creates one from the Canvas record when no matching task exists.
+
+The [homework skill](skills/canvas-overleaf-homework/SKILL.md) routes complete
+preparation through assignment, content, and Overleaf references. Formatting
+edits use the current file, preamble, and Overleaf reference; blank-solution
+scaffolds additionally use the content reference. Neither narrow edit reopens
+unrelated Canvas, Todoist, or source work. Todoist reconciliation has its own
+reference and runs only when explicitly requested.
 
 The workflow does not solve or submit homework. It stops on ambiguous problem
 numbering, missing source figures, compile errors, or disagreement between live

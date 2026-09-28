@@ -107,7 +107,7 @@ def _expectation_interval(intervals: list[tuple[Decimal, Decimal]]) -> tuple[Dec
 
 
 def response_envelope(data: bytes) -> dict:
-    """Validate billing metadata independently of answer contents."""
+    """Validate reported token usage independently of answer contents."""
     try:
         if len(data) > MAX_RESPONSE_BYTES:
             raise ValueError

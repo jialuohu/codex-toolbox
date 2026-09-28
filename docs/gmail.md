@@ -93,3 +93,13 @@ scripts/setup-gws.sh --check-account account-one
 
 Start a fresh Codex task after installation or profile changes so the
 `google-workspace-tools` skills are available from the start.
+
+The [shared account helper](../plugins/google-workspace-tools/skills/gws-shared/scripts/gws-account.sh)
+provides `check --alias ALIAS` and
+`run --alias ALIAS --expected-email EMAIL -- GWS_ARGUMENTS...`.
+The check returns only the alias and verified email as JSON. Each run repeats
+the profile, pinned-binary, and live identity checks, then preserves the command's
+arguments, streams, and exit status in the isolated environment. Invoke it with
+`/bin/bash`; read [gws-shared](../plugins/google-workspace-tools/skills/gws-shared/SKILL.md)
+first. It does not authorize operations or automate sending. Compose skills load
+one mandatory [draft, MIME, and attachment contract](../plugins/google-workspace-tools/skills/gws-shared/references/compose.md).

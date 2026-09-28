@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "purpose": "Offline routing expectations for new research figures and ordinary-diagram negative cases; no model outcomes are asserted.",
+  "cases": [
+    {
+      "id": "new-research-plot",
+      "prompt": "Create a new latency comparison plot for our systems paper from measured values.",
+      "owner": "paper-figure-workflow",
+      "research_style": true,
+      "reason": "Publication plots use the paper figure pipeline and its new-figure defaults."
+    },
+    {
+      "id": "existing-plot-regeneration",
+      "prompt": "Regenerate our existing throughput plot from its current script and keep its appearance.",
+      "owner": "paper-figure-workflow",
+      "research_style": false,
+      "reason": "Regeneration preserves an existing figure unless restyling is requested."
+    },
+    {
+      "id": "venue-overrides-width",
+      "prompt": "Create a new systems paper plot at the venue's required 3.4-inch width.",
+      "owner": "paper-figure-workflow",
+      "research_style": true,
+      "reason": "The explicit venue width overrides the 3.3-inch research default."
+    },
+    {
+      "id": "native-drawio-research",
+      "prompt": "Make a new editable .drawio architecture figure for our paper.",
+      "owner": "drawio",
+      "research_style": true,
+      "reason": "The native format selects Draw.io; the research composition applies."
+    },
+    {
+      "id": "new-research-workflow-prefers-omni",
+      "prompt": "Draw a new editable workflow figure for our systems paper; no native format is prescribed. Native acceptance for all three OmniGraffle templates passed on this Mac and the current scripting probe responds.",
+      "owner": "omnigraffle-workflow",
+      "research_style": true,
+      "reason": "After native acceptance and a fresh responsive probe, a new research workflow with no selected owner prefers OmniGraffle."
+    },
+    {
+      "id": "new-research-architecture-prefers-omni",
+      "prompt": "Create a new editable architecture overview for our systems paper. No source format is specified. OmniGraffle native acceptance passed on this Mac and its current scripting probe responds.",
+      "owner": "omnigraffle-workflow",
+      "research_style": true,
+      "reason": "The accepted native research preference includes architecture figures."
+    },
+    {
+      "id": "new-research-mechanism-prefers-omni",
+      "prompt": "Create a new cache/memory mechanism detail for our systems paper. No source format is specified. OmniGraffle native acceptance passed on this Mac and its current scripting probe responds.",
+      "owner": "omnigraffle-workflow",
+      "research_style": true,
+      "reason": "The accepted native research preference includes mechanism figures."
+    },
+    {
+      "id": "implicit-omni-unready-fallback-drawio",
+      "prompt": "Draw a new systems-paper workflow with no format specified; OmniGraffle's active scripting probe is unavailable here.",
+      "owner": "drawio",
+      "research_style": true,
+      "reason": "The implicit OmniGraffle preference can fall back to Draw.io when native drawing readiness is unverified, with the fallback disclosed."
+    },
+    {
+      "id": "research-workflow-explicit-drawio",
+      "prompt": "Draw our new systems-paper workflow as an editable .drawio file.",
+      "owner": "drawio",
+      "research_style": true,
+      "reason": "The requested native Draw.io format overrides the OmniGraffle workflow preference."
+    },
+    {
+      "id": "research-workflow-project-drawio",
+      "prompt": "Add a new workflow figure to our paper project, which requires .drawio source files.",
+      "owner": "drawio",
+      "research_style": true,
+      "reason": "The project source convention overrides the OmniGraffle workflow preference."
+    },
+    {
+      "id": "explicit-omni-doctor-blocked",
+      "prompt": "Use OmniGraffle for our paper workflow figure even if native automation is unavailable on this Mac.",
+      "owner": "omnigraffle-workflow",
+      "research_style": true,
+      "reason": "The explicit native owner remains OmniGraffle; prepare the editable request and report blocked native output instead of silently using Draw.io."
+    },
+    {
+      "id": "native-omnigraffle-existing",
+      "prompt": "Fix one connector in this existing .graffle document without restyling it.",
+      "owner": "omnigraffle-workflow",
+      "research_style": false,
+      "reason": "The existing native document keeps its established appearance."
+    },
+    {
+      "id": "ordinary-architecture-negative",
+      "prompt": "Draw a graphical architecture map for a website deployment; this is not a paper figure.",
+      "owner": "archify",
+      "research_style": false,
+      "reason": "Ordinary graphical architecture retains Archify's general defaults."
+    },
+    {
+      "id": "ordinary-workflow-negative",
+      "prompt": "Draw a graphical workflow map for an ordinary deployment, not a paper figure.",
+      "owner": "archify",
+      "research_style": false,
+      "reason": "Ordinary workflow maps retain Archify's graphical default."
+    },
+    {
+      "id": "ordinary-mermaid-negative",
+      "prompt": "Render this ordinary Mermaid flowchart A --> B using the current default theme.",
+      "owner": "pretty-mermaid",
+      "research_style": false,
+      "reason": "Explicit Mermaid uses Pretty Mermaid without research restyling."
+    }
+  ]
+}

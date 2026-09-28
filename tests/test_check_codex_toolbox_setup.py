@@ -18,6 +18,18 @@ CHECKER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECKER)
 
 
+class PluginVersionTests(unittest.TestCase):
+    def test_valid_future_releases_are_not_tied_to_the_checker(self) -> None:
+        for version in ("0.0.0", "1.2.3", "999.20.30"):
+            with self.subTest(version=version):
+                self.assertEqual(CHECKER.require_plugin_version({"version": version}, "fixture"), version)
+
+    def test_invalid_release_metadata_is_rejected(self) -> None:
+        for version in (None, 1, "", "invalid", "1.2", "01.2.3", "1.2.3\n"):
+            with self.subTest(version=version), self.assertRaisesRegex(SystemExit, "must declare a semantic version"):
+                CHECKER.require_plugin_version({"version": version}, "fixture")
+
+
 class PhotoToolsSetupTests(unittest.TestCase):
     def setUp(self) -> None:
         self.marketplace = json.loads((ROOT / ".agents/plugins/marketplace.json").read_text())

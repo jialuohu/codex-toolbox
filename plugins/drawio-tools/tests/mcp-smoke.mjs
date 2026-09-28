@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -109,6 +109,37 @@ try {
   const stored = await readFile(sourcePath, "utf8");
   assert.doesNotMatch(stored, /Updated compressed page/, "a compressed page must remain compressed");
 
+  for (const filename of [
+    "architecture-overview.drawio",
+    "execution-timeline.drawio",
+    "cache-memory-mechanism.drawio",
+  ]) {
+    const templatePath = join(pluginRoot, "assets", "research-templates", filename);
+    const copiedPath = join(tempRoot, filename);
+    await copyFile(templatePath, copiedPath);
+    const [page] = JSON.parse(textResult(await client.callTool({
+      name: "list_pages",
+      arguments: { path: copiedPath },
+    })));
+    assert.ok(page?.id, `${filename}: native page ID must survive copy`);
+    const before = textResult(await client.callTool({
+      name: "get_page",
+      arguments: { path: copiedPath, page: page.id },
+    }));
+    assert.match(before, /<mxGraphModel\b/, `${filename}: editable model expected`);
+    textResult(await client.callTool({
+      name: "set_page",
+      arguments: { path: copiedPath, page: page.id, content: before },
+    }));
+    const after = textResult(await client.callTool({
+      name: "get_page",
+      arguments: { path: copiedPath, page: page.id },
+    }));
+    assert.equal(after, before, `${filename}: source must round-trip through get/set_page`);
+    assert.match(await readFile(copiedPath, "utf8"), /Cobalt #2148B8/,
+      `${filename}: source-local palette provenance must survive page edit`);
+  }
+
   const shapes = JSON.parse(textResult(await client.callTool({
     name: "search_shapes",
     arguments: { query: "aws lambda", limit: 3 },
@@ -121,7 +152,7 @@ try {
   }));
   assert.match(opened, /^Draw\.io Editor URL:\nhttps:\/\/app\.diagrams\.net\//);
 
-  console.log("Draw.io MCP handshake, tool inventory, browser URL, shape search, and page operations passed");
+  console.log("Draw.io MCP handshake, tool inventory, browser URL, shape search, and page/template round-trips passed");
 } finally {
   await client.close().catch(() => {});
   await rm(tempRoot, { recursive: true, force: true });

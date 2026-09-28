@@ -13,6 +13,7 @@ import math
 import os
 from pathlib import Path
 import plistlib
+import re
 import stat
 import struct
 import unicodedata
@@ -316,8 +317,24 @@ def _canvas(sheet, limits, qualifications):
             if endpoint in obj and obj[endpoint] not in seen:
                 warnings.append({"kind": "missing_line_endpoint", "object_id": obj["id"],
                                  "endpoint": endpoint, "target_id": obj[endpoint]})
-    return {"id": canvas_id, "title": sheet.get("SheetTitle"),
+    result = {"id": canvas_id, "title": sheet.get("SheetTitle"),
             "structural_sha256": _hash(sheet), "objects": objects, "warnings": warnings}
+    # A live-created, saved and reopened OmniGraffle 7.26 canvas with page
+    # measurement disabled persisted mode 0 and a point-valued CGSize string.
+    # Other modes remain unqualified; callers must not infer units from a
+    # bundled example or from the creation seed.
+    sizing_mode = sheet.get("CanvasSizingMode")
+    if type(sizing_mode) is int and sizing_mode == 0 and "CanvasSize" in sheet:
+        size = sheet["CanvasSize"]
+        match = re.fullmatch(r"\{\s*([0-9]+(?:\.[0-9]+)?)\s*,\s*([0-9]+(?:\.[0-9]+)?)\s*\}", size) if isinstance(size, str) else None
+        if not match:
+            raise DocumentError("invalid fixed canvas size")
+        dimensions = [float(value) for value in match.groups()]
+        if any(not math.isfinite(value) or not 1 <= value <= 14400 for value in dimensions):
+            raise DocumentError("fixed canvas size exceeds point limits")
+        result["size"] = dimensions
+        result["size_units"] = "points"
+    return result
 
 
 def _images(document, members, canvases):

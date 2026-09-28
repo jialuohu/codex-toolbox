@@ -321,6 +321,7 @@ class SetupDocmostToolsTest(unittest.TestCase):
     def install_fake_codex(self) -> None:
         self.install_fake_node()
         self.install_fake_drawio_runtime_prerequisites()
+        self.write_executable("rg", "#!/bin/sh\n[ \"${1:-}\" = --version ]\n")
         if not self.marketplace_plugin_root.exists():
             shutil.copytree(
                 ROOT / "plugins" / "docmost-tools",

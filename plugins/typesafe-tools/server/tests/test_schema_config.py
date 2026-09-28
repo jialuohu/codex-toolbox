@@ -9,9 +9,6 @@ import pytest
 
 from typesafe_tools.billing import (
     MODEL,
-    MONTHLY_CAP,
-    NANOUSD,
-    VERIFIED_BOUNDS,
     VERIFIED_PILOTS,
 )
 from typesafe_tools.config import ConfigStore, Settings, codex_home, protected_read
@@ -247,12 +244,45 @@ def test_missing_config_defaults_without_writes(tmp_path: Path) -> None:
     assert error.value.code == "credential_missing"
 
 
-def test_private_key_and_budget_config(config: ConfigStore) -> None:
+def test_private_key_and_routing_config(config: ConfigStore) -> None:
     write_private(config.root / "api-key", "synthetic-key-for-test-only\n")
     assert config.api_key() == "synthetic-key-for-test-only"
-    write_private(config.root / "config.json", '{"monthly_budget_usd":"2.50"}')
-    assert config.settings().monthly_limit == 5 * NANOUSD // 2
+    write_private(config.root / "config.json", '{}')
     assert config.settings().model == MODEL
+    assert config.settings().automatic_routing
+    write_private(config.root / "config.json", '{"automatic_routing":false}')
+    assert not config.settings().automatic_routing
+
+
+def test_private_data_opt_in_defaults_off_and_is_independent(config: ConfigStore) -> None:
+    assert not config.settings().allow_private_data
+    write_private(config.root / "config.json", '{"allow_private_data":true}')
+    settings = config.settings()
+    assert settings.allow_private_data
+    assert settings.automatic_routing
+    assert not settings.automatic_research
+    assert not settings.automatic_browser_use and not settings.automatic_native_use
+    write_private(config.root / "config.json", '{"allow_private_data":false}')
+    assert not config.settings().allow_private_data
+
+
+def test_computer_use_config_requires_separate_evidence_fields(config: ConfigStore) -> None:
+    write_private(config.root / "config.json", json.dumps({
+        "automatic_browser_use": True, "browser_evidence_id": "browser-v1",
+        "automatic_native_use": False, "native_evidence_id": "native-v1",
+        "browser_user_opt_in": True, "native_user_opt_in": False,
+    }))
+    settings = config.settings()
+    assert settings.automatic_browser_use and settings.browser_evidence_id == "browser-v1"
+    assert not settings.automatic_native_use and settings.native_evidence_id == "native-v1"
+    assert settings.browser_user_opt_in and not settings.native_user_opt_in
+
+
+def test_computer_use_user_opt_in_defaults_off(config: ConfigStore) -> None:
+    assert not Settings().browser_user_opt_in and not Settings().native_user_opt_in
+    write_private(config.root / "config.json", "{}")
+    settings = config.settings()
+    assert not settings.browser_user_opt_in and not settings.native_user_opt_in
 
 
 @pytest.mark.parametrize("mode", [0o644, 0o640, 0o666, 0o604])
@@ -321,11 +351,15 @@ def test_protected_size_limit(config: ConfigStore) -> None:
 
 
 @pytest.mark.parametrize("value", [
-    '{"monthly_budget_usd":"5.01"}', '{"monthly_budget_usd":0}',
-    '{"monthly_budget_usd":-1}', '{"monthly_budget_usd":"NaN"}',
-    '{"monthly_budget_usd":"Infinity"}', '{"monthly_budget_usd":"0.0000000001"}',
-    '{"monthly_budget_usd":true}', '{"model":"other"}',
-    '{"billing_evidence_id":true}', '{"pilot_evidence_id":3}',
+    '{"monthly_budget_usd":null}', '{"billing_evidence_id":"old"}',
+    '{"routing_pilot_evidence_id":"old"}', '{"model":"other"}',
+    '{"pilot_evidence_id":3}', '{"automatic_routing":"true"}',
+    '{"automatic_browser_use":"true"}', '{"automatic_native_use":1}',
+    '{"browser_user_opt_in":"true"}', '{"native_user_opt_in":1}',
+    '{"allow_private_data":"true"}', '{"allow_private_data":1}',
+    '{"allow_private_data":null}', '{"allow_private_data":[]}',
+    '{"allow_private_data":false,"allow_private_data":true}',
+    '{"browser_evidence_id":1}', '{"native_evidence_id":1}',
     '{"automatic_research":"true"}', '{"verified":true}',
     '{"hard_cap_verified":true}', '{"endpoint":"https://example.invalid"}',
     '[]', 'null', 'not json',
@@ -336,16 +370,13 @@ def test_invalid_or_self_attesting_configuration(config: ConfigStore, value: str
         config.settings()
 
 
-def test_caller_evidence_ids_do_not_verify_billing_or_pilot(config: ConfigStore) -> None:
+def test_caller_evidence_id_does_not_verify_research_pilot(config: ConfigStore) -> None:
     write_private(config.root / "config.json", json.dumps({
-        "billing_evidence_id": "caller-assertion", "pilot_evidence_id": "caller-assertion",
+        "pilot_evidence_id": "caller-assertion",
         "automatic_research": True,
     }))
     settings = config.settings()
-    assert settings.monthly_limit == MONTHLY_CAP
-    assert settings.billing_evidence_id not in VERIFIED_BOUNDS
     assert settings.pilot_evidence_id not in VERIFIED_PILOTS
-    assert not VERIFIED_BOUNDS
     assert not VERIFIED_PILOTS
 
 

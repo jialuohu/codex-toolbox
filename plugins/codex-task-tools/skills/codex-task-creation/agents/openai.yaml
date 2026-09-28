@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codex Task Creation"
+  short_description: "Create one durable task in a verified Codex project."
+  default_prompt: "Use $codex-task-creation to create a new Codex task in an existing project with my title and prompt, then return its ID and verified status."
+policy:
+  allow_implicit_invocation: true

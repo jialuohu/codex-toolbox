@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Static checks for the Codex toolbox setup script."""
 
+import ast
 import hashlib
 import json
 import re
 import shlex
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -31,8 +34,10 @@ DOCUMENTATION_GUIDES = (
     "docs/web.md",
     "docs/coder.md",
     "docs/workflows.md",
+    "docs/codex-tasks.md",
     "docs/development.md",
     "docs/typesafe.md",
+    "docs/typesafe-computer-use.md",
 )
 STINKY_PENGUIN_DIR = ROOT / "config" / "codex" / "pets" / "stinky-penguin"
 STINKY_PENGUIN_MANIFEST = STINKY_PENGUIN_DIR / "pet.json"
@@ -173,6 +178,13 @@ PAPER_READ_REVIEW_OPENAI = PAPER_READ_REVIEW_SKILL.parent / "agents" / "openai.y
 WORKFLOW_PLUGIN = ROOT / "plugins" / "workflow-tools" / ".codex-plugin" / "plugin.json"
 CODER_PLUGIN = ROOT / "plugins" / "coder-tools" / ".codex-plugin" / "plugin.json"
 CODER_MCP = ROOT / "plugins" / "coder-tools" / ".mcp.json"
+CODEX_TASK_DIR = ROOT / "plugins" / "codex-task-tools"
+CODEX_TASK_PLUGIN = CODEX_TASK_DIR / ".codex-plugin" / "plugin.json"
+CODEX_TASK_MCP = CODEX_TASK_DIR / ".mcp.json"
+CODEX_TASK_SKILL = CODEX_TASK_DIR / "skills" / "codex-task-creation" / "SKILL.md"
+CODEX_TASK_OPENAI = CODEX_TASK_SKILL.parent / "agents" / "openai.yaml"
+CODEX_TASK_SERVER = CODEX_TASK_DIR / "server"
+CODEX_TASK_SETUP = ROOT / "scripts" / "setup-codex-task-tools.sh"
 DEEP_PLANNING_SKILL = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "SKILL.md"
 )
@@ -220,6 +232,16 @@ PAPER_FIGURE_REFERENCE = (
     / "references"
     / "templates.md"
 )
+PAPER_FIGURE_RESEARCH_STYLE = PAPER_FIGURE_SKILL.parent / "references" / "research-style.md"
+PAPER_FIGURE_SCAFFOLD = PAPER_FIGURE_SKILL.parent / "scripts" / "scaffold_research_figures.py"
+PAPER_FIGURE_STARTER = PAPER_FIGURE_SKILL.parent / "assets" / "research-figure-starter"
+OMNIGRAFFLE_TOOLS_DIR = ROOT / "plugins" / "omnigraffle-tools"
+OMNIGRAFFLE_PLUGIN = OMNIGRAFFLE_TOOLS_DIR / ".codex-plugin" / "plugin.json"
+OMNIGRAFFLE_SKILL = OMNIGRAFFLE_TOOLS_DIR / "skills" / "omnigraffle-workflow" / "SKILL.md"
+OMNIGRAFFLE_RESEARCH_SOURCE = OMNIGRAFFLE_TOOLS_DIR / "assets" / "research-templates" / "workflow.json"
+OMNIGRAFFLE_RESEARCH_README = OMNIGRAFFLE_RESEARCH_SOURCE.parent / "README.md"
+OMNIGRAFFLE_RESEARCH_SCRIPT = OMNIGRAFFLE_SKILL.parent / "scripts" / "research_workflow.py"
+OMNIGRAFFLE_STARTER_VERIFIER = OMNIGRAFFLE_SKILL.parent / "scripts" / "verify_research_starters.py"
 DIAGRAM_TOOLS_DIR = ROOT / "plugins" / "diagram-tools"
 DIAGRAM_TOOLS_PLUGIN = DIAGRAM_TOOLS_DIR / ".codex-plugin" / "plugin.json"
 DIAGRAM_TOOLS_PACKAGE = DIAGRAM_TOOLS_DIR / "package.json"
@@ -228,6 +250,7 @@ PRETTY_MERMAID_SKILL = PRETTY_MERMAID_DIR / "SKILL.md"
 PRETTY_MERMAID_OPENAI = PRETTY_MERMAID_DIR / "agents" / "openai.yaml"
 PRETTY_MERMAID_CLI = PRETTY_MERMAID_DIR / "scripts" / "pretty-mermaid.mjs"
 PRETTY_MERMAID_FIXTURES = PRETTY_MERMAID_DIR / "assets" / "fixtures"
+DIAGRAM_RESEARCH_STYLE = DIAGRAM_TOOLS_DIR / "skills" / "research-figure-style.md"
 DIAGRAM_BOOTSTRAP = DIAGRAM_TOOLS_DIR / "runtime" / "bootstrap"
 DIAGRAM_SETUP = ROOT / "scripts" / "setup-diagram-tools.sh"
 ARCHIFY_DIR = DIAGRAM_TOOLS_DIR / "skills" / "archify"
@@ -257,6 +280,9 @@ DRAWIO_LAUNCHER = DRAWIO_TOOLS_DIR / "scripts" / "run-drawio-mcp.sh"
 DRAWIO_VERIFIER = DRAWIO_TOOLS_DIR / "scripts" / "verify-drawio-runtime.mjs"
 DRAWIO_DESKTOP = DRAWIO_TOOLS_DIR / "scripts" / "drawio-desktop.sh"
 DRAWIO_FIXTURE = DRAWIO_TOOLS_DIR / "assets" / "fixtures" / "basic.drawio"
+DRAWIO_RESEARCH_TEMPLATES = DRAWIO_TOOLS_DIR / "assets" / "research-templates"
+DRAWIO_RESEARCH_BUILDER = DRAWIO_TOOLS_DIR / "scripts" / "build-research-templates.py"
+DRAWIO_RESEARCH_PREVIEW = DRAWIO_TOOLS_DIR / "scripts" / "preview-research-templates.py"
 DRAWIO_MCP_SMOKE = DRAWIO_TOOLS_DIR / "tests" / "mcp-smoke.mjs"
 DRAWIO_SETUP = ROOT / "scripts" / "setup-drawio-tools.sh"
 DRAWIO_WORKFLOW = ROOT / ".github" / "workflows" / "drawio-tools.yml"
@@ -381,6 +407,11 @@ GOOGLE_WORKSPACE_PROVENANCE = GOOGLE_WORKSPACE_DIR / "PROVENANCE.md"
 GOOGLE_WORKSPACE_LICENSE = GOOGLE_WORKSPACE_DIR / "LICENSE"
 GOOGLE_WORKSPACE_SKILLS_DIR = GOOGLE_WORKSPACE_DIR / "skills"
 GWS_SHARED_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-shared" / "SKILL.md"
+GWS_ACCOUNT_HELPER = GWS_SHARED_SKILL.parent / "scripts/gws-account.sh"
+GWS_ACCOUNT_HELPER_SHA256 = (
+    "6df5ab837bb3b04b3044c37ab8f49bf9aabbb9991c65586de59cce3d72dd8031"
+)
+GWS_COMPOSE_REFERENCE = GWS_SHARED_SKILL.parent / "references/compose.md"
 GWS_GMAIL_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail" / "SKILL.md"
 GWS_GMAIL_SEND_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail-send" / "SKILL.md"
 GWS_GMAIL_REPLY_SKILL = GOOGLE_WORKSPACE_SKILLS_DIR / "gws-gmail-reply" / "SKILL.md"
@@ -396,30 +427,6 @@ GWS_GMAIL_TRIAGE_SKILL = (
 )
 GOOGLE_WORKSPACE_LICENSE_SHA256 = (
     "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
-)
-GWS_SHARED_SKILL_SHA256 = (
-    "0bd1debf74c8161591394d4bf3a3a470150b351f0807088de1602f0285b8128a"
-)
-GWS_GMAIL_SKILL_SHA256 = (
-    "5dec2f19457737a4611fe073c9cb943c0e2337af12b7bb7cdd9e3b8571216ef3"
-)
-GWS_GMAIL_SEND_SKILL_SHA256 = (
-    "58e25295e204e414d429aa0fa80cc349eafaaea2816d6e64a25e2182367a9e42"
-)
-GWS_GMAIL_REPLY_SKILL_SHA256 = (
-    "0f8debeb36280fa48d1fd2767544dab45999925519b2a754f69c35736b6bc303"
-)
-GWS_GMAIL_REPLY_ALL_SKILL_SHA256 = (
-    "d1cfe8753e1cb151e7d93b679a0013fec29371311694c6f2d76a96f9d62f4648"
-)
-GWS_GMAIL_FORWARD_SKILL_SHA256 = (
-    "f03e8693bb59705edd17379f9c745e57b9d40f5b89edfff994f7719781f3a7a1"
-)
-GWS_GMAIL_READ_SKILL_SHA256 = (
-    "b5712fccedc4a706652633d8fa10c68c36c8b436da7a64a6c634f628c8feb60f"
-)
-GWS_GMAIL_TRIAGE_SKILL_SHA256 = (
-    "9ce72c66fbe1afe34d4183404c3e82be6ae89a4752334b2d11e6f8c20c6778d7"
 )
 GOOGLE_WORKSPACE_PROVENANCE_SHA256 = (
     "aff66c1f8bacb72b7a28d74a9718a9dafe54a66d457c7cc54245f4767493970c"
@@ -453,6 +460,17 @@ GLOBAL_GMAIL_ROUTING_PARAGRAPH = (
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise SystemExit(message)
+
+
+def require_plugin_version(plugin: dict, name: str) -> str:
+    """Validate release syntax without making the checker a release registry."""
+    version = plugin.get("version")
+    require(
+        isinstance(version, str)
+        and re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version),
+        f"{name} must declare a semantic version",
+    )
+    return version
 
 
 def array_body(script: str, name: str) -> str:
@@ -602,7 +620,7 @@ def validate_stevens_presentation_tools_contract(
         plugin.get("name") == "stevens-presentation-tools",
         "Stevens plugin name must be exact",
     )
-    require(plugin.get("version") == "0.2.1", "Stevens plugin version must be 0.2.1")
+    require_plugin_version(plugin, "stevens-presentation-tools")
     require(plugin.get("skills") == "./skills/", "Stevens plugin must expose its skills")
     require("mcpServers" not in plugin, "Stevens plugin must not declare an MCP server")
     require(
@@ -688,7 +706,7 @@ def validate_photo_tools_contract(
     require(manifest_path.is_file(), "photo-tools manifest must exist")
     manifest = json.loads(manifest_path.read_text())
     require(manifest.get("name") == "photo-tools", "photo-tools manifest name must be exact")
-    require(manifest.get("version") == "0.2.1", "photo-tools must be version 0.2.1")
+    require_plugin_version(manifest, "photo-tools")
     require(manifest.get("skills") == "./skills/", "photo-tools must expose ./skills/")
     require(
         "mcpServers" not in manifest and not (plugin_dir / ".mcp.json").exists(),
@@ -805,10 +823,7 @@ def validate_design_engineering_tools_contract(
         design_plugin.get("name") == "design-engineering-tools",
         "design-engineering-tools manifest name must be exact",
     )
-    require(
-        design_plugin.get("version") == "0.1.1",
-        "design-engineering-tools manifest version must be 0.1.1",
-    )
+    require_plugin_version(design_plugin, "design-engineering-tools")
     require(
         design_plugin.get("skills") == "./skills/",
         "design-engineering-tools manifest must expose ./skills/",
@@ -992,8 +1007,8 @@ def validate_google_workspace_tools_contract(
         "google-workspace-tools manifest name must be exact",
     )
     require(
-        google_workspace_plugin.get("version") == "0.1.0",
-        "google-workspace-tools manifest version must be 0.1.0",
+        re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", google_workspace_plugin.get("version", "")),
+        "google-workspace-tools manifest version must be valid semver",
     )
     require(
         google_workspace_plugin.get("license") == "Apache-2.0",
@@ -1446,6 +1461,27 @@ def validate_google_workspace_tools_contract(
         and "If it is absent, stop and\nask." in gws_shared_text,
         "gws shared contract must reject default account inference",
     )
+    require(GWS_ACCOUNT_HELPER.is_file(), "gws shared account runner must exist")
+    require(GWS_COMPOSE_REFERENCE.is_file(), "gws compose reference must exist")
+    gws_runtime_text = GWS_ACCOUNT_HELPER.read_text()
+    gws_compose_text = GWS_COMPOSE_REFERENCE.read_text()
+    require("scripts/gws-account.sh" in gws_shared_text and "references/compose.md" in gws_shared_text,
+            "gws shared skill must link its runtime and mandatory compose contract")
+    require("There is no same-request Gmail connector fallback. Fail closed" in gws_shared_text,
+            "gws shared runtime must forbid same-request connector fallback")
+    for clause in ('check --alias ALIAS', 'run --alias ALIAS --expected-email EMAIL --',
+                   'isolated_gws auth status', 'isolated_gws "$@"',
+                   'os.environ["EXPECTED_EMAIL"].casefold()', 'os.environ["REQUESTED_EMAIL"].casefold()'):
+        require(clause in gws_runtime_text, f"gws account helper must preserve {clause}")
+    scopes = re.search(r"required_scopes = (\{.*?\})", gws_runtime_text, re.DOTALL)
+    try:
+        required_scopes = ast.literal_eval(scopes[1]) if scopes else None
+    except (ValueError, SyntaxError):
+        required_scopes = None
+    require(required_scopes == {
+        "openid", "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile",
+    }, "gws shared runtime must use exactly the four canonical scopes")
     shared_runtime_requirements = (
         (
             "  cd / || exit 1\n",
@@ -1587,20 +1623,16 @@ def validate_google_workspace_tools_contract(
             "and any(scope_set == accepted for accepted in accepted_scope_sets)\n",
             "gws shared runtime must require one exact accepted scope set",
         ),
-        (
-            "There is no same-request Gmail connector fallback. Fail closed.\n",
-            "gws shared runtime must forbid same-request connector fallback",
-        ),
     )
     for expected, message in shared_runtime_requirements:
-        require(expected in gws_shared_text, message)
+        require(expected in gws_runtime_text, message)
     require(
-        "    -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \\" in gws_shared_text,
+        "    -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \\" in gws_runtime_text,
         "gws shared contract must clear ambient GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE",
     )
     require(
         all(
-            expected in gws_shared_text
+            expected in gws_runtime_text
             for expected in (
                 'secrets_root_path="${CODEX_SECRETS_DIR:-${CODEX_HOME:-$HOME/.codex}/secrets}"',
                 '[ "$secrets_root" = "$secrets_root_path" ] || exit 1',
@@ -1618,7 +1650,7 @@ def validate_google_workspace_tools_contract(
     )
     require(
         all(
-            expected in gws_shared_text
+            expected in gws_runtime_text
             for expected in (
                 '        "profile.json",',
                 '        "client_secret.json",',
@@ -1626,19 +1658,23 @@ def validate_google_workspace_tools_contract(
                 '        ".encryption_key",',
             )
         )
-        and gws_shared_text.index('        "credentials.enc",')
-        < gws_shared_text.index('status_json="$('),
+        and gws_runtime_text.index('        "credentials.enc",')
+        < gws_runtime_text.index('status_json="$('),
         "gws shared contract must require encrypted credential files before status",
     )
     require(
         'if os.path.lexists(os.path.join(profile, "credentials.json")):'
-        in gws_shared_text
-        and 'status.get("plain_credentials_exists") is False' in gws_shared_text,
+        in gws_runtime_text
+        and 'status.get("plain_credentials_exists") is False' in gws_runtime_text,
         "gws shared contract must reject plaintext credential state",
     )
     require(
+        hashlib.sha256(GWS_ACCOUNT_HELPER.read_bytes()).hexdigest() == GWS_ACCOUNT_HELPER_SHA256,
+        "gws account helper must match the reviewed executable checksum",
+    )
+    require(
         all(
-            expected in gws_shared_text
+            expected in gws_compose_text
             for expected in (
                 "Create a private temporary directory with mode `700`",
                 "one mode-`700` child directory",
@@ -1650,26 +1686,21 @@ def validate_google_workspace_tools_contract(
     )
     require(
         "After the copy, perform a post-copy original restat and rehash"
-        in gws_shared_text
+        in gws_compose_text
         and "same non-symlink regular object, canonical target, device/inode, byte size,\n"
-        "   and digest recorded initially" in gws_shared_text,
+        "   and digest recorded initially" in gws_compose_text,
         "gws shared contract must restat and rehash the original after staging",
     )
     require(
         "require its staged\n   digest and size to match the original record"
-        in gws_shared_text,
+        in gws_compose_text,
         "gws shared contract must verify staged size and digest",
     )
     require(
         "Require the final staged digest and identity to match the\n"
         "   staged record. Invoke gws with only the staged copy; never pass the mutable\n"
-        "   original path." in gws_shared_text,
+        "   original path." in gws_compose_text,
         "gws shared contract must verify the final staged copy and never pass the original path",
-    )
-    require(
-        hashlib.sha256(GWS_SHARED_SKILL.read_bytes()).hexdigest()
-        == GWS_SHARED_SKILL_SHA256,
-        "gws-shared security contract must match the canonical reviewed text",
     )
     require(
         GWS_GMAIL_SKILL.exists(),
@@ -1695,160 +1726,58 @@ def validate_google_workspace_tools_contract(
         ),
         "gws Gmail contract must keep raw send inside the exact new-draft helper boundary",
     )
-    require(
-        hashlib.sha256(GWS_GMAIL_SKILL.read_bytes()).hexdigest()
-        == GWS_GMAIL_SKILL_SHA256,
-        "gws-gmail security contract must match the canonical reviewed text",
-    )
     compose_skills = {
-        "gws-gmail-send": (
-            GWS_GMAIL_SEND_SKILL,
-            GWS_GMAIL_SEND_SKILL_SHA256,
-            r"\+send",
-        ),
-        "gws-gmail-reply": (
-            GWS_GMAIL_REPLY_SKILL,
-            GWS_GMAIL_REPLY_SKILL_SHA256,
-            r"\+reply",
-        ),
-        "gws-gmail-reply-all": (
-            GWS_GMAIL_REPLY_ALL_SKILL,
-            GWS_GMAIL_REPLY_ALL_SKILL_SHA256,
-            r"\+reply-all",
-        ),
-        "gws-gmail-forward": (
-            GWS_GMAIL_FORWARD_SKILL,
-            GWS_GMAIL_FORWARD_SKILL_SHA256,
-            r"\+forward",
-        ),
+        "gws-gmail-send": (GWS_GMAIL_SEND_SKILL, "+send"),
+        "gws-gmail-reply": (GWS_GMAIL_REPLY_SKILL, "+reply"),
+        "gws-gmail-reply-all": (GWS_GMAIL_REPLY_ALL_SKILL, "+reply-all"),
+        "gws-gmail-forward": (GWS_GMAIL_FORWARD_SKILL, "+forward"),
     }
-    for skill_name, (skill_path, expected_sha256, helper_pattern) in compose_skills.items():
-        require(skill_path.exists(), f"{skill_name} skill must exist")
+    runner = '/bin/bash "$gws_account" run --alias "$gws_alias" --expected-email "$expected_email" -- gmail '
+    for skill_name, (skill_path, helper) in compose_skills.items():
+        require(skill_path.is_file(), f"{skill_name} skill must exist")
         skill_text = skill_path.read_text()
-        skill_normalized = normalized(skill_text)
-        helper_prefix = rf'`"\$gws_bin" gmail {helper_pattern} [^`\r\n]*'
-        require(
-            re.search(
-                helper_prefix + r'--from "\$expected_email"',
-                skill_text,
-            )
-            is not None,
-            f"{skill_name} must bind the helper draft to the verified From identity",
-        )
-        require(
-            "Always create a server-side draft first" in skill_normalized
-            or "always create a server-side draft first" in skill_normalized,
-            f"{skill_name} must always create a server-side draft first",
-        )
-        require(
-            re.search(helper_prefix + r"--draft`", skill_text) is not None,
-            f"{skill_name} must always create a server-side draft first",
-        )
-        require(
-            all(
-                expected in skill_text
-                for expected in (
-                    '"userId": "me",',
-                    '"id": os.environ["DRAFT_ID"],',
-                    '"format": "full",',
-                    'draft_json="$(isolated_gws gmail users drafts get --params "$draft_get_params")" || exit 1',
-                )
-            ),
-            f"{skill_name} must fetch the exact new draft in full",
-        )
-        require(
-            all(
-                expected in skill_normalized
-                for expected in (
-                    "Validate the actual From",
-                    "case-insensitively against `$expected_email`",
-                    "actual To/CC/BCC",
-                    "subject",
-                    "thread context",
-                    "attachment names and count",
-                )
-            ),
-            f"{skill_name} must validate authoritative draft envelope and attachment fields",
-        )
-        require(
-            all(
-                expected in skill_normalized
-                for expected in (
-                    "Recursively base64url-decode every inline",
-                    "`text/plain` and `text/html` MIME leaf",
-                    "Validate decoded body content against the requested body",
-                    "Missing or undecodable body bytes fail",
-                )
-            ),
-            f"{skill_name} must validate decoded draft body content",
-        )
-        require(
-            all(
-                expected in skill_normalized
-                for expected in (
-                    "canonical MIME content digest from each part path",
-                    "decoded byte length, and SHA-256 of its decoded bytes",
-                    "decoded body bytes and canonical MIME content digest",
-                )
-            ),
-            f"{skill_name} must validate the canonical MIME content digest",
-        )
-        require(
-            'draft_json_again="$(isolated_gws gmail users drafts get '
-            '--params "$draft_get_params")" || exit 1' in skill_text,
-            f"{skill_name} must immediately reread the exact new draft before send",
-        )
-        require(
-            skill_text.count('"id": os.environ["DRAFT_ID"]') == 2
-            and 'print(json.dumps({"id": os.environ["DRAFT_ID"]}, separators=(",", ":")))'
-            in skill_text,
-            f"{skill_name} must send only the exact newly created draft ID",
-        )
-        require(
-            'isolated_gws gmail users drafts send --params \'{"userId":"me"}\' '
-            '--json "$draft_send_body" || exit 1' in skill_text
-            and "never rebuild or send with `users.messages.send`"
-            in skill_normalized,
-            f"{skill_name} must use the narrow exact raw drafts.send command",
-        )
-        require(
-            all(
-                expected in skill_normalized
-                for expected in (
-                    "shared attachment safety contract",
-                    "private temporary directory",
-                    "initial lstat",
-                    "device/inode",
-                    "SHA-256",
-                    "byte size",
-                    "copy the exact bytes",
-                    "post-copy original restat",
-                    "staged digest",
-                    "final staged digest check",
-                    "pass only the staged copy to gws",
-                    "Never pass the mutable user-supplied path",
-                    "cleanup on every exit",
-                )
-            ),
-            f"{skill_name} must enforce staged attachment integrity",
-        )
-        require(
-            hashlib.sha256(skill_path.read_bytes()).hexdigest() == expected_sha256,
-            f"{skill_name} security contract must match the canonical reviewed text",
-        )
-    for skill_name, skill_path, expected_sha256 in (
-        ("gws-gmail-read", GWS_GMAIL_READ_SKILL, GWS_GMAIL_READ_SKILL_SHA256),
-        (
-            "gws-gmail-triage",
-            GWS_GMAIL_TRIAGE_SKILL,
-            GWS_GMAIL_TRIAGE_SKILL_SHA256,
-        ),
+        require("../gws-shared/references/compose.md" in skill_text,
+                f"{skill_name} must load the shared compose contract")
+        command = next((line for line in skill_text.splitlines() if line.startswith(runner + helper + " ")), "")
+        require('--from "$expected_email"' in command,
+                f"{skill_name} must bind the helper draft to the verified From identity")
+        require(command.endswith(" --draft"), f"{skill_name} must always create a server-side draft first")
+
+    # Shared workflow checks have one owner; leaves retain operation-specific
+    # recipient/thread validation. Runtime behavior is tested with fake gws.
+    skill_name = "gws-gmail-send"
+    skill_text = gws_compose_text
+    skill_normalized = normalized(skill_text)
+    for clauses, diagnostic in (
+        (('"userId": "me",', '"id": os.environ["DRAFT_ID"],', '"format": "full",',
+          'draft_json="$(' + runner + 'users drafts get --params "$draft_get_params")" || exit 1'),
+         "must fetch the exact new draft in full"),
+        (("Validate the actual From", "case-insensitively against `$expected_email`", "actual To/CC/BCC",
+          "subject", "thread context", "attachment names and count"),
+         "must validate authoritative draft envelope and attachment fields"),
+        (("Recursively base64url-decode every inline", "`text/plain` and `text/html` MIME leaf",
+          "Validate decoded body content against the requested body", "Missing or undecodable body bytes fail"),
+         "must validate decoded draft body content"),
+        (("canonical MIME content digest from each part path", "decoded byte length, and SHA-256 of its decoded bytes",
+          "decoded body bytes and canonical MIME content digest"),
+         "must validate the canonical MIME content digest"),
+        (('draft_json_again="$(' + runner + 'users drafts get --params "$draft_get_params")" || exit 1',),
+         "must immediately reread the exact new draft before send"),
+        (("Only explicit user intent to send now", "A draft-only request stops after", "immediate unchanged readback"),
+         "must preserve the explicit send boundary"),
     ):
-        require(skill_path.exists(), f"{skill_name} skill must exist")
-        require(
-            hashlib.sha256(skill_path.read_bytes()).hexdigest() == expected_sha256,
-            f"{skill_name} security contract must match the canonical reviewed text",
-        )
+        require(all(normalized(clause) in skill_normalized for clause in clauses), f"{skill_name} {diagnostic}")
+    require(skill_text.count('"id": os.environ["DRAFT_ID"]') == 2
+            and 'print(json.dumps({"id": os.environ["DRAFT_ID"]}, separators=(",", ":")))' in skill_text,
+            f"{skill_name} must send only the exact newly created draft ID")
+    require(runner + "users drafts send --params '{\"userId\":\"me\"}' --json \"$draft_send_body\" || exit 1" in skill_text
+            and "never rebuild or send with `users.messages.send`" in skill_normalized,
+            f"{skill_name} must use the narrow exact raw drafts.send command")
+    for skill_name, skill_path in (("gws-gmail-read", GWS_GMAIL_READ_SKILL), ("gws-gmail-triage", GWS_GMAIL_TRIAGE_SKILL)):
+        require(skill_path.is_file(), f"{skill_name} skill must exist")
+        skill_text = skill_path.read_text()
+        require("../gws-shared/SKILL.md" in skill_text and runner in skill_text,
+                f"{skill_name} must use the shared account preflight and runner")
 
     global_agents_requirements = (
         (
@@ -2048,7 +1977,7 @@ def validate_overleaf_tools_contract(
     plugin = json.loads(OVERLEAF_PLUGIN.read_text())
     mcp = json.loads(OVERLEAF_MCP.read_text())
     require(plugin.get("name") == "overleaf-tools", "Overleaf plugin name must be exact")
-    require(plugin.get("version") == "0.1.4", "overleaf-tools must use version 0.1.4")
+    version = re.escape(require_plugin_version(plugin, "overleaf-tools"))
     require(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "Overleaf manifest must use neutral publisher metadata",
@@ -2059,9 +1988,9 @@ def validate_overleaf_tools_contract(
         "Overleaf manifest must register its MCP config",
     )
     for path, pattern in (
-        (OVERLEAF_PYPROJECT, r'(?m)^version = "0\.1\.4"$'),
-        (OVERLEAF_UV_LOCK, r'(?ms)^name = "overleaf-tools"\nversion = "0\.1\.4"$'),
-        (OVERLEAF_PACKAGE_INIT, r'(?m)^__version__ = "0\.1\.4"$'),
+        (OVERLEAF_PYPROJECT, rf'(?m)^version = "{version}"$'),
+        (OVERLEAF_UV_LOCK, rf'(?ms)^name = "overleaf-tools"\nversion = "{version}"$'),
+        (OVERLEAF_PACKAGE_INIT, rf'(?m)^__version__ = "{version}"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2208,11 +2137,11 @@ def validate_apple_mail_tools_contract(
     plugin = json.loads(APPLE_MAIL_PLUGIN.read_text())
     mcp = json.loads(APPLE_MAIL_MCP.read_text())
     require(plugin.get("name") == "apple-mail-tools", "Apple Mail plugin name must be exact")
-    require(plugin.get("version") == "0.2.4", "apple-mail-tools must use version 0.2.4")
+    version = re.escape(require_plugin_version(plugin, "apple-mail-tools"))
     for path, pattern in (
-        (APPLE_MAIL_PYPROJECT, r'(?m)^version = "0\.2\.4"$'),
-        (APPLE_MAIL_UV_LOCK, r'(?ms)^name = "apple-mail-tools"\nversion = "0\.2\.4"$'),
-        (APPLE_MAIL_PACKAGE_INIT, r'(?m)^__version__ = "0\.2\.4"$'),
+        (APPLE_MAIL_PYPROJECT, rf'(?m)^version = "{version}"$'),
+        (APPLE_MAIL_UV_LOCK, rf'(?ms)^name = "apple-mail-tools"\nversion = "{version}"$'),
+        (APPLE_MAIL_PACKAGE_INIT, rf'(?m)^__version__ = "{version}"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2469,11 +2398,11 @@ def validate_docmost_tools_contract(
         plugin.get("author", {}).get("name") == "Codex Toolbox Contributors",
         "docmost manifest must use neutral publisher metadata",
     )
-    require(plugin.get("version") == "0.8.3", "docmost-tools must use version 0.8.3")
+    version = re.escape(require_plugin_version(plugin, "docmost-tools"))
     for path, pattern in (
-        (DOCMOST_PYPROJECT, r'(?m)^version = "0\.8\.3"$'),
-        (DOCMOST_UV_LOCK, r'(?ms)^name = "docmost-tools"\nversion = "0\.8\.3"$'),
-        (DOCMOST_PACKAGE_INIT, r'(?m)^__version__ = "0\.8\.3"$'),
+        (DOCMOST_PYPROJECT, rf'(?m)^version = "{version}"$'),
+        (DOCMOST_UV_LOCK, rf'(?ms)^name = "docmost-tools"\nversion = "{version}"$'),
+        (DOCMOST_PACKAGE_INIT, rf'(?m)^__version__ = "{version}"$'),
     ):
         require(
             re.search(pattern, path.read_text()) is not None,
@@ -2830,6 +2759,7 @@ def validate_diagram_tools_contract(
         PRETTY_MERMAID_DIR / "scripts" / "runtime-manager.mjs",
         PRETTY_MERMAID_DIR / "scripts" / "contract-cli.mjs",
         PRETTY_MERMAID_DIR / "references" / "cli.md",
+        DIAGRAM_RESEARCH_STYLE,
         ARCHIFY_SKILL,
         ARCHIFY_OPENAI,
         ARCHIFY_REFERENCE,
@@ -2851,10 +2781,14 @@ def validate_diagram_tools_contract(
         DEPENDABOT,
     )
     require(all(path.is_file() for path in required_files), "diagram-tools required files must exist")
+    research_style_text = DIAGRAM_RESEARCH_STYLE.read_text()
+    for expected in ("new research figures", "ordinary", "--surface", "visual_preset", "schematic"):
+        require(expected in research_style_text.lower(),
+                f"diagram research guidance must mention {expected}")
 
     plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
-    require(plugin.get("version") == "0.5.0", "diagram-tools manifest version must be 0.5.0")
+    require_plugin_version(plugin, "diagram-tools")
     publisher = DIAGRAM_TOOLS_DIR / "skills" / "diagram-publish"
     publisher_runtime = DIAGRAM_TOOLS_DIR / "runtime" / "publisher"
     for relative in ("SKILL.md", "agents/openai.yaml", "scripts/diagram_publish.py"):
@@ -3138,8 +3072,8 @@ def validate_diagram_tools_contract(
     bootstrap_lock = json.loads((DIAGRAM_BOOTSTRAP / "package-lock.json").read_text())
     diagram_package = json.loads(DIAGRAM_TOOLS_PACKAGE.read_text())
     require(
-        diagram_package.get("version") == "0.5.0",
-        "Diagram Tools test package must track plugin version 0.5.0",
+        diagram_package.get("version") == plugin["version"],
+        "Diagram Tools test package must track its plugin version",
     )
     diagram_scripts = diagram_package.get("scripts", {})
     require(
@@ -3288,6 +3222,13 @@ def validate_drawio_tools_contract(
         DRAWIO_VERIFIER,
         DRAWIO_DESKTOP,
         DRAWIO_FIXTURE,
+        DRAWIO_RESEARCH_TEMPLATES / "README.md",
+        DRAWIO_RESEARCH_TEMPLATES / "architecture-overview.drawio",
+        DRAWIO_RESEARCH_TEMPLATES / "execution-timeline.drawio",
+        DRAWIO_RESEARCH_TEMPLATES / "cache-memory-mechanism.drawio",
+        DRAWIO_RESEARCH_BUILDER,
+        DRAWIO_RESEARCH_PREVIEW,
+        DRAWIO_SKILL_DIR / "references" / "research-figures.md",
         DRAWIO_MCP_SMOKE,
         DRAWIO_BOOTSTRAP / "package.json",
         DRAWIO_BOOTSTRAP / "package-lock.json",
@@ -3299,12 +3240,16 @@ def validate_drawio_tools_contract(
         DRAWIO_TEST,
     )
     require(all(path.is_file() for path in required_files), "drawio-tools required files must exist")
+    for name in ("architecture-overview", "execution-timeline", "cache-memory-mechanism"):
+        source = (DRAWIO_RESEARCH_TEMPLATES / f"{name}.drawio").read_text()
+        require("mxGraphModel" in source and "mxCell" in source,
+                f"{name} must retain editable native draw.io source")
     for executable in (DRAWIO_LAUNCHER, DRAWIO_VERIFIER, DRAWIO_DESKTOP, DRAWIO_MCP_SMOKE, DRAWIO_SETUP):
         require(executable.stat().st_mode & 0o111, f"{executable.name} must be executable")
 
     plugin = json.loads(DRAWIO_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "drawio-tools", "drawio-tools manifest name must be exact")
-    require(plugin.get("version") == "0.1.4", "drawio-tools manifest version must be 0.1.4")
+    require_plugin_version(plugin, "drawio-tools")
     require(plugin.get("skills") == "./skills/", "drawio-tools must expose its skill")
     require(plugin.get("mcpServers") == "./.mcp.json", "drawio-tools must expose its MCP config")
     require(plugin.get("license") == "MIT", "drawio-tools must declare its toolbox license")
@@ -3478,13 +3423,25 @@ def validate_drawio_tools_contract(
         "$drawio" in paper_text and "publication" in paper_text,
         "paper-figure-workflow must delegate Draw.io execution without giving up pipeline ownership",
     )
+    require_plugin_version(json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()), "diagram-tools")
+    require_plugin_version(json.loads(PAPER_FIGURE_PLUGIN.read_text()), "paper-figure-tools")
+    require_plugin_version(json.loads(OMNIGRAFFLE_PLUGIN.read_text()), "omnigraffle-tools")
     require(
-        json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()).get("version") == "0.5.0",
-        "diagram-tools version must reflect the Archify and Draw.io routing boundaries",
+        "doctor --probe-app" in paper_text and "native acceptance" in paper_text,
+        "paper-figure-workflow must gate automatic OmniGraffle preference on native acceptance",
+    )
+    paper_skill_dir = PAPER_FIGURE_SKILL.parent
+    scaffold_text = (paper_skill_dir / "scripts/scaffold_research_figures.py").read_text()
+    starter = paper_skill_dir / "assets/research-figure-starter"
+    exporter_text = (starter / "scripts/export_diagrams.py").read_text()
+    require(
+        "--diagram-owner" in scaffold_text and "diagram-owner.json" in scaffold_text,
+        "research scaffold must record the selected native diagram owner",
     )
     require(
-        json.loads(PAPER_FIGURE_PLUGIN.read_text()).get("version") == "0.2.2",
-        "paper-figure-tools version must reflect Draw.io execution delegation",
+        (starter / "scripts/init_omni_diagram.py").is_file()
+        and "OMNI_RUNTIME" in exporter_text and "saved .graffle canvas" in exporter_text,
+        "research starter must include project-local native initialization and export checks",
     )
 
     for expected in (
@@ -3593,11 +3550,11 @@ def main() -> None:
     for expected in (
         "built-in Codex web search for ordinary public discovery",
         "`$community-research`",
-        "public community or forum discussions",
+        "public community/forum discussions",
         "user reports",
         "sentiment",
-        "community troubleshooting",
-        "official or canonical corroboration",
+        "troubleshooting",
+        "corroborate with official or canonical sources",
     ):
         require(
             expected in global_agents_normalized,
@@ -3853,6 +3810,10 @@ def main() -> None:
     require(OBSIDIAN_MCP.exists(), "obsidian-tools must define an MCP config")
     require(CODER_PLUGIN.exists(), "coder-tools plugin manifest must exist")
     require(CODER_MCP.exists(), "coder-tools must define an MCP config")
+    require(CODEX_TASK_PLUGIN.exists(), "codex-task-tools plugin manifest must exist")
+    require(CODEX_TASK_MCP.exists(), "codex-task-tools MCP config must exist")
+    require(CODEX_TASK_SKILL.exists(), "codex-task-creation skill must exist")
+    require(CODEX_TASK_OPENAI.exists(), "codex-task-creation OpenAI metadata must exist")
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
     require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
@@ -3889,6 +3850,40 @@ def main() -> None:
         PAPER_FIGURE_REFERENCE.exists(),
         "paper-figure-workflow must include figure templates reference",
     )
+    for path in (
+        OMNIGRAFFLE_PLUGIN,
+        OMNIGRAFFLE_SKILL,
+        OMNIGRAFFLE_RESEARCH_SOURCE,
+        OMNIGRAFFLE_RESEARCH_README,
+        OMNIGRAFFLE_RESEARCH_SCRIPT,
+        OMNIGRAFFLE_STARTER_VERIFIER,
+    ):
+        require(path.is_file(), f"omnigraffle research workflow must include {path.name}")
+    native_starters = subprocess.run([sys.executable, str(OMNIGRAFFLE_STARTER_VERIFIER)],
+                                    capture_output=True, text=True, timeout=20)
+    require(native_starters.returncode == 0,
+            f"bundled native research starters must pass portable package verification: {native_starters.stderr.strip()}")
+    for path in (
+        PAPER_FIGURE_RESEARCH_STYLE,
+        PAPER_FIGURE_SCAFFOLD,
+        PAPER_FIGURE_STARTER / "Makefile",
+        PAPER_FIGURE_STARTER / "FIGURES_README.md",
+        PAPER_FIGURE_STARTER / "requirements.in",
+        PAPER_FIGURE_STARTER / "requirements.txt",
+        PAPER_FIGURE_STARTER / "scripts" / "verify_exports.py",
+        PAPER_FIGURE_STARTER / "scripts" / "export_diagrams.py",
+        PAPER_FIGURE_STARTER / "figures_src" / "plots" / "research.mplstyle",
+        PAPER_FIGURE_STARTER / "figures_src" / "plots" / "method_styles.json",
+        *(PAPER_FIGURE_STARTER / "figures_src" / "plots" / name for name in (
+            "figure_common.py", "grouped_bars.py", "line_scaling.py", "empirical_cdf.py",
+            "stacked_breakdown.py",
+        )),
+        *(PAPER_FIGURE_STARTER / "figures_src" / "plots" / "data" / name for name in (
+            "grouped-bars.json", "line-scaling.json", "empirical-cdf.json",
+            "breakdown-bars.json", "breakdown-area.json",
+        )),
+    ):
+        require(path.is_file(), f"paper-figure research starter must include {path.name}")
     require(PRODUCTIVITY_PLUGIN.exists(), "productivity-tools plugin manifest must exist")
     require(PRODUCTIVITY_MCP.exists(), "productivity-tools must define an MCP config")
     require(CANVAS_PLUGIN.exists(), "canvas-tools plugin manifest must exist")
@@ -3919,6 +3914,8 @@ def main() -> None:
     research_mcp = json.loads(RESEARCH_MCP.read_text())
     coder_plugin = json.loads(CODER_PLUGIN.read_text())
     coder_mcp = json.loads(CODER_MCP.read_text())
+    codex_task_plugin = json.loads(CODEX_TASK_PLUGIN.read_text())
+    codex_task_mcp = json.loads(CODEX_TASK_MCP.read_text())
     workflow_plugin = json.loads(WORKFLOW_PLUGIN.read_text())
     paper_figure_plugin = json.loads(PAPER_FIGURE_PLUGIN.read_text())
     productivity_plugin = json.loads(PRODUCTIVITY_PLUGIN.read_text())
@@ -3934,10 +3931,11 @@ def main() -> None:
     robinhood_server = trading_mcp.get("mcpServers", {}).get("robinhood-trading")
     todoist_server = productivity_mcp.get("mcpServers", {}).get("todoist")
     coder_server = coder_mcp.get("mcpServers", {}).get("coder")
+    codex_task_server = codex_task_mcp.get("mcpServers", {}).get("codex_task_tools")
     obsidian_files_server = obsidian_mcp.get("mcpServers", {}).get("obsidian_files")
 
     require(web_data_plugin.get("name") == "web-data-tools", "web-data-tools name must be exact")
-    require(web_data_plugin.get("version") == "0.5.2", "web-data-tools must use version 0.5.2")
+    require_plugin_version(web_data_plugin, "web-data-tools")
     require(
         web_data_plugin.get("skills") == "./skills/",
         "web-data-tools manifest must expose its community-research skill",
@@ -4278,14 +4276,6 @@ def main() -> None:
     ):
         require(expected in script, f"setup script must support upgradeable toolbox marketplace: {expected}")
     require(
-        "declare -a OLD_MARKETPLACE_NAMES=()" in script,
-        "setup script must not publish retired personal marketplace aliases",
-    )
-    require(
-        "remove_stale_plugin_config_blocks" in script,
-        "setup script must remove stale retired-marketplace plugin config blocks",
-    )
-    require(
         'UI_UX_MARKETPLACE_NAME="ui-ux-pro-max-skill"' in script,
         "setup script must define the UI/UX Pro Max marketplace name",
     )
@@ -4341,6 +4331,14 @@ def main() -> None:
         "setup script must install the coder-tools plugin",
     )
     require(
+        '  "codex-task-tools"' in default_plugins,
+        "setup script must install the codex-task-tools plugin",
+    )
+    require(
+        '"$ROOT/scripts/setup-codex-task-tools.sh" --install' in script,
+        "setup script must install the codex-task-tools broker",
+    )
+    require(
         '  "paper-figure-tools"' in default_plugins,
         "setup script must install the paper-figure-tools plugin",
     )
@@ -4359,6 +4357,10 @@ def main() -> None:
     require(
         '  "coder"' in managed_mcp_servers,
         "setup script must manage the coder MCP server cleanup list",
+    )
+    require(
+        '  "codex_task_tools"' in managed_mcp_servers,
+        "setup script must manage the codex-task-tools MCP server cleanup list",
     )
     require(
         any(
@@ -4393,13 +4395,84 @@ def main() -> None:
         "marketplace must include coder-tools",
     )
     require(
+        any(
+            plugin.get("name") == "codex-task-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/codex-task-tools"
+            for plugin in marketplace.get("plugins", [])
+        ),
+        "marketplace must include codex-task-tools",
+    )
+    require(codex_task_plugin.get("name") == "codex-task-tools", "codex-task-tools name must be exact")
+    task_version = re.escape(require_plugin_version(codex_task_plugin, "codex-task-tools"))
+    for path, pattern in (
+        (CODEX_TASK_SERVER / "pyproject.toml", rf'(?m)^version = "{task_version}"$'),
+        (CODEX_TASK_SERVER / "uv.lock", rf'(?ms)^name = "codex-task-tools"\nversion = "{task_version}"$'),
+        (CODEX_TASK_SERVER / "src/codex_task_tools/__init__.py", rf'(?m)^__version__ = "{task_version}"$'),
+    ):
+        require(re.search(pattern, path.read_text()) is not None,
+                f"Codex task version metadata must be synchronized in {path.name}")
+    require(codex_task_plugin.get("skills") == "./skills/", "codex-task-tools must expose its skill")
+    require(codex_task_plugin.get("mcpServers") == "./.mcp.json", "codex-task-tools must expose its MCP config")
+    require(
+        set(codex_task_mcp.get("mcpServers", {})) == {"codex_task_tools"},
+        "codex-task-tools must own exactly one MCP server",
+    )
+    require(isinstance(codex_task_server, dict), "codex-task-tools MCP server must be configured")
+    require(codex_task_server.get("command") == "uv", "codex-task-tools MCP must use uv")
+    require(
+        codex_task_server.get("args") == [
+            "run", "--frozen", "--no-dev", "--no-editable", "--no-env-file",
+            "--project", "server", "codex-task-tools-mcp",
+        ],
+        "codex-task-tools MCP must launch the frozen local package",
+    )
+    require(codex_task_server.get("cwd") == ".", "codex-task-tools MCP must use its plugin root")
+    require(
+        codex_task_server.get("env_vars") == ["CODEX_HOME"],
+        "codex-task-tools MCP may forward only CODEX_HOME",
+    )
+    require(
+        codex_task_server.get("default_tools_approval_mode") == "auto",
+        "codex-task-tools MCP must rely on explicit user requests without a second tool prompt",
+    )
+    require(
+        "tools" not in codex_task_server,
+        "codex-task-tools MCP must use the owning skill's explicit user request",
+    )
+    task_skill_text = CODEX_TASK_SKILL.read_text()
+    require(
+        "explicitly asks" in task_skill_text
+        and "matching directory" in task_skill_text
+        and "idempotencyKey" in task_skill_text,
+        "codex-task-creation skill must preserve explicit request and project identity gates",
+    )
+    require(
+        (CODEX_TASK_SERVER / "pyproject.toml").exists()
+        and (CODEX_TASK_SERVER / "uv.lock").exists(),
+        "codex-task-tools must include its locked Python package",
+    )
+    require(CODEX_TASK_SETUP.exists(), "codex-task-tools service setup must exist")
+    task_setup_text = CODEX_TASK_SETUP.read_text()
+    for expected in (
+        "codex mcp get codex_task_tools --json",
+        "codex-task-tools-service",
+        "lock --check",
+        "sync --active --locked --no-dev --no-editable",
+        '"$SERVICE_BIN" status',
+        '"$SERVICE_BIN" stop',
+        '"$SERVICE_BIN" start',
+        "activeTaskCount",
+        "pendingApprovalCount",
+    ):
+        require(
+            expected in task_setup_text or expected.replace("codex mcp", '"$CODEX_BIN" mcp') in task_setup_text,
+            f"codex-task-tools service setup must include {expected}",
+        )
+    require(
         coder_plugin.get("mcpServers") == "./.mcp.json",
         "coder-tools must expose its MCP config",
     )
-    require(
-        coder_plugin.get("version") == "0.1.0",
-        "coder-tools plugin version must start at 0.1.0",
-    )
+    require_plugin_version(coder_plugin, "coder-tools")
     require(coder_server is not None, "coder-tools must define the coder MCP server")
     require(
         coder_server.get("command") == "/bin/zsh",
@@ -4472,10 +4545,7 @@ def main() -> None:
         "productivity-tools must expose its MCP config",
     )
     productivity_interface = productivity_plugin.get("interface", {})
-    require(
-        productivity_plugin.get("version") == "0.2.1",
-        "productivity-tools plugin version must reflect daily-command-center",
-    )
+    require_plugin_version(productivity_plugin, "productivity-tools")
     require(
         "Todoist" in productivity_interface.get("longDescription", ""),
         "productivity-tools description must mention Todoist",
@@ -4576,7 +4646,8 @@ def main() -> None:
         '  "canvas-tools"' not in default_plugins,
         "canvas-tools must remain opt-in because it requires institutional credentials",
     )
-    require(canvas_plugin.get("version") == "0.2.1", "canvas-tools must be version 0.2.1")
+    require(re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", canvas_plugin.get("version", "")),
+            "canvas-tools must declare a semantic version")
     require(canvas_plugin.get("skills") == "./skills/", "canvas-tools must expose its skill")
     require(canvas_plugin.get("mcpServers") == "./.mcp.json", "canvas-tools must expose its MCP config")
     canvas_server = canvas_mcp.get("mcpServers", {}).get("canvas")
@@ -4649,18 +4720,19 @@ def main() -> None:
         'url: "https://ai.todoist.net/mcp"',
     ):
         require(expected in canvas_openai, f"Canvas OpenAI metadata must mention {expected}")
-    canvas_homework_text = normalized(CANVAS_HOMEWORK_SKILL.read_text())
-    for expected in (
-        "Never paraphrase, summarize, correct grammar",
-        "Include every figure that belongs to the question",
-        "If both have deadlines and the instants differ",
-        "Overleaf: <CANONICAL_PROJECT_URL>",
-        "never retry blindly",
-    ):
-        require(
-            expected in canvas_homework_text,
-            f"canvas-overleaf-homework must mention {expected}",
-        )
+    canvas_homework_text = CANVAS_HOMEWORK_SKILL.read_text()
+    for filename, clauses in {
+        "assignment.md": ("If both have deadlines and the instants differ",),
+        "content.md": ("Never paraphrase, summarize, correct grammar", "Include every figure that belongs to the question"),
+        "overleaf.md": ("never retry blindly",),
+        "todoist.md": ("Overleaf: <CANONICAL_PROJECT_URL>",),
+    }.items():
+        reference = CANVAS_HOMEWORK_SKILL.parent / "references" / filename
+        require(reference.is_file() and f"references/{filename}" in canvas_homework_text,
+                f"Canvas homework must link its {filename} operation contract")
+        operation = normalized(reference.read_text())
+        for clause in clauses:
+            require(clause in operation, f"Canvas homework {filename} must preserve {clause}")
     canvas_homework_openai = CANVAS_HOMEWORK_OPENAI.read_text()
     for expected in (
         'display_name: "Canvas Overleaf Homework"',
@@ -4857,10 +4929,7 @@ def main() -> None:
         workflow_plugin.get("skills") == "./skills/",
         "workflow-tools must expose bundled planning skills",
     )
-    require(
-        workflow_plugin.get("version") == "0.16.0",
-        "workflow-tools plugin version must reflect upstream maintenance",
-    )
+    require_plugin_version(workflow_plugin, "workflow-tools")
     require(
         "mcpServers" not in workflow_plugin,
         "workflow-tools must not expose an MCP server",
@@ -5146,7 +5215,7 @@ def main() -> None:
         "Matplotlib",
         "SciencePlots",
         "import scienceplots",
-        "['science', 'no-latex']",
+        "['science', 'no-latex', project_style]",
         "Inkscape",
         "make figures",
         "no hard-coded absolute paths",
@@ -5165,7 +5234,7 @@ def main() -> None:
     paper_figure_reference_text = PAPER_FIGURE_REFERENCE.read_text()
     for expected in (
         "make figures",
-        "python -m pip install matplotlib scienceplots pandas",
+        "requirements.txt",
         "fig.savefig",
         "figure.svg",
         "figure.pdf",
@@ -5396,10 +5465,7 @@ def main() -> None:
         "paper-review-sync metadata must expose the skill trigger",
     )
 
-    require(
-        research_plugin.get("version") == "0.8.4",
-        "research-tools must use the current plugin release version",
-    )
+    require_plugin_version(research_plugin, "research-tools")
     lab_skill = DOCMOST_LAB_WIKI_SKILL.read_text()
     for expected in (
         "name: docmost-lab-wiki",
@@ -5874,20 +5940,39 @@ def main() -> None:
 
 
 def check_typesafe_contract() -> None:
-    """The opt-in wrapper owns its MCP; ordinary setup must not enable it."""
+    """The opt-in installation owns its MCP and routes eligible tasks by default."""
     plugin = ROOT / "plugins/typesafe-tools"
     manifest = json.loads((plugin / ".codex-plugin/plugin.json").read_text())
     mcp = json.loads((plugin / ".mcp.json").read_text())
-    require(manifest["version"] == "0.1.4", "TypeSafe contract version must be 0.1.4")
+    require(re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", manifest.get("version", "")),
+            "TypeSafe must declare a semantic version")
     require(set(mcp["mcpServers"]) == {"typesafe"}, "TypeSafe must own one MCP server")
     launch = mcp["mcpServers"]["typesafe"]
     require(launch["command"] == "uv" and "--frozen" in launch["args"]
             and "--no-env-file" in launch["args"], "TypeSafe runtime must be locked")
     require((plugin / "server/.python-version").read_text().strip() == "3.12.13",
             "TypeSafe Python runtime must be pinned")
-    require("typesafe" not in GLOBAL_AGENTS.read_text().lower(),
-            "TypeSafe routing belongs in its owning skill, not global instructions")
+    global_agents = GLOBAL_AGENTS.read_text()
+    for expected in (
+        "If installed and ready, use `$typesafe-routing` by default",
+        "Honor opt-outs and required skills",
+        "private data requires fresh `private_data_enabled: true` status",
+        "Keep credentials and uncertain-origin content local",
+        "If installed, use `$typesafe-computer-use` for GUI observation and cleanup; gate Jev calls.",
+    ):
+        require(expected in global_agents,
+                f"global AGENTS must preserve the narrow TypeSafe routing rule: {expected}")
     require((plugin / "server/uv.lock").is_file(), "TypeSafe dependency lock is required")
+    require((plugin / "skills/typesafe-computer-use/SKILL.md").is_file(),
+            "TypeSafe computer-use skill is required")
+    require((plugin / "skills/typesafe-computer-use/scripts/helpers.js").is_file(),
+            "TypeSafe computer-use helper source is required")
+    require((plugin / "skills/typesafe-computer-use/scripts/controller.js").is_file(),
+            "TypeSafe computer-use controller source is required")
+    require((plugin / "skills/typesafe-computer-use/scripts/controller.compact.js").is_file(),
+            "TypeSafe computer-use compact controller is required")
+    require((plugin / "skills/typesafe-computer-use/scripts/build-controller-compact.py").is_file(),
+            "TypeSafe computer-use compact controller generator is required")
 
 
 if __name__ == "__main__":

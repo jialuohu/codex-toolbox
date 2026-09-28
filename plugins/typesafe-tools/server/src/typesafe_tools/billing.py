@@ -1,9 +1,7 @@
-"""Audited billing facts, never a caller-controlled verification switch.
+"""Model identity and compatibility definitions for historical capped ledgers.
 
-The public context limit and price do not establish a maximum billable cost.
-No real evidence is approved in v0.1.0. Adding an entry requires a separately
-reviewed provider guarantee, validity interval, model, and maximum charge.
-Unit tests inject fictional bounds; they are not production configuration.
+New requests record token usage without pricing or a spending limit. Existing
+reservation records are retained for inspection and are not used to gate calls.
 """
 
 from collections.abc import Mapping

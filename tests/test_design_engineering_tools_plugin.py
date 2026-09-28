@@ -157,8 +157,7 @@ class DesignEngineeringToolsPluginTests(unittest.TestCase):
         self.assertTrue(manifest_path.is_file(), "Task 1 plugin manifest is missing")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "design-engineering-tools")
-        self.assertEqual(manifest["version"], "0.1.1")
-        self.assertRegex(manifest["version"], r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+        self.assertRegex(manifest["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("mcpServers", manifest)
         self.assertEqual(

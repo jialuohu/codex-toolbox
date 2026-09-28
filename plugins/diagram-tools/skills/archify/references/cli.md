@@ -73,7 +73,25 @@ archify demo [output-directory]
 ```
 
 Types are `architecture`, `workflow`, `sequence`, `dataflow`, and `lifecycle`.
-The launcher preserves each upstream command's stdout, stderr, and exit status.
+The launcher preserves upstream arguments, working directory, inherited
+environment, streams, and normal exit status. Its Node preload uses a private
+parent connection to request one graceful stop. On POSIX, SIGINT stays SIGINT;
+SIGTERM, terminal hangup (SIGHUP), and SIGQUIT request SIGTERM. The runtime has
+a separate process group, so a terminal interrupt does not also trigger
+upstream's second-signal force stop. The wrapper waits for the child, reports a
+nonzero cleanup exit, and exits with the original cancellation signal.
+
+If the wrapper dies, including from SIGKILL, the child's lost parent connection
+requests the same one-time shutdown. Killing the wrapper during requested shutdown does
+not send a second signal. This cannot guarantee cleanup if the runtime itself
+is killed, blocked, or the host terminates. There is no automatic force-kill
+timeout; cancellation reports the exact runtime PID for scoped inspection and
+recovery when graceful shutdown stalls. Never substitute a process-name sweep.
+
+For review sessions, use `preview --no-open` and an owned browser tab. Read
+[preview cleanup](cleanup.md) before opening or starting a server. Ordinary saved
+delivery closes review resources after verification; explicit live handoffs keep
+only the required tab/server.
 Without a usable active runtime, pass-through commands report setup failure on
 stderr and exit 3.
 

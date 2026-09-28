@@ -22,8 +22,50 @@ class Packaging(unittest.TestCase):
         self.assertEqual(len(entries), 1)
         self.assertEqual(entries[0]["policy"]["installation"], "AVAILABLE")
         manifest = json.loads((ROOT / "plugins/typesafe-tools/.codex-plugin/plugin.json").read_text())
-        self.assertEqual(manifest["version"], "0.1.4")
+        self.assertRegex(manifest["version"], r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
+        self.assertTrue((ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use/SKILL.md").is_file())
+        skill = ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use"
+        self.assertTrue((skill / "scripts/helpers.js").is_file())
+        self.assertTrue((skill / "scripts/controller.js").is_file())
+        self.assertTrue((skill / "scripts/controller.compact.js").is_file())
+        self.assertTrue((skill / "scripts/build-controller-compact.py").is_file())
+        for name in ("cleanup", "observation", "jev-advice", "controller", "verification-examples"):
+            reference = f"references/{name}.md"
+            self.assertTrue((skill / reference).is_file())
+            self.assertIn(f"]({reference})", (skill / "SKILL.md").read_text())
+
+    def test_cleanup_is_required_before_all_computer_use_routes(self):
+        skill = ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use"
+        entry = (skill / "SKILL.md").read_text()
+        before_routes = " ".join(entry.split("## Choose the needed procedure", 1)[0].split())
+        self.assertIn("Before the first app launch, target binding, tab open, or GUI probe", before_routes)
+        self.assertIn("[UI cleanup](references/cleanup.md)", before_routes)
+
+    def test_cleanup_keeps_resource_ownership_and_preservation_guards(self):
+        path = ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use/references/cleanup.md"
+        text = " ".join(path.read_text().split())
+        for guard in (
+            "Do not unconditionally make `listApps()` the first call",
+            "A title, URL, or inventory difference alone does not establish ownership",
+            "Lost ownership evidence becomes unknown",
+            "Missing instance evidence makes application quit ineligible",
+            "close saved task-created tabs and windows by default",
+            "open, show, or keep it open",
+            "unsaved work, an unresolved mutation, a pending download",
+            "authentication or approval in progress",
+            "verify the target and focus before acting",
+            "is idle, and has no protected windows or work",
+            "interface has no `close()` or `quit()` method",
+            "Never force quit, use `killall`, terminate native app processes",
+            "An owning CLI may stop its own headless preview server normally",
+            "An unexpected save prompt or changed state stops that close",
+            "verify exact-resource absence",
+            "Report concrete leftovers and the reason",
+            "statuses establish no UI ownership and close nothing",
+        ):
+            with self.subTest(guard=guard):
+                self.assertIn(guard, text)
 
     def test_runtime_is_plugin_owned_and_frozen(self):
         config = json.loads((ROOT / "plugins/typesafe-tools/.mcp.json").read_text())
@@ -63,7 +105,7 @@ class Installer(unittest.TestCase):
                 redirect_stdout(output):
             self.assertEqual(setup.main(), 0)
         status = json.loads(output.getvalue())
-        self.assertIsNone(status["paid_ready"])
+        self.assertFalse(status["runtime_checked"])
         self.assertNotIn("blocked", status)
         self.assertIn("typesafe_status", status["readiness"])
 

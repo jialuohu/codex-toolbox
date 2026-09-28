@@ -5,6 +5,7 @@
 Run shell commands from the repository root. Read the owning skill before using a workflow.
 
 - [Execution Routing](#execution-routing)
+- [Local Codex task creation](#local-codex-task-creation)
 - [ChatGPT Planner](#chatgpt-planner)
 - [Deep Planning](#deep-planning)
 - [Claude Counselor](#claude-counselor)
@@ -24,11 +25,19 @@ can run through native Codex subagents. Other implementation work uses normal
 Codex behavior. Use OpenSpec when durable requirements, acceptance criteria, or
 spec governance should be settled before implementation.
 
+## Local Codex task creation
+
+For an explicit request to start a separate, durable task in an existing project,
+use [Codex Task Tools](codex-tasks.md). Its project lookup returns a backend
+project reference; the creator sets the title, submits the initial prompt once,
+and gives back a task ID and separate status evidence. It reports Desktop
+project membership only when a supported client read confirms the exact task.
+
 ## ChatGPT Planner
 
 `$chatgpt-planner` consults GPT-6 Pro automatically in actual Codex Plan mode,
 across workspaces. One global setup configures this installation;
-each persistent Codex task gets its own ChatGPT conversation. Codex checks the
+each persistent Codex task gets one active ChatGPT conversation. Codex checks the
 advice and owns the final plan, implementation, and verification.
 
 | Mode and objective | Pro consultation |
@@ -36,6 +45,7 @@ advice and owns the final plan, implementation, and verification.
 | Plan mode, new task | Create a dedicated Pro chat and consult after gathering context |
 | Plan mode, unchanged requirements | Reuse accepted advice in that task's conversation |
 | Plan mode, material requirements change | Send a new request in the same conversation |
+| Plan mode, saved conversation explicitly inaccessible | Verify the browser error and GPT-6 Pro, then create one replacement without another confirmation |
 | Execution of an approved plan | None |
 | Direct execution, including major work | None |
 
@@ -70,6 +80,13 @@ retrieval to limit overhead. Native handoff is an optimization, not an assumptio
 Record pilot tool calls and returned characters; report token counts only when
 actual usage is available.
 
+Temporary planner tabs close after completed verification, reused advice, or an
+accepted setup probe; saved ChatGPT conversations remain available for later
+turns. The [browser lifecycle contract](../plugins/workflow-tools/skills/chatgpt-planner/references/browser-lifecycle.md)
+requires exact task ownership and a fresh absence check. User-selected tabs,
+explicit live handoffs, and unresolved requests remain open. Source instruction
+tests do not establish live browser cleanup or RAM recovery.
+
 Private metadata lives under
 `${CODEX_HOME:-$HOME/.codex}/state/chatgpt-planner`. Use `$chatgpt-planner status`
 for saved configuration and optionally provide the persistent Codex task ID.
@@ -83,9 +100,13 @@ unresolved legacy requests block activation.
 
 The [owning skill](../plugins/workflow-tools/skills/chatgpt-planner/SKILL.md)
 defines bounded context, duplicate prevention, exact reply validation, and a
-15-minute deadline. Uncertain sends are reconciled, never resent via another
-transport. Execution mode stops consultation. Unavailable login, model, or
-transport produces a clear disclosure and ordinary Codex planning continues.
+15-minute deadline. A fresh, signed-in browser error saying “You don’t have access
+to this conversation” for the exact saved conversation permits one replacement,
+even when the old request is unresolved. The helper reserves it before dispatch
+and saves its new UUID only after verifying the exact submitted prompt. Timeouts,
+native errors, and uncertain sends are reconciled without another dispatch.
+Execution mode stops consultation. Unavailable login, model, or transport produces
+a clear disclosure and ordinary Codex planning continues.
 The existing Claude Counselor policy remains separate.
 
 ## Deep Planning

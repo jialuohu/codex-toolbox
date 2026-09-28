@@ -1,0 +1,17 @@
+{
+  "kind": "stacked_breakdown",
+  "figure_name": "breakdown-area",
+  "data_label": "Illustrative synthetic data; linear between samples",
+  "mode": "area",
+  "between_samples": "linear",
+  "x_values": [0, 1, 2, 3, 4],
+  "x_label": "Elapsed time",
+  "x_unit": "s",
+  "y_label": "Resource time",
+  "y_unit": "ms",
+  "components": [
+    {"component": "Load", "unit": "ms", "values": [14, 13, 11, 10, 9]},
+    {"component": "Compute", "unit": "ms", "values": [18, 21, 24, 25, 27]},
+    {"component": "Queue", "unit": "ms", "values": [9, 7, 5, 4, 3]}
+  ]
+}

@@ -24,6 +24,8 @@ OTHER = "22222222-2222-4222-8222-222222222222"
 PROBE = "55555555-5555-4555-8555-555555555555"
 CID = "33333333-3333-4333-8333-333333333333"
 SECOND_CID = "44444444-4444-4444-8444-444444444444"
+REPLACEMENT_CID = "88888888-8888-4888-8888-888888888888"
+BRAVE_PROBE_CID = "99999999-9999-4999-8999-999999999999"
 
 
 def connection(**changes):
@@ -36,6 +38,27 @@ def packet(**changes):
                   requirements="Preserve Unicode and extensions",
                   context="Inspected export.py save handler", snapshot="revision-one",
                   connection=connection())
+    return dict(result, **changes)
+
+
+def recovery_packet(**changes):
+    planning = packet()
+    live_connection = planning.pop("connection")
+    result = {
+        "expected_conversation_id": CID,
+        "expected_generation": 0,
+        "denial": {
+            "attempted_conversation_id": CID,
+            "final_url": "https://chatgpt.com/",
+            "browser": "iab",
+            "signed_in": True,
+            "error": "conversation_access_denied",
+            "observed_at": 1000.,
+        },
+        "planning": planning,
+        "connection": live_connection,
+        "replacement_url": "https://chatgpt.com/",
+    }
     return dict(result, **changes)
 
 
@@ -310,6 +333,285 @@ class GlobalPlannerTests(unittest.TestCase):
         self.assertEqual(sum(r["action"] == "create_browser" for r in results), 1)
         self.assertEqual(len({r["request"]["id"] for r in results}), 1)
 
+    def test_access_denial_redirect_reserves_and_attaches_one_replacement(self):
+        original = self.prepare()
+        self.observe(original)
+        recovered = self.store.recover("plan", recovery_packet(), True)
+        self.assertEqual(recovered["action"], "create_browser")
+        self.assertNotEqual(recovered["request"]["id"], original["request"]["id"])
+        self.assertEqual(recovered["request"]["generation"], 1)
+        self.assertIn("Plan an export filename fix", recovered["prompt"])
+        task = self.store.status()["task"]
+        self.assertEqual(task["generation"], 1)
+        self.assertIsNone(task["conversation_id"])
+        self.assertEqual(task["recoveries"][0]["from_conversation_id"], CID)
+        self.assertEqual(task["recoveries"][0]["from_generation"], 0)
+        self.assertEqual(task["recoveries"][0]["to_generation"], 1)
+        self.assertEqual(task["recoveries"][0]["replacement_request_id"], recovered["request"]["id"])
+        raw = (self.state / "state.json").read_text()
+        for private_text in (recovered["prompt"], "Plan an export filename fix",
+                             "Preserve Unicode", "Inspected export.py", "You don’t have access"):
+            self.assertNotIn(private_text, raw)
+        self.assertEqual(self.new_store().recover("plan", recovery_packet(), True)["action"], "reconcile")
+        self.assertEqual(self.new_store().plan("plan", packet(), True)["action"], "reconcile")
+        wrong = browser_snapshot(recovered, REPLACEMENT_CID)
+        wrong["messages"][0]["text"] = "A different prompt"
+        self.assertEqual(self.store.observe("plan", recovered["request"]["id"], wrong)["action"], "reconcile")
+        self.assertIsNone(self.store.status()["task"]["conversation_id"])
+        temporary = browser_snapshot(recovered, REPLACEMENT_CID)
+        temporary["url"] = "https://chatgpt.com/c/WEB:" + REPLACEMENT_CID
+        self.error("CONVERSATION_NOT_PERSISTED", self.store.observe,
+                   "plan", recovered["request"]["id"], temporary)
+        self.assertIsNone(self.store.status()["task"]["conversation_id"])
+        self.assertEqual(self.store.observe("plan", recovered["request"]["id"],
+                                            browser_snapshot(recovered, REPLACEMENT_CID))["action"], "complete")
+        self.assertEqual(self.new_store().status()["task"]["conversation_id"], REPLACEMENT_CID)
+        self.assertEqual(self.new_store().plan("plan", packet(), True)["action"], "reuse")
+
+    def test_confirmed_denial_can_replace_an_unresolved_old_send(self):
+        original = self.prepare()
+        self.observe(original)
+        pending = self.store.plan("plan", packet(requirements="A later change"), True)
+        self.assertEqual(pending["action"], "send_browser")
+        recovered = self.store.recover("plan", recovery_packet(), True)
+        self.assertEqual(recovered["action"], "create_browser")
+        by_id = {r["id"]: r for r in self.store.status()["requests"]}
+        self.assertEqual(by_id[pending["request"]["id"]]["status"], "pending")
+        self.assertEqual(by_id[pending["request"]["id"]]["generation"], 0)
+        self.assertEqual(by_id[recovered["request"]["id"]]["generation"], 1)
+        before = copy.deepcopy(self.store.status()["task"])
+        for stale_call in (
+            lambda: self.store.observe("plan", pending["request"]["id"], browser_snapshot(pending)),
+            lambda: self.store.fallback("plan", pending["request"]["id"]),
+            lambda: self.store.observe("plan", original["request"]["id"], native_snapshot(original), "native"),
+        ):
+            try:
+                result = stale_call()
+            except planner.PlannerError:
+                pass
+            else:
+                self.assertNotIn(result["action"], ("complete", "send_browser", "send_native"))
+            self.assertEqual(self.store.status()["task"], before)
+        self.assertEqual(self.store.observe("plan", recovered["request"]["id"],
+                                            browser_snapshot(recovered, REPLACEMENT_CID))["action"], "complete")
+        self.assertEqual(self.store.status()["task"]["conversation_id"], REPLACEMENT_CID)
+        self.assertEqual({r["id"]: r for r in self.store.status()["requests"]}
+                         [pending["request"]["id"]]["status"], "pending")
+
+    def test_selected_browser_change_allows_confirmed_denial_after_new_setup(self):
+        original = self.prepare()
+        self.observe(original)
+        self.assertEqual(original["request"]["browser"], "iab")
+        self.store.prefer_browser("brave")
+        probe = self.new_store(OTHER, True)
+        setup_request = probe.plan("default", packet(connection=connection(browser="brave")), True)
+        probe.observe("default", setup_request["request"]["id"],
+                      browser_snapshot(setup_request, BRAVE_PROBE_CID, "READY"))
+        probe.setup(setup_request["request"]["id"], "brave")
+        self.assertEqual(self.store.status()["setup"]["browser"], "brave")
+        payload = recovery_packet(connection=connection(browser="brave"))
+        payload["denial"]["browser"] = "brave"
+        recovered = self.store.recover("plan", payload, True)
+        self.assertEqual(recovered["action"], "create_browser")
+        self.assertEqual(recovered["request"]["browser"], "brave")
+        self.assertEqual(self.store.observe("plan", recovered["request"]["id"],
+                                            browser_snapshot(recovered, REPLACEMENT_CID))["action"], "complete")
+        self.assertEqual(self.store.status()["task"]["conversation_id"], REPLACEMENT_CID)
+
+    def test_recovery_rejects_unconfirmed_or_stale_denial_without_state_change(self):
+        original = self.prepare()
+        self.observe(original)
+        base = recovery_packet()
+        cases = []
+        for field, value in (
+            ("error", "timeout"),
+            ("error", "You don’t have access to this conversation"),
+            ("signed_in", False),
+            ("attempted_conversation_id", SECOND_CID),
+            ("final_url", "https://chatgpt.com/c/" + SECOND_CID),
+            ("final_url", "https://example.com/"),
+            ("browser", "brave"),
+            ("observed_at", 879.),
+            ("observed_at", 1001.),
+        ):
+            invalid = copy.deepcopy(base)
+            invalid["denial"][field] = value
+            cases.append(invalid)
+        for field, value in (
+            ("expected_conversation_id", SECOND_CID),
+            ("expected_generation", 1),
+            ("replacement_url", "https://chatgpt.com/c/WEB:" + REPLACEMENT_CID),
+            ("replacement_url", "https://chatgpt.com/c/" + REPLACEMENT_CID),
+            ("connection", connection(model="GPT-6")),
+            ("connection", connection(signed_in=False, model=None)),
+            ("planning", dict(base["planning"], context="x" * 70000)),
+        ):
+            invalid = copy.deepcopy(base)
+            invalid[field] = value
+            cases.append(invalid)
+        injected = copy.deepcopy(base)
+        injected["denial"]["raw_page_text"] = "You don’t have access to this conversation"
+        cases.append(injected)
+        before = (self.state / "state.json").read_bytes()
+        for index, invalid in enumerate(cases):
+            with self.subTest(index=index):
+                try:
+                    result = self.store.recover("plan", invalid, True)
+                except planner.PlannerError:
+                    pass
+                else:
+                    self.assertNotEqual(result["action"], "create_browser")
+                self.assertEqual((self.state / "state.json").read_bytes(), before)
+        self.assertEqual(self.store.recover("plan", base, False)["action"], "unavailable")
+        self.assertEqual((self.state / "state.json").read_bytes(), before)
+        direct = copy.deepcopy(base)
+        direct["denial"]["final_url"] = "https://chatgpt.com/c/" + CID
+        self.assertEqual(self.store.recover("plan", direct, True)["action"], "create_browser")
+
+    def test_recovery_replay_and_concurrent_calls_never_dispatch_twice(self):
+        original = self.prepare()
+        self.observe(original)
+        payload = recovery_packet()
+
+        def call(_):
+            return self.new_store().recover("plan", copy.deepcopy(payload), True)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(call, range(4)))
+        self.assertEqual(sum(r["action"] == "create_browser" for r in results), 1)
+        self.assertEqual(len({r["request"]["id"] for r in results}), 1)
+        self.assertTrue(all(r["action"] in ("create_browser", "reconcile", "retrieve") for r in results))
+        self.assertEqual(self.new_store().recover("plan", payload, True)["action"], "reconcile")
+        self.clock = 1121.
+        self.assertEqual(self.new_store().recover("plan", payload, True)["action"], "reconcile")
+        self.assertEqual(len(self.new_store().status()["task"]["recoveries"]), 1)
+        self.assertEqual(sum(r["generation"] == 1 for r in self.new_store().status()["requests"]), 1)
+
+    def test_corrupt_recovery_pointer_cannot_retrieve_retired_advice(self):
+        original = self.prepare()
+        self.observe(original)
+        recovered = self.store.recover("plan", recovery_packet(), True)
+        with self.store.transaction() as state:
+            state["tasks"][TASK]["recoveries"][-1]["replacement_request_id"] = original["request"]["id"]
+        self.error("INVALID_STATE", self.new_store().recover, "plan", recovery_packet(), True)
+        self.assertEqual(self.store.status()["task"]["generation"], 1)
+        self.assertIsNone(self.store.status()["task"]["conversation_id"])
+        self.assertEqual({r["id"]: r for r in self.store.status()["requests"]}
+                         [recovered["request"]["id"]]["status"], "pending")
+
+    def test_malformed_v3_recovery_metadata_fails_closed_on_read(self):
+        original = self.prepare()
+        self.observe(original)
+        recovered = self.store.recover("plan", recovery_packet(), True)
+        state_path = self.state / "state.json"
+        valid = json.loads(state_path.read_text())
+        for malformed in (None, {}, {"from_conversation_id": CID}):
+            with self.subTest(malformed=malformed):
+                corrupt = copy.deepcopy(valid)
+                corrupt["tasks"][TASK]["recoveries"] = [malformed]
+                state_path.write_text(json.dumps(corrupt, sort_keys=True))
+                state_path.chmod(0o600)
+                before = state_path.read_bytes()
+                self.error("INVALID_STATE", self.new_store().status)
+                self.error("INVALID_STATE", self.new_store().recover,
+                           "plan", recovery_packet(), True)
+                self.error("INVALID_STATE", self.new_store().observe,
+                           "plan", recovered["request"]["id"],
+                           browser_snapshot(recovered, REPLACEMENT_CID))
+                self.assertEqual(state_path.read_bytes(), before)
+
+    def test_v3_missing_generation_cannot_reuse_retired_advice(self):
+        original = self.prepare()
+        self.observe(original)
+        recovered = self.store.recover("plan", recovery_packet(), True)
+        state_path = self.state / "state.json"
+        valid_state = state_path.read_bytes()
+        with self.store.transaction() as state:
+            del state["tasks"][TASK]["generation"]
+        self.error("INVALID_STATE", self.new_store().plan, "plan", packet(), True)
+        self.error("INVALID_STATE", self.new_store().recover, "plan", recovery_packet(), True)
+        state_path.write_bytes(valid_state)
+        state_path.chmod(0o600)
+        with self.store.transaction() as state:
+            del state["requests"][recovered["request"]["id"]]["generation"]
+        self.error("INVALID_STATE", self.new_store().plan, "plan", packet(), True)
+        self.assertIsNone(json.loads(state_path.read_text())["tasks"][TASK]["conversation_id"])
+
+    def test_multiple_active_pending_requests_fail_closed(self):
+        first = self.prepare()
+        with self.store.transaction() as state:
+            extra = copy.deepcopy(state["requests"][first["request"]["id"]])
+            extra["id"] = "00000000-0000-4000-8000-000000000001"
+            extra["key"] = "alternate-objective-key"
+            state["requests"][extra["id"]] = extra
+        self.error("INVALID_STATE", self.new_store().plan, "plan", packet(), True)
+        self.error("INVALID_STATE", self.new_store().plan,
+                   "plan", packet(objective_key="third"), True)
+        self.assertEqual(self.store.status()["task"]["conversation_id"], None)
+
+    def test_recovery_is_plan_only_and_setup_probe_cannot_bypass_it(self):
+        self.setup_global()
+        for mode in ("default", "unknown"):
+            self.assertEqual(self.store.recover(mode, {}, True)["action"], "skip")
+        self.assertIsNone(self.store.status()["task"])
+        probe = self.new_store(PROBE, True)
+        for mode in ("plan", "default"):
+            try:
+                result = probe.recover(mode, recovery_packet(), True)
+            except planner.PlannerError:
+                pass
+            else:
+                self.assertNotEqual(result["action"], "create_browser")
+        self.assertIsNone(self.store.status()["task"])
+        skipped = self.cli("recover", "--mode", "default", "--task-id", TASK, payload={})
+        self.assertEqual(json.loads(skipped.stdout)["action"], "skip")
+        self.assertIsNone(self.store.status()["task"])
+
+    def test_recover_cli_dispatches_only_after_matching_denial_and_pro_check(self):
+        original = self.prepare()
+        self.observe(original)
+        payload = recovery_packet()
+        payload["denial"]["observed_at"] = time.time()
+        result = self.cli("recover", "--mode", "plan", "--task-id", TASK,
+                          "--model-confirmed", payload=payload, refresh_connection=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["action"], "create_browser")
+        self.assertEqual(self.store.status()["task"]["generation"], 1)
+
+    def test_v2_state_migrates_with_private_backup_and_preserved_history(self):
+        original = self.prepare()
+        self.observe(original)
+        pending = self.store.plan("plan", packet(requirements="migration trigger"), True)
+        self.assertEqual(pending["action"], "send_browser")
+        state_path = self.state / "state.json"
+        old = json.loads(state_path.read_text())
+        old["version"] = 2
+        for task in old["tasks"].values():
+            task.pop("generation", None)
+            task.pop("recoveries", None)
+        for request in old["requests"].values():
+            request.pop("generation", None)
+        state_path.write_text(json.dumps(old, sort_keys=True))
+        state_path.chmod(0o600)
+        before = state_path.read_bytes()
+        self.assertEqual(self.store.status()["task"]["conversation_id"], CID)
+        self.assertTrue(self.store.check(connection())["available"])
+        self.assertEqual(state_path.read_bytes(), before)
+        self.assertFalse((self.state / "state.v2.backup.json").exists())
+        next_request = self.store.plan("plan", packet(requirements="migration trigger"), True)
+        self.assertEqual(next_request["action"], "reconcile")
+        self.assertEqual(next_request["request"]["id"], pending["request"]["id"])
+        backup = self.state / "state.v2.backup.json"
+        self.assertEqual(json.loads(backup.read_text()), old)
+        self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
+        migrated = json.loads(state_path.read_text())
+        self.assertEqual(migrated["version"], 3)
+        self.assertEqual(migrated["setup"], old["setup"])
+        self.assertEqual(migrated["requests"][original["request"]["id"]]["status"], "complete")
+        self.assertEqual(migrated["requests"][original["request"]["id"]]["generation"], 0)
+        self.assertEqual(migrated["requests"][pending["request"]["id"]]["status"], "pending")
+        self.assertEqual(self.store.status()["task"]["conversation_id"], CID)
+
     def legacy(self, pending=False):
         self.state.mkdir(mode=0o700)
         data = {"version": 1, "bindings": {"project-hash": {"verified": True}},
@@ -329,7 +631,7 @@ class GlobalPlannerTests(unittest.TestCase):
         self.setup_global()
         self.assertEqual(json.loads((self.state / "state.v1.backup.json").read_text()), old)
         state = json.loads((self.state / "state.json").read_text())
-        self.assertEqual(state["version"], 2)
+        self.assertEqual(state["version"], 3)
         self.assertNotIn("bindings", state)
         self.assertNotIn("project-hash", json.dumps(state))
 

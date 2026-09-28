@@ -95,6 +95,66 @@ class TransactionBoundaryTests(unittest.TestCase):
             recreated.perform("update", changed)
         self.assertEqual(error.exception.code, "operation_id_conflict")
 
+    def test_style_verification_uses_exact_saved_readback_after_reopen(self):
+        import plistlib
+        import re
+        class SavedColorNative(FakeNative):
+            transient = False
+            def call(self, request):
+                if request["op"] == "update":
+                    self.calls.append(copy.deepcopy(request))
+                    _, strict_raw = engine.read_document(request["path"])
+                    raw = plistlib.loads(plistlib.dumps(strict_raw))
+                    raw["Sheets"][0]["GraphicsList"][1]["Text"]["Text"] = raw["Sheets"][0]["GraphicsList"][1]["Text"]["Text"].replace(r"\fs16", r"\fs18")
+                    Path(request["path"]).write_bytes(zip_bytes(raw))
+                    self.transient = True
+                    return {"status": "ok", "document": {"modified": False}}
+                if request["op"] == "close":
+                    self.transient = False
+                result = super().call(request)
+                if request["op"] == "inspect":
+                    _, raw = engine.read_document(request["path"])
+                    target = next(o for o in result["document"]["canvases"][0]["objects"] if o["id"] == 3)
+                    stored = raw["Sheets"][0]["GraphicsList"][1]["Text"]["Text"]
+                    target.update(text="Synthetic", font_name="Helvetica",
+                                  font_size=int(re.search(r"\\fs(\d+)", stored).group(1)) // 2,
+                                  text_rgb=[0.2 if self.transient else 0.1, 0.2, 0.3],
+                                  text_align="left", text_valign="center", side_padding=3, vertical_padding=3)
+                return result
+        raw = fixture()
+        raw["Sheets"][0]["GraphicsList"][1]["Text"] = {"Text": (
+            r"{\rtf1{\fonttbl\f0 Helvetica;}{\colortbl;;\red0\green0\blue0;}"
+            r"{\*\expandedcolortbl;;\cssrgb\c12941\c28235\c72157;}\pard\ql\f0\fs16\cf2 Synthetic}")}
+        self.source.write_bytes(zip_bytes(raw))
+        self.request["expected_sha256"] = tx.digest(self.source)
+        self.request["changes"][0]["set"] = {"font_size": 9}
+        self.native = SavedColorNative()
+        self.engine = engine.Engine(self.native, NeverGUI(), self.store, lambda: self.processes)
+        result = self.engine.perform("update", self.request)
+        self.assertEqual(result["status"], "committed", result.get("error"))
+        self.assertEqual(result["result"]["native_document"]["canvases"][0]["objects"][1]["text_rgb"], [0.1, 0.2, 0.3])
+        operations = [call["op"] for call in self.native.calls]
+        update_index = operations.index("update")
+        self.assertEqual(operations[update_index:update_index + 4], ["update", "close", "inspect", "close"])
+        self.assertEqual(tx.digest(self.source), self.request["expected_sha256"])
+
+    def test_saved_readback_close_fingerprint_detects_working_file_changes(self):
+        class ChangingCloseNative(FakeNative):
+            def call(self, request):
+                if request["op"] == "close":
+                    self.calls.append(copy.deepcopy(request))
+                    Path(request["path"]).write_bytes(b"unexpected file change")
+                    return {"status": "ok", "document": {"modified": False}}
+                return super().call(request)
+        self.native = ChangingCloseNative()
+        self.engine = engine.Engine(self.native, NeverGUI(), self.store, lambda: self.processes)
+        result = self.engine.perform("update", self.request)
+        self.assertEqual(result["status"], "outcome_unknown")
+        self.assertEqual(result["error"]["code"], "stale_file")
+        self.assertFalse(self.output.exists())
+        operations = [call["op"] for call in self.native.calls]
+        self.assertEqual(operations[-1], "close")
+
     def test_receipt_override_does_not_bypass_lock_or_pending_guard(self):
         other = tx.Store(self.root / "other-receipts", guard=self.root / "guard")
         with self.store.locked():

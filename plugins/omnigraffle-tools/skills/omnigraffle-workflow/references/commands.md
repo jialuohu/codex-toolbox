@@ -16,6 +16,8 @@ Resolve this installed skill directory; the entry point is `python3 scripts/omni
 
 Mutation and equation parameters arrive through `--request JSON_FILE`. `doctor` accepts optional `--probe-app`; `inspect FILE` and `audit FILE` accept optional `--output REPORT`; `reconcile OPERATION_ID` reads an existing journal. `--state-dir` selects the local operation state directory. Paths, labels and TeX remain data. Geometry and sizes use points. Results must identify paths, native identities, versions, hashes, warnings and verification status; an unsupported operation is an error, not a successful empty result.
 
+If `doctor --probe-app` times out, its `scripting.timeout_diagnostic` lists possible causes and stops without sending another AppleEvent. A `-1712` timeout alone does not establish whether OmniGraffle is unresponsive or macOS has delayed an Automation decision. When SSH session variables are present, the report calls out that macOS may attribute `osascript` to an SSH launcher such as `sshd-keygen-wrapper`. Inspect the responsible app in **System Settings > Privacy & Security > Automation** and any pending prompt in the logged-in desktop session; a grant for a separate desktop app does not authorize that SSH launcher. The report does not grant access or inspect private TCC records. Resolve the cause, then rerun the read-only doctor. For a timed-out mutation, reconcile its operation first.
+
 Do not write audit output over the input or an alias (symlink or hard link). Reject malformed archives, excessive decompression, missing assets, ambiguous or duplicate identifiers and malformed outer LinkBack records. Unsupported native formats are read-only through file adapters; use native inspection where supported. Native `.graffle` is authoritative after creation; an old JSON specification must not erase manual changes.
 
 Each write uses a canonical target, expected saved fingerprint and inspected canvas/object IDs, and checks unsaved application changes. Serialize application access. Preserve originals, stage changes, verify and replace only an authorized destination. Journal pending mutation before dispatch; after a timeout call `reconcile` and do not automatically retry. Never count a sent AppleEvent or callback as proof the resulting document was saved correctly.
@@ -45,6 +47,28 @@ When `$mono-color` supplied the colors, optionally include `palette: {"catalog_p
 Update uses `changes: [{"canvas_id": 1, "object_id": 3, "set": {"text": "Revised label"}}]` plus the common operation, source fingerprint and output fields. IDs must come from inspection, not these illustrative values.
 
 Text operations replace the target's whole label. Label-only changes retain its first-character font and size; mixed rich-text runs are not retained. Native text font sizes use whole points. Equations may use fractional sizes from 1 to 256 points. `--timeout` bounds each adapter call, not the whole multi-step command. A timeout leaves the operation pending until reconciliation.
+
+For new native research diagrams, shape objects accept `shape_type` as
+`rectangle`, `rounded_rectangle`, or `ellipse`. Shape/text objects accept
+`stroke_width` (0.25–20 pt), `stroke_pattern` (`solid` or `dashed`),
+`text_color` (`#RRGGBB`), `text_align` (`left`, `center`, `right`),
+`text_valign` (`top`, `center`, `bottom`), and symmetric whole-point
+`text_padding` (0–64 pt), in addition to their existing fields. Connectors
+accept `stroke`, `stroke_width`, `stroke_pattern`, `line_type`
+(`straight` or `orthogonal`), `head_arrow`/`tail_arrow` (`none` or `filled`),
+and `from_side`/`to_side` (`top`, `right`, `bottom`, `left`). Side choices
+attach at native side midpoints. Unsupported fields or combinations fail before
+native dispatch. Omitted fields retain prior behavior. Arbitrary waypoints,
+opacity, and hatching are outside this interface.
+
+The saved native readback verifies requested styles. A substituted font is
+reported in `result.font_substitutions` with canvas ID, object ID, requested
+font, and actual native font; inspect the final glyphs before acceptance.
+Fixed-canvas inspection reports `canvases[i].size` in points. A publication
+exporter must require this saved size and fail if it is absent; a seed JSON's
+dimensions do not establish the exported size. Native property readback and
+visual inspection are both required before marking a research template
+accepted.
 
 `--state-dir` changes receipt storage only. The application lock, pending-operation guard and operation-ID registry remain shared across receipt directories. Overwriting a destination preserves its file mode, access-control list and extended attributes on macOS, with an original backup retained in the private receipt directory. The lock coordinates toolbox commands; another application must not write the closed destination during publication.
 

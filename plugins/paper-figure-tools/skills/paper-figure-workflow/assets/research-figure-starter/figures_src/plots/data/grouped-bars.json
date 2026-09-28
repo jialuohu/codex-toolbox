@@ -1,0 +1,18 @@
+{
+  "kind": "grouped_bars",
+  "figure_name": "grouped-bars",
+  "data_label": "Synthetic layout example; bounds illustrative",
+  "categories": ["Small", "Medium", "Large"],
+  "x_label": "Model size",
+  "y_label": "Mean response time",
+  "y_unit": "ms",
+  "y_min": 0,
+  "series": [
+    {"method": "Proposed", "unit": "ms", "values": [31, 38, 47],
+     "uncertainty": {"statistic": "mean", "interval_type": "illustrative_interval", "method": "fixed synthetic bounds for layout; not calculated from samples", "n": 20, "lower": [28, 34, 42], "upper": [34, 42, 52]}},
+    {"method": "Baseline", "unit": "ms", "values": [51, 66, 84],
+     "uncertainty": {"statistic": "mean", "interval_type": "illustrative_interval", "method": "fixed synthetic bounds for layout; not calculated from samples", "n": 20, "lower": [47, 60, 77], "upper": [55, 72, 91]}},
+    {"method": "Ablation", "unit": "ms", "values": [39, 49, 65],
+     "uncertainty": {"statistic": "mean", "interval_type": "illustrative_interval", "method": "fixed synthetic bounds for layout; not calculated from samples", "n": 20, "lower": [35, 44, 59], "upper": [43, 54, 71]}}
+  ]
+}

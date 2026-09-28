@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
+import { runChild } from './lib/child.mjs';
 import { safeError } from './lib/io.mjs';
 import { resolveActiveRuntime } from './lib/runtime-manager.mjs';
 import { runtimeInfo } from './lib/release.mjs';
@@ -19,19 +19,22 @@ if (runtimeInfoCommand && (args.length !== 2 || args[1] !== '--json')) {
     if (runtimeInfoCommand) {
       process.stdout.write(`${JSON.stringify(runtimeInfo(release), null, 2)}\n`);
     } else {
-      const child = spawn(process.execPath, [release.cliPath, ...args], {
-        cwd: process.cwd(),
-        env: process.env,
-        stdio: 'inherit',
-      });
-      child.once('error', (error) => {
+      try {
+        const { code, signal, pid } = await runChild(process.execPath, [release.cliPath, ...args], {
+          onCancel: ({ pid, signal }) => process.stderr.write(
+            `Stopping Archify runtime PID ${pid} after ${signal}; waiting for cleanup.\n`,
+          ),
+        });
+        if (signal) {
+          if (code !== null && code !== 0) await new Promise(resolve => process.stderr.write(
+            `Archify runtime PID ${pid} exited with code ${code} during ${signal} cleanup.\n`, resolve,
+          ));
+          process.kill(process.pid, signal);
+        } else process.exitCode = code ?? 4;
+      } catch (error) {
         process.stderr.write(`${error.message}\n`);
         process.exitCode = 4;
-      });
-      child.once('close', (code, signal) => {
-        if (signal) process.kill(process.pid, signal);
-        else process.exitCode = code ?? 4;
-      });
+      }
     }
   } catch (error) {
     if (runtimeInfoCommand) {

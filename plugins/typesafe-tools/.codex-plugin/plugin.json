@@ -1,19 +1,19 @@
 {
   "name": "typesafe-tools",
-  "version": "0.1.4",
-  "description": "Optional bounded Jev evaluations with offline readiness and configurable spending controls.",
+  "version": "0.6.2",
+  "description": "Bounded Jev evaluation, capability routing, and computer-use action advice for eligible tasks.",
   "author": {
     "name": "Codex Toolbox Contributors"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "TypeSafe Tools",
-    "shortDescription": "Inspect readiness and evaluate public evidence with Jev.",
-    "longDescription": "Bounded typed Jev evaluations for public or synthetic research evidence. Capped mode requires verified billing; an explicitly configured uncapped mode removes the wrapper spending limit. Existing tools retain ownership of evidence retrieval and external actions.",
+    "shortDescription": "Route eligible tasks and advise on computer-use actions.",
+    "longDescription": "Jev ranks available skills and tools for eligible public, synthetic, or opted-in private tasks. Private-data processing requires protected configuration. An optional computer-use pilot reuses bounded browser and native-app action code while Codex reviews advice and verifies results.",
     "developerName": "Codex Toolbox Contributors",
     "category": "Productivity",
     "capabilities": ["Read"],
-    "defaultPrompt": "Check TypeSafe readiness and explain whether public-evidence evaluation is available."
+    "defaultPrompt": "Check TypeSafe readiness and route an eligible task among available capabilities; private content requires private_data_enabled: true in fresh status."
   },
   "mcpServers": "./.mcp.json"
 }

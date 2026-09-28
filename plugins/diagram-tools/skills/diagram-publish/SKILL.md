@@ -108,8 +108,11 @@ See Cloudflare's [Direct Upload authentication documentation](https://developers
    link. The helper checks project identity, preview deployment success, and an
    unauthenticated HTTPS response with the accepted HTML hash. A Wrangler exit
    code or printed URL alone is insufficient.
-5. Return the verified immutable deployment URL first and retain a local
-   browser preview and source links. Each completed version gets its own
+5. Return the verified immutable deployment URL first and retain local HTML/JSON
+   and source links. Follow [preview cleanup](../archify/references/cleanup.md):
+   close owned review tabs/servers after verification; keep a live preview only
+   for an explicit open/show/keep-open request or genuine handoff.
+   Each completed version gets its own
    preview deployment; later publications do not replace earlier URLs. No
    production deployment, custom domain, or public gallery is created.
 

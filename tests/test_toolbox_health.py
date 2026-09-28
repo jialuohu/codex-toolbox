@@ -127,6 +127,26 @@ class InventoryTests(HealthFixtures):
         report = self.collect([plugin])
         self.assertEqual(checks(report["components"][0])["files"]["reason"], "missing_files")
 
+    def test_external_claude_plugin_manifest_and_skill_layout(self):
+        plugin, root = self.plugin(name="ui-ux-pro-max", market="ui-ux-pro-max-skill")
+        codex_manifest = root / ".codex-plugin/plugin.json"
+        claude_manifest = root / ".claude-plugin/plugin.json"
+        claude_manifest.parent.mkdir()
+        manifest = json.loads(codex_manifest.read_text())
+        manifest["skills"] = "./.claude/skills/"
+        claude_manifest.write_text(json.dumps(manifest))
+        codex_manifest.unlink()
+        self.skill(root / ".claude/skills/ui-ux-pro-max")
+
+        report = self.collect([plugin])
+        plugin_row = next(row for row in report["components"] if row["kind"] == "plugin")
+        skill_row = next(row for row in report["components"] if row["kind"] == "skill")
+        self.assertEqual(checks(plugin_row)["files"]["status"], "passed")
+        self.assertEqual(checks(plugin_row)["version"]["status"], "passed")
+        self.assertEqual(skill_row["parent_id"], plugin_row["id"])
+        self.assertEqual(checks(skill_row)["metadata"]["status"], "passed")
+        self.assertEqual(checks(skill_row)["references"]["status"], "passed")
+
     def test_missing_parser_is_unverified_not_invalid_metadata(self):
         path = self.skill(self.base / "skill")
         collector = self.collector()

@@ -6,6 +6,9 @@ conversation is needed. Saved setup records a successful check, not a permanent
 guarantee of login, quota, or model availability. `status` reports `configured`
 separately from `available`; availability is unknown until a live check.
 
+Read [browser ownership and cleanup](browser-lifecycle.md) before opening a probe
+or status tab. Finalize it after the check, or record an explicit sign-in handoff.
+
 ## Verify the browser
 
 Use the machine's current default HTTPS browser unless the user explicitly selects
@@ -100,6 +103,8 @@ There is no per-project binding and no mandatory app restart for model verificat
 The browser's selected-model control and accepted probe are the verification basis.
 A flag records an actual observation; it does not manufacture evidence. Keep the
 probe conversation in ChatGPT; do not delete user history as cleanup.
+Close the task-created probe tab after accepted setup unless it is explicitly
+handed off to the user; verify closure through the lifecycle procedure.
 Before calling the connection persistent, repeat the live login/model check in a
 fresh task and after an app restart. A successful check in this task alone does
 not establish either result; report those checks separately if they cannot run.
@@ -113,7 +118,10 @@ identity. Recheck visible model selection before each later consultation.
 
 `status` reads version-1 state without changing it. A deliberately requested setup
 probe migrates resolved state under a lock, writing a private, durable
-`state.v1.backup.json` before creating version-2 global state. Existing project
+`state.v1.backup.json` before creating version-3 global state. Version-2 state is
+also migrated on the first write, with a private `state.v2.backup.json` that
+preserves setup, task mappings, and request history. Status and connection checks
+remain read-only. Older helpers must reject version-3 state. Existing project
 bindings are not promoted to task conversations or global readiness.
 
 Pending legacy requests block migration. Inspect and reconcile through the old

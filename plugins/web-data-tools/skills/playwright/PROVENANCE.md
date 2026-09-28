@@ -11,8 +11,11 @@ and check the resolved CLI version before using version-specific examples.
 Selected reference examples follow the immutable Microsoft runtime release
 [`v0.1.21`, commit `74354ecc7a43da16d91a9bc54fa8db8283a3fcf5`](https://github.com/microsoft/playwright-cli/tree/74354ecc7a43da16d91a9bc54fa8db8283a3fcf5):
 request inspection, callback syntax, theme/media emulation, and the default
-configuration path. The wrapper is preserved; this
-reference refresh does not install a runtime or grant browser write authority.
+configuration path. The toolbox-owned [lifecycle contract](references/lifecycle.md)
+adds mandatory task ownership, scoped cleanup, and explicit handoff rules; the
+entrypoint examples pass an explicit task session. The wrapper and imported
+references are preserved. These instructions do not install a runtime or grant
+browser write authority.
 
 [The import receipt](upstream.json) records source and local checksums. The
 historical instruction baseline remains unchanged.

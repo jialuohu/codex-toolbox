@@ -1,0 +1,626 @@
+{
+  "schema_version": 1,
+  "status": "native_reopen_and_export_verified",
+  "application_called_by_helper": false,
+  "native_application_version": [
+    "com.omnigroup.OmniGraffle7",
+    "205.57.23"
+  ],
+  "native_application_version_basis": "Saved source archive; no current app probe by sanitizer.",
+  "palette": {
+    "file": "palette.json",
+    "sha256": "856a57736ac0ed9aa4e495a0060198a01b1802cc4d645735d4fe8e5d5efd932e"
+  },
+  "provenance": "Original fixed synthetic examples composed from public-paper visual patterns; retained sources are native editable primitives.",
+  "acceptance_document": "../../../ACCEPTANCE.md",
+  "starters": [
+    {
+      "file": "architecture-single.graffle",
+      "sha256": "83e3ac6d7f74320d46a1f0eafef3b03965a915b1952f667152a2b085702f9152",
+      "original_saved_source_sha256": "e0847dd657af28f766d535121de8d7a14822e736dd6c649562d8606b6f72146e",
+      "width": "single",
+      "size_pt": [
+        237.6,
+        221.0
+      ],
+      "minimum_text_size_pt": 7.0,
+      "fonts": [
+        "Helvetica",
+        "Helvetica-Bold"
+      ],
+      "srgb_palette_values": [
+        "#2148B8",
+        "#30343A",
+        "#B9C0C7",
+        "#C65F38",
+        "#F0F4FC",
+        "#F4F5F6",
+        "#FCF3ED",
+        "#FFFFFF"
+      ],
+      "synthetic_schematic": true,
+      "composition_references": [
+        "https://arxiv.org/pdf/2502.05370v2#page=5"
+      ],
+      "sanitization": {
+        "removed_top_level_author_fields": [
+          "Modifier"
+        ],
+        "parsed_semantic_difference_only_removed_fields": true,
+        "all_retained_graphs_rtf_ids_groups_opaque_payloads_equal": true,
+        "opaque_members_byte_identical": [
+          {
+            "member": "preview.jpeg",
+            "sha256": "8de5a0e03dcca658be8b55c9c49fcd13003258f18db4ce0d830cd5c9e2e994ec"
+          }
+        ],
+        "private_path_prefix_scan": "passed",
+        "private_path_matches": 0
+      },
+      "native_reopen_after_sanitization": "verified_by_acceptance_run",
+      "native_export_after_sanitization": "guarded_native_pdf_svg_committed",
+      "native_reopen_basis": "Actual acceptance run confirmed reopen; guarded native export opened working copies of these exact sanitized source hashes.",
+      "native_export_evidence": {
+        "export_report_sha256": "714714118d77bd5df6e36b344a0a21111fd435c45cf118179a1c0d9bb6c61507",
+        "output_sha256": {
+          "pdf": "780ba99d9d864fb1a2deed721036b4c0a849b214e01ed91d34e6bf4419261dc1",
+          "svg": "c9feea73964786498c3c35c9224f3952495df0c65d5d0284d834bdbe45094397",
+          "png": "79d1d5e7caa3c68ba92c10e678d63868187721d74f088ddb994808b88dcd16a1"
+        },
+        "operation_ids": {
+          "pdf": "fd120f49-8ad8-4b4e-bb3b-5f3e64a004aa",
+          "svg": "e3dc08d7-6f39-425d-bcdd-f91399b7d1e1"
+        },
+        "verification": {
+          "pdf_width_in": 3.3,
+          "svg_width_in": 3.3,
+          "pdf_fonts_embedded": true,
+          "svg_editable_text": true,
+          "glyph_review": "required"
+        },
+        "svg_text_metrics": {
+          "status": "qualified_native_svg_text",
+          "canvas_scale": [
+            1.0,
+            1.0
+          ],
+          "minimum_effective_font_size_pt": 7.0,
+          "font_families": [
+            "Helvetica"
+          ],
+          "editable_text_elements": 17,
+          "basis": "Explicit point dimensions and matching viewBox; translation-only transforms."
+        },
+        "svg_normalization": {
+          "status": "unitless_native_points_normalized",
+          "applied": true,
+          "original_dimensions": {
+            "width": "237.6",
+            "height": "221"
+          },
+          "physical_dimensions": {
+            "width": "237.6pt",
+            "height": "221pt"
+          },
+          "saved_canvas_size_points": [
+            237.6,
+            221.0
+          ],
+          "known_doctype_removed": false,
+          "original_export_sha256": "be8c90c72ddd3b573fcbff72c6fbf98203e9af8e4f46bd0da633bded72de9ddf",
+          "normalized_export_sha256": "c9feea73964786498c3c35c9224f3952495df0c65d5d0284d834bdbe45094397",
+          "svg_text_elements_retained": 17,
+          "basis": "both unitless dimensions and viewBox match saved fixed canvas points"
+        }
+      },
+      "top_level_author_metadata_absent": true,
+      "private_path_scan_after_native_export": "passed"
+    },
+    {
+      "file": "architecture-double.graffle",
+      "sha256": "409444db2496dc67358ecd65870020b0d2d88a577201d096b65dff4e9c88b237",
+      "original_saved_source_sha256": "29cfb503e50306152ae6c1617aa7331152917b9df7b6e41d425ce278e80095d1",
+      "width": "double",
+      "size_pt": [
+        496.8,
+        232.0
+      ],
+      "minimum_text_size_pt": 7.0,
+      "fonts": [
+        "Helvetica",
+        "Helvetica-Bold"
+      ],
+      "srgb_palette_values": [
+        "#2148B8",
+        "#30343A",
+        "#B9C0C7",
+        "#C65F38",
+        "#F0F4FC",
+        "#F4F5F6",
+        "#FCF3ED",
+        "#FFFFFF"
+      ],
+      "synthetic_schematic": true,
+      "composition_references": [
+        "https://arxiv.org/pdf/2502.05370v2#page=5"
+      ],
+      "sanitization": {
+        "removed_top_level_author_fields": [
+          "Modifier"
+        ],
+        "parsed_semantic_difference_only_removed_fields": true,
+        "all_retained_graphs_rtf_ids_groups_opaque_payloads_equal": true,
+        "opaque_members_byte_identical": [
+          {
+            "member": "preview.jpeg",
+            "sha256": "d5e5cf13ef9204e359d66d1f287f0ea201c384e09e17d43fbc23e1b74abf1c85"
+          }
+        ],
+        "private_path_prefix_scan": "passed",
+        "private_path_matches": 0
+      },
+      "native_reopen_after_sanitization": "verified_by_acceptance_run",
+      "native_export_after_sanitization": "guarded_native_pdf_svg_committed",
+      "native_reopen_basis": "Actual acceptance run confirmed reopen; guarded native export opened working copies of these exact sanitized source hashes.",
+      "native_export_evidence": {
+        "export_report_sha256": "c706cfe4516b2bf58ac14df2ad2faf3628d78e91a2a58390f9ad6027a20fd1a9",
+        "output_sha256": {
+          "pdf": "906a85c06b139125f9165563630afef22d41482aee90ef9e8f0cc098e29d2f4f",
+          "svg": "910a066e2d09a54ad0702959bdb0837a8ac8b29a7077db28d3a88cbec9287767",
+          "png": "a663c60dd7315fc2319e50072913a4c2be772e4f6593c6777966d299c5e4abff"
+        },
+        "operation_ids": {
+          "pdf": "cc8d0681-1c27-46a8-8f67-cfbfc4a360a2",
+          "svg": "8ac8035b-7c0d-4e66-9131-4804fd3d3fe8"
+        },
+        "verification": {
+          "pdf_width_in": 6.9,
+          "svg_width_in": 6.8999999999999995,
+          "pdf_fonts_embedded": true,
+          "svg_editable_text": true,
+          "glyph_review": "required"
+        },
+        "svg_text_metrics": {
+          "status": "qualified_native_svg_text",
+          "canvas_scale": [
+            1.0,
+            1.0
+          ],
+          "minimum_effective_font_size_pt": 7.0,
+          "font_families": [
+            "Helvetica"
+          ],
+          "editable_text_elements": 17,
+          "basis": "Explicit point dimensions and matching viewBox; translation-only transforms."
+        },
+        "svg_normalization": {
+          "status": "unitless_native_points_normalized",
+          "applied": true,
+          "original_dimensions": {
+            "width": "496.8",
+            "height": "232"
+          },
+          "physical_dimensions": {
+            "width": "496.8pt",
+            "height": "232pt"
+          },
+          "saved_canvas_size_points": [
+            496.8,
+            232.0
+          ],
+          "known_doctype_removed": false,
+          "original_export_sha256": "e247908509525698ebce2c94f6ff9ec8d9bfaf7b0417e3428cead269f06fa184",
+          "normalized_export_sha256": "910a066e2d09a54ad0702959bdb0837a8ac8b29a7077db28d3a88cbec9287767",
+          "svg_text_elements_retained": 17,
+          "basis": "both unitless dimensions and viewBox match saved fixed canvas points"
+        }
+      },
+      "top_level_author_metadata_absent": true,
+      "private_path_scan_after_native_export": "passed"
+    },
+    {
+      "file": "timeline-single.graffle",
+      "sha256": "777d5fcf17b0f9e11f47963a32c7165fc0c074fe4e23931c6cd8224afa09a0b2",
+      "original_saved_source_sha256": "777d5fcf17b0f9e11f47963a32c7165fc0c074fe4e23931c6cd8224afa09a0b2",
+      "width": "single",
+      "size_pt": [
+        237.6,
+        223.0
+      ],
+      "minimum_text_size_pt": 7.0,
+      "fonts": [
+        "Helvetica",
+        "Helvetica-Bold"
+      ],
+      "srgb_palette_values": [
+        "#2148B8",
+        "#30343A",
+        "#B9C0C7",
+        "#C65F38",
+        "#F0F4FC",
+        "#F4F5F6",
+        "#FCF3ED",
+        "#FFFFFF"
+      ],
+      "synthetic_schematic": true,
+      "composition_references": [
+        "https://intellisys.haow.us/assets/pdf/SC41406.2024.00045.pdf#page=4",
+        "https://intellisys.haow.us/assets/pdf/hanfei-asplos24spring.pdf#page=5"
+      ],
+      "sanitization": {
+        "removed_top_level_author_fields": [],
+        "parsed_semantic_difference_only_removed_fields": true,
+        "all_retained_graphs_rtf_ids_groups_opaque_payloads_equal": true,
+        "opaque_members_byte_identical": [
+          {
+            "member": "preview.jpeg",
+            "sha256": "4a01a5c72526a8663b653265f94542017a0e024919b68033e996c23df2b86fe9"
+          }
+        ],
+        "private_path_prefix_scan": "passed",
+        "private_path_matches": 0
+      },
+      "native_reopen_after_sanitization": "verified_by_acceptance_run",
+      "native_export_after_sanitization": "guarded_native_pdf_svg_committed",
+      "native_reopen_basis": "Actual acceptance run confirmed reopen; guarded native export opened working copies of these exact sanitized source hashes.",
+      "native_export_evidence": {
+        "export_report_sha256": "3d6c16fbfd4018de9b8131b4ced960737e7b969f1e33d22365ae91beab65fecc",
+        "output_sha256": {
+          "pdf": "d8307a8d7ebb85354a5eaee131f8fbc03d6831ced9f96f1694d7313e2daf324f",
+          "svg": "ead0bce16b2ed02203945eb5a61d8c13bb2e40b78da67dca0c4d6a87a79d0c36",
+          "png": "dafd117bdabdff2325f9876b1b4269894e628e94999fd12a03e9095e91d2fb0e"
+        },
+        "operation_ids": {
+          "pdf": "93614bc8-7e82-4996-83fa-9c5cc6340c12",
+          "svg": "fe192923-fea6-4821-bd56-7712afe755c2"
+        },
+        "verification": {
+          "pdf_width_in": 3.3,
+          "svg_width_in": 3.3,
+          "pdf_fonts_embedded": true,
+          "svg_editable_text": true,
+          "glyph_review": "required"
+        },
+        "svg_text_metrics": {
+          "status": "qualified_native_svg_text",
+          "canvas_scale": [
+            1.0,
+            1.0
+          ],
+          "minimum_effective_font_size_pt": 7.0,
+          "font_families": [
+            "Helvetica"
+          ],
+          "editable_text_elements": 14,
+          "basis": "Explicit point dimensions and matching viewBox; translation-only transforms."
+        },
+        "svg_normalization": {
+          "status": "unitless_native_points_normalized",
+          "applied": true,
+          "original_dimensions": {
+            "width": "237.6",
+            "height": "223"
+          },
+          "physical_dimensions": {
+            "width": "237.6pt",
+            "height": "223pt"
+          },
+          "saved_canvas_size_points": [
+            237.6,
+            223.0
+          ],
+          "known_doctype_removed": false,
+          "original_export_sha256": "34ef423f232d31f26da603a9d8951622c7fe8d9ac9ff882166f7835788bcee74",
+          "normalized_export_sha256": "ead0bce16b2ed02203945eb5a61d8c13bb2e40b78da67dca0c4d6a87a79d0c36",
+          "svg_text_elements_retained": 14,
+          "basis": "both unitless dimensions and viewBox match saved fixed canvas points"
+        }
+      },
+      "top_level_author_metadata_absent": true,
+      "private_path_scan_after_native_export": "passed"
+    },
+    {
+      "file": "timeline-double.graffle",
+      "sha256": "ee6ab658074f7bb0e7c6cf8582e8407d247a1283b569cbe5a6380a9b1d7f87ea",
+      "original_saved_source_sha256": "ee6ab658074f7bb0e7c6cf8582e8407d247a1283b569cbe5a6380a9b1d7f87ea",
+      "width": "double",
+      "size_pt": [
+        496.8,
+        215.0
+      ],
+      "minimum_text_size_pt": 7.0,
+      "fonts": [
+        "Helvetica",
+        "Helvetica-Bold"
+      ],
+      "srgb_palette_values": [
+        "#2148B8",
+        "#30343A",
+        "#B9C0C7",
+        "#C65F38",
+        "#F0F4FC",
+        "#F4F5F6",
+        "#FCF3ED",
+        "#FFFFFF"
+      ],
+      "synthetic_schematic": true,
+      "composition_references": [
+        "https://intellisys.haow.us/assets/pdf/SC41406.2024.00045.pdf#page=4",
+        "https://intellisys.haow.us/assets/pdf/hanfei-asplos24spring.pdf#page=5"
+      ],
+      "sanitization": {
+        "removed_top_level_author_fields": [],
+        "parsed_semantic_difference_only_removed_fields": true,
+        "all_retained_graphs_rtf_ids_groups_opaque_payloads_equal": true,
+        "opaque_members_byte_identical": [
+          {
+            "member": "preview.jpeg",
+            "sha256": "fb5f544eb60f97827f28404e77c9745127e8419f4172c16775402f7ab0220922"
+          }
+        ],
+        "private_path_prefix_scan": "passed",
+        "private_path_matches": 0
+      },
+      "native_reopen_after_sanitization": "verified_by_acceptance_run",
+      "native_export_after_sanitization": "guarded_native_pdf_svg_committed",
+      "native_reopen_basis": "Actual acceptance run confirmed reopen; guarded native export opened working copies of these exact sanitized source hashes.",
+      "native_export_evidence": {
+        "export_report_sha256": "94e40be6d629a1dac6937957f2a12738b708c1898d8e88f3f2f0bf5b556a9fe1",
+        "output_sha256": {
+          "pdf": "a71bda635de51bc925058d737249fbf92b75c29eef5447316a59bcebaf98d7a0",
+          "svg": "c8b21ecfa024a2682671ab031c427f9441be4ebec8eb4b668643748da36e36a1",
+          "png": "94d6535638849a1a7bf02c73efe92ccfc9677fea06dd9262b77382a440672f99"
+        },
+        "operation_ids": {
+          "pdf": "d9245d13-45ec-4f84-80ed-8931b56a2a06",
+          "svg": "bedde602-6b39-424a-9f44-59d01657dda6"
+        },
+        "verification": {
+          "pdf_width_in": 6.9,
+          "svg_width_in": 6.8999999999999995,
+          "pdf_fonts_embedded": true,
+          "svg_editable_text": true,
+          "glyph_review": "required"
+        },
+        "svg_text_metrics": {
+          "status": "qualified_native_svg_text",
+          "canvas_scale": [
+            1.0,
+            1.0
+          ],
+          "minimum_effective_font_size_pt": 7.0,
+          "font_families": [
+            "Helvetica"
+          ],
+          "editable_text_elements": 14,
+          "basis": "Explicit point dimensions and matching viewBox; translation-only transforms."
+        },
+        "svg_normalization": {
+          "status": "unitless_native_points_normalized",
+          "applied": true,
+          "original_dimensions": {
+            "width": "496.8",
+            "height": "215"
+          },
+          "physical_dimensions": {
+            "width": "496.8pt",
+            "height": "215pt"
+          },
+          "saved_canvas_size_points": [
+            496.8,
+            215.0
+          ],
+          "known_doctype_removed": false,
+          "original_export_sha256": "46f3481c8d96127fca0c7f58ac80ddf572f7e57087a452ef7d1302a1fd2bbd9e",
+          "normalized_export_sha256": "c8b21ecfa024a2682671ab031c427f9441be4ebec8eb4b668643748da36e36a1",
+          "svg_text_elements_retained": 14,
+          "basis": "both unitless dimensions and viewBox match saved fixed canvas points"
+        }
+      },
+      "top_level_author_metadata_absent": true,
+      "private_path_scan_after_native_export": "passed"
+    },
+    {
+      "file": "mechanism-single.graffle",
+      "sha256": "c0d363477cffb0c55f731f74c790b1fb1c93af438fa8ffea3d687131738de369",
+      "original_saved_source_sha256": "c0d363477cffb0c55f731f74c790b1fb1c93af438fa8ffea3d687131738de369",
+      "width": "single",
+      "size_pt": [
+        237.6,
+        370.0
+      ],
+      "minimum_text_size_pt": 7.0,
+      "fonts": [
+        "Helvetica",
+        "Helvetica-Bold"
+      ],
+      "srgb_palette_values": [
+        "#2148B8",
+        "#30343A",
+        "#B9C0C7",
+        "#C65F38",
+        "#F0F4FC",
+        "#F4F5F6",
+        "#FCF3ED",
+        "#FFFFFF"
+      ],
+      "synthetic_schematic": true,
+      "composition_references": [
+        "https://www.vldb.org/pvldb/vol18/p66-yu.pdf#page=4"
+      ],
+      "sanitization": {
+        "removed_top_level_author_fields": [],
+        "parsed_semantic_difference_only_removed_fields": true,
+        "all_retained_graphs_rtf_ids_groups_opaque_payloads_equal": true,
+        "opaque_members_byte_identical": [
+          {
+            "member": "preview.jpeg",
+            "sha256": "62da2d9dad0f4e13c5022fe0823bc1807589e1a1f43904c43aa34b3e7c669b98"
+          }
+        ],
+        "private_path_prefix_scan": "passed",
+        "private_path_matches": 0
+      },
+      "native_reopen_after_sanitization": "verified_by_acceptance_run",
+      "native_export_after_sanitization": "guarded_native_pdf_svg_committed",
+      "native_reopen_basis": "Actual acceptance run confirmed reopen; guarded native export opened working copies of these exact sanitized source hashes.",
+      "native_export_evidence": {
+        "export_report_sha256": "bb03014418ea69f923574ca7d8b1a98685317ce5ef23f825738f5a9107113b63",
+        "output_sha256": {
+          "pdf": "a01e3a2d12026ec43b36965cf77c0dd23e42697ada15c91f2c215ddaa0128fb4",
+          "svg": "22fb35aa07c99d7e20221b155273a4a4f1182510f833dbf33fd2aa80f67edfa1",
+          "png": "fc2317ec39c72741265ac70078896f039d5adaac28dc8bf07312709ce22b31eb"
+        },
+        "operation_ids": {
+          "pdf": "37cb1b5a-4e6b-4ebf-9485-f7a136172ed4",
+          "svg": "5b8cca09-17ac-4a8c-a02a-2f7a3567978d"
+        },
+        "verification": {
+          "pdf_width_in": 3.3,
+          "svg_width_in": 3.3,
+          "pdf_fonts_embedded": true,
+          "svg_editable_text": true,
+          "glyph_review": "required"
+        },
+        "svg_text_metrics": {
+          "status": "qualified_native_svg_text",
+          "canvas_scale": [
+            1.0,
+            1.0
+          ],
+          "minimum_effective_font_size_pt": 7.0,
+          "font_families": [
+            "Helvetica"
+          ],
+          "editable_text_elements": 18,
+          "basis": "Explicit point dimensions and matching viewBox; translation-only transforms."
+        },
+        "svg_normalization": {
+          "status": "unitless_native_points_normalized",
+          "applied": true,
+          "original_dimensions": {
+            "width": "237.6",
+            "height": "370"
+          },
+          "physical_dimensions": {
+            "width": "237.6pt",
+            "height": "370pt"
+          },
+          "saved_canvas_size_points": [
+            237.6,
+            370.0
+          ],
+          "known_doctype_removed": false,
+          "original_export_sha256": "bb54ef90fd79f72bf0e8f87dfd63e6cc52ca0dcf47ed2a778d9e892d34d84a78",
+          "normalized_export_sha256": "22fb35aa07c99d7e20221b155273a4a4f1182510f833dbf33fd2aa80f67edfa1",
+          "svg_text_elements_retained": 18,
+          "basis": "both unitless dimensions and viewBox match saved fixed canvas points"
+        }
+      },
+      "top_level_author_metadata_absent": true,
+      "private_path_scan_after_native_export": "passed"
+    },
+    {
+      "file": "mechanism-double.graffle",
+      "sha256": "b75c76b089cd6faddb2716078d6d473266c1e327cd86a5851f3df999121eae90",
+      "original_saved_source_sha256": "b75c76b089cd6faddb2716078d6d473266c1e327cd86a5851f3df999121eae90",
+      "width": "double",
+      "size_pt": [
+        496.8,
+        248.0
+      ],
+      "minimum_text_size_pt": 7.0,
+      "fonts": [
+        "Helvetica",
+        "Helvetica-Bold"
+      ],
+      "srgb_palette_values": [
+        "#2148B8",
+        "#30343A",
+        "#B9C0C7",
+        "#C65F38",
+        "#F0F4FC",
+        "#F4F5F6",
+        "#FCF3ED",
+        "#FFFFFF"
+      ],
+      "synthetic_schematic": true,
+      "composition_references": [
+        "https://www.vldb.org/pvldb/vol18/p66-yu.pdf#page=4"
+      ],
+      "sanitization": {
+        "removed_top_level_author_fields": [],
+        "parsed_semantic_difference_only_removed_fields": true,
+        "all_retained_graphs_rtf_ids_groups_opaque_payloads_equal": true,
+        "opaque_members_byte_identical": [
+          {
+            "member": "preview.jpeg",
+            "sha256": "1d3d2e692c04b6c0bf7adbd4d27b898040a46be55a26e531a485a5aa8d5b6e39"
+          }
+        ],
+        "private_path_prefix_scan": "passed",
+        "private_path_matches": 0
+      },
+      "native_reopen_after_sanitization": "verified_by_acceptance_run",
+      "native_export_after_sanitization": "guarded_native_pdf_svg_committed",
+      "native_reopen_basis": "Actual acceptance run confirmed reopen; guarded native export opened working copies of these exact sanitized source hashes.",
+      "native_export_evidence": {
+        "export_report_sha256": "170598657b96a964e9a307fbf45fc8336ceea76c49e90245b082fe610d15f3c1",
+        "output_sha256": {
+          "pdf": "0fe3c2b33ebb5ea4234c4b83a0fd15b03b2ccc4e86d1462aca903f633ff57d82",
+          "svg": "22a9e491a884f79f1cdbe7310fa07263436d3af9979ac0a85ce4a77208ce03c9",
+          "png": "7b6e7e71118ba011314c0dba696042ff0cf307be0f30160525d64050265229b0"
+        },
+        "operation_ids": {
+          "pdf": "d4eb13f8-a0e2-4875-beb0-290722a66c49",
+          "svg": "f909cfa4-4cad-4d3c-b52f-fc6a6b4b43bb"
+        },
+        "verification": {
+          "pdf_width_in": 6.9,
+          "svg_width_in": 6.8999999999999995,
+          "pdf_fonts_embedded": true,
+          "svg_editable_text": true,
+          "glyph_review": "required"
+        },
+        "svg_text_metrics": {
+          "status": "qualified_native_svg_text",
+          "canvas_scale": [
+            1.0,
+            1.0
+          ],
+          "minimum_effective_font_size_pt": 7.0,
+          "font_families": [
+            "Helvetica"
+          ],
+          "editable_text_elements": 22,
+          "basis": "Explicit point dimensions and matching viewBox; translation-only transforms."
+        },
+        "svg_normalization": {
+          "status": "unitless_native_points_normalized",
+          "applied": true,
+          "original_dimensions": {
+            "width": "496.8",
+            "height": "248"
+          },
+          "physical_dimensions": {
+            "width": "496.8pt",
+            "height": "248pt"
+          },
+          "saved_canvas_size_points": [
+            496.8,
+            248.0
+          ],
+          "known_doctype_removed": false,
+          "original_export_sha256": "a1dcc8d0d068f474d58d4aefdae3cad239195328e460ab6386cfa87e4591393c",
+          "normalized_export_sha256": "22a9e491a884f79f1cdbe7310fa07263436d3af9979ac0a85ce4a77208ce03c9",
+          "svg_text_elements_retained": 22,
+          "basis": "both unitless dimensions and viewBox match saved fixed canvas points"
+        }
+      },
+      "top_level_author_metadata_absent": true,
+      "private_path_scan_after_native_export": "passed"
+    }
+  ],
+  "application_called_by_promotion_helper": false,
+  "native_acceptance_basis": "Actual six-source sanitized native reopen/export run and fresh saved-source/export validation; no pixel or PDF-byte equality requirement."
+}

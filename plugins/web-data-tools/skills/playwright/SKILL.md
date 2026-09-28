@@ -9,6 +9,9 @@ description: "Use when the task requires automating a real browser from the term
 Drive a real browser from the terminal using `playwright-cli`. Prefer the bundled wrapper script so the CLI works even when it is not globally installed.
 Treat this skill as CLI-first automation. Do not pivot to `@playwright/test` unless the user explicitly asks for test files.
 
+Before any browser command, read [session ownership and cleanup](references/lifecycle.md).
+It is mandatory for every workflow, including examples copied from the references.
+
 ## Prerequisite check (required)
 
 Before proposing commands, check whether `npx` is available (the wrapper depends on it):
@@ -48,15 +51,20 @@ an older cached CLI supports the documented syntax.
 
 ## Quick start
 
-Use the wrapper script:
+Generate one session name for this task and pass it explicitly on every browser
+command. Keep the same value across shell calls; never generate it per command.
+The mandatory lifecycle reference defines when a session may be closed.
 
 ```bash
-"$PWCLI" open https://playwright.dev --headed
-"$PWCLI" snapshot
-"$PWCLI" click e15
-"$PWCLI" type "Playwright"
-"$PWCLI" press Enter
-"$PWCLI" screenshot
+PW_SESSION="codex-$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')"
+"$PWCLI" --session "$PW_SESSION" open https://playwright.dev --headed
+"$PWCLI" --session "$PW_SESSION" snapshot
+"$PWCLI" --session "$PW_SESSION" click e15
+"$PWCLI" --session "$PW_SESSION" type "Playwright"
+"$PWCLI" --session "$PW_SESSION" press Enter
+"$PWCLI" --session "$PW_SESSION" screenshot
+# After verifying the saved artifact and cleanup conditions:
+"$PWCLI" --session "$PW_SESSION" close
 ```
 
 If the user prefers a global install, this is also valid:
@@ -68,19 +76,21 @@ playwright-cli --help
 
 ## Core workflow
 
-1. Open the page.
+1. Record session ownership and open the page in the task's explicit session.
 2. Snapshot to get stable element refs.
 3. Interact using refs from the latest snapshot.
 4. Re-snapshot after navigation or significant DOM changes.
 5. Capture artifacts (screenshot, pdf, traces) when useful.
+6. Verify saved outputs, then finalize the owned session or record a deliberate
+   handoff using the mandatory lifecycle reference.
 
 Minimal loop:
 
 ```bash
-"$PWCLI" open https://example.com
-"$PWCLI" snapshot
-"$PWCLI" click e3
-"$PWCLI" snapshot
+"$PWCLI" --session "$PW_SESSION" open https://example.com
+"$PWCLI" --session "$PW_SESSION" snapshot
+"$PWCLI" --session "$PW_SESSION" click e3
+"$PWCLI" --session "$PW_SESSION" snapshot
 ```
 
 ## When to snapshot again
@@ -99,30 +109,30 @@ Refs can go stale. When a command fails due to a missing ref, snapshot again.
 ### Form fill and submit
 
 ```bash
-"$PWCLI" open https://example.com/form
-"$PWCLI" snapshot
-"$PWCLI" fill e1 "user@example.com"
-"$PWCLI" fill e2 "password123"
-"$PWCLI" click e3
-"$PWCLI" snapshot
+"$PWCLI" --session "$PW_SESSION" open https://example.com/form
+"$PWCLI" --session "$PW_SESSION" snapshot
+"$PWCLI" --session "$PW_SESSION" fill e1 "user@example.com"
+"$PWCLI" --session "$PW_SESSION" fill e2 "password123"
+"$PWCLI" --session "$PW_SESSION" click e3
+"$PWCLI" --session "$PW_SESSION" snapshot
 ```
 
 ### Debug a UI flow with traces
 
 ```bash
-"$PWCLI" open https://example.com --headed
-"$PWCLI" tracing-start
+"$PWCLI" --session "$PW_SESSION" open https://example.com --headed
+"$PWCLI" --session "$PW_SESSION" tracing-start
 # ...interactions...
-"$PWCLI" tracing-stop
+"$PWCLI" --session "$PW_SESSION" tracing-stop
 ```
 
 ### Multi-tab work
 
 ```bash
-"$PWCLI" tab-new https://example.com
-"$PWCLI" tab-list
-"$PWCLI" tab-select 0
-"$PWCLI" snapshot
+"$PWCLI" --session "$PW_SESSION" tab-new https://example.com
+"$PWCLI" --session "$PW_SESSION" tab-list
+"$PWCLI" --session "$PW_SESSION" tab-select 0
+"$PWCLI" --session "$PW_SESSION" snapshot
 ```
 
 ## Wrapper script
@@ -137,8 +147,9 @@ Prefer the wrapper unless the repository already standardizes on a global instal
 
 ## References
 
-Open only what you need:
+Read the lifecycle contract first; open the other references as needed:
 
+- Required session lifecycle: [ownership and cleanup](references/lifecycle.md)
 - CLI command reference: `references/cli.md`
 - Practical workflows and troubleshooting: `references/workflows.md`
 

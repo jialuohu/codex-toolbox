@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "source": "codex-toolbox photo-tools/skills/mono-color/references/design-system/colors.json",
+  "palette_id": "palette_cobalt_terracotta",
+  "selected_on": "2026-09-25",
+  "colors": {
+    "background": "#FFFFFF",
+    "text": "#30343A",
+    "cobalt": "#2148B8",
+    "terracotta": "#C65F38",
+    "pale_blue": "#F0F4FC",
+    "pale_terracotta": "#FCF3ED",
+    "pale_gray": "#F4F5F6",
+    "hairline": "#B9C0C7"
+  },
+  "usage": {
+    "blue": "held or ready resource, data transfer, control",
+    "terracotta": "active execution or output",
+    "dashed_gray": "idle, waiting, or empty",
+    "labels": "Always label states; colors alone never carry meaning"
+  },
+  "note": "The first three inks are selected from the cited immutable catalog. Pale fills and hairlines are local research figure companions; they are not catalog entries."
+}

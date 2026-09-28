@@ -18,6 +18,7 @@ or rendered ASCII as requested.
 2. If the runtime is missing or incompatible, use native inline Mermaid with the unchanged source, briefly disclose the fallback, and report the setup command from the doctor result. Do not install packages during an ordinary render.
 3. Create or validate the `.mmd` source. Use quoted node labels when labels contain punctuation or parentheses. If the user gave no destination, create a task-scoped temporary directory with `mktemp -d` and keep the source and export there; do not add automatic artifacts to the active repository.
 4. On a graphical surface, default to SVG and the renderer's default theme (`github-light` when available). In a terminal, render ASCII and include the editable `.mmd`. Honor an explicit destination, format, theme, color, scale, or transparency setting.
+   For a new research figure, use [research composition and supported style flags](../research-figure-style.md) after the explicit request and project or venue conventions. Ordinary diagrams retain the normal renderer defaults.
 5. Render the artifact, for example:
 
    ```bash

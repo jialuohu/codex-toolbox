@@ -13,6 +13,10 @@ validated standalone HTML file and retain its editable typed JSON source beside
 it. Static presentation is the default; enable trace motion only when the user
 asks for a demo or presentation.
 
+Before opening a browser or starting a preview server, read
+[preview cleanup](references/cleanup.md). Reuse one owned preview; finish by
+closing disposable review resources after verifying the saved result.
+
 ## Runtime and progressive loading
 
 1. Run `archify runtime-info --json`. If the launcher is unavailable, resolve
@@ -56,6 +60,7 @@ Archify behavior was essential, say that the fallback is not equivalent. Report
    other four types use `schema_version: 1`. Keep one obvious main path and
    roughly 8–12 primary nodes at showcase quality; move supporting detail into
    cards instead of crowding the topology.
+   For a new research figure, follow [research composition within existing presets](../research-figure-style.md) after explicit and project or venue conventions. Keep the selected type schema and supported presets; ordinary diagrams retain this skill's defaults.
 4. After the first candidate exists, run
    `node "<absolute updateCheckerPath>"` once using the exact returned path and
    follow the packaged notice contract. A timeout, offline host, or other check
@@ -89,11 +94,12 @@ Archify behavior was essential, say that the fallback is not equivalent. Report
    receipts retain `visualReview: "pending"`; supplementary manual browser work
    never changes the automated `browser_evidence` result. Do not claim visual
    inspection unless it happened, or treat failed capture as skipped.
-8. Open a local browser preview of the accepted HTML on graphical Codex
+8. Open one task-owned local browser preview of the accepted HTML on graphical Codex
    surfaces. A source-file link alone does not establish that the diagram was
    opened or rendered. If file links open source, serve the artifact directory
-   on `127.0.0.1` and open its HTTP URL in the browser. Keep the HTML and editable
-   JSON available locally.
+   on `127.0.0.1` using a tracked task-owned server and open its HTTP URL in a
+   browser tab with an exact creation handle. Keep the HTML and editable JSON
+   available locally. Follow the cleanup reference for server/tab ownership.
 9. Read [Diagram Publish](../diagram-publish/SKILL.md) after successful
    validation, delivery, and actual visual review. When that installation has
    opted into automatic public sharing, publish the accepted HTML using its
@@ -103,8 +109,12 @@ Archify behavior was essential, say that the fallback is not equivalent. Report
 10. Return a verified hosted URL first when publishing succeeded, followed by
     local HTML/JSON paths, diagram type, validation/delivery receipts, and
     independent `browser_evidence` and `visual_review` statuses. If sharing is
-    disabled, unconfigured, or unsuccessful, retain the local preview and
+    disabled, unconfigured, or unsuccessful, retain the local HTML/JSON and
     explain the publishing status without claiming that a public link is ready.
+11. Close owned review tabs and stop owned preview servers after saving and
+    verification, including on failure while control remains available. Keep a
+    live preview only for an explicit open/show/keep-open request or genuine
+    handoff, and report retained or unverified resources.
 
 ## Routing boundaries
 

@@ -1,7 +1,7 @@
 {
   "name": "drawio-tools",
-  "version": "0.1.4",
-  "description": "Create, inspect, edit, open, and export editable draw.io diagrams through a pinned official MCP runtime.",
+  "version": "0.1.6",
+  "description": "Create and export editable draw.io diagrams, including research architecture and mechanism templates.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com",
@@ -23,7 +23,7 @@
   "interface": {
     "displayName": "Draw.io Tools",
     "shortDescription": "Editable draw.io diagrams and exports.",
-    "longDescription": "Draw.io Tools provides the official draw.io MCP tool surface from a setup-time verified offline runtime, plus optional draw.io Desktop export to editable PNG, SVG, and PDF artifacts.",
+    "longDescription": "Draw.io Tools provides the official draw.io MCP tool surface from a setup-time verified offline runtime, editable research architecture, timeline, and cache mechanism templates, plus optional draw.io Desktop export to editable PNG, SVG, and PDF artifacts.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [

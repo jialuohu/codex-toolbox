@@ -1,0 +1,32 @@
+{
+  "name": "codex-task-tools",
+  "version": "0.1.0",
+  "description": "Create and track durable local Codex tasks in existing backend projects.",
+  "author": {
+    "name": "Codex Toolbox Contributors"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codex Task Tools",
+    "shortDescription": "Create and track local Codex tasks in verified projects.",
+    "longDescription": "Find existing Codex backend projects, create one durable task for an explicit request, submit its initial prompt once, and read back its status and pending approvals. A private local broker maintains execution tracking after the creation call returns.",
+    "developerName": "Codex Toolbox Contributors",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write",
+      "Interactive"
+    ],
+    "defaultPrompt": [
+      "Create a new Codex task in an existing project with this title and prompt, then give me its ID and verified status."
+    ]
+  },
+  "keywords": [
+    "codex",
+    "tasks",
+    "projects",
+    "app-server",
+    "mcp"
+  ]
+}

@@ -19,6 +19,23 @@ import time
 SCRIPT = Path(__file__).with_suffix('.applescript')
 APP_IDS = {'com.omnigroup.OmniGraffle7', 'com.omnigroup.OmniGraffle7.MacAppStore'}
 MUTATIONS = {'create', 'update', 'close', 'export', 'save'}
+SHAPE_FIELDS = {'x', 'y', 'width', 'height', 'text', 'font_size', 'font_name',
+                'fill', 'stroke', 'stroke_width', 'stroke_pattern', 'text_color',
+                'text_align', 'text_valign', 'text_padding'}
+CONNECTOR_FIELDS = {'stroke', 'stroke_width', 'stroke_pattern', 'line_type',
+                    'head_arrow', 'tail_arrow', 'from_side', 'to_side'}
+TEXT_READBACK_FIELDS = {'font_size', 'font_name', 'text_color', 'text_align'}
+STYLE_ENUMS = {
+    'shape_type': {'rectangle', 'rounded_rectangle', 'ellipse'},
+    'stroke_pattern': {'solid', 'dashed'},
+    'text_align': {'left', 'center', 'right'},
+    'text_valign': {'top', 'center', 'bottom'},
+    'line_type': {'straight', 'orthogonal'},
+    'head_arrow': {'none', 'filled'},
+    'tail_arrow': {'none', 'filled'},
+    'from_side': {'top', 'right', 'bottom', 'left'},
+    'to_side': {'top', 'right', 'bottom', 'left'},
+}
 
 
 def failure(code, message, unknown=False):
@@ -68,6 +85,9 @@ def connector_points(a, b):
     dx, dy = bx - ax, by - ay
     if dx == 0 and dy == 0:
         raise ValueError('Connector endpoints have identical centers')
+    if (max(a['x'], b['x']) <= min(a['x'] + a['width'], b['x'] + b['width'])
+            and max(a['y'], b['y']) <= min(a['y'] + a['height'], b['y'] + b['height'])):
+        raise ValueError('Connector endpoint rectangles overlap or touch')
     def distance(shape):
         return min(shape['width'] / (2 * abs(dx)) if dx else math.inf,
                    shape['height'] / (2 * abs(dy)) if dy else math.inf)
@@ -78,7 +98,9 @@ def connector_points(a, b):
 
 
 def _properties(props):
-    _keys(props, {'x', 'y', 'width', 'height', 'text', 'font_size', 'font_name', 'fill', 'stroke'})
+    _keys(props, SHAPE_FIELDS | CONNECTOR_FIELDS | {'shape_type'})
+    if props.get('text') == '' and set(props) & TEXT_READBACK_FIELDS:
+        raise ValueError('Text styling cannot be read back from an empty replacement label')
     for key in ('x', 'y'):
         if key in props:
             _number(props[key], -100000, 100000)
@@ -89,14 +111,23 @@ def _properties(props):
         _number(props['font_size'], 1, 1000)
         if int(props['font_size']) != props['font_size']:
             raise ValueError('This native interface supports integer font sizes only')
+    if 'stroke_width' in props:
+        _number(props['stroke_width'], .25, 20)
+    if 'text_padding' in props:
+        _number(props['text_padding'], 0, 64)
+        if int(props['text_padding']) != props['text_padding']:
+            raise ValueError('This native interface supports integer text padding only')
     for key in ('text', 'font_name'):
         if key in props:
             _string(props[key])
-    for key in ('fill', 'stroke'):
+    for key in ('fill', 'stroke', 'text_color'):
         if key in props:
             if not isinstance(props[key], str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', props[key]):
                 raise ValueError('Colors must be #RRGGBB')
             props['_' + key] = [int(props[key][i:i + 2], 16) * 257 for i in (1, 3, 5)]
+    for key, values in STYLE_ENUMS.items():
+        if key in props and (not isinstance(props[key], str) or props[key] not in values):
+            raise ValueError(f'Unsupported {key}')
 
 
 def validate_request(request):
@@ -145,18 +176,31 @@ def validate_request(request):
             objects = {}
             grouped = set()
             for obj in c['objects']:
-                _keys(obj, {'key', 'kind', 'x', 'y', 'width', 'height', 'text', 'font_size', 'font_name', 'fill', 'stroke', 'from', 'to', 'children'}, {'key', 'kind'})
+                _keys(obj, {'key', 'kind', 'from', 'to', 'children'} | SHAPE_FIELDS | CONNECTOR_FIELDS | {'shape_type'}, {'key', 'kind'})
                 key = _string(obj['key'], 256)
                 if not key or key in objects:
                     raise ValueError('Duplicate or empty object key')
                 kind = obj['kind']
                 if kind not in {'shape', 'text', 'connector', 'group'}:
                     raise ValueError('Unsupported object kind')
+                allowed = {'key', 'kind'}
+                if kind in {'shape', 'text'}:
+                    allowed |= SHAPE_FIELDS
+                    if kind == 'shape':
+                        allowed.add('shape_type')
+                elif kind == 'connector':
+                    allowed |= CONNECTOR_FIELDS | {'from', 'to'}
+                else:
+                    allowed.add('children')
+                if set(obj) - allowed:
+                    raise ValueError('Unsupported fields for object kind')
                 props = {k: v for k, v in obj.items() if k not in {'key', 'kind', 'from', 'to', 'children'}}
                 if kind in {'shape', 'text'} and not {'x', 'y', 'width', 'height'} <= props.keys():
                     raise ValueError('Shapes and text require geometry')
-                if kind in {'connector', 'group'} and set(props) - {'stroke'}:
-                    raise ValueError('Connector/group geometry is derived from endpoints/children')
+                if kind in {'shape', 'text'} and set(obj) & TEXT_READBACK_FIELDS and not obj.get('text'):
+                    raise ValueError('Text styling requires a nonempty label for native readback')
+                if kind == 'group' and props:
+                    raise ValueError('Group geometry and style are derived from children')
                 if kind != 'connector' and ('from' in obj or 'to' in obj):
                     raise ValueError('Only connectors have endpoints')
                 if kind != 'group' and 'children' in obj:
@@ -170,7 +214,11 @@ def validate_request(request):
                         endpoint = obj.get(field)
                         if not isinstance(endpoint, str) or endpoint not in objects or objects[endpoint]['kind'] not in {'shape', 'text'}:
                             raise ValueError('Connector endpoints must reference shapes on the same canvas')
-                    obj['_points'] = connector_points(objects[obj['from']], objects[obj['to']])
+                    # Validate only this connector's endpoint nodes. Backgrounds
+                    # and containing regions may intentionally overlap nodes.
+                    points = connector_points(objects[obj['from']], objects[obj['to']])
+                    if obj.get('line_type', 'straight') == 'straight' and not {'from_side', 'to_side'} & set(obj):
+                        obj['_points'] = points
                 if obj['kind'] == 'group':
                     children = obj.get('children')
                     if not isinstance(children, list) or len(children) < 2:
@@ -184,6 +232,7 @@ def validate_request(request):
         if not isinstance(changes, list) or not 1 <= len(changes) <= 1000:
             raise ValueError('Expected 1 to 1000 changes')
         seen = set()
+        saved_graphics = None
         for change in changes:
             _keys(change, {'canvas_id', 'object_id', 'set'}, {'canvas_id', 'object_id', 'set'})
             identity = (_id(change['canvas_id']), _id(change['object_id']))
@@ -193,6 +242,17 @@ def validate_request(request):
             if not change['set']:
                 raise ValueError('Empty update')
             _properties(change['set'])
+            if ({'font_size', 'font_name', 'text_align'} & set(change['set'])
+                    and 'text' not in change['set'] and 'text_color' not in change['set']):
+                # Derive this internal tuple from the strictly parsed saved
+                # working file. Callers cannot inject internal style fields.
+                from document import read_document
+                from engine import graph_map, qualified_saved_text_color
+                if saved_graphics is None:
+                    saved_graphics = graph_map(read_document(r['path'])[1])
+                if identity not in saved_graphics:
+                    raise ValueError('Saved text styling target is missing')
+                change['set']['_preserved_text_color'] = qualified_saved_text_color(saved_graphics[identity])
     if op == 'export':
         if ('canvas_id' in r) == (r.get('document_scope') is True):
             raise ValueError('Select exactly one canvas_id or document_scope:true')
@@ -295,11 +355,21 @@ class NativeAdapter:
                         for doc in documents:
                             if doc.get('path'):
                                 doc['path'] = str(Path(doc['path']).resolve())
+                            color_encoding = doc.get('color_encoding', 'legacy_16bit')
+                            if color_encoding not in {'legacy_16bit', 'srgb_unit'}:
+                                raise ValueError('Unsupported native color encoding')
                             for canvas in doc.get('canvases', []):
                                 for obj in canvas.get('objects', []):
-                                    for color_key in ('fill_rgb', 'stroke_rgb'):
+                                    for color_key in ('fill_rgb', 'stroke_rgb', 'text_rgb'):
                                         if color_key in obj:
-                                            obj[color_key] = [component / 65535 for component in obj[color_key]]
+                                            components = obj[color_key]
+                                            maximum = 1 if color_encoding == 'srgb_unit' else 65535
+                                            if (not isinstance(components, list) or len(components) != 3
+                                                    or any(type(component) not in (int, float) or not math.isfinite(component)
+                                                           or not 0 <= component <= maximum for component in components)):
+                                                raise ValueError('Invalid native color components')
+                                            if color_encoding == 'legacy_16bit':
+                                                obj[color_key] = [component / 65535 for component in components]
                     return value
                 except (ValueError, TypeError):
                     return failure('native_invalid_response', 'Native response was not valid JSON', normalized['op'] in MUTATIONS)

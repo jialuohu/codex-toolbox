@@ -6,6 +6,7 @@ import copy
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -17,10 +18,14 @@ import legacy_sidebar as legacy
 import recovery_runtime as runtime
 
 VERSION = 2
+APP_SCHEMA = 3
+APP_ADAPTER = 'app-owned-placement-v1'
+APP_OBSERVATION = 'owning-app-sidebar-observation'
 STATE, ATOM, LAYOUTS = legacy.STATE, legacy.ATOM, legacy.LAYOUTS
 Refusal = legacy.Refusal
 require, read, encoded, atomic, digest = legacy.require, legacy.read, legacy.encoded, legacy.atomic, legacy.digest
 MAX_RECORD = 8 * 1024 * 1024
+APP_MAX_EVENTS_PER_DIRECTION = 8
 
 def fingerprint(value):
     return digest(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8'))
@@ -345,6 +350,15 @@ def load_record(directory):
     plan = private_read(directory / 'plan.json')
     if plan.get('schema') == 1:
         return legacy.load_record(directory)
+    if plan.get('schema') == APP_SCHEMA:
+        require(plan.get('adapter') == APP_ADAPTER, 'Unsupported app-owned receipt')
+        require(private_read(directory / 'plan.sha256.json')['sha256'] == digest((directory / 'plan.json').read_bytes()),
+                'Recovery plan changed')
+        validate_layout(plan['layout'])
+        require(isinstance(plan.get('native_actions'), list)
+                and isinstance(plan.get('expected'), list)
+                and isinstance(plan.get('missing_projects'), list), 'Invalid app-owned plan')
+        return directory, plan
     require(plan.get('schema') == VERSION and plan.get('adapter') == 'client-remote-registry-v2', 'Unsupported receipt')
     require(private_read(directory / 'plan.sha256.json')['sha256'] == digest((directory / 'plan.json').read_bytes()),
             'Recovery plan changed')
@@ -468,6 +482,8 @@ def transact_locked(home, directory, rollback=False):
     directory, plan = load_record(directory)
     if plan['schema'] == 1:
         return legacy.transact(home, directory, rollback)
+    if plan['schema'] == APP_SCHEMA:
+        raise Refusal('App-owned placement requires fresh --observations; no file transaction is available')
     require(rollback or private_read(directory / 'status.json')['phase'] != 'metadata-rolled-back',
             'Recovery was rolled back; prepare a new record before applying again')
     if not plan['created']:
@@ -558,6 +574,9 @@ def native_event(directory, event, remove_empty_sections=False, home=None):
 
 def native_event_locked(directory, event, remove_empty_sections=False, home=None):
     directory, plan = load_record(directory)
+    if plan['schema'] == APP_SCHEMA:
+        return app_event_locked(Path(home) if home is not None else Path(plan['codex_home']),
+                                directory, plan, event, remove_empty_sections)
     require(plan['schema'] == VERSION, 'Native receipts require v2')
     guard(Path(home) if home is not None else Path(plan['codex_home']), plan, closed=False)
     status = private_read(directory / 'status.json')
@@ -704,6 +723,8 @@ def verify_locked(home, directory, observations):
     directory, plan = load_record(directory)
     if plan['schema'] == 1:
         return legacy.verify(home, directory, observations)
+    if plan['schema'] == APP_SCHEMA:
+        return verify_app_locked(home, directory, plan, observations)
     state = guard(home, plan, closed=False)
     status = private_read(directory / 'status.json')
     require(status['phase'] in ('applied-unverified', 'verified')
@@ -767,11 +788,553 @@ def verify_locked(home, directory, observations):
     save_status(directory, 'verified', projects=len(plan['expected']), tasks=len(all_candidates))
     return {'phase': 'verified', 'projects': len(plan['expected']), 'tasks': len(all_candidates)}
 
+
+def app_observation(home, observation, *, account=None, machine=None, after=None):
+    """Validate a fresh, private wrapper around both owning app-tool results."""
+    require(isinstance(observation, dict)
+            and set(observation) == {'schema', 'kind', 'collected_at', 'sidebar_machine',
+                                     'account_id', 'projects_result', 'threads_result'}
+            and observation['schema'] == 1 and observation['kind'] == APP_OBSERVATION,
+            'Invalid owning-app observation wrapper')
+    collected = observation['collected_at']
+    require(isinstance(collected, (int, float)) and math.isfinite(collected)
+            and time.time() - 300 <= collected <= time.time() + 30
+            and (after is None or collected >= after), 'Fresh owning-app observations required')
+    actual_machine, actual_account = legacy.machine_id(), legacy.identity(home)
+    require(observation['sidebar_machine'] == actual_machine
+            and observation['account_id'] == actual_account
+            and (machine is None or machine == actual_machine)
+            and (account is None or account == actual_account),
+            'Owning app is not the selected sidebar Mac and account')
+    project_result, thread_result = observation['projects_result'], observation['threads_result']
+    require(isinstance(project_result, dict) and isinstance(project_result.get('schemaVersion'), int)
+            and isinstance(project_result.get('projects'), list)
+            and isinstance(thread_result, dict) and isinstance(thread_result.get('schemaVersion'), int)
+            and isinstance(thread_result.get('sections'), list)
+            and thread_result.get('unavailableHosts') == []
+            and thread_result.get('unavailableSources') == [],
+            'Incomplete owning-app project or section observations')
+    ps, ss = project_result['projects'], thread_result['sections']
+    require(len(ps) <= 10000 and len(ss) <= 1000, 'Owning-app observation exceeds size limit')
+    projects, pairs = {}, set()
+    for p in ps:
+        require(isinstance(p, dict) and isinstance(p.get('projectId'), str)
+                and 0 < len(p['projectId']) <= 512 and isinstance(p.get('projectKind'), str)
+                and p['projectKind'] and p['projectId'] not in projects,
+                'Invalid or duplicate owning-app project ID')
+        kind = p['projectKind']
+        if kind in ('local', 'remote'):
+            require(all(isinstance(p.get(k), str) and p[k] for k in ('label', 'path', 'hostId'))
+                    and Path(p['path']).is_absolute() and '\x00' not in p['path']
+                    and ((kind == 'local' and p['hostId'] == 'local')
+                         or (kind == 'remote' and p['hostId'].startswith('remote-ssh-discovered:'))),
+                    'Invalid owning-app local or remote project')
+            pair = (p['hostId'], p['path'])
+            require(pair not in pairs, 'Ambiguous owning-app project identity')
+            pairs.add(pair)
+        projects[p['projectId']] = {
+            'projectId': p['projectId'], 'projectKind': kind,
+            'label': p.get('label') if isinstance(p.get('label'), str) else None,
+            'path': p.get('path') if isinstance(p.get('path'), str) else None,
+            'hostId': p.get('hostId') if isinstance(p.get('hostId'), str) else None,
+        }
+    sections_out, ids, names = [], set(), set()
+    for s in ss:
+        require(isinstance(s, dict) and all(k in s for k in ('sectionId', 'name', 'itemKeys'))
+                and isinstance(s['sectionId'], str) and 0 < len(s['sectionId']) <= 512
+                and isinstance(s['name'], str) and 0 < len(s['name']) <= 200
+                and isinstance(s['itemKeys'], list)
+                and all(isinstance(k, str) and k for k in s['itemKeys'])
+                and len(set(s['itemKeys'])) == len(s['itemKeys']),
+                'Invalid owning-app section')
+        require(s['sectionId'] not in ids and s['name'] not in names,
+                'Ambiguous owning-app section identity')
+        ids.add(s['sectionId']); names.add(s['name'])
+        sections_out.append({'id': s['sectionId'], 'name': s['name'], 'itemKeys': list(s['itemKeys'])})
+    require({'pinned', 'threads', 'chats'} <= ids, 'Owning-app built-in sections are incomplete')
+    return {'collected_at': collected, 'sidebar_machine': actual_machine,
+            'account_id': actual_account, 'projects': projects, 'sections': sections_out}
+
+
+def app_owner(section_list, project_id):
+    key = 'codex:project:' + project_id
+    found = [s for s in section_list if key in s['itemKeys']]
+    require(len(found) == 1, 'Selected project is absent from sidebar or has conflicting owners')
+    return found[0]
+
+
+def app_host_evidence(project_host, host_id, paths, sidebar_machine):
+    require(isinstance(project_host, str) and project_host, 'Select a project host')
+    expected = 'local' if project_host == 'local' else 'remote-ssh-discovered:' + project_host
+    require(host_id == expected, 'Observed project host does not match the selected connection')
+    evidence = runtime.probe_paths(project_host, sorted(set(paths)))
+    require(isinstance(evidence, dict) and isinstance(evidence.get('machine'), str)
+            and len(evidence['machine']) == 64
+            and isinstance(evidence.get('paths'), dict), 'Incomplete project-host evidence')
+    if project_host == 'local':
+        require(evidence['machine'] == sidebar_machine, 'Local project belongs to a different Mac')
+    for path in paths:
+        info = evidence['paths'].get(path)
+        require(isinstance(info, dict) and isinstance(info.get('canonical'), str)
+                and Path(info['canonical']).is_absolute()
+                and isinstance(info.get('file_id'), list) and len(info['file_id']) == 2
+                and all(isinstance(n, int) for n in info['file_id']),
+                'Missing or inaccessible project path: ' + path)
+    return evidence
+
+
+def app_path_key(evidence, path):
+    info = evidence['paths'][path]
+    return info['canonical'], tuple(info['file_id'])
+
+
+def export_app_data(home, observations, project_host, host_id):
+    view = app_observation(home, observations)
+    projects = [p for p in view['projects'].values()
+                if p['hostId'] == host_id and p['projectKind'] in ('local', 'remote')]
+    require(projects, 'No owning-app projects for selected host')
+    selected_paths = {p['path'] for p in projects}
+    require(not any(p['projectKind'] not in ('local', 'remote')
+                    and p['path'] in selected_paths for p in view['projects'].values()),
+            'Selected source path has an unsupported owning-app project kind')
+    evidence = app_host_evidence(project_host, host_id, [p['path'] for p in projects], view['sidebar_machine'])
+    require(len({app_path_key(evidence, p['path'])[0] for p in projects}) == len(projects)
+            and len({app_path_key(evidence, p['path'])[1] for p in projects}) == len(projects),
+            'Ambiguous physical project paths')
+    custom = [s for s in view['sections'] if s['id'] not in ('pinned', 'threads', 'chats')]
+    portable_sections = [{'key': 's' + str(i), 'name': s['name']} for i, s in enumerate(custom)]
+    by_id = {s['id']: portable_sections[i]['key'] for i, s in enumerate(custom)}
+    portable_projects = []
+    for i, p in enumerate(projects):
+        owner = app_owner(view['sections'], p['projectId'])
+        require(owner['id'] != 'chats', 'A project is in the task section')
+        placement = ('@pinned' if owner['id'] == 'pinned' else None if owner['id'] == 'threads'
+                     else by_id[owner['id']])
+        portable_projects.append({'key': 'p' + str(i), 'path': p['path'], 'label': p['label'],
+                                  'section': placement,
+                                  'section_position': owner['itemKeys'].index('codex:project:' + p['projectId']),
+                                  'appearance': None, 'expanded': None})
+    return validate_layout({'schema': VERSION, 'kind': 'sidebar-layout',
+        'provenance': {'source_machine': view['sidebar_machine'],
+                       'project_machine': evidence['machine'], 'captured_at': view['collected_at']},
+        'projects': portable_projects, 'sections': portable_sections})
+
+
+def prepare_app(home, directory, source_layout, project_host, new_host, observations):
+    layout = validate_layout(private_read(source_layout) if not isinstance(source_layout, dict)
+                             else copy.deepcopy(source_layout))
+    require(all(len(s['key']) <= 200 for s in layout['sections'])
+            and all(len(p['key']) <= 200 for p in layout['projects']),
+            'Portable app-owned source keys are too long')
+    view = app_observation(home, observations)
+    selected = [p for p in view['projects'].values()
+                if p['hostId'] == new_host and p['projectKind'] in ('local', 'remote')]
+    paths = [p['path'] for p in layout['projects']] + [p['path'] for p in selected]
+    evidence = app_host_evidence(project_host, new_host, paths, view['sidebar_machine'])
+    require(layout['provenance']['project_machine'] == evidence['machine'],
+            'Layout belongs to a different project Mac')
+    for batch in ([p['path'] for p in layout['projects']], [p['path'] for p in selected]):
+        require(len({app_path_key(evidence, p)[0] for p in batch}) == len(batch)
+                and len({app_path_key(evidence, p)[1] for p in batch}) == len(batch),
+                'Ambiguous physical project paths')
+    current_sections = view['sections']
+    existing = {s['name']: s for s in current_sections if s['id'] not in ('pinned', 'threads', 'chats')}
+    builtin_names = {s['name'] for s in current_sections if s['id'] in ('pinned', 'threads', 'chats')}
+    require(not any(s['name'] in builtin_names for s in layout['sections']),
+            'Portable custom section collides with a built-in section')
+    section_map = {s['key']: s for s in layout['sections']}
+    placements, expected, missing = [], [], []
+    for source in layout['projects']:
+        require(not any(p['path'] == source['path']
+                        and p['projectKind'] not in ('local', 'remote')
+                        for p in view['projects'].values()),
+                'Source path has an unsupported owning-app project kind')
+        require(not any(p['path'] == source['path'] and p['hostId'] != new_host
+                        for p in view['projects'].values()),
+                'Source path is registered under a different observed project host')
+        key = app_path_key(evidence, source['path'])
+        matches = [p for p in selected if app_path_key(evidence, p['path'])[0] == key[0]
+                   or app_path_key(evidence, p['path'])[1] == key[1]]
+        require(len(matches) <= 1, 'Ambiguous owning-app registration for source path')
+        if not matches:
+            missing.append({'path': source['path'], 'label': source['label'],
+                            'hostId': new_host, 'reason': 'add_project_in_destination_app'})
+            continue
+        p = matches[0]
+        current_owner = app_owner(current_sections, p['projectId'])
+        require(current_owner['id'] != 'chats', 'A project is in the task section')
+        desired_key = source['section']
+        desired_name = ('Pinned' if desired_key == '@pinned' else
+                        section_map[desired_key]['name'] if desired_key else None)
+        target = (next(s for s in current_sections if s['id'] == 'pinned') if desired_key == '@pinned'
+                  else existing.get(desired_name) if desired_name else None)
+        if current_owner['id'] == 'threads' and desired_key is not None:
+            placements.append({'id': 'place:' + source['key'], 'kind': 'place-project',
+                               'source_key': source['key'], 'project_id': p['projectId'],
+                               'section_key': desired_key,
+                               'section_id': target['id'] if target else None,
+                               'section_name': target['name'] if target else desired_name,
+                               'prior_owner': 'threads'})
+        expected.append({'source_key': source['key'], 'project_id': p['projectId'],
+                         'host_id': new_host, 'project_kind': p['projectKind'],
+                         'path': p['path'], 'canonical': key[0],
+                         'file_id': list(key[1]), 'before_owner': current_owner['id'],
+                         'desired_section': desired_key})
+    rank = {s['key']: i for i, s in enumerate(layout['sections'])}
+    source_by_key = {p['key']: p for p in layout['projects']}
+    placements.sort(key=lambda a: (rank.get(a['section_key'], len(rank)),
+                                   source_by_key[a['source_key']]['section_position']))
+    needed = {a['section_key'] for a in placements if a['section_key'] != '@pinned'}
+    creates = [{'id': 'section:' + s['key'], 'kind': 'create-section',
+                'section_key': s['key'], 'section_name': s['name']}
+               for s in layout['sections'] if s['key'] in needed and s['name'] not in existing]
+    actions = creates + placements
+    if actions:
+        enlarged = current_sections + [
+            {'id': 'x' * 512, 'name': action['section_name'], 'itemKeys': []}
+            for action in creates]
+        sample = {'operation_id': max((a['id'] for a in actions), key=len),
+                  'stage': 'rollback-unresolved', 'observed_at': 1e20,
+                  'sections': enlarged, 'result_section_id': 'x' * 512}
+        sample_bytes = len(encoded({'schema': APP_SCHEMA, 'events': [sample]}))
+        require(2 * sample_bytes * 2 * APP_MAX_EVENTS_PER_DIRECTION * len(actions) < MAX_RECORD,
+                'Planned app-owned action journal exceeds private receipt limit; use a smaller batch')
+    plan = {'schema': APP_SCHEMA, 'adapter': APP_ADAPTER, 'layout': layout,
+            'codex_home': str(Path(home).expanduser().resolve()),
+            'sidebar_machine': view['sidebar_machine'], 'target_account': view['account_id'],
+            'project_host': project_host, 'new_host': new_host,
+            'project_machine': evidence['machine'],
+            'source_identity': {p['path']: {'canonical': app_path_key(evidence, p['path'])[0],
+                                            'file_id': list(app_path_key(evidence, p['path'])[1])}
+                                for p in layout['projects']},
+            'prepared_at': time.time(), 'baseline_sections': current_sections,
+            'baseline_collected_at': view['collected_at'], 'expected': expected,
+            'selected_host_projects': sorted([{'project_id': p['projectId'],
+                                                'project_kind': p['projectKind'],
+                                                'host_id': p['hostId'], 'path': p['path']}
+                                               for p in selected], key=lambda p: p['project_id']),
+            'missing_projects': missing, 'native_actions': actions}
+    directory = legacy.private_directory(directory)
+    require(not list(directory.iterdir()), 'Choose a new empty recovery directory')
+    raw = encoded(plan)
+    require(len(raw) <= MAX_RECORD, 'App-owned plan exceeds private receipt limit')
+    atomic(directory / 'plan.json', raw)
+    atomic(directory / 'plan.sha256.json', encoded({'sha256': digest(raw)}))
+    atomic(directory / 'native.json', encoded({'schema': APP_SCHEMA, 'events': []}))
+    save_status(directory, 'prepared')
+    return {'phase': 'prepared', 'record': str(directory), 'native_actions': plan['native_actions'],
+            'missing_projects': missing, 'requires_app_exit': False, 'file_changes': 0}
+
+
+def app_live(home, plan, observations, *, after=None):
+    require(str(Path(home).expanduser().resolve()) == plan['codex_home'],
+            'Wrong sidebar Codex home')
+    view = app_observation(home, observations, account=plan['target_account'],
+                           machine=plan['sidebar_machine'], after=after)
+    current_host = sorted([{'project_id': p['projectId'], 'project_kind': p['projectKind'],
+                            'host_id': p['hostId'], 'path': p['path']}
+                           for p in view['projects'].values()
+                           if p['hostId'] == plan['new_host']
+                           and p['projectKind'] in ('local', 'remote')],
+                          key=lambda p: p['project_id'])
+    require(current_host == plan['selected_host_projects'],
+            'Selected project-host registrations changed; prepare a new receipt')
+    source_paths = set(plan['source_identity'])
+    require(not any(p['path'] in source_paths and p['hostId'] != plan['new_host']
+                    for p in view['projects'].values() if p['path']),
+            'A source path is registered under another observed host')
+    for p in plan['expected']:
+        current = view['projects'].get(p['project_id'])
+        require(current is not None and current['projectKind'] == p['project_kind']
+                and current['hostId'] == p['host_id']
+                and current['path'] == p['path'],
+                'Prepared owning-app project identity changed')
+        app_owner(view['sections'], p['project_id'])
+    return view
+
+
+def app_recheck_paths(plan):
+    paths = sorted({p['path'] for p in plan['layout']['projects']}
+                   | {p['path'] for p in plan['expected']})
+    evidence = app_host_evidence(plan['project_host'], plan['new_host'],
+                                 paths, plan['sidebar_machine'])
+    require(evidence['machine'] == plan['project_machine'],
+            'Project host identity changed')
+    for path, before in plan['source_identity'].items():
+        require(app_path_key(evidence, path) == (before['canonical'], tuple(before['file_id'])),
+                'Source project path identity changed')
+    for p in plan['expected']:
+        require(app_path_key(evidence, p['path']) == (p['canonical'], tuple(p['file_id'])),
+                'Prepared project path identity changed')
+    return evidence
+
+
+def app_sections_equal(a, b):
+    return a == b
+
+
+def app_action_delta(before, after, action, *, reverse=False, created_id=None):
+    """Validate that an owning tool changed only its intended section membership."""
+    old = {s['id']: s for s in before}
+    new = {s['id']: s for s in after}
+    if action['kind'] == 'create-section':
+        if reverse:
+            require(created_id in old and created_id not in new
+                    and old[created_id]['name'] == action['section_name']
+                    and not old[created_id]['itemKeys'], 'Created section is not empty and owned by this receipt')
+            require([s['id'] for s in before if s['id'] != created_id] == [s['id'] for s in after]
+                    and all(old[sid] == new[sid] for sid in new),
+                    'Unrelated section changed during removal')
+            return created_id
+        added = set(new) - set(old)
+        require(len(added) == 1 and set(old) <= set(new), 'Section creation was not uniquely observed')
+        sid = next(iter(added))
+        require(sid not in ('pinned', 'threads', 'chats')
+                and new[sid]['name'] == action['section_name']
+                and not new[sid]['itemKeys']
+                and [s['id'] for s in after if s['id'] != sid] == [s['id'] for s in before]
+                and all(old[k] == new[k] for k in old),
+                'Section creation changed unrelated sidebar data')
+        return sid
+    require([s['id'] for s in before] == [s['id'] for s in after]
+            and all(old[sid]['name'] == new[sid]['name'] for sid in old),
+            'Section identity changed during placement')
+    key = 'codex:project:' + action['project_id']
+    source = action['prior_owner'] if not reverse else None
+    target = action['prior_owner'] if reverse else action['section_id']
+    if not reverse and target is None:
+        candidates = [s for s in after if s['name'] == action['section_name']
+                      and s['id'] not in ('threads', 'chats')]
+        require(len(candidates) == 1, 'New destination section is ambiguous')
+        target = candidates[0]['id']
+    if reverse:
+        matches = [s['id'] for s in before if key in s['itemKeys']]
+        require(len(matches) == 1, 'Placed project owner changed before rollback')
+        source = matches[0]
+        require(old[source]['name'] == action['section_name']
+                and (action['section_id'] is None or source == action['section_id']),
+                'Placed project is no longer in its intended section')
+    require(source in old and target in old and source != target
+            and key in old[source]['itemKeys'] and key not in old[target]['itemKeys']
+            and key not in new[source]['itemKeys'] and key in new[target]['itemKeys'],
+            'Owning-app placement did not make the intended move')
+    for sid in old:
+        before_keys, after_keys = old[sid]['itemKeys'], new[sid]['itemKeys']
+        require([x for x in before_keys if x != key] == [x for x in after_keys if x != key]
+                and ((key in before_keys) != (key in after_keys)) == (sid in (source, target)),
+                'Unrelated section membership or ordering changed')
+    return target if not reverse else source
+
+
+def begin_app_apply(home, directory, observations):
+    with record_lock(directory):
+        directory, plan = load_record(directory)
+        require(plan['schema'] == APP_SCHEMA, 'App-owned observations require an app-owned receipt')
+        status = private_read(directory / 'status.json')
+        require(status['phase'] == 'prepared', 'App-owned recovery was already started')
+        view = app_live(home, plan, observations, after=plan['baseline_collected_at'])
+        require(app_sections_equal(view['sections'], plan['baseline_sections']),
+                'Destination sidebar changed; prepare a new receipt')
+        app_recheck_paths(plan)
+        save_status(directory, 'applying')
+        return {'phase': 'applying', 'native_actions': plan['native_actions'],
+                'missing_projects': plan['missing_projects'], 'file_changes': 0}
+
+
+def app_event(home, directory, event, remove_empty_sections=False):
+    with record_lock(directory):
+        directory, plan = load_record(directory)
+        require(plan['schema'] == APP_SCHEMA, 'App-owned events require an app-owned receipt')
+        return app_event_locked(home, directory, plan, event, remove_empty_sections)
+
+
+def app_event_locked(home, directory, plan, event, remove_empty_sections=False):
+    status = private_read(directory / 'status.json')
+    require(status['phase'] in ('applying', 'placement-verified', 'placement-partial'),
+            'Begin app-owned apply before recording actions')
+    require(isinstance(event, dict)
+            and set(event) == {'operation_id', 'stage', 'observed_at', 'observation'}
+            and event['stage'] in ('intent', 'unresolved', 'confirmed', 'not-applied',
+                                   'rollback-intent', 'rollback-unresolved', 'reversed')
+            and isinstance(event['observed_at'], (int, float))
+            and math.isfinite(event['observed_at']),
+            'Invalid app-owned event')
+    view = app_live(home, plan, event['observation'], after=status['time'])
+    app_recheck_paths(plan)
+    require(event['observed_at'] == view['collected_at'], 'Event time does not match its app readback')
+    actions = plan['native_actions']
+    action = next((a for a in actions if a['id'] == event['operation_id']), None)
+    require(action is not None, 'Unknown app-owned operation')
+    receipt = private_read(directory / 'native.json')
+    require(receipt.get('schema') == APP_SCHEMA and isinstance(receipt.get('events'), list),
+            'Invalid app-owned action journal')
+    events = receipt['events']
+    require(not events or event['observed_at'] >= events[-1]['observed_at'],
+            'Stale app-owned observation')
+    previous = [e for e in events if e['operation_id'] == action['id']]
+    forward = ('intent', 'unresolved', 'confirmed', 'not-applied')
+    reverse_stages = ('rollback-intent', 'rollback-unresolved', 'reversed')
+    same_direction = sum(e['stage'] in (forward if event['stage'] in forward else reverse_stages)
+                         for e in previous)
+    terminal = event['stage'] in ('confirmed', 'not-applied', 'reversed')
+    require(same_direction < APP_MAX_EVENTS_PER_DIRECTION - (0 if terminal else 1),
+            'App-owned event retry limit reached; reconcile the outstanding result')
+    current = view['sections']
+    if event['stage'] == 'intent':
+        require(not any(e['stage'] in ('rollback-intent', 'rollback-unresolved', 'reversed')
+                        for e in events), 'Prepare a new receipt after rollback begins')
+        if previous:
+            require(previous[-1]['stage'] == 'unresolved'
+                    and current == next(e for e in previous if e['stage'] == 'intent')['sections'],
+                    'Uncertain action must be read back unchanged before retry')
+        else:
+            prior_actions = actions[:actions.index(action)]
+            require(all(any(e['operation_id'] == a['id'] and e['stage'] == 'confirmed' for e in events)
+                        for a in prior_actions), 'Apply actions in planned order')
+            baseline = events[-1]['sections'] if events else plan['baseline_sections']
+            require(current == baseline, 'Sidebar changed before app-owned intent')
+            if action['kind'] == 'create-section':
+                require(not any(s['name'] == action['section_name'] for s in current),
+                        'Destination section already exists; reprepare')
+            else:
+                require(app_owner(current, action['project_id'])['id'] == action['prior_owner'],
+                        'Project placement changed before intent')
+                matches = [s for s in current if
+                           (s['id'] == action['section_id'] if action['section_id']
+                            else s['name'] == action['section_name'])]
+                require(len(matches) == 1 and matches[0]['name'] == action['section_name'],
+                        'Destination section is not uniquely present')
+    elif event['stage'] in ('unresolved', 'confirmed', 'not-applied'):
+        require(previous and previous[-1]['stage'] in ('intent', 'unresolved'),
+                'Record app-owned intent before its result')
+        if event['stage'] == 'confirmed':
+            initial = next(e for e in previous if e['stage'] == 'intent')
+            app_action_delta(initial['sections'], current, action)
+        if event['stage'] == 'not-applied':
+            initial = next(e for e in previous if e['stage'] == 'intent')
+            require(event['observed_at'] > previous[-1]['observed_at']
+                    and current == initial['sections'],
+                    'A failed action must have a fresh unchanged app readback')
+    elif event['stage'] == 'rollback-intent':
+        require(previous and previous[-1]['stage'] in ('confirmed', 'rollback-unresolved'),
+                'Confirm forward action or reconcile uncertain rollback before retry')
+        if previous[-1]['stage'] == 'rollback-unresolved':
+            require(current == next(e for e in previous if e['stage'] == 'rollback-intent')['sections'],
+                    'Uncertain rollback must be read back unchanged before retry')
+        else:
+            later = actions[actions.index(action) + 1:]
+            require(all(not [e for e in events if e['operation_id'] == a['id']]
+                        or [e for e in events if e['operation_id'] == a['id']][-1]['stage']
+                        in ('reversed', 'not-applied')
+                        for a in later), 'Reverse app actions in reverse order')
+            require(current == events[-1]['sections'], 'Sidebar changed before rollback intent')
+        if action['kind'] == 'create-section':
+            confirmed = next(e for e in previous if e['stage'] == 'confirmed')
+            sid = confirmed['result_section_id']
+            selected = next((s for s in current if s['id'] == sid), None)
+            require(remove_empty_sections and selected and not selected['itemKeys'],
+                    'Explicitly select removal of the empty recovery-created section')
+        else:
+            require(app_owner(current, action['project_id'])['name'] == action['section_name'],
+                    'Later placement edit conflicts with rollback')
+    elif event['stage'] in ('rollback-unresolved', 'reversed'):
+        require(previous and previous[-1]['stage'] in ('rollback-intent', 'rollback-unresolved'),
+                'Record rollback intent before its result')
+        if event['stage'] == 'reversed':
+            initial = next(e for e in previous if e['stage'] == 'rollback-intent')
+            confirmed = next(e for e in previous if e['stage'] == 'confirmed')
+            app_action_delta(initial['sections'], current, action, reverse=True,
+                             created_id=confirmed.get('result_section_id'))
+    item = {'operation_id': action['id'], 'stage': event['stage'],
+            'observed_at': event['observed_at'], 'sections': current}
+    if event['stage'] == 'confirmed':
+        initial = next(e for e in previous if e['stage'] == 'intent')
+        item['result_section_id'] = app_action_delta(initial['sections'], current, action)
+    events.append(item)
+    require(len(encoded(receipt)) <= MAX_RECORD, 'App-owned action journal exceeds size limit')
+    atomic(directory / 'native.json', encoded(receipt))
+    return {'phase': 'app-' + event['stage'], 'operation_id': action['id']}
+
+
+def verify_app(home, directory, observations):
+    with record_lock(directory):
+        directory, plan = load_record(directory)
+        require(plan['schema'] == APP_SCHEMA, 'App-owned verification requires an app-owned receipt')
+        return verify_app_locked(home, directory, plan, observations)
+
+
+def verify_app_locked(home, directory, plan, observations):
+    status = private_read(directory / 'status.json')
+    require(status['phase'] in ('applying', 'placement-verified', 'placement-partial'),
+            'Apply app-owned recovery before verification')
+    receipt = private_read(directory / 'native.json')
+    events = receipt['events']
+    require(all(next((e for e in reversed(events) if e['operation_id'] == a['id']), {}).get('stage') == 'confirmed'
+                for a in plan['native_actions']), 'App-owned action evidence is incomplete')
+    view = app_live(home, plan, observations, after=max(status['time'], events[-1]['observed_at'] if events else 0))
+    require(view['sections'] == (events[-1]['sections'] if events else plan['baseline_sections']),
+            'Sidebar changed after app-owned actions')
+    app_recheck_paths(plan)
+    action_by_project = {a['project_id']: a for a in plan['native_actions']
+                         if a['kind'] == 'place-project'}
+    for p in plan['expected']:
+        now = app_owner(view['sections'], p['project_id'])
+        action = action_by_project.get(p['project_id'])
+        if action:
+            require(now['name'] == action['section_name']
+                    and (action['section_id'] is None or now['id'] == action['section_id']),
+                    'Recovered project is missing its intended section')
+        else:
+            require(now['id'] == p['before_owner'], 'Preserved destination placement changed')
+    partial = bool(plan['missing_projects'])
+    phase = 'placement-partial' if partial else 'placement-verified'
+    save_status(directory, phase, missing_projects=len(plan['missing_projects']),
+                task_associations_verified=False)
+    return {'phase': phase, 'placement_status': 'partial' if partial else 'verified',
+            'projects': len(plan['expected']), 'missing_projects': len(plan['missing_projects']),
+            'task_associations_verified': False, 'file_changes': 0}
+
+
+def finish_app_rollback(home, directory, observations):
+    with record_lock(directory):
+        directory, plan = load_record(directory)
+        require(plan['schema'] == APP_SCHEMA, 'App-owned rollback requires an app-owned receipt')
+        status = private_read(directory / 'status.json')
+        require(status['phase'] in ('applying', 'placement-verified', 'placement-partial'),
+                'App-owned recovery has not been applied')
+        receipt = private_read(directory / 'native.json')
+        events = receipt['events']
+        for action in plan['native_actions']:
+            previous = [e for e in events if e['operation_id'] == action['id']]
+            require(not previous or previous[-1]['stage'] in ('reversed', 'not-applied'),
+                    'Reverse confirmed app actions before finalizing rollback')
+        view = app_live(home, plan, observations, after=max(status['time'], events[-1]['observed_at'] if events else 0))
+        require(view['sections'] == (events[-1]['sections'] if events else plan['baseline_sections']),
+                'Sidebar changed during rollback')
+        app_recheck_paths(plan)
+        base = {s['id']: s for s in plan['baseline_sections']}
+        now = {s['id']: s for s in view['sections']}
+        moved = {'codex:project:' + a['project_id'] for a in plan['native_actions']
+                 if a['kind'] == 'place-project'}
+        require(set(base) == set(now)
+                and all(base[sid]['name'] == now[sid]['name']
+                        and [k for k in base[sid]['itemKeys'] if k not in moved]
+                        == [k for k in now[sid]['itemKeys'] if k not in moved]
+                        for sid in base), 'Rollback would leave unrelated sidebar changes')
+        for p in plan['expected']:
+            require(app_owner(view['sections'], p['project_id'])['id'] == p['before_owner'],
+                    'Project was not restored to its prior section')
+        save_status(directory, 'rolled-back')
+        return {'phase': 'rolled-back', 'file_changes': 0,
+                'task_associations_verified': False}
+
 def wait_and_transact(home, directory, seconds, rollback=False):
     """One bounded worker per receipt; waiting must not erase transaction status."""
     require(0 < seconds <= 600, 'Wait must be between 1 and 600 seconds')
     with record_lock(directory):
         directory, plan = load_record(directory)
+        require(plan['schema'] != APP_SCHEMA,
+                'App-owned placement never waits for desktop exit or uses a file transaction')
         deadline = time.monotonic() + seconds
         receipt = {'phase': 'waiting-for-app-exit', 'pid': os.getpid(), 'started_at': time.time(),
                    'maximum_wait_seconds': seconds, 'operation': 'rollback' if rollback else 'apply'}
@@ -794,9 +1357,11 @@ def wait_and_transact(home, directory, seconds, rollback=False):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('operation', choices=['inspect', 'export-layout', 'prepare', 'apply', 'verify', 'rollback'])
+    p.add_argument('operation', choices=['inspect', 'export-layout', 'export-app-layout',
+                                         'prepare', 'apply', 'verify', 'rollback'])
     p.add_argument('--codex-home', type=Path, default=Path(os.environ.get('CODEX_HOME', Path.home() / '.codex')))
     p.add_argument('--record', type=Path)
+    p.add_argument('--route', choices=['legacy', 'app-owned'], default='legacy')
     p.add_argument('--source-account')
     p.add_argument('--old-host')
     p.add_argument('--new-host')
@@ -832,11 +1397,29 @@ def main():
             data = export_data(state, args.source_account, args.old_host, runtime.probe(args.project_host, paths), legacy.machine_id())
             private_write(args.output, data)
             result = {'phase': 'exported', 'projects': len(data['projects']), 'output': str(args.output)}
+        elif args.operation == 'export-app-layout':
+            require(args.project_host and args.new_host and args.observations and args.output,
+                    'Select app observations, project host, host ID, and private output')
+            data = export_app_data(home, private_read(args.observations),
+                                   args.project_host, args.new_host)
+            require(len(encoded(data)) <= MAX_RECORD, 'App-owned export exceeds private input limit')
+            private_write(args.output, data)
+            result = {'phase': 'exported', 'projects': len(data['projects']),
+                      'output': str(args.output), 'route': 'app-owned'}
         else:
             require(args.record is not None, '--record is required')
             if args.operation == 'prepare':
-                result = prepare(home, args.record, args.source_account, args.old_host, args.new_host,
-                                 args.project_host, args.source_layout, args.alias_host, args.app_path)
+                if args.route == 'app-owned':
+                    require(args.source_layout and args.observations and args.project_host and args.new_host,
+                            'App-owned preparation requires layout, observations, host, and host ID')
+                    require(not args.source_account and not args.old_host and not args.alias_host,
+                            'App-owned route uses a portable layout and observed project IDs')
+                    result = prepare_app(home, args.record, args.source_layout, args.project_host,
+                                         args.new_host, private_read(args.observations))
+                else:
+                    require(args.observations is None, 'Legacy preparation does not accept app observations')
+                    result = prepare(home, args.record, args.source_account, args.old_host, args.new_host,
+                                     args.project_host, args.source_layout, args.alias_host, args.app_path)
             elif args.native_event:
                 require(args.operation in ('apply', 'rollback'), 'Native events belong to apply/rollback')
                 event = private_read(args.native_event)
@@ -851,13 +1434,24 @@ def main():
                     require(args.observations is not None, '--observations is required')
                     result = verify(home, args.record, private_read(args.observations))
             else:
+                directory, plan = load_record(args.record)
+                if plan['schema'] == APP_SCHEMA:
+                    require(args.observations is not None and not args.wait_seconds,
+                            'App-owned route requires fresh --observations and cannot wait for app exit')
+                    result = (begin_app_apply(home, directory, private_read(args.observations))
+                              if args.operation == 'apply' else
+                              finish_app_rollback(home, directory, private_read(args.observations)))
+                    print(json.dumps(result, ensure_ascii=False))
+                    return 0
+                require(args.observations is None, 'Legacy file transaction does not accept app observations')
                 require(0 <= args.wait_seconds <= 600, 'Wait must be between 0 and 600 seconds')
                 if args.wait_seconds:
                     result = wait_and_transact(home, args.record, args.wait_seconds, args.operation == 'rollback')
                 else:
                     result = transact(home, args.record, args.operation == 'rollback')
         print(json.dumps(result, ensure_ascii=False))
-        return 0 if result.get('inventory_status', 'verified') == 'verified' else 2
+        return 0 if (result.get('inventory_status', 'verified') == 'verified'
+                     and result.get('phase') != 'placement-partial') else 2
     except (ValueError, OSError, KeyError, TypeError, legacy.subprocess.SubprocessError) as exc:
         print(json.dumps({'phase': 'refused', 'reason': str(exc)}))
         return 2

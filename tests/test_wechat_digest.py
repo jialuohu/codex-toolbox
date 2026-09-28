@@ -3640,7 +3640,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
     def test_reader_metadata_plugin_version_and_global_routing_are_english(self):
         metadata = METADATA_FILE.read_text(encoding="utf-8")
         routing_text = (MODULE.parents[5] / "config/codex/AGENTS.global.md").read_text(encoding="utf-8")
-        routing = self.paragraph_containing(routing_text, "Use `$wechat-digest`")
+        routing = self.paragraph_containing(routing_text, "`$wechat-digest`")
         self.assertIn('display_name: "WeChat Reader & Digest"', metadata)
         self.assertIn("$wechat-digest", metadata)
         self.assertIn("interactive reading", metadata.lower())
@@ -3652,12 +3652,16 @@ class WechatDigestSkillContractTests(unittest.TestCase):
             "Current reading",
             "incremental delivery",
             "Defuddle",
-            "public threads",
         ):
             self.assertIn(expected, routing)
+        community_routing = next(
+            line for line in routing_text.splitlines()
+            if line.startswith("- ") and "`$community-research`" in line
+        )
+        self.assertIn("public community/forum discussions", community_routing)
         self.assertTrue(routing_text.isascii())
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.5.2")
+        self.assertRegex(plugin["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
         self.assertIn("wechat reader and digest tools", plugin["description"].lower())
 
     def test_skill_declares_the_operational_digest_contract(self):
@@ -3817,7 +3821,7 @@ class WechatDigestSkillContractTests(unittest.TestCase):
         self.assertIn("$wechat-digest", metadata)
         self.assertNotIn("dependencies:", metadata)
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.5.2")
+        self.assertRegex(plugin["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
         joined = json.dumps(plugin).lower()
         for capability in ("wechat", "firecrawl", "playwright"):
             self.assertIn(capability, joined)

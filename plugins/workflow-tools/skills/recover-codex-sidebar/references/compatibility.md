@@ -1,9 +1,127 @@
 # Compatibility and recovery contract
 
-## Adapter boundary
+## Route selection
 
-The v2 helper supports macOS and Python 3.9+. Its remote adapter uses validated
-`remote-projects` records (`id`, `label`, `hostId`, `remotePath`) and account
+Use `app-owned-placement-v1` to recover **registered** project placement through
+owning Codex app tools. This route does not call the desktop-build fingerprint
+adapter, require app closure, or write legacy registration and section files.
+An unknown desktop version is not by itself a refusal for app-owned placement.
+The owning tools have no target-host selector and must run in a task opened in
+the destination sidebar Mac's Codex desktop app. A task on an SSH project host
+viewed from a different Mac can address that other Mac's sidebar; verify the
+actual sidebar device before preparation and every operation. The operator must
+verify that each observation came from that desktop's owning tools and retain
+tool provenance in the task. The helper checks the supplied account, machine,
+host, and path evidence, but cannot independently attest the app-tool endpoint
+or fabricated results.
+
+Match the current account ID against the destination's read-only identity cache,
+the sidebar hardware identity against the local machine, and every project by
+current app ID, observed host ID, physical host, and filesystem-resolved,
+case-preserving path. The app-owned route checks that the observed host ID
+matches the selected project-host alias and probes that host and its paths; it
+does not read the client's saved connection binding or desktop build.
+Refuse missing or ambiguous account/device evidence, duplicate IDs or physical
+host/path identities, incomplete `list_projects` or `list_threads` results,
+unavailable hosts/sources,
+or non-unique destination section names. A source section ID is never a
+destination ID. A snapshot records layout evidence, not permission to act.
+
+App-owned recovery restores a verified prior custom or Pinned section only when
+the registered destination project is currently ungrouped and recovery was
+explicitly requested. Preserve a project already in any custom or Pinned section,
+even if the source layout differs. Create only uniquely missing custom sections,
+in source order, through the owning section tool; preserve unrelated sections,
+projects, and task `itemKeys`. Project registration is a separate capability.
+Use a documented owning registration tool only if one is exposed with a verified
+contract. No project-create tool is currently exposed. Show the user the precise
+destination host and folder in Codex's Add Project flow, then collect fresh
+observations and prepare a new receipt after registration. Independent safe
+section moves may verify, but a missing registration remains **partial recovery**
+until that project is added and placed. Do not invent an API, synthesize an ID,
+or fall through to unknown-build file writes. This route does not provide
+automatic cross-Mac mirroring or custom-section project-order guarantees.
+
+### App-owned commands and evidence
+
+Resolve `helper` to this skill's `scripts/recover_sidebar.py`. The source layout
+may be a previously verified portable `export-layout` snapshot or an
+`export-app-layout` snapshot captured while the source layout is still visible.
+Run app export from a task in the source sidebar Mac's app, and preparation,
+application, verification, and rollback from a task in the destination Mac's app.
+If neither layout source survives, stop rather than reconstructing placement
+from names. Store snapshots and observations in a private mode-700 directory
+outside Git, with mode-600 files and no symlink components.
+
+```sh
+python3 "$helper" export-app-layout --project-host "$project_host" \
+  --new-host "$source_host_id" --observations "$source_observations" \
+  --output "$snapshot"
+python3 "$helper" prepare --route app-owned --source-layout "$snapshot" \
+  --project-host "$project_host" --new-host "$destination_host_id" \
+  --observations "$before_observations" --record "$recovery_dir"
+python3 "$helper" apply --record "$recovery_dir" \
+  --observations "$fresh_before_observations"
+python3 "$helper" apply --record "$recovery_dir" --native-event "$event_file"
+python3 "$helper" verify --record "$recovery_dir" \
+  --observations "$after_observations"
+python3 "$helper" rollback --record "$recovery_dir" --native-event "$event_file"
+python3 "$helper" rollback --record "$recovery_dir" \
+  --observations "$fresh_after_rollback_observations"
+```
+
+Keep each `--observations` file as a reduced wrapper built from **fresh**
+owning-tool results. Set `collected_at` to the actual collection time, use the
+hashed `sidebar_machine` from the destination Mac's read-only machine identity,
+and obtain `account_id`
+from the existing account identity; never place tokens in the file. The wrapper
+has `schema: 1`, `kind: "owning-app-sidebar-observation"`, `collected_at`,
+`sidebar_machine`, and `account_id`. Its `projects_result` retains the observed
+`schemaVersion` and **all** `projects`, with each entry's `projectId`,
+`projectKind`, `label`, `path`, and `hostId`. Its `threads_result` retains the
+observed `schemaVersion`, **all** `sections` with `sectionId`, `name`, and
+`itemKeys`, plus explicit empty `unavailableHosts` and `unavailableSources`.
+Drop thread titles, summaries, and unrelated task listings; do not remove any
+section or project from the inventory. Do not fabricate completeness by
+enlarging a capped task list; section membership and task-association evidence
+have different coverage.
+
+The app-owned receipt is schema 3 with adapter `app-owned-placement-v1`,
+separate from v1/v2 file receipts. Read its planned section and placement
+operations before acting. For each owning-tool action, write a private event
+with exactly `operation_id`, `stage`, `observed_at`, and `observation` (a fresh
+wrapper in the shape above). Submit `intent` before the tool call, then
+`confirmed` after fresh readback or `unresolved` if the outcome is uncertain.
+Do not repeat an unresolved call; reconcile it against a fresh owning-app
+listing first. If fresh readback proves that an attempted action made no change,
+record the terminal `not-applied` stage; this permits rollback of earlier
+confirmed actions, but retrying the failed action requires a new receipt.
+Preparation bounds the action journal against its private file size limit before
+any app action. The route progresses through `prepared`, `applying`, and
+`placement-verified` only when each expected placement is observed.
+
+For rollback, record `rollback-intent` before each inverse owning-tool action,
+then `reversed` after fresh readback or `rollback-unresolved` for an uncertain
+result. An inverse project move is allowed only while the project remains in
+the recovery-owned section and returns to its recorded prior owner (`threads`
+for an originally ungrouped project). Delete a recovery-created section only
+when the user explicitly requests removal, it remains empty, and the
+`rollback-intent` event is submitted with `--remove-empty-sections`. Never
+delete a pre-existing section or move unrelated members. Final rollback status
+is `rolled-back` only after fresh reconciliation.
+
+App-owned `verify` checks app-visible project and section placement and unchanged
+unrelated section members. It reports `task_associations_verified: false` because
+the owning sidebar tools do not expose a complete historical membership audit.
+Do not describe placement verification as full task-association recovery. The
+private receipt stores complete section `itemKeys`, including task and project
+IDs needed to check preservation; it excludes task titles, summaries, bodies,
+and credentials.
+
+## Legacy registration adapter boundary
+
+The v2 legacy helper supports macOS and Python 3.9+. Its remote adapter uses
+validated `remote-projects` records (`id`, `label`, `hostId`, `remotePath`) and account
 layouts under `electron-persisted-atom-state/sidebar-custom-sections-v3`.
 The selected compatibility profile must match the desktop version/build and
 audited implementation fingerprint. It establishes whether remote registrations
@@ -24,18 +142,19 @@ and other connection formats require another validated profile. Use the existing
 supported connection setup before preparation; never rewrite saved connections
 to make a profile match. Local project registrations remain outside this adapter.
 
-Section bindings are established with owning app tools after reopening.
-Snapshots never carry reusable `hostSectionIds`. Existing destination names,
-appearance, order, and placement—including ungrouped—win. For a missing
-registration, surviving destination placement under an old connection precedes
-the donor layout. Conflicting identity or placement evidence needs resolution.
+Legacy section bindings are established with owning app tools after reopening.
+Snapshots never carry reusable `hostSectionIds`. Under this legacy route,
+existing destination names, appearance, order, and placement—including
+ungrouped—win. For a missing registration, surviving destination placement
+under an old connection precedes the donor layout. Conflicting identity or
+placement evidence needs resolution.
 Append missing registrations and sections; never delete historical registrations.
 Built-in Pinned placement is preserved too: destination placement wins over the
 donor, and source-pinned projects remain pinned when no destination choice exists.
 Pin and unpin only through owning app tools; the helper never writes
 `pinned-project-ids` or creates a custom replacement for the built-in section.
 
-## Identity, trust, and privacy
+## Legacy registration identity and trust; shared privacy
 
 Bind the sidebar Mac and project Mac by hashed physical hardware identity.
 Resolve project paths on that host without case-folding. SSH and remote-control
@@ -184,7 +303,7 @@ must be reconciled with current sections; absence of a returned ID does not
 prove failure. Do not retry until current observations establish what happened.
 Helper success and section-tool success are separate from verified recovery.
 
-### Native-event input
+### Legacy native-event input
 
 Native receipts serialize updates under the record lock and recheck the active
 account and sidebar target. Each private event file contains exactly
@@ -279,7 +398,7 @@ metadata, and refuse conflicts on affected fields. Report retained sections or
 unresolved native actions separately from metadata rollback.
 A rolled-back v2 record cannot be applied again; prepare a new recovery record.
 
-## Verification evidence
+## Legacy registration verification evidence
 
 Build observations from fresh owning app results after the latest apply/native
 receipt. Include the destination account and sidebar device, collection time,

@@ -1,0 +1,41 @@
+{
+  "canvases": [
+    {
+      "key": "research-workflow",
+      "name": "Research workflow (schematic)",
+      "width": 900,
+      "height": 540,
+      "objects": [
+        {"key": "background", "kind": "shape", "x": 0, "y": 0, "width": 900, "height": 540, "fill": "#FFFFFF", "stroke": "#FFFFFF"},
+        {"key": "intake-group", "kind": "shape", "x": 42, "y": 142, "width": 212, "height": 335, "fill": "#F4F5F6", "stroke": "#B9C0C7"},
+        {"key": "control-group", "kind": "shape", "x": 302, "y": 142, "width": 268, "height": 335, "fill": "#F0F4FC", "stroke": "#B9C0C7"},
+        {"key": "execution-group", "kind": "shape", "x": 618, "y": 142, "width": 240, "height": 335, "fill": "#EFF8F2", "stroke": "#B9C0C7"},
+
+        {"key": "queue", "kind": "shape", "x": 68, "y": 250, "width": 160, "height": 66, "text": "Request queue", "font_name": "Helvetica", "font_size": 18, "fill": "#FFFFFF", "stroke": "#30343A"},
+        {"key": "scheduler", "kind": "shape", "x": 334, "y": 250, "width": 204, "height": 66, "text": "Scheduler", "font_name": "Helvetica", "font_size": 18, "fill": "#FFFFFF", "stroke": "#30343A"},
+        {"key": "worker", "kind": "shape", "x": 650, "y": 250, "width": 176, "height": 66, "text": "Worker", "font_name": "Helvetica", "font_size": 18, "fill": "#FFFFFF", "stroke": "#30343A"},
+        {"key": "memory", "kind": "shape", "x": 650, "y": 356, "width": 176, "height": 89, "fill": "#FFFFFF", "stroke": "#30343A"},
+        {"key": "layer-1", "kind": "shape", "x": 666, "y": 401, "width": 45, "height": 30, "text": "L1", "font_name": "Helvetica", "font_size": 16, "fill": "#F0F4FC", "stroke": "#B9C0C7"},
+        {"key": "layer-2", "kind": "shape", "x": 716, "y": 401, "width": 45, "height": 30, "text": "L2", "font_name": "Helvetica", "font_size": 16, "fill": "#EFF8F2", "stroke": "#B9C0C7"},
+        {"key": "layer-3", "kind": "shape", "x": 766, "y": 401, "width": 45, "height": 30, "text": "L3", "font_name": "Helvetica", "font_size": 16, "fill": "#FCF3ED", "stroke": "#B9C0C7"},
+        {"key": "step-1", "kind": "shape", "x": 263, "y": 211, "width": 28, "height": 28, "text": "1", "font_name": "Helvetica", "font_size": 16, "fill": "#F0F4FC", "stroke": "#2148B8"},
+        {"key": "step-2", "kind": "shape", "x": 579, "y": 211, "width": 28, "height": 28, "text": "2", "font_name": "Helvetica", "font_size": 16, "fill": "#F0F4FC", "stroke": "#2148B8"},
+
+        {"key": "title", "kind": "text", "x": 43, "y": 32, "width": 800, "height": 38, "text": "Numbered research workflow", "font_name": "Helvetica Bold", "font_size": 27},
+        {"key": "subtitle", "kind": "text", "x": 43, "y": 80, "width": 810, "height": 34, "text": "Schematic example; replace each role, edge and cache state with verified facts", "font_name": "Helvetica", "font_size": 17},
+        {"key": "intake-heading", "kind": "text", "x": 67, "y": 161, "width": 162, "height": 30, "text": "REQUESTS", "font_name": "Helvetica Bold", "font_size": 17},
+        {"key": "control-heading", "kind": "text", "x": 326, "y": 161, "width": 221, "height": 30, "text": "CONTROL", "font_name": "Helvetica Bold", "font_size": 17},
+        {"key": "execution-heading", "kind": "text", "x": 643, "y": 161, "width": 189, "height": 30, "text": "EXECUTION", "font_name": "Helvetica Bold", "font_size": 17},
+        {"key": "submit-label", "kind": "text", "x": 295, "y": 212, "width": 78, "height": 27, "text": "Submit", "font_name": "Helvetica", "font_size": 16},
+        {"key": "dispatch-label", "kind": "text", "x": 612, "y": 212, "width": 86, "height": 27, "text": "Dispatch", "font_name": "Helvetica", "font_size": 16},
+        {"key": "memory-heading", "kind": "text", "x": 666, "y": 365, "width": 145, "height": 27, "text": "GPU memory", "font_name": "Helvetica Bold", "font_size": 16},
+        {"key": "cache-step-label", "kind": "text", "x": 651, "y": 447, "width": 174, "height": 27, "text": "3  Populate layers", "font_name": "Helvetica", "font_size": 16},
+        {"key": "footer", "kind": "text", "x": 44, "y": 493, "width": 810, "height": 32, "text": "Schematic order only; spacing and layer blocks do not report measured time or capacity.", "font_name": "Helvetica", "font_size": 16},
+
+        {"key": "submit", "kind": "connector", "from": "queue", "to": "scheduler", "stroke": "#2148B8"},
+        {"key": "dispatch", "kind": "connector", "from": "scheduler", "to": "worker", "stroke": "#2148B8"},
+        {"key": "populate", "kind": "connector", "from": "worker", "to": "memory", "stroke": "#C65F38"}
+      ]
+    }
+  ]
+}

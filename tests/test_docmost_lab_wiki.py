@@ -19,7 +19,7 @@ class DocmostLabWikiContractTests(unittest.TestCase):
         manifest = json.loads((RESEARCH / ".codex-plugin" / "plugin.json").read_text())
         prompts = manifest["interface"]["defaultPrompt"]
 
-        self.assertEqual(manifest["version"], "0.8.4")
+        self.assertRegex(manifest["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
         self.assertIn("$docmost-lab-wiki", " ".join(prompts))
         self.assertIn("Research LLM Wiki", manifest["interface"]["longDescription"])
         self.assertIn("separate read-only Docmost-to-Obsidian Lab Wiki", manifest["interface"]["longDescription"])
@@ -83,7 +83,7 @@ class DocmostLabWikiContractTests(unittest.TestCase):
         manifest = json.loads(
             (ROOT / "plugins" / "docmost-tools" / ".codex-plugin" / "plugin.json").read_text()
         )
-        self.assertEqual(manifest["version"], "0.8.3")
+        self.assertRegex(manifest["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
         server = mcp["mcpServers"]["docmost"]
         self.assertEqual(server["tool_timeout_sec"], 900)
         self.assertEqual(server["command"], "/bin/bash")

@@ -42,7 +42,7 @@ permissions:
 jobs:
   conformance:
     name: ${{ matrix.os }} / Node ${{ matrix.node }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ vars.BROKKR_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && matrix.os == 'ubuntu-latest' && fromJSON('["self-hosted","linux","x64","brokkr"]') || matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false

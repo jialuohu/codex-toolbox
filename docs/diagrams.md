@@ -34,6 +34,24 @@ or presentation.
 Without a requested destination, artifacts go in a task-scoped temporary
 directory.
 
+Review windows are temporary by default. After verifying saved artifacts, close
+task-created preview tabs/windows and stop their owned local servers. Keep live
+views for explicit open/show/keep-open requests or required interactive handoffs;
+preserve existing user work and unknown or unsaved state. Native app owners must
+capture state before launch-capable readiness probes and quit only a proven
+task-started, idle instance with no protected work. Each owning skill supplies
+its cleanup procedure; these instructions do not close existing applications.
+
+On POSIX, the Archify launcher requests one graceful child shutdown on cancellation,
+terminal hangup, or loss of its private parent connection, including when the
+wrapper is killed. It uses a separate POSIX process group to avoid a terminal
+interrupt reaching the child twice, consistent with
+[Node's child-process behavior](https://nodejs.org/api/child_process.html#optionsdetached).
+It reports the exact runtime PID when cancellation starts and preserves the
+wrapper's cancellation signal after the child exits. A stalled runtime, direct
+SIGKILL of the runtime, or host termination can still prevent graceful cleanup;
+there is no automatic force-kill timeout.
+
 The immutable Archify runtime is pinned to development snapshot
 `2.17.0-dev.1` at commit `72c750bb070d95171dbb2244e5b62b1b7da69c12`, using
 that commit's canonical
@@ -241,19 +259,81 @@ destination, artifacts go in a task-scoped temporary directory.
 
 ## OmniGraffle Tools
 
-Use `$omnigraffle-workflow` for explicit OmniGraffle or an existing `.graffle` artifact. Native drawing and exports use OmniGraffle scripting; editable equations use official LaTeXiT and real LinkBack GUI callbacks. Equation automation requires an unlocked Mac. General graphical requests retain `$archify`; explicit Mermaid and compact static diagrams retain `$pretty-mermaid`.
+Use `$omnigraffle-workflow` for explicit OmniGraffle, an existing `.graffle` artifact, or a new research architecture, workflow or mechanism diagram without another selected owner. Native acceptance passed for all three template families, including creation, save, reopen, edit and actual PDF/SVG export. New unowned requests also require a fresh `doctor --probe-app` showing responsive scripting and advertised PDF export; otherwise disclose Draw.io fallback before native dispatch. Explicit OmniGraffle and existing `.graffle` requests retain ownership if native work is blocked. Editable equations passed genuine LaTeXiT LinkBack editing after both apps restarted in the user's foreground Terminal; this does not grant access to another caller, and SSH-to-System Events remained denied in the tested profile. Verify current equation GUI access separately from drawing readiness. See [acceptance evidence](../plugins/omnigraffle-tools/ACCEPTANCE.md). General graphical requests retain `$archify`; explicit Mermaid and compact static diagrams retain `$pretty-mermaid`.
 
 Default setup installs plugin files only. Applications, TeX and permission changes require explicit dependency setup. Start with [the skill and doctor command](../plugins/omnigraffle-tools/skills/omnigraffle-workflow/SKILL.md); [command details](../plugins/omnigraffle-tools/skills/omnigraffle-workflow/references/commands.md) describe inspection, mutation, export and interruption reconciliation. A retained JSON request never replaces later manual native edits. Do not retry an uncertain mutation before reconciliation.
 
+The [research templates](../plugins/omnigraffle-tools/assets/research-templates/README.md)
+provide architecture, aligned execution and cache/memory compositions at
+single and double widths, with six accepted editable native starters and a
+source/export manifest. Their JSON and portable previews support initialization
+and approximate layout checks. Copy a native starter to a new project filename
+or initialize it through the guarded native command, then retain the saved
+file and palette provenance for later edits and project builds.
+
 ## Paper Figure Workflow
 
-Explicit application choice takes precedence, followed by the existing source format. `$omnigraffle-workflow` owns OmniGraffle/`.graffle`; `$drawio` owns draw.io/`.drawio`. Otherwise publication pipelines retain draw.io as their default. Paper Figure Workflow owns directories, regeneration commands and cross-figure checks.
+Explicit application choice takes precedence, followed by the existing source format and project or venue convention. `$omnigraffle-workflow` owns OmniGraffle/`.graffle`; `$drawio` owns draw.io/`.drawio`. New unowned research architecture, workflow and mechanism diagrams prefer OmniGraffle after fresh drawing readiness checks; an unavailable native path permits a disclosed Draw.io fallback before dispatch. Record the selected owner, selection basis and reason once. Explicit choices, existing sources and recorded project owners retain ownership during an app blocker. Paper Figure Workflow owns directories, recorded owner selection, regeneration commands and cross-figure checks. OmniGraffle retains editable native source and verified PDF/SVG; unsupported native SVG may use a documented project-local PDF vector conversion with text outlining disclosed.
 
 Use `$paper-figure-workflow` when a research repo needs reproducible paper
 figures. The skill guides Codex to inspect the repo first, keep native source
 diagrams editable through the selected drawing owner, generate Matplotlib and SciencePlots result
 plots from repo data, export SVG/PDF figures, use Inkscape only for conversion
 or light cleanup, and add a command such as `make figures`.
+
+For **new research figures**, apply each setting in this order: explicit request,
+project or venue convention, research default, general default. Existing
+figures keep their appearance unless restyling is requested. The research
+default uses a white canvas, pale component groups, short action labels,
+numbered operations when order matters, meaningful memory/cache state,
+aligned comparisons, and stable method encodings. Plot widths are 3.3 inches
+for a single column or 6.9 inches for two columns, with 8-point text and a
+7-point minimum at final size. A venue's requirements override these values.
+
+The [research plot starter](../plugins/paper-figure-tools/skills/paper-figure-workflow/assets/research-figure-starter/)
+contains grouped bars, line/scaling, empirical cumulative distributions, and
+additive breakdowns. Its examples use labeled synthetic data. The
+[Draw.io research templates](../plugins/drawio-tools/assets/research-templates/)
+provide editable architecture, aligned schematic timeline, and cache/memory
+mechanism sources. The [OmniGraffle research templates](../plugins/omnigraffle-tools/assets/research-templates/README.md)
+cover the same three composition families with editable native sources after initialization.
+The [research style guide](../plugins/paper-figure-tools/skills/paper-figure-workflow/references/research-style.md)
+records the inspected figure references and the data, typography, font, and
+export contracts. Mono-Color can supply exact project-local HEX values and
+provenance; its catalog stays immutable. Pretty Mermaid uses its existing
+style flags, while Archify uses its existing typed schemas and presets with
+the same visual review and delivery gates.
+
+Copy the starter into a research project, then regenerate from that project's
+sources rather than from the toolbox cache:
+
+```bash
+python3 plugins/paper-figure-tools/skills/paper-figure-workflow/scripts/scaffold_research_figures.py --project /absolute/path/to/research-project --diagram-owner auto
+cd /absolute/path/to/research-project
+make plots
+make diagrams
+make figures
+```
+
+The scaffold records the selected owner in `figures_src/diagram-owner.json`
+and copies scripts, styles, fixed example data, method encodings, native template
+sources and pinned dependency instructions. An OmniGraffle project also copies
+the complete guarded runtime and supports `make init-diagram TEMPLATE=architecture WIDTH=double`.
+Its later `make diagrams` reads the saved `.graffle`, preserving manual edits.
+The plot CLIs
+accept `--data`, `--out-dir`, and `--width single|double`, or a mutually
+exclusive positive `--width-in`. Exports retain the requested physical canvas
+size. Missing dependencies fail the build rather than treating older exports
+as current. Replace synthetic data and check units, missing values, uncertainty
+metadata, glyphs, final-size text, grayscale distinction, and visual overlap
+before using any generated figure as paper evidence. A schematic timeline is
+not measured timing.
+
+The selected-owner exporter stages PDF/SVG outputs and PNG previews, then checks
+physical widths, PDF font embedding and source fingerprints before replacing
+older exports. Missing dependencies and uncertain native mutations fail with
+reconciliation information. The native equation and visual checks remain in
+the OmniGraffle skill.
 
 Example prompt:
 

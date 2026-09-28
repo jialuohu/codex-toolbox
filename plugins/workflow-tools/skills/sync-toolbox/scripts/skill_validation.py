@@ -43,7 +43,8 @@ def frontmatter(text: str) -> dict:
     return data
 
 
-def local_links(path: Path, root: Path) -> tuple[list[Path], list[str]]:
+def local_links(path: Path, root: Path, *, external: bool = False,
+                skill_root: Path | None = None) -> tuple[list[Path], list[str]]:
     path, root = path.resolve(), root.resolve()
     if not path.is_file() or path.stat().st_size > 4 * 1024 * 1024:
         raise ValueError("reference size or type limit")
@@ -53,27 +54,55 @@ def local_links(path: Path, root: Path) -> tuple[list[Path], list[str]]:
     named_refs = re.findall(r"`((?:references|assets)/[^`\n]*\.(?:md|json|yaml|yml))`", text)
     text = re.sub(r"(`+)[^\n]*?\1", "", text)
     links, errors = [], []
-    for raw in re.findall(r"!?\[[^\]\n]*\]\(([^)\n]+)\)", text) + named_refs:
+
+    def inspect(raw: str, base: Path, required: bool) -> None:
         target = raw.strip().split(' "', 1)[0].strip("<>")
         parsed = urlsplit(target)
         if parsed.scheme or parsed.netloc or not parsed.path:
-            continue
+            return
         if any(c in target for c in ("$", "{", "}", "*")):
-            continue
-        resolved = (path.parent / unquote(parsed.path)).resolve()
+            return
+        # An absolute link in an external skill may be a documentation-site
+        # route. Its local installation cannot establish that remote target.
+        if external and parsed.path.startswith("/"):
+            return
+        resolved = (base / unquote(parsed.path)).resolve()
         try:
             resolved.relative_to(root)
         except ValueError:
             errors.append(f"{path.relative_to(root)}: reference escapes repository: {target}")
-            continue
+            return
         if not resolved.exists():
-            errors.append(f"{path.relative_to(root)}: missing reference: {target}")
+            # Published documentation sometimes uses extensionless routes
+            # relative to the page. A local package cannot verify those.
+            if external and not Path(parsed.path).suffix:
+                return
+            if required:
+                errors.append(f"{path.relative_to(root)}: missing reference: {target}")
         else:
             links.append(resolved)
+
+    for raw in re.findall(r"!?\[[^\]\n]*\]\(([^)\n]+)\)", text):
+        inspect(raw, path.parent, True)
+    for raw in named_refs:
+        if not external:
+            inspect(raw, path.parent, True)
+            continue
+        # Backticked paths in external skills also appear in examples. Follow
+        # an installed file, but do not call an absent illustrative path broken.
+        bases = (path.parent, skill_root or path.parent)
+        for base in bases:
+            candidate = (base / raw).resolve()
+            if not candidate.is_relative_to(root):
+                inspect(raw, base, True)
+                break
+            if candidate.exists():
+                inspect(raw, base, True)
+                break
     return links, errors
 
 
-def reference_graph(entry: Path, root: Path) -> tuple[list[str], list[str]]:
+def reference_graph(entry: Path, root: Path, *, external: bool = False) -> tuple[list[str], list[str]]:
     entry, root = entry.resolve(), root.resolve()
     pending, seen, errors = [entry], set(), []
     while pending:
@@ -85,7 +114,7 @@ def reference_graph(entry: Path, root: Path) -> tuple[list[str], list[str]]:
         seen.add(path)
         if path.suffix != ".md":
             continue
-        links, failures = local_links(path, root)
+        links, failures = local_links(path, root, external=external, skill_root=entry.parent)
         errors.extend(failures)
         pending.extend(links)
     return sorted(str(p.relative_to(root)) for p in seen if p != entry), errors

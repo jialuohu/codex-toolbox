@@ -1,7 +1,7 @@
 {
   "name": "omnigraffle-tools",
-  "version": "0.1.0",
-  "description": "Editable OmniGraffle diagrams and genuine LaTeXiT LinkBack equations on macOS.",
+  "version": "0.2.1",
+  "description": "Editable OmniGraffle research diagrams, native research templates, and genuine LaTeXiT LinkBack equations on macOS.",
   "author": {
     "name": "Jialuo Hu"
   },
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "OmniGraffle Tools",
     "shortDescription": "Native diagrams and editable equations.",
-    "longDescription": "Create, inspect, update and export native OmniGraffle diagrams with a bounded local Python CLI. Equation editing uses official LaTeXiT and GUI automation on an unlocked Mac. Installation provides plugin files only; applications, TeX and permissions require explicit setup.",
+    "longDescription": "Create, inspect, update and export native OmniGraffle diagrams with a bounded local Python CLI, research composition templates, and project-copyable sources. Prefer the accepted native workflow for new unowned research diagrams after fresh drawing readiness checks. Equation editing uses official LaTeXiT and GUI automation on an unlocked Mac, with caller-specific permissions checked separately. Installation provides plugin files only.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],

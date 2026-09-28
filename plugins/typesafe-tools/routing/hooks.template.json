@@ -1,0 +1,17 @@
+{
+  "description": "Optional TypeSafe routing observation; replace the absolute script path and opt in before use.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /REPLACE_WITH_ABSOLUTE_PATH/plugins/typesafe-tools/routing/user_prompt_submit.py",
+            "timeout": 2,
+            "additionalContextLimit": 200
+          }
+        ]
+      }
+    ]
+  }
+}

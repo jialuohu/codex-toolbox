@@ -128,6 +128,53 @@ class NativeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             native.validate_request(request)
 
+    def test_overlapping_connector_endpoints_rejected_for_every_route_and_side(self):
+        a = dict(x=20, y=20, width=80, height=40)
+        geometries = {
+            'partial': dict(x=90, y=30, width=80, height=40),
+            'contained': dict(x=30, y=25, width=20, height=10),
+            'edge_touch': dict(x=100, y=20, width=80, height=40),
+            # These rectangles overlap at a corner even though their
+            # center-to-center boundary intersections are separated.
+            'corner': dict(x=90, y=55, width=10, height=100),
+        }
+        attachments = ({}, {'from_side': 'right'}, {'to_side': 'left'},
+                       *({'from_side': side, 'to_side': side}
+                         for side in ('top', 'right', 'bottom', 'left')))
+        for geometry, b in geometries.items():
+            for route in ('straight', 'orthogonal'):
+                for sides in attachments:
+                    with self.subTest(geometry=geometry, route=route, sides=sides):
+                        request = self.create()
+                        request['spec']['canvases'][0]['objects'] = [
+                            dict(a, key='a', kind='shape'),
+                            dict(b, key='b', kind='text'),
+                            dict(key='line', kind='connector', **{'from': 'a', 'to': 'b'},
+                                 line_type=route, **sides),
+                        ]
+                        with patch.object(native.subprocess, 'run') as dispatch:
+                            result = self.adapter.call(request)
+                        dispatch.assert_not_called()
+                        self.assertEqual(result['error']['code'], 'invalid_request')
+                        self.assertIn('overlap or touch', result['error']['message'])
+
+    def test_connector_validation_preserves_background_and_region_containment(self):
+        for route in ('straight', 'orthogonal'):
+            for sides in ({}, {'from_side': 'right', 'to_side': 'left'}):
+                with self.subTest(route=route, sides=sides):
+                    request = self.create()
+                    request['spec']['canvases'][0]['objects'] = [
+                        dict(key='background', kind='shape', x=0, y=0, width=480, height=240),
+                        dict(key='region', kind='shape', x=10, y=10, width=100, height=80),
+                        dict(key='a', kind='shape', x=20, y=20, width=80, height=40),
+                        dict(key='b', kind='shape', x=200, y=20, width=80, height=40),
+                        dict(key='line', kind='connector', **{'from': 'a', 'to': 'b'},
+                             line_type=route, **sides),
+                    ]
+                    normalized = native.validate_request(request)
+                    line = normalized['spec']['canvases'][0]['objects'][-1]
+                    self.assertEqual('_points' in line, route == 'straight' and not sides)
+
     def test_group_shared_children_rejected(self):
         request = self.create()
         objs = request['spec']['canvases'][0]['objects']
@@ -197,6 +244,32 @@ class NativeTests(unittest.TestCase):
         self.assertEqual(value['documents'][0]['path'],str(self.doc.resolve()))
         self.assertEqual(value['documents'][1]['path'],'')
         self.assertEqual(value['documents'][0]['canvases'][0]['objects'][0]['fill_rgb'],[1,0,.5])
+
+    def test_srgb_unit_protocol_preserves_components_without_double_scaling(self):
+        def run(args, **kwargs):
+            value = {'status': 'ok', 'documents': [{'path': str(self.doc),
+                'color_encoding': 'srgb_unit', 'canvases': [{'objects': [
+                    {'fill_rgb': [.9176363, .9490128, .9686241], 'stroke_rgb': [0, 0, 0]}]}]}]}
+            kwargs['stdout'].write(json.dumps(value).encode())
+            return subprocess.CompletedProcess(args, 0)
+        with patch.object(native.subprocess, 'run', side_effect=run):
+            value = self.adapter.call({'op': 'inventory'})
+        obj = value['documents'][0]['canvases'][0]['objects'][0]
+        self.assertEqual(obj['fill_rgb'], [.9176363, .9490128, .9686241])
+        self.assertEqual(obj['stroke_rgb'], [0, 0, 0])
+
+    def test_unknown_color_encoding_and_invalid_unit_components_rejected(self):
+        for encoding, rgb in (('unknown', [0, 0, 0]), ('srgb_unit', [65535, 0, 0]),
+                              ('srgb_unit', [True, 0, 0]), ('srgb_unit', [0, 0])):
+            with self.subTest(encoding=encoding, rgb=rgb):
+                def run(args, **kwargs):
+                    value = {'status': 'ok', 'documents': [{'color_encoding': encoding,
+                        'canvases': [{'objects': [{'stroke_rgb': rgb}]}]}]}
+                    kwargs['stdout'].write(json.dumps(value).encode())
+                    return subprocess.CompletedProcess(args, 0)
+                with patch.object(native.subprocess, 'run', side_effect=run):
+                    result = self.adapter.call({'op': 'inventory'})
+                self.assertEqual(result['error']['code'], 'native_invalid_response')
 
 
 if __name__ == '__main__':

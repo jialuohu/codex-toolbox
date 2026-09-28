@@ -1,0 +1,36 @@
+{
+  "palette_provenance": {
+    "selection_id": "research-figure-starter-custom-v1",
+    "source": "Codex Toolbox photo-tools/mono-color/references/design-system/colors.json",
+    "catalog_sha256": "e299d6b4a2ec36e2e59b7095b85bae5f13609f505d21c9a83561088f7c446b48",
+    "selection": "Research figure inks copied into this project; regenerate without the plugin cache",
+    "inks": [
+      {"id": "ink_cobalt", "name": "Cobalt", "hex": "#2148B8", "role": "proposed method and compute"},
+      {"id": "ink_terracotta", "name": "Terracotta Orange", "hex": "#C65F38", "role": "ablation method"},
+      {"id": "ink_botanical_green", "name": "Botanical Green", "hex": "#008A4B", "role": "cache-aware method"},
+      {"id": "ink_charcoal", "name": "Charcoal", "hex": "#30343A", "role": "baseline method and outlines"}
+    ],
+    "locally_chosen_tints": [
+      {"hex": "#E7C8B9", "role": "queue component"},
+      {"hex": "#AABACB", "role": "load component"},
+      {"hex": "#D9DFE7", "role": "subtle grid"}
+    ],
+    "cobalt": "#2148B8",
+    "terracotta": "#C65F38",
+    "botanical_green": "#008A4B",
+    "charcoal": "#30343A"
+  },
+  "method_order": ["Baseline", "Ablation", "Cache-aware", "Proposed"],
+  "styles": {
+    "Baseline": {"color": "#30343A", "marker": "o", "linestyle": "-", "hatch": ".."},
+    "Ablation": {"color": "#C65F38", "marker": "s", "linestyle": "--", "hatch": "//"},
+    "Cache-aware": {"color": "#008A4B", "marker": "^", "linestyle": ":", "hatch": "\\\\"},
+    "Proposed": {"color": "#2148B8", "marker": "D", "linestyle": "-.", "hatch": "xx"}
+  },
+  "component_order": ["Queue", "Load", "Compute"],
+  "component_styles": {
+    "Queue": {"color": "#E7C8B9", "hatch": "//"},
+    "Load": {"color": "#AABACB", "hatch": ".."},
+    "Compute": {"color": "#2148B8", "hatch": "xx"}
+  }
+}
