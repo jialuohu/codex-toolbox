@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# Inherited Node preload/module-search settings must not run before verification
+# or alter the managed server. This affects only this launcher and its children.
+unset NODE_OPTIONS NODE_PATH
+
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CODEX_ROOT="${CODEX_HOME:-$HOME/.codex}"
 RUNTIME_DIR="$CODEX_ROOT/runtime/drawio-tools/active"
@@ -25,4 +29,4 @@ fi
 # The verified local index must win. If it disappears after verification, fail
 # closed instead of silently downloading a mutable index during MCP use.
 export DRAWIO_SHAPE_INDEX_URL="https://invalid.invalid/drawio-tools-offline-index"
-exec "$NODE_BIN" "$RUNTIME_DIR/node_modules/@drawio/mcp/src/index.js"
+exec "$NODE_BIN" "$PLUGIN_ROOT/scripts/drawio-runtime.mjs" "$RUNTIME_DIR"

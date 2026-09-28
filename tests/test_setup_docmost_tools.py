@@ -274,9 +274,9 @@ class SetupDocmostToolsTest(unittest.TestCase):
             "printf 'node %s\\n' \"$*\" >> \"$FAKE_DOCMOST_LOG\"\n"
             "if [ \"$1\" = -p ]; then printf '20\\n'; exit 0; fi\n"
             "case \"$*\" in\n"
-            "  *'verify-drawio-runtime.mjs --package-tree-sha256'*) printf '%s\\n' '9b8fed587fd1bc61041c4a57ec536ad653673e8f413141d7ff6ef0b03754ac6d' ;;\n"
+            "  *'verify-drawio-runtime.mjs --package-tree-sha256'*) printf '%s\\n' '8ec16714a64760022d45737080e8702030f12a2c307c6fe93a5d8ec202224c73' ;;\n"
             "  *'verify-drawio-runtime.mjs'*) exit 0 ;;\n"
-            "  *'node_modules/@drawio/mcp/src/index.js --version'*) printf '1.4.0\\n' ;;\n"
+            "  *'node_modules/@drawio/mcp/src/index.js --version'*) printf '1.6.0\\n' ;;\n"
             "esac\n",
         )
 

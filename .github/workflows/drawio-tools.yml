@@ -69,6 +69,7 @@ jobs:
           CODEX_HOME: ${{ runner.temp }}/codex-home
         run: |
           scripts/setup-drawio-tools.sh --check
+          node plugins/drawio-tools/tests/runtime-verifier.mjs
           node plugins/drawio-tools/tests/mcp-smoke.mjs
       - name: Scan current tree for private paths and secrets
         run: scripts/privacy-audit.sh current

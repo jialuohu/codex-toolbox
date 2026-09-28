@@ -1,6 +1,6 @@
 {
   "name": "drawio-tools",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Create and export editable draw.io diagrams, including research architecture and mechanism templates.",
   "author": {
     "name": "Jialuo Hu",

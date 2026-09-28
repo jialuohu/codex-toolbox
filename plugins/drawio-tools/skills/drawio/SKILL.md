@@ -48,6 +48,7 @@ Before opening a page/app or running a Desktop probe/export, read [UI cleanup](r
 - Never overwrite a user file merely to preview it. Use `set_page` only for the specifically requested file and page.
 - Do not invent topology, credentials, legal states, measurements, or system relationships. Report ambiguity before drawing it.
 - Specialized shapes improve semantics but do not substitute for verified architecture data.
+- Shape search is local; remote icon supplementation is disabled. `routing: "libavoid"` uses verified bundled code. Omit XML `postLayout: "elk"`: server-side ELK is unavailable, and the tool reports that it retained the supplied coordinates. Mermaid ELK selection runs in the requested editor.
 
 Read `references/cli.md` for helper commands, setup, and recovery.
 
