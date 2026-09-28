@@ -31,7 +31,7 @@ from urllib.parse import quote, unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
-WRANGLER_VERSION = "4.135.0"
+WRANGLER_VERSION = "4.140.0"
 MAX_HTML = 25 * 1024 * 1024
 API = "https://api.cloudflare.com/client/v4"
 HEADERS = b"/*\n  X-Robots-Tag: noindex, nofollow\n  X-Content-Type-Options: nosniff\n"
