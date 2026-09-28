@@ -2,4 +2,3 @@ self-hosted-runner:
   labels:
     - brokkr
     - brokkr-gpu
-    - brokkr-*
