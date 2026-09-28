@@ -15,7 +15,7 @@ Runtime dependencies are installed outside this repository.
 | [@xmldom/xmldom](https://github.com/xmldom/xmldom) | XML parser and serializer | MIT |
 | [culori](https://github.com/Evercoder/culori) | CSS color parsing | MIT |
 | [pngjs](https://github.com/pngjs/pngjs) | PNG decoding and inspection | MIT |
-| [Cloudflare Wrangler 4.135.0](https://github.com/cloudflare/workers-sdk) | Optional Cloudflare Pages Direct Upload CLI | MIT / Apache-2.0 |
+| [Cloudflare Wrangler 4.140.0](https://github.com/cloudflare/workers-sdk/releases/tag/wrangler%404.140.0) | Optional Cloudflare Pages Direct Upload CLI | MIT / Apache-2.0 |
 | [postcss](https://github.com/postcss/postcss) | CSS parser | MIT |
 | [postcss-value-parser](https://github.com/TrySound/postcss-value-parser) | CSS value parser | MIT |
 

@@ -2795,8 +2795,15 @@ def validate_diagram_tools_contract(
         require((publisher / relative).is_file(), f"publisher must provide {relative}")
     publisher_package = json.loads((publisher_runtime / "package.json").read_text())
     publisher_lock = json.loads((publisher_runtime / "package-lock.json").read_text())
-    require(publisher_package["dependencies"] == {"wrangler": "4.135.0"}, "publisher Wrangler must be pinned")
-    require(publisher_lock["packages"]["node_modules/wrangler"]["version"] == "4.135.0", "publisher lock must match pin")
+    require(publisher_package["dependencies"] == {"wrangler": "4.140.0"}, "publisher Wrangler must be pinned")
+    require(publisher_lock["packages"]["node_modules/wrangler"]["version"] == "4.140.0", "publisher lock must match pin")
+    require(publisher_lock["packages"][""]["dependencies"] == publisher_package["dependencies"],
+            "publisher lock root must match the exact dependency pin")
+    require('WRANGLER_VERSION = "4.140.0"' in (publisher / "scripts" / "diagram_publish.py").read_text(),
+            "publisher runtime verifier must match the approved Wrangler pin")
+    require(publisher_package["version"] == publisher_lock["version"] ==
+            publisher_lock["packages"][""]["version"] == plugin["version"],
+            "publisher package metadata must match the plugin version")
     require((ROOT / "scripts" / "setup-diagram-publish.sh").is_file(), "publisher launcher setup must exist")
     require('setup-diagram-publish.sh" --install-launcher' in SETUP_SCRIPT.read_text(), "toolbox setup installs only publisher launcher")
     require("diagram-publish/SKILL.md" in ARCHIFY_SKILL.read_text(), "Archify delegates publishing to its owning skill")
