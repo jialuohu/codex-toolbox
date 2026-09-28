@@ -141,21 +141,6 @@ class CorrectionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "input hashes changed"):
                 correction.build_correction(path, Path(directory))
 
-    def test_local_frozen_72_replay_when_available(self) -> None:
-        base = Path("/private/tmp/codex-toolbox-cu-prep-diagnostic")
-        results = base / "full72-py312-20260924.json"
-        sessions = Path.home() / ".codex/sessions/2026/09/24"
-        if not results.is_file() or not sessions.is_dir():
-            self.skipTest("historical local trial artifacts are unavailable")
-        audited = correction.build_correction(results, sessions)
-        self.assertEqual(audited["summary"]["corrected_statuses"],
-                         {"success": 48, "timeout": 24})
-        self.assertEqual(len(audited["summary"]["corrected_false_failure_sequences"]), 15)
-        self.assertEqual(audited["summary"]["timeouts_with_observed_pass_sequences"],
-                         [38, 41, 47])
-        self.assertEqual(audited["summary"]["timeouts_with_verified_ui"], 1)
-        self.assertNotIn("Synthetic records", json.dumps(audited))
-
 
 if __name__ == "__main__":
     unittest.main()

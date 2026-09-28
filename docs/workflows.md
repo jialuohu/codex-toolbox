@@ -80,6 +80,13 @@ retrieval to limit overhead. Native handoff is an optimization, not an assumptio
 Record pilot tool calls and returned characters; report token counts only when
 actual usage is available.
 
+Temporary planner tabs close after completed verification, reused advice, or an
+accepted setup probe; saved ChatGPT conversations remain available for later
+turns. The [browser lifecycle contract](../plugins/workflow-tools/skills/chatgpt-planner/references/browser-lifecycle.md)
+requires exact task ownership and a fresh absence check. User-selected tabs,
+explicit live handoffs, and unresolved requests remain open. Source instruction
+tests do not establish live browser cleanup or RAM recovery.
+
 Private metadata lives under
 `${CODEX_HOME:-$HOME/.codex}/state/chatgpt-planner`. Use `$chatgpt-planner status`
 for saved configuration and optionally provide the persistent Codex task ID.

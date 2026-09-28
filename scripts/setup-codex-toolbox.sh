@@ -23,7 +23,6 @@ TOOLBOX_MARKETPLACE_SOURCE="${CODEX_TOOLBOX_MARKETPLACE_SOURCE:-jialuohu/codex-t
 TOOLBOX_MARKETPLACE_GIT_URL="https://github.com/jialuohu/codex-toolbox.git"
 TOOLBOX_MARKETPLACE_REF="${CODEX_TOOLBOX_MARKETPLACE_REF:-main}"
 TOOLBOX_MARKETPLACE_MODE="${CODEX_TOOLBOX_MARKETPLACE_MODE:-git}"
-declare -a OLD_MARKETPLACE_NAMES=()
 UI_UX_MARKETPLACE_NAME="ui-ux-pro-max-skill"
 UI_UX_MARKETPLACE_SOURCE="nextlevelbuilder/ui-ux-pro-max-skill"
 UI_UX_MARKETPLACE_REF="v2.15.0"
@@ -732,76 +731,10 @@ direct_mcp_config_present() {
   [ -f "$config_file" ] && grep -Eq "^\[mcp_servers\.${server_name//./\\.}\]" "$config_file"
 }
 
-remove_stale_plugin_config_blocks() {
-  local config_file="${CODEX_HOME:-$HOME/.codex}/config.toml"
-  local old_marketplaces
-  local default_plugins
-
-  [ -f "$config_file" ] || return 0
-  if [ "${#OLD_MARKETPLACE_NAMES[@]}" -eq 0 ]; then
-    echo "Stale retired-marketplace plugin config blocks not present"
-    return 0
-  fi
-
-  old_marketplaces="$(printf '%s\n' "${OLD_MARKETPLACE_NAMES[@]}")"
-  default_plugins="$(printf '%s\n' "${DEFAULT_PLUGINS[@]}")"
-
-  OLD_MARKETPLACES="$old_marketplaces" DEFAULT_PLUGINS_TEXT="$default_plugins" \
-    python3 - "$config_file" <<'PY'
-import os
-import sys
-from pathlib import Path
-
-config_path = Path(sys.argv[1])
-old_marketplaces = set(filter(None, os.environ["OLD_MARKETPLACES"].splitlines()))
-default_plugins = set(filter(None, os.environ["DEFAULT_PLUGINS_TEXT"].splitlines()))
-retired_headers = {
-    f'[plugins."{plugin}@{marketplace}"]'
-    for plugin in default_plugins
-    for marketplace in old_marketplaces
-}
-
-original = config_path.read_text()
-kept_lines = []
-removed_headers = []
-skipping = False
-
-for line in original.splitlines(keepends=True):
-    stripped = line.strip()
-    if stripped.startswith("[") and stripped.endswith("]"):
-        if stripped in retired_headers:
-            skipping = True
-            removed_headers.append(stripped)
-            continue
-        skipping = False
-
-    if not skipping:
-        kept_lines.append(line)
-
-if not removed_headers:
-    print("Stale retired-marketplace plugin config blocks not present")
-    raise SystemExit(0)
-
-backup_path = config_path.with_name(
-    config_path.name + ".backup-before-toolbox-plugin-migration"
-)
-if not backup_path.exists():
-    backup_path.write_text(original)
-
-config_path.write_text("".join(kept_lines))
-print(
-    "Removed stale retired-marketplace plugin config blocks: "
-    + ", ".join(removed_headers)
-)
-PY
-}
-
 for plugin in "${RETIRED_PLUGINS[@]}"; do
   "$CODEX_BIN" plugin remove "${plugin}@${MARKETPLACE_NAME}" --json >/dev/null 2>&1 || true
   echo "Removed retired plugin if present: ${plugin}@${MARKETPLACE_NAME}"
 done
-
-remove_stale_plugin_config_blocks
 
 for server in "${MANAGED_MCP_SERVERS[@]}"; do
   if direct_mcp_config_present "$server"; then

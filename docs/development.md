@@ -71,11 +71,15 @@ python3 -m venv /tmp/toolbox-instruction-audit
 /tmp/toolbox-instruction-audit/bin/python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit
 ```
 
-Use `--baseline tests/fixtures/instruction-baseline.json` to compare this cleanup
-against the recorded pre-refactor inventory and enforce its 25% aggregate
-description reduction. General CI omits that historical comparison so future
-skills can be added deliberately. The Skill Instructions workflow runs offline
-metadata, setup, instruction, and privacy checks; it never invokes a model.
+`tests/fixtures/instruction-baseline.json` and `instruction-preservation.json`
+record the historical 56-skill instruction refactor. Keep them as evidence,
+not current acceptance targets: `--baseline` requires the same skill inventory
+and the historical 25% description reduction. For routine development, use
+`--check` without that baseline. Save before/after audit JSON outside Git when
+measuring a new refactor; compare entry sizes and all mandatory references
+for each affected operation, not just the entry files. The Skill Instructions
+workflow runs offline metadata, setup, instruction, and privacy checks; it
+never invokes a model.
 
 Chronicle activates for screen or recent-activity context, Stevens Slides for
 Stevens-branded requests, and Defuddle for standalone article extraction.

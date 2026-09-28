@@ -37,6 +37,16 @@ When drawing or applying colors is also requested, keep execution with the
 current plotting/diagram owner: `$paper-figure-workflow` for publication
 pipelines, `$omnigraffle-workflow` for OmniGraffle/`.graffle`, `$drawio` for draw.io/`.drawio`, or the existing plotting code. Explicit application choice takes precedence, followed by the existing artifact format. Include the exact absolute path of this active skill's `references/design-system/colors.json` with the palette handoff; do not substitute a duplicated catalog.
 
+For a reproducible research figure set, give the drawing owner the selected
+palette ID (or `custom selection`), catalog identity and SHA-256, and each
+selected ink's ID, name, exact HEX value, and figure role. Store that selection
+with the project-local figure sources and method encoding map. The active
+absolute catalog path is for the immediate handoff and audit; regeneration
+uses the copied values and must not depend on that path or the plugin cache.
+Never edit the imported catalog to add a research palette. For each color
+setting, use explicit request, then project or venue convention, then the
+research selection, then a general default.
+
 ## Editorial Images
 
 Read [the complete upstream workflow](references/upstream.md), then only the

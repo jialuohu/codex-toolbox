@@ -2,6 +2,27 @@
 
 [TypeSafe setup](typesafe.md) · [Owning skill](../plugins/typesafe-tools/skills/typesafe-computer-use/SKILL.md)
 
+The skill entry gives routing and safety gates. Read the
+[UI cleanup contract](../plugins/typesafe-tools/skills/typesafe-computer-use/references/cleanup.md)
+before the first launch, binding, tab open, or GUI probe. It closes verified,
+saved task-created resources by default while preserving requested live outputs,
+pre-existing or unknown resources, and unsaved or pending work. It verifies
+closure and reports leftovers without force termination or guessed native APIs.
+The optional controller does not acquire UI ownership or perform cleanup.
+
+Load other detailed procedures only
+when needed: [observation and binding](../plugins/typesafe-tools/skills/typesafe-computer-use/references/observation.md),
+[Jev advice](../plugins/typesafe-tools/skills/typesafe-computer-use/references/jev-advice.md),
+[controller](../plugins/typesafe-tools/skills/typesafe-computer-use/references/controller.md),
+and [verification examples](../plugins/typesafe-tools/skills/typesafe-computer-use/references/verification-examples.md).
+The helper/controller JavaScript and MCP interfaces are unchanged.
+
+Offline CI runs all `test_computer_use_*.py` suites, copyable recipe tests, and controller parity tests
+on Linux and macOS with Python 3.12 and Node.js. Native fixture syntax checks
+require macOS and Swift; no GUI runs are part of this suite. Historical replay
+uses the [explicit evidence check](../plugins/typesafe-tools/computer_use_diagnostic/README.md#historical-scoring-correction)
+and never runs during test discovery.
+
 The `typesafe_choose_action` tool advises Codex on an ambiguous next action
 in a browser or native app. Codex observes the interface, supplies a bounded
 set of possible actions, reviews every field sent to Jev, and remains responsible

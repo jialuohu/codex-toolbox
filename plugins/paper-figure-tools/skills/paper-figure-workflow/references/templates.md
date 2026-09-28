@@ -1,84 +1,36 @@
 # Figure Workflow Templates
 
-Use these as starting points only after inspecting the target repo.
+Use the project-local starter in `../assets/research-figure-starter/` after inspecting the paper repo. It includes four editable Matplotlib scripts: `grouped_bars.py`, `line_scaling.py`, `empirical_cdf.py`, and `stacked_breakdown.py`. The last script produces either additive stacked bars or stacked areas. Fixed, labeled synthetic inputs show ablation uncertainty, aligned scaling panels with a shared legend, empirical percentile annotations, and both breakdown forms.
 
-The example below retains the publication default of draw.io. For explicit OmniGraffle or existing `.graffle`, delegate export to `$omnigraffle-workflow`, retain that native source, and document the actual JSON export request in the regeneration command. An unlocked Mac and licensed applications may be required; do not describe a GUI-dependent regeneration step as portable CI. Keep directory layout and cross-figure checks here.
-
-## Makefile Target
-
-This target lets users regenerate the full figure set with `make figures`.
-
-```makefile
-.PHONY: figures
-figures:
-	python scripts/plot_results.py --data data/results.csv --out-dir figures
-	drawio --export --format svg --output figures/pipeline.svg figures_src/pipeline.drawio
-	drawio --export --format pdf --output figures/pipeline.pdf figures_src/pipeline.drawio
-```
-
-If draw.io export is unavailable but Inkscape is installed, convert a generated SVG to PDF:
+Copy all scripts, `figure_common.py`, `research.mplstyle`, `method_styles.json`, input data, `requirements.txt`, Makefile, and selected native diagram sources into the research project. The copier is:
 
 ```bash
-inkscape figures/pipeline.svg --export-type=pdf --export-filename=figures/pipeline.pdf
+python3 plugins/paper-figure-tools/skills/paper-figure-workflow/scripts/scaffold_research_figures.py --project /absolute/paper/project --diagram-owner auto
 ```
 
-## Python Plot Skeleton
+Choose `--diagram-owner auto|omnigraffle|drawio`. The selected owner, selection basis and reason are recorded once in `figures_src/diagram-owner.json`. Explicit choices, existing `.graffle` or `.drawio` sources, and recorded project owners are preserved without probing or switching applications. The source-owned native preference is active after template and foreground-Terminal equation/restart acceptance. Only new unowned `auto` projects run a fresh `doctor --probe-app`; responsive OmniGraffle scripting and advertised PDF export select OmniGraffle, otherwise the recorded reason discloses Draw.io fallback before native dispatch. Project metadata and a doctor result cannot activate the release gate. The probe establishes drawing readiness, not equation GUI access: the accepted foreground Terminal profile does not grant System Events permission to an SSH caller. `--drawio-templates /absolute/dir` and `--omnigraffle-plugin /absolute/plugin` override plugin discovery. The copier refuses source-file overwrites and copies the complete guarded OmniGraffle runtime and accepted native starter assets for native projects. If selected templates are unavailable, scaffolding fails unless `--plots-only` is explicitly chosen.
+
+The [OmniGraffle template contract](../../../../omnigraffle-tools/assets/research-templates/README.md) links the six accepted native starters and their manifest. Copy a selected `.graffle` to a new filename under `figures_src/diagrams` to edit it directly, or initialize a fresh source from the generator. Preserve its adjacent palette provenance. Later `make diagrams` builds use the saved native file without initialization seeds.
+
+## Build and export
+
+Install exact Python versions from the copied `requirements.txt` into an isolated environment. Poppler `pdffonts` is required for the plot verification gate. Draw.io Desktop is required for its diagram owner. Then run:
+
+```bash
+make plots PYTHON=.venv/bin/python
+make diagrams
+make figures PYTHON=.venv/bin/python
+```
+
+`make diagrams` reads the recorded owner. A conflicting `DIAGRAM_OWNER` fails instead of switching tools. For OmniGraffle, run `make init-diagram TEMPLATE=architecture WIDTH=double` once per new native source; it creates a seed and editable `.graffle` through the copied guarded runtime. Later builds export the saved native file, keeping manual edits. The built-in native path stages PDF/SVG/PNG, checks source fingerprints and physical widths, and fails on missing dependencies. Other diagram owners can still use a project-local `FIGURE_DIAGRAM_EXPORTER` adapter, including Archify's existing review gate.
+
+All plot scripts retain `--data`, `--out-dir`, and `--width single|double`; `--width-in` is a mutually exclusive positive custom override. The renderers use `import scienceplots` before `plt.style.use(['science', 'no-latex', project_style])`. The project style declares DejaVu Sans, 8-point body text, a 7-point minimum, `svg.fonttype='none'`, and `pdf.fonttype=42`. For fixed width, `fig.savefig(..., bbox_inches=None)` is required. Do not use a tight bounding-box crop: it changes the saved canvas width. A simple exporter writes `figure.svg` and `figure.pdf`:
 
 ```python
-#!/usr/bin/env python3
-from __future__ import annotations
-
-import argparse
-from pathlib import Path
-
-import matplotlib.pyplot as plt
-import pandas as pd
-import scienceplots
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data", type=Path, required=True)
-    parser.add_argument("--out-dir", type=Path, default=Path("figures"))
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-    data = pd.read_csv(args.data)
-
-    plt.style.use(["science", "no-latex"])
-    plt.rcParams.update({
-        "figure.figsize": (3.3, 2.2),
-        "font.size": 8,
-        "axes.labelsize": 8,
-        "legend.fontsize": 7,
-        "xtick.labelsize": 7,
-        "ytick.labelsize": 7,
-        "svg.fonttype": "none",
-        "pdf.fonttype": 42,
-    })
-
-    fig, ax = plt.subplots()
-    ax.plot(data["x"], data["y"], marker="o", linewidth=1.25, label="method")
-    ax.set_xlabel("Input")
-    ax.set_ylabel("Metric")
-    ax.legend(frameon=False)
-    fig.tight_layout()
-
-    for suffix in ("svg", "pdf"):
-        fig.savefig(args.out_dir / f"figure.{suffix}", bbox_inches="tight")
-
-
-if __name__ == "__main__":
-    main()
+fig.savefig("figure.svg", bbox_inches=None)
+fig.savefig("figure.pdf", bbox_inches=None)
 ```
 
-This writes `figure.svg` and `figure.pdf` in the selected output directory.
+`make verify-plots` checks SVG/PDF physical widths within 0.01 inch, editable SVG text, text size after any requested placement scaling, and PDF font embedding. Use `pdftotext` and a visual inspection for unusual glyphs. See [research-style.md](research-style.md) for the source-grounded composition and data rules.
 
-Install minimal plotting dependencies in the target repo's chosen environment:
-
-```bash
-python -m pip install matplotlib scienceplots pandas
-```
+The native owner may use `drawio --export` when available; the installed Draw.io Desktop helper handles `svg` and `pdf`. If a project uses Inkscape for a supported conversion, `inkscape figure.svg --export-type=pdf --export-filename=figure.pdf` is a separate explicit step, never a silent fallback for a missing owner export.

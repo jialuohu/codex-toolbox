@@ -63,25 +63,62 @@ def graph_map(document):
 
 
 def normalized_graphic(graphic):
-    value = copy.deepcopy(graphic)
+    # Parsed dictionaries reject duplicate keys on assignment. Convert the
+    # comparison copy to plain containers; never mutate the strict parsed tree.
+    def plain_container(item):
+        if isinstance(item, dict):
+            return {key: plain_container(child) for key, child in item.items()}
+        if isinstance(item, list):
+            return [plain_container(child) for child in item]
+        return item
+    value = plain_container(graphic)
+    # OmniGraffle 7.26 may reopen an explicit RGB style color by converting
+    # numeric strings to plist numbers. Normalize only that observed shape,
+    # retaining its color-space tag and every other style field.
+    styles = value.get("Style")
+    for style_name in ("fill", "stroke", "shadow"):
+        style = styles.get(style_name) if isinstance(styles, dict) else None
+        if not isinstance(style, dict):
+            continue
+        color = style.get("Color")
+        if (not isinstance(color, dict) or set(color) != {"r", "g", "b", "space"}
+                or color.get("space") not in {"srgb", "RGB", "rgb"}):
+            continue
+        converted = {}
+        for component_name in ("r", "g", "b"):
+            component = color[component_name]
+            if isinstance(component, str):
+                if len(component) > 64 or not re.fullmatch(r"-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", component):
+                    raise CommandError("verification_failed", "Unqualified explicit RGB style color")
+                component = float(component)
+            if type(component) not in (int, float) or not math.isfinite(component) or not 0 <= component <= 1:
+                raise CommandError("verification_failed", "Invalid explicit RGB style color")
+            converted[component_name] = float(component)
+        style["Color"] = {**converted, "space": color["space"]}
     # Observed native default normalization after restarting OmniGraffle 7.26.
     # Only explicit numeric RGB black is equivalent to an absent stroke Color;
     # do not normalize opaque color archives or other color spaces.
-    if value.get("Class") == "LineGraphic":
+    if value.get("Class") == "LineGraphic" and isinstance(styles, dict) and isinstance(styles.get("stroke", {}), dict):
         stroke = value.get("Style", {}).get("stroke", {})
         color = stroke.get("Color")
         if (isinstance(color, dict) and set(color) <= {"r", "g", "b", "space"}
                 and color.get("space", "RGB") == "RGB"
                 and all(type(color.get(k)) in (int, float) and color[k] == 0 for k in ("r", "g", "b"))):
             stroke.pop("Color")
+    for children_field in ("Graphics", "GraphicsList"):
+        children = value.get(children_field)
+        if isinstance(children, list):
+            value[children_field] = [normalized_graphic(child) if isinstance(child, dict) else child
+                                     for child in children]
     return value
 
 
-def verify_preservation(before, after, changed, native_before=None, native_after=None):
+def verify_preservation(before, after, changed, native_before=None, native_after=None, incident_geometry=()):
     a, b = graph_map(before), graph_map(after)
     # Ancestors contain nested child dictionaries and necessarily change with
     # an explicitly targeted descendant. All other objects compare in full.
-    allowed = set(changed)
+    incident_geometry = set(incident_geometry) - set(changed)
+    allowed = set(changed) | incident_geometry
     ancestors = set()
     for key, g in a.items():
         descendants = []
@@ -99,6 +136,16 @@ def verify_preservation(before, after, changed, native_before=None, native_after
         if key in ancestors and key not in allowed:
             left = {k: v for k, v in original.items() if k not in ("Graphics", "GraphicsList")}
             right = {k: v for k, v in b[key].items() if k not in ("Graphics", "GraphicsList")}
+        if key in incident_geometry:
+            if left.get("Class") != right.get("Class") or left.get("Class") != "LineGraphic":
+                raise CommandError("verification_failed", f"Incident connector {key} changed class")
+            geometry_fields = {"Points", "LogicalPath", "ControlPoints", "Bounds"}
+            if left.get("OrthogonalBarAutomatic") is True:
+                geometry_fields |= {"OrthogonalBarPoint", "OrthogonalBarPosition"}
+            if (normalized_graphic({k: v for k, v in left.items() if k not in geometry_fields})
+                    != normalized_graphic({k: v for k, v in right.items() if k not in geometry_fields})):
+                raise CommandError("verification_failed", f"Incident connector {key} changed style, attachment, or manual-route metadata")
+            continue
         if key not in allowed and normalized_graphic(left) != normalized_graphic(right):
             # OmniGraffle can reserialize a black line's color archive on open.
             # Never decode it or trust its textual RGB: require independent
@@ -122,9 +169,284 @@ def verify_preservation(before, after, changed, native_before=None, native_after
         raise CommandError("verification_failed", "Canvas identities changed")
     for key, sheet in before_sheets.items():
         for field in ("SheetTitle", "CanvasSize", "BackgroundGraphic"):
-            if sheet.get(field) != after_sheets[key].get(field):
+            left_field, right_field = sheet.get(field), after_sheets[key].get(field)
+            if field == "BackgroundGraphic" and isinstance(left_field, dict) and isinstance(right_field, dict):
+                left_field, right_field = normalized_graphic(left_field), normalized_graphic(right_field)
+            if left_field != right_field:
                 raise CommandError("verification_failed", f"Unrelated canvas field {field} changed")
-    return {"unrelated_objects": "verified", "comparison": "parsed objects; black line color serialization may normalize with matching native RGB readback"}
+    return {"unrelated_objects": "verified", "comparison": "parsed objects; explicit RGB component strings may normalize to numbers; black line color serialization may normalize with matching native RGB readback"}
+
+
+TEXT_STYLE_FIELDS = {"font_size", "font_name", "text_color", "text_align", "text_valign", "text_padding"}
+TEXT_READBACK_FIELDS = {"font_size", "font_name", "text_color", "text_align"}
+CONNECTOR_STYLE_FIELDS = {"stroke", "stroke_width", "stroke_pattern", "line_type",
+                          "head_arrow", "tail_arrow", "from_side", "to_side"}
+
+
+def _qualified_rtf_body(stored):
+    if not isinstance(stored, str) or len(stored) > 65536 or not stored.startswith("{\\rtf"):
+        return None
+    stack, tables = [], []
+    index = 0
+    while index < len(stored):
+        char = stored[index]
+        if char == "\\" and index + 1 < len(stored) and stored[index + 1] in "\\{}":
+            index += 2
+            continue
+        if char == "{":
+            stack.append(index)
+            if len(stack) > 16:
+                return None
+        elif char == "}":
+            if not stack:
+                return None
+            start = stack.pop()
+            content = stored[start + 1:index]
+            if re.match(r"\\(?:fonttbl|colortbl)\b|\\\*\\expandedcolortbl\b", content):
+                tables.append((start, index + 1, content))
+            if not stack and stored[index + 1:].strip():
+                return None
+        index += 1
+    if stack:
+        return None
+    font_tables = [content for _, _, content in tables if content.startswith("\\fonttbl")]
+    if len(font_tables) != 1 or len(re.findall(r"\\f\d+(?=[^A-Za-z\d])", font_tables[0])) != 1:
+        return None
+    body = stored
+    for start, end, _ in sorted(tables, reverse=True):
+        body = body[:start] + body[end:]
+    index, depth = 0, 0
+    while index < len(body):
+        if body[index] == "\\" and index + 1 < len(body) and body[index + 1] in "\\{}":
+            index += 2
+            continue
+        if body[index] == "{":
+            depth += 1
+            if depth > 1:
+                return None
+        elif body[index] == "}":
+            depth -= 1
+        index += 1
+    return body
+
+
+def _body_text_attributes(body, *, require_color=True):
+    """Qualify one explicit body font/size/color before every text token."""
+    attributes = {} if require_color else {"cf": 0}
+    first = None
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char in "{}\r\n":
+            index += 1
+            continue
+        if char == "\\":
+            control = re.match(r"\\([A-Za-z]+)(-?\d+)? ?", body[index:])
+            if control:
+                name, number = control.groups()
+                if name in {"f", "fs", "cf"}:
+                    if number is None or len(number) > 6 or number.startswith("-"):
+                        return None
+                    attributes[name] = int(number)
+                if name != "u":
+                    index += len(control.group())
+                    continue
+        if first is None:
+            if char.isspace():
+                index += 1
+                continue
+            if set(attributes) != {"f", "fs", "cf"}:
+                return None
+            first = dict(attributes)
+        if attributes != first:
+            return None
+        if char == "\\" and index + 1 < len(body):
+            index += 2
+        else:
+            index += 1
+    return first if first is not None and attributes == first else None
+
+
+def uniform_text_attributes(graphic):
+    """Conservatively recognize labels for which a whole-text style write is safe.
+
+    Native text archives may contain arbitrary RTF. This does not parse or
+    rewrite that archive; unfamiliar or mixed runs are rejected before dispatch.
+    """
+    stored = graphic.get("Text", "")
+    if isinstance(stored, dict):
+        stored = stored.get("Text", "")
+    if not isinstance(stored, str):
+        return False
+    if not stored.startswith("{\\rtf"):
+        return True
+    body = _qualified_rtf_body(stored)
+    attributes = _body_text_attributes(body, require_color=False) if body is not None else None
+    if attributes is None:
+        return False
+    color_indices = set(re.findall(r"\\cf(-?\d+)(?=[^A-Za-z\d])", stored))
+    if color_indices and color_indices != {str(attributes["cf"])}:
+        return False
+    fallback_tables = re.findall(r"\{\\colortbl([^{}]*)\}", stored)
+    if "\\colortbl" in stored:
+        if len(fallback_tables) != 1:
+            return False
+        fallback = fallback_tables[0]
+        if (not re.fullmatch(r"(?:;|\\red\d{1,3}\\green\d{1,3}\\blue\d{1,3};)*", fallback)
+                or any(int(item) > 255 for item in re.findall(r"\\(?:red|green|blue)(\d+)", fallback))):
+            return False
+    # The observed expanded table carries sRGB components in 1/100000 units.
+    # Qualify those controls only inside that table, not as arbitrary body text
+    # formatting. Unobserved color models or nested destinations fail closed.
+    expanded_tables = re.findall(r"\{\\\*\\expandedcolortbl([^{}]*)\}", stored)
+    if "\\expandedcolortbl" in stored:
+        if len(expanded_tables) != 1:
+            return False
+        table = expanded_tables[0]
+        if (not re.fullmatch(r"(?:;|\\cssrgb\\c\d{1,6}\\c\d{1,6}\\c\d{1,6};)*", table)
+                or any(int(component) > 100000 for component in re.findall(r"\\c(\d+)", table))):
+            return False
+        if not fallback_tables or len(table.split(";")[:-1]) != len(fallback_tables[0].split(";")[:-1]):
+            return False
+    if fallback_tables:
+        entry_count = len(fallback_tables[0].split(";")[:-1])
+        if not 0 <= attributes["cf"] < entry_count <= 256:
+            return False
+    elif attributes["cf"] != 0:
+        return False
+    control_source = re.sub(r"\{\\\*\\expandedcolortbl[^{}]*\}", "", stored)
+    # The allowed controls are the plain, single-run RTF envelope observed in
+    # OmniGraffle 7.26 saved labels. Unknown controls may carry formatting that
+    # the fixed attributed-text write cannot retain, so they fail closed.
+    allowed = {"rtf", "ansi", "ansicpg", "cocoartf", "cocoatextscaling",
+               "cocoaplatform", "fonttbl", "deff", "f", "fnil", "fswiss",
+               "froman", "fmodern", "fdecor", "ftech", "fbidi", "fcharset",
+               "colortbl", "red", "green", "blue", "expandedcolortbl",
+               "pard", "tx", "pardirnatural", "qc", "ql", "qr", "qj",
+               "partightenfactor", "fs", "cf", "uc", "u"}
+    controls = set(re.findall(r"\\([A-Za-z]+)(?:-?\d+)? ?", control_source))
+    if controls - allowed:
+        return False
+    for attr in ("f", "fs", "cf"):
+        values = set(re.findall(rf"\\{attr}(-?\d+)(?=[^A-Za-z])", stored))
+        if len(values) > 1:
+            return False
+    aligns = set(re.findall(r"\\q([lrcj])(?=[^A-Za-z])", stored))
+    return len(aligns) <= 1
+
+
+def qualified_saved_text_color(graphic):
+    """Recover an exact 16-bit sRGB setter from one qualified saved RTF run.
+
+    The expanded table stores decimal components in 1/100000 units. Accept a
+    component only when it identifies a 16-bit value that serializes to exactly
+    the same decimal component. Other color models and fractional colors that
+    cannot survive this setter are rejected before native mutation.
+    """
+    if not uniform_text_attributes(graphic):
+        raise CommandError("mixed_text_attributes", "Unqualified saved text attributes")
+    stored = graphic.get("Text")
+    stored = stored.get("Text") if isinstance(stored, dict) else stored
+    if not isinstance(stored, str) or len(stored) > 65536:
+        raise CommandError("mixed_text_attributes", "Unqualified saved text color")
+    body = _qualified_rtf_body(stored)
+    attributes = _body_text_attributes(body) if body is not None else None
+    if attributes is None:
+        raise CommandError("mixed_text_attributes", "Saved text needs explicit uniform body attributes")
+    tables = re.findall(r"\{\\\*\\expandedcolortbl([^{}]*)\}", stored)
+    fallback_tables = re.findall(r"\{\\colortbl([^{}]*)\}", stored)
+    indices = set(re.findall(r"\\cf(\d{1,3})(?=[^A-Za-z\d])", stored))
+    if len(tables) != 1 or len(fallback_tables) != 1 or len(indices) != 1:
+        raise CommandError("mixed_text_attributes", "Saved text needs one explicit expanded sRGB color")
+    fallback = fallback_tables[0]
+    if (not re.fullmatch(r"(?:;|\\red\d{1,3}\\green\d{1,3}\\blue\d{1,3};)*", fallback)
+            or any(int(item) > 255 for item in re.findall(r"\\(?:red|green|blue)(\d+)", fallback))):
+        raise CommandError("mixed_text_attributes", "Saved fallback color table is unsupported")
+    entries = tables[0].split(";")[:-1]
+    if len(fallback.split(";")[:-1]) != len(entries):
+        raise CommandError("mixed_text_attributes", "Saved color table indices disagree")
+    index = int(next(iter(indices)))
+    if index != attributes["cf"]:
+        raise CommandError("mixed_text_attributes", "Saved text color scope is unsupported")
+    if not 0 < index < len(entries) or len(entries) > 256:
+        raise CommandError("mixed_text_attributes", "Saved text color index is unsupported")
+    color = re.fullmatch(r"\\cssrgb\\c(\d{1,6})\\c(\d{1,6})\\c(\d{1,6})", entries[index])
+    if not color:
+        raise CommandError("mixed_text_attributes", "Saved text color is not explicit sRGB")
+    components = [int(item) for item in color.groups()]
+    result = [(item * 65535 + 50000) // 100000 for item in components]
+    if any((item * 100000 + 32767) // 65535 != original for item, original in zip(result, components)):
+        raise CommandError("mixed_text_attributes", "Saved text color cannot be retained exactly by the native setter")
+    return result
+
+
+def verify_retained_text_attributes(before_native, after_native, canvas_id, object_id, requested):
+    if "text" in requested:
+        return
+    prior = target_object(before_native, canvas_id, object_id)
+    current = target_object(after_native, canvas_id, object_id)
+    fields = {"text": None, "font_name": "font_name", "font_size": "font_size",
+              "text_rgb": "text_color", "text_align": "text_align", "text_valign": "text_valign",
+              "side_padding": "text_padding", "vertical_padding": "text_padding"}
+    for field, public_name in fields.items():
+        if public_name not in requested and prior.get(field) != current.get(field):
+            raise CommandError("verification_failed", f"Style or geometry change altered unrequested {field}")
+
+
+def preflight_update_styles(before_raw, changes):
+    graphics = graph_map(before_raw)
+    moved = set()
+    for change in changes:
+        key = (change["canvas_id"], change["object_id"])
+        graphic = graphics[key]
+        requested = change["set"]
+        kind = graphic.get("Class")
+        if kind == "LineGraphic":
+            if set(requested) - CONNECTOR_STYLE_FIELDS:
+                raise CommandError("invalid_request", "Unsupported connector property")
+        elif kind in ("ShapedGraphic", "SolidGraphic"):
+            if "ImageID" in graphic:
+                raise CommandError("invalid_request", "Generic updates to image or LinkBack objects are unsupported")
+            if kind == "SolidGraphic" and "shape_type" in requested:
+                raise CommandError("invalid_request", "Shape type on a non-shape solid")
+            if set(requested) & {"line_type", "head_arrow", "tail_arrow", "from_side", "to_side"}:
+                raise CommandError("invalid_request", "Connector property on a shape")
+            if (set(requested) & TEXT_READBACK_FIELDS and not requested.get("text")
+                    and graphic.get("Text") in (None, "", {"Text": ""})):
+                raise CommandError("invalid_request", "Text styling requires a nonempty label for native readback")
+            if set(requested) & TEXT_STYLE_FIELDS and "text" not in requested and not uniform_text_attributes(graphic):
+                raise CommandError("mixed_text_attributes", "Mixed or unqualified text attributes require explicit whole-label replacement")
+            if (set(requested) & {"font_size", "font_name", "text_align"}
+                    and "text" not in requested and "text_color" not in requested):
+                qualified_saved_text_color(graphic)
+            if set(requested) & {"x", "y", "width", "height"}:
+                moved.add(key)
+        else:
+            raise CommandError("invalid_request", "Unsupported update for this native graphic class")
+    if not moved:
+        return set()
+    incident = set()
+    for key, graphic in graphics.items():
+        if graphic.get("Class") != "LineGraphic":
+            continue
+        endpoint_ids = {graphic.get(side, {}).get("ID") for side in ("Head", "Tail")}
+        if not any(canvas_id == key[0] and object_id in endpoint_ids for canvas_id, object_id in moved):
+            continue
+        points = graphic.get("Points", [])
+        stroke = graphic.get("Style", {}).get("stroke", {})
+        line_type = stroke.get("LineType")
+        auto_orthogonal = line_type == 2 and graphic.get("OrthogonalBarAutomatic") is True
+        valid_points = isinstance(points, list) and len(points) >= 2
+        simple_segment = valid_points and len(points) == 2 and line_type in (None, 0, 2)
+        if (not valid_points or graphic.get("ControlPoints")
+                or graphic.get("OrthogonalBarAutomatic") is False
+                or not (simple_segment or auto_orthogonal)):
+            raise CommandError("manual_connector_route", "Move would alter an incident connector with a manual or unqualified route")
+        if any(other.get("Line", {}).get("ID") == key[1] for other_key, other in graphics.items()
+               if other_key[0] == key[0]):
+            raise CommandError("manual_connector_route", "Move would alter a connector with an attached label")
+        incident.add(key)
+    return incident
 
 
 def target_object(report, canvas_id, object_id):
@@ -132,6 +454,19 @@ def target_object(report, canvas_id, object_id):
     if len(objects) != 1:
         raise CommandError("ambiguous_object", "Expected one inspected canvas/object identity")
     return objects[0]
+
+
+def preflight_native_text_readback(before_native, changes):
+    """Reject an empty native label before dispatching an update mutation."""
+    for change in changes:
+        requested = change["set"]
+        if not set(requested) & TEXT_READBACK_FIELDS:
+            continue
+        if requested.get("text"):
+            continue
+        obj = target_object(before_native, change["canvas_id"], change["object_id"])
+        if not obj.get("text"):
+            raise CommandError("invalid_request", "Text styling requires a nonempty native label")
 
 
 def verify_assets(before, after, changed):
@@ -164,11 +499,12 @@ def verify_properties(native_document, canvas_id, object_id, properties):
     if len(matches) != 1:
         raise CommandError("verification_failed", "Native result does not uniquely identify the requested object")
     obj = matches[0]
+    substitutions = []
     for key, expected in properties.items():
         if key in ("x", "y", "width", "height"):
             actual = obj.get("origin" if key in ("x", "y") else "size", [None, None])[0 if key in ("x", "width") else 1]
-        elif key in ("fill", "stroke"):
-            actual = obj.get(key + "_rgb")
+        elif key in ("fill", "stroke", "text_color"):
+            actual = obj.get("text_rgb" if key == "text_color" else key + "_rgb")
             rgb = [int(expected[i:i + 2], 16) / 255 for i in (1, 3, 5)]
             if not isinstance(actual, list) or len(actual) != 3 or any(abs(a - b) > 0.0001 for a, b in zip(actual, rgb)):
                 raise CommandError("verification_failed", f"Native {key} did not match the requested color")
@@ -180,7 +516,12 @@ def verify_properties(native_document, canvas_id, object_id, properties):
         else:
             equal = actual == expected
         if not equal:
+            if key == "font_name" and isinstance(actual, str) and actual:
+                substitutions.append({"canvas_id": canvas_id, "object_id": object_id,
+                                      "requested": expected, "native": actual})
+                continue
             raise CommandError("verification_failed", f"Native property {key} did not match the requested value")
+    return substitutions
 
 
 def export_check(path, format_name):
@@ -198,15 +539,43 @@ def export_check(path, format_name):
         if not raw.startswith(b"%PDF-") or b"%%EOF" not in raw[-1024:]:
             raise CommandError("verification_failed", "Incomplete PDF export")
         return {"format": "PDF", "visual_check": "required"}
-    if b"<!ENTITY" in raw or b"<!DOCTYPE" in raw or len(raw) > 16 * 1024 * 1024:
+    if b"\x00" in raw or len(raw) > 16 * 1024 * 1024:
         raise CommandError("verification_failed", "Unsupported SVG envelope")
+    # OmniGraffle 7.26 emits this external declaration. Remove its exact,
+    # recognized spelling before parsing; never load a DTD or accept entities.
+    declaration = (b'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" '
+                   b'"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">')
+    declarations = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
+    sanitized = raw
+    if declarations.search(raw):
+        if raw.count(declaration) != 1:
+            raise CommandError("verification_failed", "Unsupported SVG envelope")
+        prefix, suffix = raw.split(declaration)
+        prolog = prefix.removeprefix(b"\xef\xbb\xbf").strip()
+        if prolog and not re.fullmatch(br"<\?xml\s+[^<>?]*\?>", prolog):
+            raise CommandError("verification_failed", "Unsupported SVG envelope")
+        sanitized = prefix + suffix
+        if declarations.search(sanitized):
+            raise CommandError("verification_failed", "Unsupported SVG envelope")
     try:
-        root = ET.fromstring(raw)
+        # Decode explicitly so another XML encoding cannot conceal declarations
+        # from the envelope check or invoke encoding-dependent entity parsing.
+        root = ET.fromstring(sanitized.decode("utf-8"))
         if root.tag.split("}")[-1] != "svg":
             raise ValueError()
-    except (ET.ParseError, ValueError) as error:
+    except (ET.ParseError, ValueError, UnicodeDecodeError) as error:
         raise CommandError("verification_failed", "Invalid SVG export") from error
-    return {"format": "SVG", "visual_check": "required"}
+    verification = {"format": "SVG", "visual_check": "required"}
+    if sanitized != raw:
+        # Only the private staged export changes. Its original bytes remain
+        # traceable; the native document's source fingerprint is unaffected.
+        Path(path).write_bytes(sanitized)
+        verification["sanitization"] = {
+            "external_doctype_removed": True,
+            "original_export_sha256": hashlib.sha256(raw).hexdigest(),
+            "sanitized_export_sha256": hashlib.sha256(sanitized).hexdigest(),
+        }
+    return verification
 
 
 class Engine:
@@ -274,10 +643,12 @@ class Engine:
                                 expected_output_sha256=expected_output, working_path=str(working), processes=processes,
                                 versions=application_versions(self.native, self.latexit), palette=palette)
                 changed = set()
+                incident_geometry = set()
                 if command == "update":
                     for change in request["changes"]:
                         target_object(before_report, change["canvas_id"], change["object_id"])
                         changed.add((change["canvas_id"], change["object_id"]))
+                    incident_geometry = preflight_update_styles(before_raw, request["changes"])
                 if command in ("equation-source", "equation-update"):
                     obj = target_object(before_report, request["canvas_id"], request["object_id"])
                     if obj.get("linkback", {}).get("owner", {}).get("bundle_id") != STOCK_OWNER:
@@ -287,6 +658,7 @@ class Engine:
                 dispatched = True
                 equations = []
                 adapter_warnings = []
+                font_substitutions = []
                 native_report = None
                 before_native = checked(self.native.call({"op": "inspect", "path": str(working)}))["document"] if source else None
                 if command == "create":
@@ -304,6 +676,7 @@ class Engine:
                         adapter_warnings.extend(result.get("warnings", []))
                         checked(self.native.call({"op": "save", "path": str(working), "working_copy": True}))
                 elif command == "update":
+                    preflight_native_text_readback(before_native, request["changes"])
                     result = checked(self.native.call({"op": "update", "path": str(working), "changes": request["changes"], "working_copy": True}))
                     native_report = result["document"]
                 elif command.startswith("equation-"):
@@ -336,16 +709,24 @@ class Engine:
                     verification = export_check(final_stage, "PDF")
                 else:
                     final_stage = working
+                    saved_hash = digest(working)
+                    checked(self.native.call({"op": "close", "path": str(working), "working_copy": True, "discard": False}))
+                    check_fingerprint(working, saved_hash, "Working file after saved-readback close")
                     native_report = checked(self.native.call({"op": "inspect", "path": str(working)}))["document"]
+                    check_fingerprint(working, saved_hash, "Working file after saved-readback reopen")
                     if native_report.get("modified") is not False:
                         raise CommandError("verification_failed", "Working document still has unsaved changes")
                     after_report, after_raw = read_document(working)
-                    verification = verify_preservation(before_raw, after_raw, changed, before_native, native_report) if before_raw else {"native_structure": "verified"}
+                    verification = verify_preservation(before_raw, after_raw, changed, before_native, native_report,
+                                                       incident_geometry=incident_geometry) if before_raw else {"native_structure": "verified"}
                     if before_report:
                         verify_assets(before_report, after_report, changed)
                     if command == "update":
                         for change in request["changes"]:
-                            verify_properties(native_report, change["canvas_id"], change["object_id"], change["set"])
+                            font_substitutions.extend(verify_properties(native_report, change["canvas_id"],
+                                                                        change["object_id"], change["set"]))
+                            verify_retained_text_attributes(before_native, native_report, change["canvas_id"],
+                                                            change["object_id"], change["set"])
                     if command == "create":
                         for canvas in request["spec"]["canvases"]:
                             mapped = created["mapping"][canvas["key"]]
@@ -356,10 +737,15 @@ class Engine:
                             for obj in canvas["objects"]:
                                 if obj["kind"] in ("shape", "text"):
                                     props = {k: v for k, v in obj.items() if k not in ("key", "kind")}
-                                    verify_properties(native_report, mapped["canvas_id"], mapped["objects"][obj["key"]], props)
+                                    font_substitutions.extend(verify_properties(native_report, mapped["canvas_id"],
+                                                                                mapped["objects"][obj["key"]], props))
                                 elif obj["kind"] == "connector":
-                                    verify_properties(native_report, mapped["canvas_id"], mapped["objects"][obj["key"]],
-                                                      {"source_id": mapped["objects"][obj["from"]], "destination_id": mapped["objects"][obj["to"]]})
+                                    connector_properties = {key: value for key, value in obj.items() if key in CONNECTOR_STYLE_FIELDS}
+                                    font_substitutions.extend(verify_properties(native_report, mapped["canvas_id"],
+                                                                                mapped["objects"][obj["key"]],
+                                                                               {"source_id": mapped["objects"][obj["from"]],
+                                                                                "destination_id": mapped["objects"][obj["to"]],
+                                                                                **connector_properties}))
                                 elif obj["kind"] == "group":
                                     for child in obj["children"]:
                                         item = target_object(after_report, mapped["canvas_id"], mapped["objects"][child])
@@ -398,7 +784,8 @@ class Engine:
                             warnings.append("Equation metadata remains in the private operation receipt; adjacent sidecar could not be written")
                     self.store.finish(receipt, "committed", result={"output": str(output), "sha256": output_hash,
                                       "equation_metadata": str(metadata) if metadata else None, "verification": verification,
-                                      "native_document": native_report, "versions": receipt.get("versions", {}), "palette": palette, "warnings": warnings})
+                                      "native_document": native_report, "versions": receipt.get("versions", {}),
+                                      "palette": palette, "font_substitutions": font_substitutions, "warnings": warnings})
                 return receipt
             except Exception as error:
                 code = getattr(error, "code", "operation_error")

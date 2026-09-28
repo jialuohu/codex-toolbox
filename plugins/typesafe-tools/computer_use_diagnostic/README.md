@@ -23,9 +23,18 @@ After validating a prefix, use `--resume` with the same private result file and
 a larger `--limit`. Use `--mode comparison` and a new result path only after the
 canary acceptance checks pass. The source/runtime hashes, prompts, model,
 reasoning, fixture versions, and schedule are sealed in each v2 result file;
-resume rejects changed pins or a noncontiguous prefix. The installed TypeSafe
-0.4.0 skill supplies baseline arms; the reproducibly generated compact
-controller source supplies the pilot arms. Both compact and readable sources
+resume rejects changed pins or a noncontiguous prefix. The bundled TypeSafe
+0.4.0 recipe in `skill_0_4_0.md` supplies baseline arms; the reproducibly generated
+compact controller source supplies the pilot arms. The baseline is an exact copy
+of `plugins/typesafe-tools/skills/typesafe-computer-use/SKILL.md` at toolbox commit
+`432f9bc164f4ad2cb97b3e95ba43409c2a84acaf`, whose plugin manifest declares 0.4.0.
+Its SHA-256 is
+`1f5d58053dcce20349e9501f2de773d5a9e14587ca670d24607c9970d9b3e702`.
+The runner verifies this fixed hash before preparing a campaign. It never loads
+the baseline from a user plugin cache; no installed 0.4.0 plugin is required.
+The cache-independence repair changes runner and prompt hashes, so previous
+result files cannot be resumed with this source. Historical result artifacts and
+their recorded pins remain unchanged. Both compact and readable sources
 are pinned. The comparison remains incomplete if any required native
 backend session or exact operation/safety measurement is unavailable.
 
@@ -219,6 +228,21 @@ unmeasured. The 72-run **screening comparison** remains pending under the
 protocol; exploratory 72-slot collection is descriptive only.
 
 ### Historical scoring correction
+
+Ordinary test discovery uses synthetic data and never reads local Codex session
+history. To verify the archived campaign's recorded counts, explicitly supply
+both evidence locations to this read-only, offline check:
+
+```sh
+PYTHONPATH=plugins/typesafe-tools python3.12 -m computer_use_diagnostic.verify_historical_replay \
+  --results /path/to/original/full72-results.json \
+  --sessions-day /path/to/authorized/session-evidence
+```
+
+This optional check is outside CI and unittest discovery. It creates no report
+file and prints only verification status and mismatched field names. Run it
+only when access to those evidence files is authorized; the synthetic unit
+suite does not need them.
 
 The frozen 2026-09-24 72-trial collection has a separate, metadata-only v2
 correction. Replay of completed CUA results associated with each verified

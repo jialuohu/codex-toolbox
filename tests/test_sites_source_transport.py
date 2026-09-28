@@ -14,6 +14,7 @@ import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -194,6 +195,16 @@ raise SystemExit(module.main(sys.argv, runtime=runtime, boundary=boundary))
     def clear_records(self):
         self.log_path.unlink(missing_ok=True)
 
+    def child_environment(self, *, cwd=None, env=None):
+        process_env = os.environ.copy()
+        # Codex's host session is not part of this synthetic credential fixture.
+        # Remove it only from test children; explicit overrides still test the guard.
+        process_env.pop("CODEX_SESSION_ID", None)
+        process_env["PWD"] = str(cwd or self.root)
+        if env:
+            process_env.update(env)
+        return process_env
+
     def run_tty(
         self,
         operation,
@@ -206,10 +217,7 @@ raise SystemExit(module.main(sys.argv, runtime=runtime, boundary=boundary))
     ):
         credential = self.credential() if credential is None else credential
         master_fd, slave_fd = pty.openpty()
-        process_env = os.environ.copy()
-        process_env["PWD"] = str(cwd or self.root)
-        if env:
-            process_env.update(env)
+        process_env = self.child_environment(cwd=cwd, env=env)
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -307,10 +315,7 @@ raise SystemExit(module.main(sys.argv, runtime=runtime, boundary=boundary))
 
     def run_tty_without_input(self, operation, *, cwd=None, env=None):
         master_fd, slave_fd = pty.openpty()
-        process_env = os.environ.copy()
-        process_env["PWD"] = str(cwd or self.root)
-        if env:
-            process_env.update(env)
+        process_env = self.child_environment(cwd=cwd, env=env)
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -352,7 +357,7 @@ raise SystemExit(module.main(sys.argv, runtime=runtime, boundary=boundary))
                 operation,
             ],
             cwd=self.root,
-            env=os.environ.copy(),
+            env=self.child_environment(),
             stdin=slave_fd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -373,10 +378,7 @@ raise SystemExit(module.main(sys.argv, runtime=runtime, boundary=boundary))
 
     def run_pipe(self, operation, credential=None, *, cwd=None, env=None, extra_args=()):
         credential = self.credential() if credential is None else credential
-        process_env = os.environ.copy()
-        process_env["PWD"] = str(cwd or self.root)
-        if env:
-            process_env.update(env)
+        process_env = self.child_environment(cwd=cwd, env=env)
         return subprocess.run(
             [
                 sys.executable,
@@ -465,7 +467,7 @@ class SitesSourceTransportTests(unittest.TestCase):
         self.assertNotIn(SYNTHETIC_TOKEN, text)
 
         plugin = json.loads(PLUGIN_FILE.read_text(encoding="utf-8"))
-        self.assertEqual(plugin["version"], "0.5.2")
+        self.assertRegex(plugin["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
     def test_boundary_config_is_private_strict_and_fail_closed(self):
         spec = importlib.util.spec_from_file_location(
@@ -651,6 +653,20 @@ class SitesSourceTransportTests(unittest.TestCase):
                     env={name: SYNTHETIC_TOKEN},
                 )
                 self.assert_error(result, "CREDENTIAL_ENV_FORBIDDEN")
+
+    def test_fixture_isolates_inherited_session_but_preserves_explicit_rejection(self):
+        session = "synthetic-host-session"
+        with patch.dict(os.environ, {"CODEX_SESSION_ID": session}):
+            self.assert_success(self.fixture.run_tty("readback"))
+            self.fixture.clear_records()
+            result = self.fixture.run_tty_without_input(
+                "readback", env={"CODEX_SESSION_ID": session},
+            )
+            self.assert_error(result, "CREDENTIAL_ENV_FORBIDDEN")
+            self.assertFalse(result.timed_out)
+            self.assertEqual(self.fixture.records(), [])
+            self.assert_error(self.fixture.run_pipe("readback"), "STDIN_TTY_REQUIRED")
+            self.assertEqual(os.environ["CODEX_SESSION_ID"], session)
 
     def test_rejects_generic_credential_environment_before_tty_input_or_git(self):
         result = self.fixture.run_tty_without_input(

@@ -1,0 +1,23 @@
+{
+  "kind": "line_scaling",
+  "figure_name": "line-scaling",
+  "data_label": "Illustrative synthetic data",
+  "between_samples": "straight_segments",
+  "x_values": [1, 2, 4, 8],
+  "x_label": "Concurrency",
+  "x_unit": "requests",
+  "y_label": "Response time",
+  "y_unit": "ms",
+  "panels": [
+    {"title": "Median", "series": [
+      {"method": "Proposed", "unit": "ms", "values": [38, 40, 43, 48]},
+      {"method": "Baseline", "unit": "ms", "values": [48, 55, null, 95]},
+      {"method": "Ablation", "unit": "ms", "values": [44, 47, 53, 64]}
+    ]},
+    {"title": "95th percentile", "series": [
+      {"method": "Ablation", "unit": "ms", "values": [63, 72, 82, 103]},
+      {"method": "Proposed", "unit": "ms", "values": [57, 61, 69, 80]},
+      {"method": "Baseline", "unit": "ms", "values": [71, 86, 109, 138]}
+    ]}
+  ]
+}

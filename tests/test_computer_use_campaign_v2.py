@@ -33,6 +33,51 @@ def cua_event(code: str, text: str) -> dict:
 
 
 class CampaignV2Tests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Campaign behavior uses synthetic runtime identity; installed desktop
+        # hash enforcement is covered by the dedicated runner drift tests.
+        self.runtime = patch.object(runner, "pinned_runtime", return_value=runner.RUNTIME_SHA256.copy())
+        self.runtime.start()
+        self.addCleanup(self.runtime.stop)
+
+    def test_baseline_is_bundled_and_pinned_without_an_installed_cache(self) -> None:
+        baseline = campaign_v2.BASELINE_SKILL
+        self.assertEqual(baseline.parent, Path(campaign_v2.__file__).resolve().parent)
+        self.assertEqual(sha256(baseline.read_bytes()).hexdigest(),
+                         campaign_v2.BASELINE_SKILL_SHA256)
+        with patch.object(Path, "home", side_effect=AssertionError("installed cache accessed")):
+            pinned = campaign_v2.protocol("canary")
+            slot = next(item for item in campaign_v2.schedule("canary")
+                        if item["condition"] == "B_old")
+            prompt = campaign_v2.trial_prompt(slot, "a" * 32, pinned)
+        self.assertEqual(pinned["source_sha256"]["baseline_skill"],
+                         campaign_v2.BASELINE_SKILL_SHA256)
+        self.assertIn(baseline.read_text(encoding="utf-8"), prompt)
+
+    def test_changed_or_missing_baseline_fails_before_a_campaign(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            baseline = Path(temp) / "skill_0_4_0.md"
+            baseline.write_bytes(campaign_v2.BASELINE_SKILL.read_bytes() + b"\nchanged\n")
+            with patch.object(campaign_v2, "BASELINE_SKILL", baseline):
+                with self.assertRaisesRegex(runner.PinError, "baseline recipe differs"):
+                    campaign_v2.protocol("canary")
+                baseline.unlink()
+                with self.assertRaises(FileNotFoundError):
+                    campaign_v2.protocol("canary")
+
+    def test_changed_current_reference_invalidates_campaign_provenance(self) -> None:
+        slot = campaign_v2.schedule("canary")[0]
+        for name, source in campaign_v2.CURRENT_SKILL_REFERENCES.items():
+            with self.subTest(reference=name), tempfile.TemporaryDirectory() as temp:
+                reference = Path(temp) / source.name
+                reference.write_bytes(source.read_bytes())
+                references = {**campaign_v2.CURRENT_SKILL_REFERENCES, name: reference}
+                with patch.object(campaign_v2, "CURRENT_SKILL_REFERENCES", references):
+                    pinned = campaign_v2.protocol("canary")
+                    reference.write_bytes(reference.read_bytes() + b"\nchanged\n")
+                    with self.assertRaisesRegex(runner.PinError, "source changed"):
+                        campaign_v2.trial_prompt(slot, "a" * 32, pinned)
+
     def test_canary_has_one_repetition_of_each_case_condition(self) -> None:
         canary = campaign_v2.schedule("canary")
         comparison = campaign_v2.schedule("comparison")
@@ -101,7 +146,7 @@ class CampaignV2Tests(unittest.TestCase):
         old = next(item for item in campaign_v2.schedule("canary")
                    if item["condition"] == "B_old")
         baseline = campaign_v2.trial_prompt(old, "b" * 32, pinned)
-        self.assertIn("installed TypeSafe 0.4.0", baseline)
+        self.assertIn("pinned TypeSafe 0.4.0", baseline)
         self.assertNotIn("var cuController", baseline)
         self.assertIn("Do not search for or read SKILL.md", baseline)
         native = next(item for item in campaign_v2.schedule("canary")

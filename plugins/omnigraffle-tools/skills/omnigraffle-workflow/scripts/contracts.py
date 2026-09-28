@@ -47,6 +47,25 @@ def color(value):
         reject("Colors must be #RRGGBB")
 
 
+SHAPE_FIELDS = {"x", "y", "width", "height", "text", "font_size",
+                "font_name", "fill", "stroke", "stroke_width", "stroke_pattern",
+                "text_color", "text_align", "text_valign", "text_padding"}
+CONNECTOR_FIELDS = {"stroke", "stroke_width", "stroke_pattern", "line_type",
+                    "head_arrow", "tail_arrow", "from_side", "to_side"}
+TEXT_READBACK_FIELDS = {"font_size", "font_name", "text_color", "text_align"}
+STYLE_ENUMS = {
+    "shape_type": {"rectangle", "rounded_rectangle", "ellipse"},
+    "stroke_pattern": {"solid", "dashed"},
+    "text_align": {"left", "center", "right"},
+    "text_valign": {"top", "center", "bottom"},
+    "line_type": {"straight", "orthogonal"},
+    "head_arrow": {"none", "filled"},
+    "tail_arrow": {"none", "filled"},
+    "from_side": {"top", "right", "bottom", "left"},
+    "to_side": {"top", "right", "bottom", "left"},
+}
+
+
 def equation(value):
     fields(value, {"source", "preamble", "mode", "font_size"}, {"source", "preamble", "mode", "font_size"})
     string(value["source"], "TeX source", 32768)
@@ -66,9 +85,11 @@ def equation(value):
 
 
 def properties(value):
-    fields(value, {"x", "y", "width", "height", "text", "font_size", "font_name", "fill", "stroke"})
+    fields(value, SHAPE_FIELDS | CONNECTOR_FIELDS | {"shape_type"})
     if not value:
         reject("Empty object change")
+    if value.get("text") == "" and set(value) & TEXT_READBACK_FIELDS:
+        reject("Text styling cannot be read back from an empty replacement label")
     for key, item in value.items():
         if key in ("x", "y"):
             number(item, key, -14400, 14400)
@@ -78,8 +99,17 @@ def properties(value):
             number(item, key, 1, 512)
             if int(item) != item:
                 reject("Native text font sizes must be whole points")
-        elif key in ("fill", "stroke"):
+        elif key == "stroke_width":
+            number(item, key, 0.25, 20)
+        elif key == "text_padding":
+            number(item, key, 0, 64)
+            if int(item) != item:
+                reject("Native text padding must be whole points")
+        elif key in ("fill", "stroke", "text_color"):
             color(item)
+        elif key in STYLE_ENUMS:
+            if not isinstance(item, str) or item not in STYLE_ENUMS[key]:
+                reject(f"Unsupported {key}")
         else:
             string(item, key, 16384 if key == "text" else 256, empty=key == "text")
 
@@ -108,7 +138,7 @@ def specification(spec):
             reject("Object limit exceeded")
         keys = {}
         for obj in objects:
-            fields(obj, {"key", "kind", "x", "y", "width", "height", "text", "font_size", "font_name", "fill", "stroke", "from", "to", "children", "equation"}, {"key", "kind"})
+            fields(obj, {"key", "kind", "from", "to", "children", "equation"} | SHAPE_FIELDS | CONNECTOR_FIELDS | {"shape_type"}, {"key", "kind"})
             name = string(obj["key"], "object key", 128)
             if name in keys:
                 reject("Duplicate object key")
@@ -118,20 +148,24 @@ def specification(spec):
                 reject("Unsupported object kind")
             allowed = {"key", "kind"}
             if kind in ("shape", "text"):
-                allowed |= {"x", "y", "width", "height", "text", "font_size", "font_name", "fill", "stroke"}
+                allowed |= SHAPE_FIELDS
+                if kind == "shape":
+                    allowed.add("shape_type")
             elif kind == "equation":
                 allowed |= {"x", "y", "equation"}
             elif kind == "connector":
-                allowed |= {"from", "to", "stroke"}
+                allowed |= {"from", "to"} | CONNECTOR_FIELDS
             else:
                 allowed |= {"children"}
             if set(obj) - allowed:
                 reject("Unsupported properties for this object kind")
-            props = {k: v for k, v in obj.items() if k in ("x", "y", "width", "height", "text", "font_size", "font_name", "fill", "stroke")}
+            props = {k: v for k, v in obj.items() if k in SHAPE_FIELDS | CONNECTOR_FIELDS | {"shape_type"}}
             if props:
                 properties(props)
             if kind in ("shape", "text") and not {"x", "y", "width", "height"} <= obj.keys():
                 reject("Native shape/text requires point geometry")
+            if kind in ("shape", "text") and set(obj) & TEXT_READBACK_FIELDS and not obj.get("text"):
+                reject("Text styling requires a nonempty label for native readback")
             if kind == "equation":
                 if not {"x", "y", "equation"} <= obj.keys():
                     reject("Equation requires source settings and point position")

@@ -1,7 +1,7 @@
 {
   "name": "photo-tools",
-  "version": "0.2.1",
-  "description": "Photo and editorial image workflows, with mono-color research palette selection.",
+  "version": "0.2.2",
+  "description": "Photo and editorial image workflows with traceable mono-color research palette selection.",
   "author": {
     "name": "Codex Toolbox Maintainers"
   },
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Photo Tools",
     "shortDescription": "Research palettes, editorial images, and photo posters.",
-    "longDescription": "Choose research graph colors with Mono-Color, create one/two-ink editorial images, or turn each travel photo into its own 4:3 rubber stamp journal poster. Uses Codex image generation for artwork and existing figure tools for scientific graphs.",
+    "longDescription": "Choose and record research graph colors with Mono-Color, create one/two-ink editorial images, or turn each travel photo into its own 4:3 rubber stamp journal poster. Uses Codex image generation for artwork and existing figure tools for scientific graphs.",
     "developerName": "Codex Toolbox Maintainers",
     "category": "Productivity",
     "capabilities": ["Read", "Write"],

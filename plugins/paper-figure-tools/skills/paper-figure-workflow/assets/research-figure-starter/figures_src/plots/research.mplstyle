@@ -1,0 +1,18 @@
+figure.facecolor: white
+axes.facecolor: white
+savefig.facecolor: white
+font.family: DejaVu Sans
+font.size: 8
+axes.labelsize: 8
+axes.titlesize: 8
+legend.fontsize: 7
+xtick.labelsize: 7
+ytick.labelsize: 7
+axes.linewidth: 0.6
+xtick.major.width: 0.6
+ytick.major.width: 0.6
+lines.linewidth: 1.25
+lines.markersize: 3.5
+svg.fonttype: none
+pdf.fonttype: 42
+savefig.bbox: standard

@@ -1,6 +1,6 @@
 {
   "name": "typesafe-tools",
-  "version": "0.6.0",
+  "version": "0.6.2",
   "description": "Bounded Jev evaluation, capability routing, and computer-use action advice for eligible tasks.",
   "author": {
     "name": "Codex Toolbox Contributors"

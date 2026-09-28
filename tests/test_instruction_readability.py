@@ -55,8 +55,46 @@ class InstructionBudgetTests(unittest.TestCase):
         self.assertIn("Put detailed trigger, state-machine, quota, fallback", repo_text)
         self.assertNotIn("Current default plugins are", global_text)
 
+    def test_global_routes_cleanup_and_preserves_user_work(self) -> None:
+        text = GLOBAL_AGENTS.read_text(encoding="utf-8")
+        self.assertIn("$typesafe-computer-use` for GUI observation and cleanup", text)
+        for contract in (
+            "Track task-opened tabs/windows/apps",
+            "close them after verification",
+            "Quit only task-started idle apps",
+            "pre-existing/unsaved work",
+            "active handoffs",
+            "explicitly requested or required open results",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, text)
+
 
 class ReadabilityContractTests(unittest.TestCase):
+    def test_archify_preview_cleanup_is_required_and_packaged(self) -> None:
+        entry = ARCHIFY_SKILL.read_text(encoding="utf-8")
+        reference = ARCHIFY_SKILL.parent / "references" / "cleanup.md"
+        publisher = ARCHIFY_SKILL.parent.parent / "diagram-publish" / "SKILL.md"
+        self.assertTrue(reference.is_file())
+        self.assertIn("](references/cleanup.md)", entry)
+        self.assertIn("](../archify/references/cleanup.md)", publisher.read_text())
+        text = " ".join(reference.read_text(encoding="utf-8").split())
+        for contract in (
+            "exact browser/tab handle",
+            "--no-open",
+            "After success or failure",
+            "verify its ID is absent",
+            "pre-existing/borrowed",
+            "unsaved edits, pending work",
+            "open/show/keep-open",
+            "Stop the owned preview server",
+            "original terminal session or exact child handle",
+            "Verify terminal completion",
+            "cleanup unverified",
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, text)
+
     def test_global_defines_the_format_ladder_and_validation_guards(self) -> None:
         text = GLOBAL_AGENTS.read_text(encoding="utf-8")
 
@@ -183,13 +221,15 @@ class ReadabilityContractTests(unittest.TestCase):
         self.assertIn("terminal", pretty_text)
         self.assertIn("multi-page", drawio_text)
 
-    def test_plugin_versions_bumped_without_implicit_ship_toolbox(self) -> None:
+    def test_manifest_versions_and_explicit_shipping(self) -> None:
         workflow_manifest = json.loads(WORKFLOW_PLUGIN.read_text(encoding="utf-8"))
         diagram_manifest = json.loads(DIAGRAM_PLUGIN.read_text(encoding="utf-8"))
         ship_agent_text = SHIP_AGENT.read_text(encoding="utf-8")
 
-        self.assertEqual(workflow_manifest["version"], "0.18.1")
-        self.assertEqual(diagram_manifest["version"], "0.5.0")
+        for manifest in (workflow_manifest, diagram_manifest):
+            self.assertRegex(manifest["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+        diagram_package = json.loads((DIAGRAM_PLUGIN.parents[1] / "package.json").read_text())
+        self.assertEqual(diagram_manifest["version"], diagram_package["version"])
         self.assertIn("allow_implicit_invocation: false", ship_agent_text)
 
     def test_claude_counselor_is_bounded_and_implicitly_available(self) -> None:

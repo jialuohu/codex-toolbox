@@ -1,5 +1,6 @@
 """Doctor reports are discovery evidence, never native export acceptance."""
 import importlib.util
+import os
 from pathlib import Path
 import plistlib
 import tempfile
@@ -75,6 +76,47 @@ class ProductionDoctorTests(unittest.TestCase):
             result = preflight.collect(self.root,True,5,[],'stock-gui',self.root)
         self.assertIn('stock_gui_helper_build_tools_unavailable',result['blockers'])
         self.assertFalse(result['release_accepted'])
+
+    def test_ssh_appleevent_timeout_reports_conditional_permission_hint(self):
+        inventory = {'status': 'ok', 'instances': [
+            {'pid': 101, 'path': '/Applications/OmniGraffle.app', 'bundle_id': preflight.APP_ID},
+        ]}
+        with patch.dict(os.environ, {'SSH_CONNECTION': 'test session'}, clear=True), \
+             patch.object(preflight, 'running_instances', return_value=inventory), \
+             patch.object(preflight, 'run_command', side_effect=[
+                 {'status': 'ok', 'output': '7.26'}, {'status': 'timeout', 'error': '(-1712)'},
+             ]) as command:
+            report = preflight.probe_app(5, Path('/Applications/OmniGraffle.app'))
+        self.assertEqual(report['status'], 'blocked')
+        self.assertEqual(list(report['checks']), ['version', 'documents'])
+        self.assertEqual(command.call_count, 2)
+        diagnostic = report['timeout_diagnostic']
+        self.assertEqual(diagnostic['status'], 'cause_unconfirmed')
+        self.assertTrue(diagnostic['ssh_environment_detected'])
+        self.assertIn('automation_decision_pending', diagnostic['possible_causes'])
+        self.assertTrue(any('sshd-keygen-wrapper' in step for step in diagnostic['next_steps']))
+
+    def test_timeout_without_ssh_does_not_assert_ssh_attribution(self):
+        inventory = {'status': 'ok', 'instances': [
+            {'pid': 101, 'path': '/Applications/OmniGraffle.app', 'bundle_id': preflight.APP_ID},
+        ]}
+        with patch.dict(os.environ, {}, clear=True), \
+             patch.object(preflight, 'running_instances', return_value=inventory), \
+             patch.object(preflight, 'run_command', return_value={'status': 'timeout'}):
+            report = preflight.probe_app(5, Path('/Applications/OmniGraffle.app'))
+        diagnostic = report['timeout_diagnostic']
+        self.assertFalse(diagnostic['ssh_environment_detected'])
+        self.assertFalse(any('sshd-keygen-wrapper' in step for step in diagnostic['next_steps']))
+
+    def test_permission_denial_is_not_reported_as_timeout(self):
+        inventory = {'status': 'ok', 'instances': [
+            {'pid': 101, 'path': '/Applications/OmniGraffle.app', 'bundle_id': preflight.APP_ID},
+        ]}
+        with patch.object(preflight, 'running_instances', return_value=inventory), \
+             patch.object(preflight, 'run_command', return_value={'status': 'permission_denied'}):
+            report = preflight.probe_app(5, Path('/Applications/OmniGraffle.app'))
+        self.assertEqual(report['status'], 'blocked')
+        self.assertNotIn('timeout_diagnostic', report)
 
 
 if __name__ == '__main__':

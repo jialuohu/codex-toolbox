@@ -19,19 +19,21 @@ delegates draw.io execution here.
 
 ## Workflow
 
+Before opening a page/app or running a Desktop probe/export, read [UI cleanup](references/ui-cleanup.md) and capture initial state without launching anything. Apply cleanup on completion or failure when control is available.
+
 1. Resolve the requested destination. Use absolute paths. If none is given, create a task-scoped temporary directory with `mktemp -d`; do not add automatic artifacts to the active repository.
 2. For a new native diagram, create and retain a `.drawio` source file. Prefer basic draw.io geometry for flowcharts, UML, ERDs, org charts, and simple architecture diagrams. Call `search_shapes` only when industry-specific icons or stencils are materially useful.
-3. For Mermaid or CSV input that the user wants to edit interactively, call `open_drawio_mermaid` or `open_drawio_csv`. For native XML or specialized layouts, call `open_drawio_xml`.
+3. When an editor is needed, use `open_drawio_mermaid`, `open_drawio_csv`, or `open_drawio_xml` for the corresponding input. Reuse an editor already opened for this task; do not call another open tool merely to preview or deliver the same diagram.
 4. For an existing multi-page file, call `list_pages` first, then `get_page` for only the required page. Before `set_page`, preserve every unrelated page and pass one plain `<mxGraphModel>` element. `set_page` is a file mutation and remains approval-gated by the plugin.
 5. Validate native XML before saving: one `<mxfile>` wrapper, stable page IDs, valid parent references, and non-overlapping geometry unless overlap is intentional. Re-read changed pages after `set_page`.
-6. Open the retained `.drawio` source unless the user asked for a non-interactive result. The MCP open tools use `DRAWIO_BASE_URL`, defaulting to `https://app.diagrams.net/`; a self-hosted deployment may override it.
+6. Open the retained `.drawio` source when needed for editing or verification, or when explicitly requested. Ordinary saved-file delivery uses verified previews and file links. The MCP open tools use `DRAWIO_BASE_URL`, defaulting to `https://app.diagrams.net/`; a self-hosted deployment may override it.
 7. If PNG, SVG, or PDF is requested, retain the `.drawio` source and run the bundled Desktop helper from this skill directory:
 
    ```bash
    ../../scripts/drawio-desktop.sh --export svg /absolute/path/diagram.drawio /absolute/path/diagram.svg
    ```
 
-8. Verify every output exists and has the expected signature. Display PNG or SVG with its absolute path and link the `.drawio` source in the final response.
+8. Verify every output exists and has the expected signature. Display PNG or SVG with its absolute path and link the `.drawio` source in the final response. Close exact owned saved idle previews under the cleanup reference; keep requested open/show/keep-open deliverables or an active interactive handoff open.
 
 ## Export contract
 
@@ -48,3 +50,14 @@ delegates draw.io execution here.
 - Specialized shapes improve semantics but do not substitute for verified architecture data.
 
 Read `references/cli.md` for helper commands, setup, and recovery.
+
+## New research figures
+
+For a **new** research architecture or mechanism figure, read
+`references/research-figures.md` and start from one of the editable sources in
+`../../assets/research-templates/`. Apply each setting in this order: the
+explicit request, the project's or venue's convention, this research style,
+then the general diagram default. Leave an existing figure's style intact
+unless restyling is requested. The templates are synthetic examples, not
+evidence about a system. Keep the `.drawio` source with the project and export
+from that project copy.

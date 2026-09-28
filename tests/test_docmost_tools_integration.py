@@ -304,8 +304,10 @@ class DocmostToolsIntegrationTests(unittest.TestCase):
         def mutate_version(root: Path) -> None:
             path = root / "plugins" / "docmost-tools" / "server" / "pyproject.toml"
             value = path.read_text()
-            self.assertIn('version = "0.8.3"', value)
-            path.write_text(value.replace('version = "0.8.3"', 'version = "0.8.4"', 1))
+            manifest = json.loads((root / "plugins/docmost-tools/.codex-plugin/plugin.json").read_text())
+            declared = f'version = "{manifest["version"]}"'
+            self.assertIn(declared, value)
+            path.write_text(value.replace(declared, 'version = "999.0.0"', 1))
 
         def mutate_jsonpatch(root: Path) -> None:
             path = root / "plugins" / "docmost-tools" / "server" / "pyproject.toml"

@@ -1,0 +1,17 @@
+{
+  "kind": "empirical_cdf",
+  "figure_name": "empirical-cdf",
+  "data_label": "Illustrative synthetic raw samples",
+  "x_label": "Response time",
+  "x_unit": "ms",
+  "x_range": [20, 135],
+  "percentile_method": "nearest_rank",
+  "series": [
+    {"method": "Proposed", "unit": "ms", "samples": [30, 35, 35, 40, 45, 50, 50, 55, 60, 65, 70, 75]},
+    {"method": "Baseline", "unit": "ms", "samples": [50, 55, 55, 60, 65, 70, 70, 80, 90, 90, 100, 115]}
+  ],
+  "annotations": [
+    {"method": "Proposed", "percentile": 50, "label": "p50"},
+    {"method": "Baseline", "percentile": 95, "label": "p95"}
+  ]
+}

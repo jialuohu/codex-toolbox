@@ -7,6 +7,7 @@ import sys
 import unittest
 from dataclasses import fields
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "plugins/typesafe-tools"))
@@ -34,6 +35,11 @@ def attempt(slot: dict, *, status: str, verified_ms: float | None,
 
 
 class SummaryV2Tests(unittest.TestCase):
+    def setUp(self) -> None:
+        runtime = patch.object(runner, "pinned_runtime", return_value=runner.RUNTIME_SHA256.copy())
+        runtime.start()
+        self.addCleanup(runtime.stop)
+
     def test_timeout_is_cap_penalized_and_missing_tokens_stay_missing(self) -> None:
         slots = campaign_v2.schedule("canary")
         one = slots[0]

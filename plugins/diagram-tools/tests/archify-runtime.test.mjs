@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rm,
   symlink,
   writeFile,
 } from 'node:fs/promises';
@@ -13,6 +14,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { crc32, extractZipArchive, inspectZipArchive } from '../skills/archify/scripts/lib/archive.mjs';
 import {
@@ -76,7 +79,7 @@ function zipArchive(entries) {
   return Buffer.concat([...localRecords, centralDirectory, end]);
 }
 
-function fakeCli({ failDoctor = false } = {}) {
+function fakeCli({ failDoctor = false, previewExitCode = 0 } = {}) {
   return `#!/usr/bin/env node
 import { writeFileSync } from 'node:fs';
 const [command, type, input, output] = process.argv.slice(2);
@@ -87,6 +90,16 @@ if (command === 'doctor') {
 } else if (command === 'deliver') {
   writeFileSync(output, '<!doctype html><title>' + type + '</title>');
   process.stdout.write(JSON.stringify({schemaVersion:1,ok:true,command,type,input,output}) + '\\n');
+} else if (command === 'preview') {
+  if (process.env.ARCHIFY_TEST_CHILD_PID_FILE) writeFileSync(process.env.ARCHIFY_TEST_CHILD_PID_FILE, String(process.pid));
+  let signalCount = 0;
+  for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+    process.stdout.write('RECEIVED ' + signal + '\\n');
+    if (++signalCount > 1) { process.stdout.write('FORCED\\n'); process.exit(91); }
+    setTimeout(() => { process.stdout.write('CLEANED\\n'); process.exit(${previewExitCode}); }, 200);
+  });
+  process.stdout.write('READY\\n');
+  setInterval(() => {}, 1000);
 } else {
   process.stdout.write(JSON.stringify({ok:true,command,type,input}) + '\\n');
 }
@@ -168,6 +181,74 @@ function run(command, args, env = {}) {
     child.once('close', (code) => resolvePromise({ code, stdout, stderr }));
   });
 }
+
+async function launcherFixture(t, options = {}) {
+  const root = await mkdtemp(join(tmpdir(), 'archify-launcher-cleanup-'));
+  const pidFile = join(root, 'synthetic-runtime.pid');
+  const release = fakeRelease('1.0.0', options);
+  const archivePath = await writeArchive(root, 'fixture.zip', release.archive);
+  await installRuntime({ root, pin: release.pin, archivePath });
+  const proc = spawn(process.execPath, [wrapper, 'preview'], {
+    env: { ...process.env, ARCHIFY_RUNTIME_ROOT: root, ARCHIFY_TEST_CHILD_PID_FILE: pidFile },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+  });
+  let stdout = '';
+  let stderr = '';
+  proc.stdout.on('data', chunk => { stdout += chunk; });
+  proc.stderr.on('data', chunk => { stderr += chunk; });
+  const closed = once(proc, 'close');
+  t.after(async () => {
+    if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGTERM');
+    const drained = closed.then(() => true);
+    if (!await Promise.race([drained, delay(500, false, { ref: false })])) {
+      // Only the exact synthetic PID is eligible for test-only forced teardown.
+      let pid;
+      try { pid = Number(await readFile(pidFile, 'utf8')); } catch {}
+      if (Number.isInteger(pid)) {
+        try { process.kill(pid, 'SIGKILL'); } catch (error) {
+          if (error.code !== 'ESRCH') throw error;
+        }
+      }
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL');
+      assert.equal(await Promise.race([drained, delay(1000, false, { ref: false })]), true,
+        'synthetic runtime did not close after bounded teardown');
+    }
+    await rm(root, { recursive: true, force: true });
+  });
+  for (let i = 0; i < 250 && !stdout.includes('READY\n'); i += 1) await delay(20);
+  assert.match(stdout, /READY\n/);
+  return { proc, closed, pid: Number(await readFile(pidFile, 'utf8')),
+    output: () => ({ stdout, stderr }) };
+}
+
+for (const [signal, processGroup] of [
+  ['SIGINT', false], ['SIGTERM', false], ['SIGHUP', false], ['SIGQUIT', false],
+  ['SIGKILL', false], ['SIGKILL', true],
+]) {
+  test(`real launcher ${signal} ${processGroup ? 'group' : 'PID'} drains its verified runtime`,
+    { skip: process.platform === 'win32', timeout: 10000 }, async (t) => {
+      const { proc, closed, pid, output } = await launcherFixture(t);
+      if (processGroup) process.kill(-proc.pid, signal);
+      else proc.kill(signal);
+      assert.deepEqual(await closed, [null, signal]);
+      const childSignal = signal === 'SIGINT' ? 'SIGINT' : 'SIGTERM';
+      assert.equal(output().stdout, `READY\nRECEIVED ${childSignal}\nCLEANED\n`);
+      assert.equal(output().stderr, signal === 'SIGKILL' ? ''
+        : `Stopping Archify runtime PID ${pid} after ${signal}; waiting for cleanup.\n`);
+    });
+}
+
+test('real launcher reports a nonzero cleanup exit and preserves cancellation signal',
+  { skip: process.platform === 'win32', timeout: 10000 }, async (t) => {
+    const { proc, closed, pid, output } = await launcherFixture(t, { previewExitCode: 9 });
+    proc.kill('SIGTERM');
+    assert.deepEqual(await closed, [null, 'SIGTERM']);
+    assert.equal(output().stdout, 'READY\nRECEIVED SIGTERM\nCLEANED\n');
+    assert.equal(output().stderr,
+      `Stopping Archify runtime PID ${pid} after SIGTERM; waiting for cleanup.\n`
+      + `Archify runtime PID ${pid} exited with code 9 during SIGTERM cleanup.\n`);
+  });
 
 test('ZIP inspection accepts a regular package and rejects unsafe entries', async (t) => {
   const limits = { maxBytes: 1024 * 1024, maxExpandedBytes: 1024 * 1024, maxEntries: 20 };

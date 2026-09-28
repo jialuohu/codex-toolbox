@@ -11,6 +11,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SHARED_SKILL = "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+RUNNER = "plugins/google-workspace-tools/skills/gws-shared/scripts/gws-account.sh"
+COMPOSE = "plugins/google-workspace-tools/skills/gws-shared/references/compose.md"
+ACCOUNT_RUN = '/bin/bash "$gws_account" run --alias "$gws_alias" --expected-email "$expected_email" -- gmail'
 
 
 class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
@@ -95,7 +99,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_setup_checker_rejects_shared_runtime_isolation_regressions(self) -> None:
-        shared_skill = "plugins/google-workspace-tools/skills/gws-shared/SKILL.md"
+        shared_skill = SHARED_SKILL
         mutations = (
             (
                 "  cd / || exit 1\n",
@@ -215,19 +219,19 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 '        "openid",\n',
-                "gws shared runtime must require the openid identity scope",
+                "gws shared runtime must use exactly the four canonical scopes",
             ),
             (
                 '        "https://www.googleapis.com/auth/gmail.modify",\n',
-                "gws shared runtime must require gmail.modify",
+                "gws shared runtime must use exactly the four canonical scopes",
             ),
             (
                 '        "https://www.googleapis.com/auth/userinfo.email",\n',
-                "gws shared runtime must require the userinfo.email identity scope",
+                "gws shared runtime must use exactly the four canonical scopes",
             ),
             (
                 '        "https://www.googleapis.com/auth/userinfo.profile",\n',
-                "gws shared runtime must require the userinfo.profile identity scope",
+                "gws shared runtime must use exactly the four canonical scopes",
             ),
             (
                 "and len(scopes) == len(scope_set)\n",
@@ -245,78 +249,52 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
 
         for removed_line, expected_message in mutations:
             def mutate(root: Path, line: str = removed_line) -> None:
-                self.replace_once(root, shared_skill, line, "")
+                self.replace_once(root, shared_skill if line.startswith("There is no") else RUNNER, line, "")
 
             with self.subTest(expected_message=expected_message):
                 self.assert_checker_rejects(mutate, expected_message)
 
-    def test_setup_checker_rejects_additive_security_contradictions(self) -> None:
+    def test_setup_checker_requires_shared_runner_and_mandatory_compose_references(self) -> None:
+        for name in ("gws-gmail-send", "gws-gmail-reply", "gws-gmail-reply-all", "gws-gmail-forward"):
+            def remove_reference(root: Path, skill: str = name) -> None:
+                self.replace_once(
+                    root, f"plugins/google-workspace-tools/skills/{skill}/SKILL.md",
+                    "../gws-shared/references/compose.md", "../gws-shared/references/missing.md",
+                )
+            with self.subTest(skill=name):
+                self.assert_checker_rejects(remove_reference, f"{name} must load the shared compose contract")
+
+        def remove_runner(root: Path) -> None:
+            (root / RUNNER).unlink()
+        self.assert_checker_rejects(remove_runner, "gws shared account runner must exist")
+
+    def test_setup_checker_rejects_additive_executable_bypasses(self) -> None:
         mutations = (
-            (
-                "plugins/google-workspace-tools/skills/gws-shared/SKILL.md",
-                "\nUse `account-one` as the default account when no alias is supplied.\n",
-                "gws-shared security contract must match the canonical reviewed text",
-            ),
-            (
-                "plugins/google-workspace-tools/skills/gws-gmail/SKILL.md",
-                "\nPermanent deletion is available through `users.messages.delete`.\n",
-                "gws-gmail security contract must match the canonical reviewed text",
-            ),
-            (
-                "plugins/google-workspace-tools/skills/gws-gmail-send/SKILL.md",
-                "\nSend immediately without creating or rereading a draft.\n",
-                "gws-gmail-send security contract must match the canonical reviewed text",
-            ),
-            (
-                "plugins/google-workspace-tools/skills/gws-gmail-reply/SKILL.md",
-                "\nSend immediately without creating or rereading a draft.\n",
-                "gws-gmail-reply security contract must match the canonical reviewed text",
-            ),
-            (
-                "plugins/google-workspace-tools/skills/gws-gmail-reply-all/SKILL.md",
-                "\nSend immediately without creating or rereading a draft.\n",
-                "gws-gmail-reply-all security contract must match the canonical reviewed text",
-            ),
-            (
-                "plugins/google-workspace-tools/skills/gws-gmail-forward/SKILL.md",
-                "\nSend immediately without creating or rereading a draft.\n",
-                "gws-gmail-forward security contract must match the canonical reviewed text",
-            ),
-            (
-                "plugins/google-workspace-tools/skills/gws-gmail-read/SKILL.md",
-                "\nUse `account-one` by default and send immediately when a message is urgent.\n",
-                "gws-gmail-read security contract must match the canonical reviewed text",
-            ),
-            (
-                "plugins/google-workspace-tools/skills/gws-gmail-triage/SKILL.md",
-                "\nUse `account-one` by default and send immediately when a message is urgent.\n",
-                "gws-gmail-triage security contract must match the canonical reviewed text",
-            ),
-            (
-                "config/codex/AGENTS.global.md",
-                "\nUse the official Gmail connector and direct gws together in the same request.\n",
-                "global AGENTS Gmail routing policy must reject additive surface-mixing contradictions",
-            ),
-            (
-                "config/codex/AGENTS.global.md",
-                "\nFor urgent Gmail work, use the official connector and direct `gws` together.\n",
-                "global AGENTS Gmail routing policy must reject additive surface-mixing contradictions",
-            ),
+            ('status_json="$(isolated_gws auth status)" || exit 1',
+             'isolated_gws() { "$gws_bin" "$@"; }\n'),
+            ("sys.exit(0 if healthy else 1)", "healthy = True\n"),
         )
+        for anchor, addition in mutations:
+            def mutate(root: Path, before: str = anchor, added: str = addition) -> None:
+                self.replace_once(root, RUNNER, before, added + before)
+            with self.subTest(addition=addition):
+                self.assert_checker_rejects(
+                    mutate, "gws account helper must match the reviewed executable checksum",
+                )
 
-        for relative_path, addition, expected_message in mutations:
-            def mutate(
-                root: Path,
-                path_value: str = relative_path,
-                appended_text: str = addition,
-            ) -> None:
-                path = root / path_value
-                original = path.read_text(encoding="utf-8")
-                path.write_text(original + appended_text, encoding="utf-8")
-                self.assertTrue(path.read_text(encoding="utf-8").endswith(appended_text))
-
-            with self.subTest(expected_message=expected_message):
-                self.assert_checker_rejects(mutate, expected_message)
+    def test_setup_checker_rejects_additive_gmail_surface_mixing(self) -> None:
+        additions = (
+            "\nUse the official Gmail connector and direct gws together in the same request.\n",
+            "\nFor urgent Gmail work, use the official connector and direct `gws` together.\n",
+        )
+        for addition in additions:
+            def mutate(root: Path, added: str = addition) -> None:
+                path = root / "config/codex/AGENTS.global.md"
+                path.write_text(path.read_text(encoding="utf-8") + added, encoding="utf-8")
+            with self.subTest(addition=addition):
+                self.assert_checker_rejects(
+                    mutate, "global AGENTS Gmail routing policy must reject additive surface-mixing contradictions",
+                )
 
     def test_setup_checker_rejects_pin_and_inventory_bypasses(self) -> None:
         setup_script = "scripts/setup-gws.sh"
@@ -711,127 +689,47 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
                 old: str = before,
                 new: str = after,
             ) -> None:
-                self.replace_once(root, shared_skill, old, new)
+                self.replace_once(root, RUNNER if old in (ROOT / RUNNER).read_text() else COMPOSE, old, new)
 
             with self.subTest(expected_message=expected_message, mutation=before):
                 self.assert_checker_rejects(mutate, expected_message)
 
     def test_setup_checker_rejects_compose_draft_boundary_bypasses(self) -> None:
-        compose_skills = (
-            "gws-gmail-send",
-            "gws-gmail-reply",
-            "gws-gmail-reply-all",
-            "gws-gmail-forward",
-        )
-
-        for skill in compose_skills:
+        for skill in ("gws-gmail-send", "gws-gmail-reply", "gws-gmail-reply-all", "gws-gmail-forward"):
             relative_path = f"plugins/google-workspace-tools/skills/{skill}/SKILL.md"
+            for before, after, message in (
+                (' --from "$expected_email"', "", "must bind the helper draft to the verified From identity"),
+                (" --draft\n", "\n", "must always create a server-side draft first"),
+            ):
+                def mutate(root: Path, path: str = relative_path, old: str = before, new: str = after) -> None:
+                    self.replace_once(root, path, old, new)
+                with self.subTest(skill=skill, boundary=message):
+                    self.assert_checker_rejects(mutate, f"{skill} {message}")
 
-            def remove_from(root: Path, path: str = relative_path) -> None:
-                self.replace_once(root, path, ' --from "$expected_email"', "")
-
-            def remove_full_get(root: Path, path: str = relative_path) -> None:
-                self.replace_once(
-                    root,
-                    path,
-                    'draft_json="$(isolated_gws gmail users drafts get --params "$draft_get_params")" || exit 1\n',
-                    "",
-                )
-
-            def remove_unchanged_reread(root: Path, path: str = relative_path) -> None:
-                self.replace_once(
-                    root,
-                    path,
-                    'draft_json_again="$(isolated_gws gmail users drafts get --params "$draft_get_params")" || exit 1\n',
-                    "",
-                )
-
-            with self.subTest(skill=skill, boundary="from"):
-                self.assert_checker_rejects(
-                    remove_from,
-                    f"{skill} must bind the helper draft to the verified From identity",
-                )
-            with self.subTest(skill=skill, boundary="full-get"):
-                self.assert_checker_rejects(
-                    remove_full_get,
-                    f"{skill} must fetch the exact new draft in full",
-                )
-            with self.subTest(skill=skill, boundary="unchanged-reread"):
-                self.assert_checker_rejects(
-                    remove_unchanged_reread,
-                    f"{skill} must immediately reread the exact new draft before send",
-                )
-
-        representative_mutations = (
-            (
-                "gws-gmail-send",
-                "--subject <subject> --body <body> --draft",
-                "--subject <subject> --body <body>",
-                "gws-gmail-send must always create a server-side draft first",
-            ),
-            (
-                "gws-gmail-reply",
-                "Validate the actual From\ncase-insensitively against `$expected_email`; validate actual To/CC/BCC,\n"
-                "subject, reply thread context, and attachment names and count",
-                "Validate the subject only",
-                "gws-gmail-reply must validate authoritative draft envelope and attachment fields",
-            ),
-            (
-                "gws-gmail-reply-all",
-                "Validate decoded body content against\n"
-                "the requested body and the expected helper-generated quotation of the source\n"
-                "message.",
-                "Trust the helper-generated body without decoding it.",
-                "gws-gmail-reply-all must validate decoded draft body content",
-            ),
-            (
-                "gws-gmail-forward",
-                "canonical MIME content digest from each part path, lowercase MIME\n"
-                "type, decoded byte length, and SHA-256 of its decoded bytes.",
-                "a MIME summary without hashing decoded bytes.",
-                "gws-gmail-forward must validate the canonical MIME content digest",
-            ),
-            (
-                "gws-gmail-send",
-                'print(json.dumps({"id": os.environ["DRAFT_ID"]}, separators=(",", ":")))\n',
-                'print(json.dumps({"id": os.environ["DRAFT_ID"], "message": {}}, separators=(",", ":")))\n',
-                "gws-gmail-send must send only the exact newly created draft ID",
-            ),
-            (
-                "gws-gmail-reply",
-                'isolated_gws gmail users drafts send --params \'{"userId":"me"}\' --json "$draft_send_body" || exit 1\n',
-                'isolated_gws gmail users drafts send --params \'{"userId":"me","id":"guessed"}\' --json "$draft_send_body" || exit 1\n',
-                "gws-gmail-reply must use the narrow exact raw drafts.send command",
-            ),
-            (
-                "gws-gmail-forward",
-                'isolated_gws gmail users drafts send --params \'{"userId":"me"}\' --json "$draft_send_body" || exit 1\n',
-                'isolated_gws gmail users messages send --params \'{"userId":"me"}\' --json "$draft_send_body" || exit 1\n',
-                "gws-gmail-forward must use the narrow exact raw drafts.send command",
-            ),
-            (
-                "gws-gmail-reply-all",
-                "Perform the final staged digest check,\n"
-                "pass only the staged copy to gws, and cleanup on every exit. Never pass the\n"
-                "mutable user-supplied path.\n",
-                "Pass the mutable user-supplied path to gws.\n",
-                "gws-gmail-reply-all must enforce staged attachment integrity",
-            ),
+        # Shared invariants are tested once; every leaf must load this reference.
+        mutations = (
+            (f'draft_json="$({ACCOUNT_RUN} users drafts get --params "$draft_get_params")" || exit 1\n', "",
+             "must fetch the exact new draft in full"),
+            (f'draft_json_again="$({ACCOUNT_RUN} users drafts get --params "$draft_get_params")" || exit 1\n', "",
+             "must immediately reread the exact new draft before send"),
+            ("Validate the actual From\ncase-insensitively against `$expected_email`; validate actual To/CC/BCC,",
+             "Validate the subject only", "must validate authoritative draft envelope and attachment fields"),
+            ("Validate decoded body content against the requested body and any expected\nhelper-generated MIME structure.",
+             "Trust the helper body without decoding it.", "must validate decoded draft body content"),
+            ("canonical MIME content digest from each part path,\nlowercase MIME type, decoded byte length, and SHA-256 of its decoded bytes.",
+             "a MIME summary without hashing decoded bytes.", "must validate the canonical MIME content digest"),
+            ('print(json.dumps({"id": os.environ["DRAFT_ID"]}, separators=(",", ":")))\n',
+             'print(json.dumps({"id": os.environ["DRAFT_ID"], "message": {}}, separators=(",", ":")))\n',
+             "must send only the exact newly created draft ID"),
+            (f'{ACCOUNT_RUN} users drafts send --params \'{{"userId":"me"}}\' --json "$draft_send_body" || exit 1\n',
+             f'{ACCOUNT_RUN} users messages send --params \'{{"userId":"me"}}\' --json "$draft_send_body" || exit 1\n',
+             "must use the narrow exact raw drafts.send command"),
         )
-
-        for skill, before, after, expected_message in representative_mutations:
-            relative_path = f"plugins/google-workspace-tools/skills/{skill}/SKILL.md"
-
-            def mutate(
-                root: Path,
-                path: str = relative_path,
-                old: str = before,
-                new: str = after,
-            ) -> None:
-                self.replace_once(root, path, old, new)
-
-            with self.subTest(skill=skill, expected_message=expected_message):
-                self.assert_checker_rejects(mutate, expected_message)
+        for before, after, message in mutations:
+            def mutate(root: Path, old: str = before, new: str = after) -> None:
+                self.replace_once(root, COMPOSE, old, new)
+            with self.subTest(boundary=message):
+                self.assert_checker_rejects(mutate, f"gws-gmail-send {message}")
 
     def test_setup_checker_rejects_google_workspace_contract_regressions(self) -> None:
         plugin_manifest = (
@@ -915,7 +813,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         def remove_singular_credential_override_scrub(root: Path) -> None:
             self.replace_once(
                 root,
-                shared_skill,
+                RUNNER,
                 "    -u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE \\\n",
                 "",
             )
@@ -923,7 +821,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
         def add_extra_shared_scope(root: Path) -> None:
             self.replace_once(
                 root,
-                shared_skill,
+                RUNNER,
                 '        "https://www.googleapis.com/auth/userinfo.profile",\n',
                 '        "https://www.googleapis.com/auth/userinfo.profile",\n'
                 '        "https://www.googleapis.com/auth/calendar.readonly",\n',
@@ -963,7 +861,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             self.rewrite_json(
                 root,
                 plugin_manifest,
-                lambda manifest: manifest.update({"version": "0.2.0"}),
+                lambda manifest: manifest.update({"version": "not-a-version"}),
             )
 
         def remove_one_skill(root: Path) -> None:
@@ -1106,7 +1004,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 add_extra_shared_scope,
-                "gws-shared security contract must match the canonical reviewed text",
+                "gws shared runtime must use exactly the four canonical scopes",
             ),
             (
                 allow_permanent_delete,
@@ -1126,7 +1024,7 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
             ),
             (
                 change_manifest_version,
-                "google-workspace-tools manifest version must be 0.1.0",
+                "google-workspace-tools manifest version must be valid semver",
             ),
             (
                 remove_one_skill,

@@ -15,7 +15,10 @@ on:
       - "tests/test_typesafe_tools.py"
       - "tests/test_capability_routing_benchmark.py"
       - "tests/fixtures/capability-routing-benchmark.json"
-      - "tests/test_computer_use_benchmark.py"
+      - "tests/test_computer_use_*.py"
+      - "tests/test_typesafe_computer_use_*.py"
+      - "tests/fixture_long_tree_dom.cjs"
+      - "tests/typesafe_computer_use_controller.cjs"
   push:
     branches: [main]
     paths:
@@ -31,7 +34,10 @@ on:
       - "tests/test_typesafe_tools.py"
       - "tests/test_capability_routing_benchmark.py"
       - "tests/fixtures/capability-routing-benchmark.json"
-      - "tests/test_computer_use_benchmark.py"
+      - "tests/test_computer_use_*.py"
+      - "tests/test_typesafe_computer_use_*.py"
+      - "tests/fixture_long_tree_dom.cjs"
+      - "tests/typesafe_computer_use_controller.cjs"
   workflow_dispatch:
 
 permissions:
@@ -47,6 +53,9 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
@@ -65,7 +74,8 @@ jobs:
           python3 -m unittest discover -s plugins/typesafe-tools/effort -p 'test_*.py'
           python3 -m unittest discover -s plugins/typesafe-tools/routing -p 'test_*.py'
           python3 -m unittest tests.test_capability_routing_benchmark
-          python3 -m unittest tests.test_computer_use_benchmark
+          python3 -m unittest discover -s tests -p 'test_computer_use_*.py'
+          python3 -m unittest discover -s tests -p 'test_typesafe_computer_use_*.py'
       - name: Check runtime lint and types
         working-directory: plugins/typesafe-tools/server
         run: |

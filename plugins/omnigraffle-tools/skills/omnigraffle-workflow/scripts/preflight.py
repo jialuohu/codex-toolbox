@@ -143,6 +143,32 @@ def running_instances(timeout: int) -> dict[str, Any]:
         return {"status": "invalid_response", "instances": [], "error": str(error)}
 
 
+def appleevent_timeout_diagnostic() -> dict[str, Any]:
+    """Offer a bounded clue, without claiming that a timeout proves TCC denial.
+
+    SSH environment variables indicate how this process was launched, not the
+    identity macOS ultimately assigns to its AppleEvents. Do not read or edit
+    the TCC database or issue another event to test the hypothesis here.
+    """
+    ssh_environment = any(os.environ.get(name) for name in
+                          ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+    steps = [
+        "Check whether OmniGraffle is responsive in the logged-in desktop session.",
+        "Inspect System Settings > Privacy & Security > Automation for the process responsible for this osascript request, and resolve any pending prompt in that session.",
+    ]
+    if ssh_environment:
+        steps.append(
+            "This process has SSH session variables. macOS may attribute its AppleEvents to an SSH launcher such as sshd-keygen-wrapper; a separate desktop-app grant does not cover that launcher. Confirm the responsible identity before changing its Automation permission."
+        )
+    steps.append("After resolving the cause, run a new read-only doctor --probe-app; never replay a timed-out mutation without reconciliation.")
+    return {
+        "status": "cause_unconfirmed",
+        "ssh_environment_detected": ssh_environment,
+        "possible_causes": ["target_app_unresponsive", "automation_decision_pending"],
+        "next_steps": steps,
+    }
+
+
 def probe_app(timeout: int, app: Path) -> dict[str, Any]:
     if not 1 <= timeout <= 30:
         raise ValueError("Probe timeout must be between 1 and 30 seconds")
@@ -188,7 +214,10 @@ def probe_app(timeout: int, app: Path) -> dict[str, Any]:
         checks[probe] = check
         if check["status"] != "ok":
             # Do not retry or queue more AppleEvents behind an unresponsive app.
-            return {"status": "blocked", "checks": checks, "process_checks": process_checks}
+            report = {"status": "blocked", "checks": checks, "process_checks": process_checks}
+            if check["status"] == "timeout":
+                report["timeout_diagnostic"] = appleevent_timeout_diagnostic()
+            return report
     return {
         "status": "responding", "checks": checks, "process_checks": process_checks,
         "note": "Read-only command responses do not prove authoring or export.",

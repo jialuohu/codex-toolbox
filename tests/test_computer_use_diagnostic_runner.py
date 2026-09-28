@@ -111,6 +111,13 @@ def scheduled_capture(slots: list[dict], visited: list[int]):
 
 class RunnerTests(unittest.TestCase):
     def setUp(self) -> None:
+        # Exercise frozen recipe checks without requiring historical Git
+        # objects in shallow CI checkouts or source archives.
+        old_skill = (ROOT / "plugins/typesafe-tools/computer_use_diagnostic/skill_0_4_0.md").read_bytes()
+        self.assertEqual(hashlib.sha256(old_skill).hexdigest(), runner.SOURCE_SHA256["old_skill"])
+        historical_source = patch.object(runner, "_old_skill", return_value=old_skill)
+        historical_source.start()
+        self.addCleanup(historical_source.stop)
         runtime_dir = tempfile.TemporaryDirectory()
         self.addCleanup(runtime_dir.cleanup)
         cua_manifest = Path(runtime_dir.name) / "cua.json"

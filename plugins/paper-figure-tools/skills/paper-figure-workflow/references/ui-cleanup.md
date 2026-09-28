@@ -1,0 +1,11 @@
+# Figure workflow UI cleanup
+
+Capture a non-launching inventory of existing app instances and windows before invoking `scaffold_research_figures.py` with auto owner selection, `doctor --probe-app`, `getApp`, or `open`. The scaffold's auto readiness probe can launch OmniGraffle before drawing starts, including when it later selects a Draw.io fallback. An inventory taken after the tool returns misses that baseline; if initial state is unavailable, treat ownership as unknown.
+
+Track task-created app/window identities across scaffold, initialization, exports and preview inspection. An inventory difference or matching title/path/URL alone does not prove ownership. Read the selected native owner's UI cleanup reference before dispatch and retain any recorded launch evidence when delegating. Keep the same owner-selection, fallback-disclosure, shared-lock and reconciliation behavior. Cleanup applies to a probe-launched app even if a different owner completes the figure.
+
+On completion or failure, when control is available, verify saved source and exports, return their file links, and close only exact task-created saved idle preview windows. An explicit open/show/keep-open request or active interactive handoff keeps the requested deliverable open. Preserve pre-existing resources and any user-created, new/untracked, unsaved, busy, or ambiguous windows/dialogs.
+
+Let OmniGraffle's backend close its verified working copies and LaTeXiT editors; do not repeat that cleanup. Preserve unknown mutation state and retained working copies for `reconcile`; do not retry mutations, dismiss save prompts, or close uncertain native work. Draw.io OS-open without a stable ownership receipt stays open and is reported, not identified by URL/title guesswork.
+
+Use a supported normal quit only for a proven task-started app still matching the recorded instance, after confirming no pre-existing, user-created, new/untracked, unsaved, busy, or pending windows/documents/dialogs remain and no reconciliation is pending. Never quit a shared browser, force-quit, use `killall`, or launch an absent app for cleanup. Verify closure without launching anything; bound attempts and report any retained resource and reason alongside the original operation result. These instructions add no process-management API to the copied runtime or helper scripts.

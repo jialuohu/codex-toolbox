@@ -30,6 +30,10 @@ REQUIRED_SCOPES = (
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
 )
+SHARED = PLUGIN / "skills" / "gws-shared"
+RUNNER = SHARED / "scripts" / "gws-account.sh"
+COMPOSE = SHARED / "references" / "compose.md"
+AMBIENT_GWS_COMMAND = re.compile(r"(?m)^\s*gws (?:--version|auth|gmail)\b")
 COMPOSE_SKILLS = (
     "gws-gmail-send",
     "gws-gmail-reply",
@@ -103,24 +107,10 @@ def active_shell_array_entries(script: str, name: str) -> list[str]:
     return entries
 
 
-def shared_bash_blocks(source: Optional[str] = None) -> list[str]:
-    if source is None:
-        source = (PLUGIN / "skills" / "gws-shared" / "SKILL.md").read_text(encoding="utf-8")
-    return re.findall(r"```bash\n(.*?)\n```", source, re.DOTALL)
-
-
-def shared_preflight_script(
-    source: Optional[str] = None,
-) -> str:
-    blocks = shared_bash_blocks(source)
-    if len(blocks) != 3:
-        raise AssertionError(f"expected three ordered shared bash blocks, found {len(blocks)}")
-    return "\n\n".join((*blocks, "printf 'PREFLIGHT_OK\\n'"))
-
-
 def profile_validator_python(source: Optional[str] = None) -> str:
-    first_block = shared_bash_blocks(source)[0]
-    match = re.search(r"<<'PY'\n(.*?)\nPY(?:\n|$)", first_block, re.DOTALL)
+    """Read the profile validator from the executable for targeted fault injection."""
+    source = RUNNER.read_text(encoding="utf-8") if source is None else source
+    match = re.search(r"<<'PY'\n(.*?)\nPY(?:\n|$)", source, re.DOTALL)
     if match is None:
         raise AssertionError("profile-validator Python heredoc not found")
     return match.group(1)
@@ -130,7 +120,7 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
     def test_plugin_has_exact_gmail_only_inventory_and_provenance(self):
         manifest = json.loads((PLUGIN / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "google-workspace-tools")
-        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertRegex(manifest["version"], r"^\d+\.\d+\.\d+$")
         self.assertEqual(manifest["license"], "Apache-2.0")
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertNotIn("mcpServers", manifest)
@@ -178,101 +168,29 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
                     f"{name} has an unresolved markdown reference: {reference}",
                 )
 
-    def test_shared_skill_uses_managed_binary_and_plain_status_command(self):
-        shared = normalized(PLUGIN / "skills" / "gws-shared" / "SKILL.md")
-        shared_source = (PLUGIN / "skills" / "gws-shared" / "SKILL.md").read_text(encoding="utf-8")
-        for required in (
-            '${XDG_DATA_HOME:-$HOME/.local/share}/codex-toolbox/gws/0.22.5/gws',
-            'gws_bin=',
-            'RUNTIME_DIR_PATH="$gws_runtime_dir"',
-            "metadata = os.lstat(component)",
-            "metadata.st_uid not in trusted_owners",
-            "mode & (stat.S_IWGRP | stat.S_IWOTH)",
-            "not stat.S_ISREG(metadata.st_mode)",
-            '/usr/bin/shasum -a 256 "$gws_bin"',
-            GWS_BINARY_SHA256,
-            '"$gws_bin" --version',
-            'first_line',
-            'gws 0.22.5',
-            '"$gws_bin" auth status',
-            'same absolute `$gws_bin`',
-            'Fail closed',
-        ):
-            self.assertIn(required, shared)
-        self.assertEqual(shared_source.count(GWS_BINARY_SHA256), 1)
-        self.assertEqual(shared_source.count("/usr/bin/python3 -I - <<'PY'"), 3)
-        self.assertIn("/usr/bin/env -u GOOGLE_WORKSPACE_CLI_TOKEN", shared_source)
-        self.assertIn("same scrubbed absolute `/usr/bin/env` prefix", shared)
-        self.assertNotIn("auth status --format", shared)
-        self.assertNotRegex(shared_source, r"(?m)^\s*gws (?:--version|auth|gmail)\b")
+    def test_shared_skill_loads_one_reviewed_runner_and_compose_contract(self):
+        skill = SHARED / "SKILL.md"
+        self.assertEqual(
+            markdown_references(skill),
+            {"scripts/gws-account.sh", "references/compose.md"},
+        )
+        runner = RUNNER.read_text(encoding="utf-8")
+        self.assertEqual(runner.count(GWS_BINARY_SHA256), 1)
+        self.assertNotIn("eval ", runner)
+        self.assertNotIn("users drafts send", runner)
+        self.assertNotIn("users messages send", runner)
+        self.assertNotRegex(runner, AMBIENT_GWS_COMMAND)
+        self.assertEqual(subprocess.run(["/bin/bash", "-n", str(RUNNER)]).returncode, 0)
+        self.assertIn("explicit alias", normalized(skill))
+        self.assertIn("no same-request Gmail connector fallback", normalized(skill))
+        self.assertIn("successful check is not permission", normalized(skill))
 
-    def test_shared_skill_validates_profile_privacy_before_gws(self):
-        shared = normalized(PLUGIN / "skills" / "gws-shared" / "SKILL.md")
-        for required in (
-            "explicit alias",
-            "^[a-z0-9][a-z0-9._-]{0,62}$",
-            "`.`",
-            "`..`",
-            "accounts_root",
-            "secrets_root",
-            'profile="$accounts_root/$alias"',
-            "canonical",
-            "direct child",
-            "secrets root, accounts root, profile, or descendant symlink",
-            "profile.json",
-            "client_secret.json",
-            "credentials.enc",
-            ".encryption_key",
-            "Reject `credentials.json`",
-            "regular file",
-            "700",
-            "600",
-            "traversal error",
-            "schema_version",
-            "expected_email",
-            '"$gws_bin" auth status',
-            "GOOGLE_WORKSPACE_CLI_CONFIG_DIR",
-            "GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND=file",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "missing profile-local sentinel",
-            "-u GOOGLE_WORKSPACE_CLI_TOKEN",
-            "-u GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE",
-            "-u GOOGLE_WORKSPACE_CLI_CREDENTIAL_FILE",
-            "-u GOOGLE_WORKSPACE_CLI_CLIENT_ID",
-            "-u GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",
-            "-u GOOGLE_WORKSPACE_CLI_LOG",
-            "-u GOOGLE_WORKSPACE_CLI_LOG_FILE",
-            "-u GOOGLE_WORKSPACE_PROJECT_ID",
-            "-u GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE",
-            "-u GOOGLE_WORKSPACE_CLI_SANITIZE_MODE",
-            "-u GOOGLE_APPLICATION_CREDENTIALS",
-            "from `/`",
-            "exact case-insensitive email match",
-            "token_valid: true",
-            "storage",
-            "encrypted",
-            "keyring_backend",
-            "encrypted_credentials_exists",
-            "plain_credentials_exists",
-            "status.get(\"plain_credentials_exists\") is False",
-            "encryption_valid",
-            "https://www.googleapis.com/auth/gmail.modify",
-            "openid",
-            "https://www.googleapis.com/auth/userinfo.email",
-            "https://www.googleapis.com/auth/userinfo.profile",
-            "accepted_scope_sets",
-            "len(scopes) == len(scope_set)",
-            "any(scope_set == accepted for accepted in accepted_scope_sets)",
-            "https://mail.google.com/",
-            "absolute attachment paths",
-            "no same-request Gmail connector fallback",
-            "Fail closed",
-        ):
-            self.assertIn(required, shared)
-
-        validation_end = shared.index("profile validation passed")
-        gws_start = shared.index('"$gws_bin" --version')
-        self.assertLess(validation_end, gws_start)
+    def test_ambient_gws_detector_rejects_added_unisolated_commands(self):
+        runner = RUNNER.read_text(encoding="utf-8")
+        for command in ("gws --version", "  gws auth status", "\tgws gmail +read --id synthetic"):
+            with self.subTest(command=command):
+                with self.assertRaises(AssertionError):
+                    self.assertNotRegex(runner + "\n" + command + "\n", AMBIENT_GWS_COMMAND)
 
     def test_each_compose_skill_requires_authoritative_draft_readback_and_send_boundary(self):
         expected_helpers = {
@@ -282,18 +200,18 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             "gws-gmail-forward": "+forward",
         }
         for name in COMPOSE_SKILLS:
-            text = normalized(PLUGIN / "skills" / name / "SKILL.md").lower()
+            text = (normalized(PLUGIN / "skills" / name / "SKILL.md") + " " + normalized(COMPOSE)).lower()
             self.assertIn("../gws-shared/skill.md", text, name)
             self.assertIn("--draft", text, name)
             self.assertRegex(
                 text,
-                rf'"\$gws_bin" gmail {re.escape(expected_helpers[name])} '
+                rf'-- gmail {re.escape(expected_helpers[name])} '
                 rf'[^\n]*--from "\$expected_email"[^\n]*--draft',
                 name,
             )
             self.assertIn("explicit user intent to send", text, name)
             self.assertIn("identity/recipient preview", text, name)
-            self.assertIn('"$gws_bin" gmail', text, name)
+            self.assertIn('../gws-shared/references/compose.md', text, name)
             for authoritative_requirement in (
                 "primary verified identity is the only permitted from",
                 "always create a server-side draft first",
@@ -327,16 +245,10 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
                 )
             for command_requirement in (
                 "gws v0.22.5 schema",
-                "isolated_gws()",
-                "cd / || exit 1",
-                "/usr/bin/env -u google_workspace_cli_token",
-                'google_workspace_cli_config_dir="$profile"',
-                "google_workspace_cli_keyring_backend=file",
-                'isolated_gws gmail users drafts get --params "$draft_get_params"',
-                'draft_json_again="$(isolated_gws gmail users drafts get '
-                '--params "$draft_get_params")" || exit 1',
-                'isolated_gws gmail users drafts send --params \'{"userid":"me"}\' '
-                '--json "$draft_send_body" || exit 1',
+                '/bin/bash "$gws_account" run --alias "$gws_alias" --expected-email "$expected_email" -- gmail',
+                'users drafts get --params "$draft_get_params"',
+                'draft_json_again="$(/bin/bash "$gws_account"',
+                'users drafts send --params \'{"userid":"me"}\' --json "$draft_send_body" || exit 1',
                 '"userid": "me"',
                 '"format": "full"',
             ):
@@ -349,7 +261,7 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
             for attachment_requirement in (
                 "attachment safety contract",
                 "private temporary directory",
-                "initial lstat",
+                "initial `lstat`",
                 "device/inode",
                 "sha-256",
                 "byte size",
@@ -370,11 +282,17 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
         self.assertIn("server-side original attachments", forward)
         self.assertIn("separate", forward)
         self.assertIn("authoritative attachment names and count", forward)
+        self.assertIn("helper-generated forward block from the source message", forward)
+        self.assertIn("preview every recipient", forward)
         reply_all = normalized(PLUGIN / "skills" / "gws-gmail-reply-all" / "SKILL.md").lower()
         self.assertIn("authoritative resolved recipients", reply_all)
+        for name in ("gws-gmail-reply", "gws-gmail-reply-all"):
+            leaf = normalized(PLUGIN / "skills" / name / "SKILL.md").lower()
+            self.assertIn("helper-generated quotation of the source message", leaf)
+            self.assertIn("draft state", leaf)
 
     def test_shared_attachment_contract_stages_exact_bytes_and_revalidates_identity(self):
-        shared = normalized(PLUGIN / "skills" / "gws-shared" / "SKILL.md").lower()
+        shared = normalized(COMPOSE).lower()
         for required in (
             "before draft or send",
             "user-supplied attachment",
@@ -460,7 +378,8 @@ class GoogleWorkspaceToolsPluginTests(unittest.TestCase):
 class SharedPreflightExecutionTests(unittest.TestCase):
 
     def setUp(self):
-        self.tempdir = tempfile.TemporaryDirectory()
+        # Runtime trust rejects world-writable ancestors such as Linux /tmp.
+        self.tempdir = tempfile.TemporaryDirectory(prefix=".toolbox-gws-test-", dir=Path.home())
         self.addCleanup(self.tempdir.cleanup)
         self.root = Path(self.tempdir.name).resolve()
         self.secrets = self.root / "secrets"
@@ -471,6 +390,7 @@ class SharedPreflightExecutionTests(unittest.TestCase):
         self.accounts.chmod(0o700)
         self.data = self.root / "data"
         self.log = self.root / "gws.log"
+        self.args_log = self.root / "args.json"
         self.shim_log = self.root / "hostile-shims.log"
         self.hostile_bin = self.root / "hostile-bin"
         self.hostile_bin.mkdir()
@@ -560,6 +480,19 @@ if [ "$#" -eq 2 ] && [ "$1" = "auth" ] && [ "$2" = "status" ]; then
   printf '%s\n' "$FAKE_GWS_STATUS"
   exit "${FAKE_STATUS_EXIT:-0}"
 fi
+if [ "$1" = "gmail" ] || [ "$1" = "schema" ]; then
+  /usr/bin/python3 -I - "$@" <<'PY'
+import json
+import os
+import sys
+with open(os.environ["FAKE_GWS_ARGS"], "w") as target:
+    json.dump(sys.argv[1:], target)
+sys.stdout.write("command stdout\\n")
+sys.stderr.write("command stderr\\n")
+sys.exit(23)
+PY
+  exit "$?"
+fi
 exit 97
 """,
             encoding="utf-8",
@@ -604,12 +537,17 @@ exit 97
         status_exit: int = 0,
         status_create_key: bool = False,
         secrets_dir: Optional[Path] = None,
-        script: Optional[str] = None,
+        script: Optional[Path] = None,
+        run_args: Optional[list[str]] = None,
+        expected_email: str = "personal@example.com",
+        cli_args: Optional[list[str]] = None,
     ) -> subprocess.CompletedProcess:
         if self.log.exists():
             self.log.unlink()
         if self.shim_log.exists():
             self.shim_log.unlink()
+        if self.args_log.exists():
+            self.args_log.unlink()
         env = os.environ.copy()
         env.update(
             {
@@ -617,6 +555,7 @@ exit 97
                 "XDG_DATA_HOME": str(self.data),
                 "CODEX_SECRETS_DIR": str(self.secrets if secrets_dir is None else secrets_dir),
                 "FAKE_GWS_LOG": str(self.log),
+                "FAKE_GWS_ARGS": str(self.args_log),
                 "FAKE_GWS_STATUS": json.dumps(self.status if status is None else status),
                 "FAKE_STATUS_EXIT": str(status_exit),
                 "FAKE_STATUS_CREATE_KEY": "1" if status_create_key else "0",
@@ -638,16 +577,11 @@ exit 97
                 "alias": alias,
             }
         )
+        helper = self.copied_preflight_script(binary_sha256=self.test_binary_sha256) if script is None else script
+        arguments = (["check", "--alias", alias] if run_args is None else
+                     ["run", "--alias", alias, "--expected-email", expected_email, "--", *run_args])
         return subprocess.run(
-            [
-                "bash",
-                "-c",
-                (
-                    self.copied_preflight_script(binary_sha256=self.test_binary_sha256)
-                    if script is None
-                    else script
-                ),
-            ],
+            ["/bin/bash", str(helper), *(arguments if cli_args is None else cli_args)],
             cwd=REPO_ROOT,
             env=env,
             text=True,
@@ -660,14 +594,14 @@ exit 97
         *,
         binary_sha256: str,
         replace: Optional[tuple[str, str]] = None,
-    ) -> str:
-        source_path = PLUGIN / "skills" / "gws-shared" / "SKILL.md"
-        copied_path = self.root / f"gws-shared-copy-{len(list(self.root.glob('gws-shared-copy-*')))}.md"
+    ) -> Path:
+        source_path = RUNNER
+        copied_path = self.root / f"gws-runner-copy-{len(list(self.root.glob('gws-runner-copy-*')))}.sh"
         source = source_path.read_text(encoding="utf-8")
         self.assertEqual(
             source.count(GWS_BINARY_SHA256),
             1,
-            "source skill must contain one canonical managed-binary digest",
+            "source helper must contain one canonical managed-binary digest",
         )
         source = source.replace(GWS_BINARY_SHA256, binary_sha256, 1)
         if replace is not None:
@@ -675,7 +609,7 @@ exit 97
             self.assertIn(old, source, "requested temporary-copy mutation is absent")
             source = source.replace(old, new, 1)
         copied_path.write_text(source, encoding="utf-8")
-        return shared_preflight_script(copied_path.read_text(encoding="utf-8"))
+        return copied_path
 
     def run_profile_validator(
         self,
@@ -718,7 +652,7 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
     def test_valid_profile_runs_exact_isolated_status(self):
         result = self.run_preflight()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.stdout, "PREFLIGHT_OK\n")
+        self.assertEqual(json.loads(result.stdout), {"alias": "personal", "expected_email": "personal@example.com"})
         calls = [line.split("|") for line in self.log.read_text(encoding="utf-8").splitlines()]
         self.assertEqual([call[0] for call in calls], ["--version", "auth status"])
         status_call = calls[1]
@@ -863,7 +797,7 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.log.exists())
 
-    def test_extracted_profile_validator_propagates_walk_onerror(self):
+    def test_profile_validator_propagates_walk_onerror(self):
         result = self.run_profile_validator(walk_error=True)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -885,8 +819,8 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         mutated = self.copied_preflight_script(
             binary_sha256=self.test_binary_sha256,
             replace=(
-                '"$gws_bin" auth status',
-                '"$gws_bin" auth status --bogus',
+                'isolated_gws auth status',
+                'isolated_gws auth status --bogus',
             ),
         )
         suffixed = self.run_preflight(script=mutated)
@@ -918,6 +852,81 @@ exec(compile({validator!r}, "<extracted-profile-validator>", "exec"))
         symlinked = self.run_preflight(script=symlink_script)
         self.assertNotEqual(symlinked.returncode, 0, symlinked.stdout + symlinked.stderr)
         self.assertFalse(self.log.exists(), "symlinked binary must fail before invocation")
+
+    def test_run_preserves_argv_raw_streams_and_exit_status(self):
+        arguments = ["gmail", "+read", "--id", "spaces and \"quotes\"", "--body",
+                     "line one\nline two; $(not-a-command) `literal`", ""]
+        result = self.run_preflight(run_args=arguments, expected_email="PERSONAL@EXAMPLE.COM")
+        self.assertEqual(result.returncode, 23, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "command stdout\n")
+        self.assertEqual(result.stderr, "command stderr\n")
+        self.assertEqual(json.loads(self.args_log.read_text()), arguments)
+        # The argument body contains a newline, so inspect the final environment suffix.
+        self.assertIn("|/|" + str(self.profile.resolve()) + "|file|", self.log.read_text())
+        self.assertFalse(self.shim_log.exists())
+
+    def test_run_rechecks_identity_and_never_dispatches_on_mismatch(self):
+        for changes, expected in (({}, "another@example.com"), ({"user": "another@example.com"}, "personal@example.com"),
+                                  ({"token_valid": False}, "personal@example.com")):
+            with self.subTest(changes=changes, expected=expected):
+                status = dict(self.status, **changes)
+                result = self.run_preflight(run_args=["gmail", "+read", "--id", "m1"],
+                                            status=status, expected_email=expected)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.args_log.exists())
+                self.assertEqual([line.split("|")[0] for line in self.log.read_text().splitlines()],
+                                 ["--version", "auth status"])
+
+    def test_run_rejects_unsafe_profile_before_dispatch(self):
+        (self.profile / "credentials.enc").chmod(0o644)
+        result = self.run_preflight(run_args=["gmail", "+read", "--id", "m1"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.log.exists())
+        self.assertFalse(self.args_log.exists())
+
+    def test_runtime_rejects_writable_or_symlinked_paths_before_invocation(self):
+        for path in (self.data, self.gws_bin):
+            with self.subTest(path=path.name):
+                original_mode = path.stat().st_mode & 0o777
+                path.chmod(0o777)
+                try:
+                    result = self.run_preflight(run_args=["gmail", "+read", "--id", "m1"])
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertFalse(self.log.exists())
+                finally:
+                    path.chmod(original_mode)
+        real_data = self.root / "real-data"
+        self.data.rename(real_data)
+        self.data.symlink_to(real_data, target_is_directory=True)
+        result = self.run_preflight()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.log.exists())
+
+    def test_runtime_version_mismatch_blocks_status_and_requested_operation(self):
+        source = self.gws_bin.read_text().replace("gws 0.22.5", "gws 0.22.4")
+        self.gws_bin.write_text(source)
+        helper = self.copied_preflight_script(binary_sha256=hashlib.sha256(self.gws_bin.read_bytes()).hexdigest())
+        result = self.run_preflight(script=helper, run_args=["gmail", "+read", "--id", "m1"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([line.split("|")[0] for line in self.log.read_text().splitlines()], ["--version"])
+        self.assertFalse(self.args_log.exists())
+
+    def test_cli_rejects_ambiguous_or_unsupported_invocations_before_preflight(self):
+        for arguments in ([], ["check"], ["check", "--alias", "personal", "extra"],
+                          ["run", "--alias", "personal", "--", "gmail"],
+                          ["run", "--alias", "personal", "--expected-email", "", "--", "gmail"],
+                          ["run", "--alias", "personal", "--expected-email", "personal@example.com", "--", "auth", "login"],
+                          ["run", "--alias", "personal", "--expected-email", "personal@example.com", "--"]):
+            with self.subTest(arguments=arguments):
+                result = self.run_preflight(cli_args=arguments)
+                self.assertEqual(result.returncode, 2)
+                self.assertFalse(self.log.exists())
+
+    def test_schema_uses_the_same_isolated_runner(self):
+        args = ["schema", "gmail.users.messages.get"]
+        result = self.run_preflight(run_args=args)
+        self.assertEqual(result.returncode, 23)
+        self.assertEqual(json.loads(self.args_log.read_text()), args)
 
 
 if __name__ == "__main__":

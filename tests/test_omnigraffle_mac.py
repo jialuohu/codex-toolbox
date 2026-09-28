@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -74,6 +75,23 @@ class LicensedMacAcceptance(unittest.TestCase):
     def inspect(self, path):
         return self.cli("inspect", None, path)
 
+    def assert_saved_connector_path(self, path, object_id, *, orthogonal=False):
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            from document import read_document
+            from engine import graph_map
+        finally:
+            sys.path.pop(0)
+        _, raw = read_document(path)
+        lines = [graphic for (_, oid), graphic in graph_map(raw).items() if oid == object_id]
+        self.assertEqual(len(lines), 1)
+        line = lines[0]
+        elements = line["LogicalPath"]["elements"]
+        self.assertEqual(elements[0]["point"], line["Points"][0])
+        self.assertEqual(elements[-1]["point"], line["Points"][-1])
+        if orthogonal:
+            self.assertIs(line["OrthogonalBarAutomatic"], True)
+
     def test_native_multicanvas_groups_update_and_canvas_exports(self):
         path = self.create()
         before = self.inspect(path)
@@ -105,6 +123,139 @@ class LicensedMacAcceptance(unittest.TestCase):
             self.assertEqual(verification["visual_check"], "required")
         # Automated signatures/dimensions are not a visual inspection.
         (self.root / "VISUAL-REVIEW-REQUIRED.txt").write_text("Inspect canvas.pdf and canvas.png for bilingual glyphs, clipping, geometry and final reading size. This suite does not claim visual acceptance.\n")
+
+    def test_research_style_saved_readback_and_endpoint_move(self):
+        """Qualify script dictionary mappings on a licensed, responsive Mac."""
+        path = self.root / "research-style.graffle"
+        created = self.cli("create", {"output": str(path), "spec": {"canvases": [{
+            "key": "main", "name": "Synthetic workflow", "width": 475.2, "height": 230,
+            "objects": [
+                {"key": "input", "kind": "shape", "x": 20, "y": 35, "width": 90, "height": 48,
+                 "text": "1 Request", "font_size": 8, "font_name": "Helvetica",
+                 "fill": "#EAF2F7", "stroke": "#35556B", "stroke_width": 1.25,
+                 "shape_type": "rounded_rectangle", "text_color": "#202020",
+                 "text_align": "center", "text_valign": "center", "text_padding": 3},
+                {"key": "output", "kind": "shape", "x": 305, "y": 35, "width": 90, "height": 48,
+                 "text": "2 Worker", "font_size": 8, "font_name": "Helvetica-Bold",
+                 "shape_type": "ellipse", "fill": "#F3F0E7"},
+                {"key": "edge", "kind": "connector", "from": "input", "to": "output",
+                 "line_type": "straight", "head_arrow": "filled", "tail_arrow": "none",
+                 "from_side": "right", "to_side": "left", "stroke": "#35556B",
+                 "stroke_width": 1.5, "stroke_pattern": "dashed"},
+            ]}]}})
+        result = created["result"]
+        mapped = result["native_document"]["canvases"][0]
+        nodes = {obj["name"]: obj for obj in mapped["objects"]}
+        self.assertEqual(mapped["size"], [475.2, 230])
+        self.assertEqual(nodes["input"]["shape_type"], "rounded_rectangle")
+        for component in nodes["input"]["text_rgb"]:
+            self.assertAlmostEqual(component, 32 / 255, delta=0.0001)
+        self.assertEqual(nodes["input"]["text_padding"], 3)
+        self.assertEqual(nodes["output"]["shape_type"], "ellipse")
+        self.assertEqual(nodes["edge"]["head_arrow"], "filled")
+        self.assertEqual(nodes["edge"]["from_side"], "right")
+        self.assertEqual(nodes["edge"]["to_side"], "left")
+        self.assertEqual(nodes["edge"]["stroke_pattern"], "dashed")
+        self.assert_saved_connector_path(path, nodes["edge"]["id"])
+
+        moved_path = self.root / "research-style-moved.graffle"
+        moved = self.cli("update", self.existing(path, output=str(moved_path), changes=[{
+            "canvas_id": mapped["id"], "object_id": nodes["input"]["id"], "set": {"x": 30}}]))
+        self.assertEqual(moved["result"]["verification"]["unrelated_objects"], "verified")
+        moved_nodes = {obj["name"]: obj for obj in moved["result"]["native_document"]["canvases"][0]["objects"]}
+        self.assertEqual(moved_nodes["edge"]["stroke_pattern"], "dashed")
+        self.assertEqual(moved_nodes["edge"]["head_arrow"], "filled")
+        self.assertEqual(moved_nodes["edge"]["from_side"], "right")
+        self.assertEqual(moved_nodes["edge"]["to_side"], "left")
+        self.assert_saved_connector_path(moved_path, nodes["edge"]["id"])
+
+        routed_path = self.root / "research-style-orthogonal.graffle"
+        routed = self.cli("update", self.existing(moved_path, output=str(routed_path), changes=[{
+            "canvas_id": mapped["id"], "object_id": nodes["edge"]["id"],
+            "set": {"line_type": "orthogonal", "stroke_pattern": "solid", "tail_arrow": "filled"}}]))
+        routed_nodes = {obj["name"]: obj for obj in routed["result"]["native_document"]["canvases"][0]["objects"]}
+        self.assertEqual(routed_nodes["edge"]["line_type"], "orthogonal")
+        self.assertEqual(routed_nodes["edge"]["tail_arrow"], "filled")
+        self.assertEqual(routed_nodes["edge"]["stroke_pattern"], "solid")
+        self.assert_saved_connector_path(routed_path, nodes["edge"]["id"], orthogonal=True)
+        for fmt in ("PDF", "PNG"):
+            self.cli("export", self.existing(routed_path, output=str(self.root / ("research-style." + fmt.lower())),
+                     scope="canvas", canvas_id=mapped["id"], format=fmt, dpi=72))
+        (self.root / "RESEARCH-STYLE-VISUAL-REVIEW.txt").write_text(
+            "Inspect research-style.pdf and research-style.png for arrow direction, side attachments, routed bends, glyphs and final reading size.\n")
+
+    def test_style_only_font_size_preserves_saved_text_attributes(self):
+        """Qualify preservation independently from endpoint/connector updates."""
+        path = self.root / "text-style-before.graffle"
+        created = self.cli("create", {"output": str(path), "spec": {"canvases": [{
+            "key": "main", "name": "Text style preservation", "width": 237.6, "height": 110,
+            "objects": [{"key": "label", "kind": "shape", "x": 20, "y": 20,
+                "width": 185, "height": 48, "text": "Editable text", "font_size": 8,
+                "font_name": "Helvetica", "text_color": "#202020", "text_align": "left",
+                "text_valign": "top", "text_padding": 3}]}]}})
+        canvas = created["result"]["native_document"]["canvases"][0]
+        before = next(obj for obj in canvas["objects"] if obj["name"] == "label")
+        source_sha = self.fingerprint(path)
+        output = self.root / "text-style-after.graffle"
+        updated = self.cli("update", self.existing(path, output=str(output), changes=[{
+            "canvas_id": canvas["id"], "object_id": before["id"], "set": {"font_size": 9}}]))
+        after = next(obj for obj in updated["result"]["native_document"]["canvases"][0]["objects"]
+                     if obj["name"] == "label")
+        self.assertEqual(after["font_size"], 9)
+        for field in ("text", "font_name", "text_align", "text_valign", "text_padding"):
+            self.assertEqual(after[field], before[field], field)
+        for actual, expected in zip(after["text_rgb"], before["text_rgb"]):
+            self.assertAlmostEqual(actual, expected, delta=0.0001)
+            self.assertAlmostEqual(actual, 32 / 255, delta=0.0001)
+        self.assertEqual(self.fingerprint(path), source_sha)
+
+    def test_palette_text_colors_survive_style_only_font_size_update(self):
+        """Qualify non-gray text-color preservation for the selected inks."""
+        sys.path.insert(0, str(SCRIPTS))
+        try:
+            from document import read_document
+            from engine import graph_map, uniform_text_attributes
+        finally:
+            sys.path.pop(0)
+        colors = {"charcoal": "#30343A", "cobalt": "#2148B8", "terracotta": "#C65F38"}
+        path = self.root / "palette-text-before.graffle"
+        objects = [{"key": name, "kind": "shape", "x": 20, "y": 20 + index * 55,
+                    "width": 185, "height": 45, "text": name.capitalize(), "font_size": 8,
+                    "font_name": "Helvetica", "text_color": color, "text_align": "left",
+                    "text_valign": "center", "text_padding": 3}
+                   for index, (name, color) in enumerate(colors.items())]
+        created = self.cli("create", {"output": str(path), "spec": {"canvases": [{
+            "key": "main", "name": "Palette text preservation", "width": 237.6,
+            "height": 200, "objects": objects}]}})
+        canvas = created["result"]["native_document"]["canvases"][0]
+        before_nodes = {obj["name"]: obj for obj in canvas["objects"]}
+        source_sha = self.fingerprint(path)
+        _, before_raw = read_document(path)
+        output = self.root / "palette-text-after.graffle"
+        updated = self.cli("update", self.existing(path, output=str(output), changes=[{
+            "canvas_id": canvas["id"], "object_id": before_nodes[name]["id"], "set": {"font_size": 9}}
+            for name in colors]))
+        after_nodes = {obj["name"]: obj for obj in updated["result"]["native_document"]["canvases"][0]["objects"]}
+        _, after_raw = read_document(output)
+        before_graphics, after_graphics = graph_map(before_raw), graph_map(after_raw)
+        for name, color in colors.items():
+            before, after = before_nodes[name], after_nodes[name]
+            self.assertEqual(after["font_size"], 9)
+            self.assertEqual(after["text_rgb"], before["text_rgb"], name)
+            for index, actual in enumerate(after["text_rgb"]):
+                self.assertAlmostEqual(actual, int(color[1 + index * 2:3 + index * 2], 16) / 255,
+                                       delta=0.0001, msg=name)
+            for field in ("text", "font_name", "text_align", "text_valign", "text_padding"):
+                self.assertEqual(after[field], before[field], name + ": " + field)
+            key = (canvas["id"], before["id"])
+            prior, current = before_graphics[key], after_graphics[key]
+            self.assertTrue(uniform_text_attributes(prior), name)
+            self.assertTrue(uniform_text_attributes(current), name)
+            for pattern in (r"\{\\colortbl[^{}]*\}", r"\{\\\*\\expandedcolortbl[^{}]*\}"):
+                prior_tables = re.findall(pattern, prior["Text"]["Text"])
+                self.assertTrue(prior_tables, name)
+                self.assertEqual(re.findall(pattern, current["Text"]["Text"]), prior_tables, name)
+        self.assertEqual(self.fingerprint(path), source_sha)
 
     @unittest.skipUnless(EQUATIONS_ENABLED, "Requires OMNIGRAFFLE_MAC_EQUATIONS=1, running official LaTeXiT, prepared TeX profile and existing GUI permissions")
     def test_actual_linkback_insert_two_updates_and_optional_restart(self):

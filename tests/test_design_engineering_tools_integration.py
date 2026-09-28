@@ -138,7 +138,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
             rewrite_manifest(root, lambda manifest: manifest.update({"name": "wrong-tools"}))
 
         def change_manifest_version(root: Path) -> None:
-            rewrite_manifest(root, lambda manifest: manifest.update({"version": "0.1.2"}))
+            rewrite_manifest(root, lambda manifest: manifest.update({"version": "invalid"}))
 
         def change_manifest_skills_path(root: Path) -> None:
             rewrite_manifest(root, lambda manifest: manifest.update({"skills": "./wrong-skills/"}))
@@ -435,7 +435,7 @@ class DesignEngineeringToolsIntegrationTests(unittest.TestCase):
 
         cases: tuple[tuple[Callable[[Path], None], str], ...] = (
             (change_manifest_name, "design-engineering-tools manifest name must be exact"),
-            (change_manifest_version, "design-engineering-tools manifest version must be 0.1.1"),
+            (change_manifest_version, "design-engineering-tools must declare a semantic version"),
             (change_manifest_skills_path, "design-engineering-tools manifest must expose ./skills/"),
             (change_manifest_capabilities, "design-engineering-tools manifest capabilities must be Read, Write, and Interactive"),
             (add_manifest_mcp_declaration, "design-engineering-tools manifest must not declare MCP servers"),

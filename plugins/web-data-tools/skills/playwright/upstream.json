@@ -13,7 +13,7 @@
       "source_path": "skills/.curated/playwright/SKILL.md",
       "source_sha256": "0ffaabcc8e0990627c4725f18bf1c7955534a796c1c199e872909de2013ce6a8",
       "local_path": "SKILL.md",
-      "sha256": "9f1fdb77153bf4b1e9565ca1ba4747ae1ffb5ccafa353da5df98bd1399ffb49d"
+      "sha256": "67158499850c7674bccc3452f39251fa4f86bc214533a427b92b4c069169e466"
     },
     {
       "source_path": "skills/.curated/playwright/scripts/playwright_cli.sh",

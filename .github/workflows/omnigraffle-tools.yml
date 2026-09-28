@@ -35,6 +35,8 @@ jobs:
         with:
           python-version: "3.11"
       - name: Portable archive, request, journal, adapter and routing tests
+        env:
+          OMNIGRAFFLE_MAC_INTEGRATION: "0"
         run: >-
           python3 -m unittest
           tests.test_omnigraffle_document
@@ -43,10 +45,14 @@ jobs:
           tests.test_omnigraffle_plugin_preflight
           tests.test_latexit_compile_probe
           tests.test_omnigraffle_native
+          tests.test_omnigraffle_style
+          tests.test_omnigraffle_exports
           tests.test_omnigraffle_latexit
           tests.test_omnigraffle_transactions
           tests.test_omnigraffle_routing
           tests.test_omnigraffle_mac
+      - name: Portable research sources and bundled native archives
+        run: python3 -m unittest discover -s plugins/omnigraffle-tools/tests -p 'test_*.py'
       - name: Setup and privacy contracts
         run: |
           python3 scripts/check-codex-toolbox-setup.py

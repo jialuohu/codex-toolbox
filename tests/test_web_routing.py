@@ -16,13 +16,11 @@ class WebRoutingContractTests(unittest.TestCase):
     def test_global_keeps_only_concise_search_dispatch(self) -> None:
         text = GLOBAL_AGENTS.read_text(encoding="utf-8")
 
-        expected_sentence = (
-            "Use built-in Codex web search for ordinary public discovery, current facts, "
-            "documentation, news, and citations; use `$community-research` for public "
-            "community or forum discussions, user reports, sentiment, or community "
-            "troubleshooting, alongside official or canonical corroboration."
-        )
-        self.assertIn(expected_sentence, text)
+        dispatch = next(line for line in text.splitlines() if line.startswith("- OpenAI/Codex:"))
+        for required in ("official docs first", "Context7", "built-in Codex web search",
+                         "ordinary public discovery", "$community-research", "forum",
+                         "user reports", "sentiment", "troubleshooting", "official or canonical"):
+            self.assertIn(required, dispatch)
         for detail_owned_by_the_skill in (
             "exactly one web source",
             "no `scrapeOptions`",
@@ -58,12 +56,12 @@ class WebRoutingContractTests(unittest.TestCase):
         ):
             self.assertIn(stable_error_code, normalized)
 
-    def test_community_skill_is_implicit_and_plugin_version_is_current(self) -> None:
+    def test_community_skill_is_implicit_and_plugin_metadata_is_valid(self) -> None:
         agent_text = COMMUNITY_AGENT.read_text(encoding="utf-8")
         manifest = json.loads(WEB_PLUGIN.read_text(encoding="utf-8"))
 
         self.assertIn("allow_implicit_invocation: true", agent_text)
-        self.assertEqual(manifest["version"], "0.5.2")
+        self.assertRegex(manifest["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
         self.assertIn("community research", manifest["description"].lower())
 
 

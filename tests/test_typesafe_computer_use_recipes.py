@@ -8,11 +8,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL = (ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use/SKILL.md").read_text()
+REFERENCES = ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use/references"
+OBSERVATION = (REFERENCES / "observation.md").read_text()
+VERIFICATION = (REFERENCES / "verification-examples.md").read_text()
 HELPERS = (ROOT / "plugins/typesafe-tools/skills/typesafe-computer-use/scripts/helpers.js").read_text()
-ACTION = re.search(r"```javascript\n(var cuBefore = await target\.getAXState.*?\n)```", SKILL, re.DOTALL).group(1)
-OBSERVE = re.search(r"```javascript\n(var cuAx = await target\.getAXState.*?\n)```", SKILL, re.DOTALL).group(1)
+ACTION = re.search(r"```javascript\n(var cuBefore = await target\.getAXState.*?\n)```", VERIFICATION, re.DOTALL).group(1)
+OBSERVE = re.search(r"```javascript\n(var cuAx = await target\.getAXState.*?\n)```", OBSERVATION, re.DOTALL).group(1)
 
-NATIVE_RESULT = re.search(r"// cu-native-result-begin\n(.*?)\n// cu-native-result-end", SKILL, re.DOTALL).group(1)
+NATIVE_RESULT = re.search(r"// cu-native-result-begin\n(.*?)\n// cu-native-result-end", VERIFICATION, re.DOTALL).group(1)
 
 # This is the index/role/label layout captured from the disposable browser fixture.
 AX = """0 AXWebArea Computer Use Browser Fixture

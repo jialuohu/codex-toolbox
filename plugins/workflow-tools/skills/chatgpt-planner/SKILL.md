@@ -9,6 +9,9 @@ Codex gathers evidence, consults GPT-6 Pro, and verifies its advice against sour
 Codex owns the final plan, implementation, tests, and decisions. Use the ChatGPT
 subscription through supported browser and native Codex tools.
 
+Before any browser action, read [browser ownership and cleanup](references/browser-lifecycle.md).
+This is required for planning, setup probes, and live status checks.
+
 ## Choose the action
 
 - **plan:** Automatically consult once per planning objective after grounding
@@ -56,6 +59,8 @@ Plan mode. The UI toggle alone starts no work; consult on the next planning turn
    guarded [recovery procedure](references/transport.md#recovery).
 5. Validate the complete response through the helper, then verify substantive
    advice against source evidence. Remain in the current collaboration mode.
+6. Finalize temporary tabs using the required browser lifecycle reference.
+   Keep the saved conversation and task identity; hand off unresolved requests.
 
 Clarifications reuse the same objective key and requirements. Material changes
 allow a new request in the same conversation after the previous request resolves.
