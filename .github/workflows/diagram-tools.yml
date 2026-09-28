@@ -147,6 +147,9 @@ jobs:
           chrome_path="$(node -e 'process.stdout.write(require(process.argv[1]).chromium.executablePath())' "$browser_runtime/node_modules/playwright-core")"
           test -x "$chrome_path"
           printf 'ARCHIFY_CHROME=%s\n' "$chrome_path" >> "$GITHUB_ENV"
+          # Ubuntu's AppArmor user-namespace restrictions block this downloaded
+          # Chromium sandbox. This opt-out applies only to the Brokkr job.
+          printf 'ARCHIFY_CHROME_NO_SANDBOX=1\n' >> "$GITHUB_ENV"
       - name: Gate Archify artifacts with upstream visual-check
         shell: bash
         run: |
