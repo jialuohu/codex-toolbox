@@ -77,10 +77,65 @@ active, or when broker health cannot be established.
 Private task receipts live under `${CODEX_HOME:-$HOME/.codex}/state/codex-task-tools`
 with restricted permissions; they are not part of the repository.
 
-The first version is certified against Codex CLI/App Server `0.156.1` on macOS.
-An unrecognized runtime can be inspected, but task creation stops until its API
-compatibility is verified. A missing background service is a setup failure,
+Version `0.1.1` accepts exactly Codex CLI/App Server `0.156.1` and `0.159.0` on
+macOS. Unknown versions are refused before the broker binds its task journal.
+The [protocol qualification fixture](../plugins/codex-task-tools/server/tests/fixtures/app-server-compatibility.json)
+records 32 generated schema comparisons. The changes are an optional initialize
+capability and two additional error values; the broker's request shapes are
+unchanged. Generated request-schema checks and broker fault tests cover both
+accepted versions. Live `0.159.0` initialization, project discovery, and task
+readback were checked; this upgrade does not claim a live task-creation or
+approval-response test. A missing background service remains a setup failure,
 not a reason to create a task through an unmanaged subprocess.
+Normal broker readback uses App Server's full-history read; on `0.159.0`, a loaded
+thread with paginated history may be persisted by App Server during that read.
+
+For a `0.1.0` broker disconnected by the Desktop update, setup runs the verified
+candidate's upgrade helper in an isolated environment before replacing the stable
+runtime. The helper checks the predecessor's source hashes, distribution,
+LaunchAgent, process, socket, and private journal. A separate private `upgrade.lock`
+serializes helper attempts before any quiesce operation. It fences new broker work using
+the existing quiesce operation, then requires every journal row to be settled,
+every tracked thread to be unloaded with complete terminal turn history, and the
+pending-request table to be empty. Unknown, active, foreign, or incomplete state
+blocks the upgrade. Unrelated chats are not stopped or resumed.
+Readback checks unloaded status before and after full history. A concurrent external
+thread load can still make App Server persist history; these checks are not an atomic
+snapshot of the thread store.
+
+After stopping only the proven-idle broker, the helper takes its existing ownership
+lock and repeats the journal and live-readback checks. While retaining that lock,
+it verifies that the installation project matches the executing isolated candidate,
+replaces the stable environment through `uv sync`, and checks the installed package
+version and source bytes. Setup does not repeat this replacement after the helper
+returns. Setup validates the helper's JSON completion receipt before startup and
+emits the verified receipt to stderr. Service commands retain their own JSON output.
+An already stopped predecessor must pass the same proof. The ordinary
+service stop still refuses unknown counts. The upgrade never deletes a lock or
+edits task-journal rows.
+Both isolated startup and locked installation refresh only the `codex-task-tools`
+package, preventing reuse of an older wheel with the same version; dependencies
+remain frozen to the verified lockfile.
+
+Failure before shutdown releases only the barrier established by that invocation.
+A failed final proof restores the unchanged predecessor only after its shutdown
+and ownership checks permit restoration. Interruption that prevents cleanup can
+leave the broker quiesced; a later attempt refuses a pre-existing barrier. Review
+the interrupted attempt before clearing it through the existing supported
+`service_quiesce` operation and rerunning setup. Failure after stable-runtime
+replacement begins leaves the broker unloaded until setup can finish safely.
+The helper does not restart an old or partially replaced environment after an
+installation failure. The replacement child receives only the selected stable
+path as `UV_PROJECT_ENVIRONMENT`; an inherited `VIRTUAL_ENV` is removed.
+A private `upgrade-install.json` marker is written before replacement and removed
+only by the same invocation after verifying installed source, version, and stopped
+state. Every `--install` attempt refuses a pre-existing marker, including when a
+failed replacement already reports `0.1.1` or has missing package metadata. Inspect
+the failed receipt, installed package, and marker before arranging a repair under
+the broker ownership lock; keep the broker unloaded until that repair is verified.
+Setup never clears or skips an interrupted-install marker automatically. `--status`
+remains available for inspection; `--check` reports an explicit upgrade requirement
+for an existing `0.1.0` runtime.
 
 ## Create and follow a task
 

@@ -132,3 +132,18 @@ def test_failed_bootout_releases_stop_barrier(
     with pytest.raises(service.ServiceError, match="Could not stop"):
         service._stop()  # noqa: SLF001 - lifecycle contract
     assert quiesce_calls == [True, False]
+
+
+@pytest.mark.parametrize(("active", "pending"), [(None, None), (None, 0), (0, None), (1, 0), (0, 1)])
+def test_ordinary_stop_never_treats_unknown_or_active_counts_as_idle(
+    monkeypatch: pytest.MonkeyPatch, active: int | None, pending: int | None,
+) -> None:
+    monkeypatch.setattr(service, "_status", lambda: status(loaded=True, running=True, active=active, pending=pending))
+
+    def forbidden(*_args: object) -> None:
+        pytest.fail("Ordinary stop must refuse before any mutation")
+
+    monkeypatch.setattr(service, "_set_quiesced", forbidden)
+    monkeypatch.setattr(service, "_launchctl", forbidden)
+    with pytest.raises(service.ServiceError, match="active task or pending approval"):
+        service._stop()

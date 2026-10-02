@@ -1,0 +1,376 @@
+{
+  "annotation_delta": "Turn.error description now includes interrupted turns as well as failed turns; the validation type is unchanged.",
+  "qualification": "Public schema comparison plus synthetic contract/fault tests; live mutating operations are not claimed as verified.",
+  "readback_behavior": "On 0.159.0, normal full-history readback may cause App Server to persist loaded paginated history. This accepted App Server behavior is distinct from direct database edits. The upgrade helper refuses loaded tracked threads but cannot obtain an atomic thread-store snapshot.",
+  "schemas": {
+    "CommandExecutionRequestApprovalParams": {
+      "schema_sha256": {
+        "0.156.1": "739c3b53bffc7ef0cda2ffa1c26238a2e2fb6120d236bd97434084a03a3b6a0f",
+        "0.159.0": "739c3b53bffc7ef0cda2ffa1c26238a2e2fb6120d236bd97434084a03a3b6a0f"
+      },
+      "structural_deltas": []
+    },
+    "CommandExecutionRequestApprovalResponse": {
+      "schema_sha256": {
+        "0.156.1": "d1546d530d210f005b87c0d57e4840da712257fd11747c356c830833b19c0010",
+        "0.159.0": "d1546d530d210f005b87c0d57e4840da712257fd11747c356c830833b19c0010"
+      },
+      "structural_deltas": []
+    },
+    "FileChangeRequestApprovalParams": {
+      "schema_sha256": {
+        "0.156.1": "1683d378ee81b2d4d2aeab348d4aa8236a8070c6ee44a1548a8d206ee947411d",
+        "0.159.0": "1683d378ee81b2d4d2aeab348d4aa8236a8070c6ee44a1548a8d206ee947411d"
+      },
+      "structural_deltas": []
+    },
+    "FileChangeRequestApprovalResponse": {
+      "schema_sha256": {
+        "0.156.1": "f522e127a6160afd094932f6b0a58b736a171ebfb767d58b3d70c0bd7ff7ab97",
+        "0.159.0": "f522e127a6160afd094932f6b0a58b736a171ebfb767d58b3d70c0bd7ff7ab97"
+      },
+      "structural_deltas": []
+    },
+    "InitializeParams": {
+      "schema_sha256": {
+        "0.156.1": "df2c8126d3d1d95c8b7914c8f157eefd9b3c56d64e04ef12f6c941e1915d4331",
+        "0.159.0": "e38c4d61719f7c6b0aa3976de697b52748befcb6335dad5386da140c05f9aba2"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/InitializeCapabilities/properties/explicitGatewayOauth",
+          null,
+          {
+            "type": "boolean"
+          }
+        ]
+      ]
+    },
+    "InitializeResponse": {
+      "schema_sha256": {
+        "0.156.1": "747401b5d7d395b71e4023d3d13aaaaefb0f6ae044d611675f59838672720c3d",
+        "0.159.0": "747401b5d7d395b71e4023d3d13aaaaefb0f6ae044d611675f59838672720c3d"
+      },
+      "structural_deltas": []
+    },
+    "ProjectListParams": {
+      "schema_sha256": {
+        "0.156.1": "da7169ba0a72d29ae4a086c99fa6ae5e9feb97add11b68a2c2d6a6db3f0b785a",
+        "0.159.0": "da7169ba0a72d29ae4a086c99fa6ae5e9feb97add11b68a2c2d6a6db3f0b785a"
+      },
+      "structural_deltas": []
+    },
+    "ProjectListResponse": {
+      "schema_sha256": {
+        "0.156.1": "c6acc04d51edf20c46cc1e5a5893e0651d12b1e5e0a4558543f0e92daa73a5c3",
+        "0.159.0": "c6acc04d51edf20c46cc1e5a5893e0651d12b1e5e0a4558543f0e92daa73a5c3"
+      },
+      "structural_deltas": []
+    },
+    "ProjectReadParams": {
+      "schema_sha256": {
+        "0.156.1": "539d5d47e18b6bf7b647001910cf7df676d9d350dbc0e484c7a679c311be3ca3",
+        "0.159.0": "539d5d47e18b6bf7b647001910cf7df676d9d350dbc0e484c7a679c311be3ca3"
+      },
+      "structural_deltas": []
+    },
+    "ProjectReadResponse": {
+      "schema_sha256": {
+        "0.156.1": "05d75f09d57c2f13973753868e61d78ba46308a8300e51b5622fea337f8a4187",
+        "0.159.0": "05d75f09d57c2f13973753868e61d78ba46308a8300e51b5622fea337f8a4187"
+      },
+      "structural_deltas": []
+    },
+    "ServerRequestResolvedNotification": {
+      "schema_sha256": {
+        "0.156.1": "9bab6c9eda658824742162c9eaa3edbfa3b70fcc5348f20f5a190d7a794b3d53",
+        "0.159.0": "9bab6c9eda658824742162c9eaa3edbfa3b70fcc5348f20f5a190d7a794b3d53"
+      },
+      "structural_deltas": []
+    },
+    "ThreadListParams": {
+      "schema_sha256": {
+        "0.156.1": "6a465d79183f856336ec42a9a183433fbde964ca9a94378b5d11501418cd42b6",
+        "0.159.0": "6a465d79183f856336ec42a9a183433fbde964ca9a94378b5d11501418cd42b6"
+      },
+      "structural_deltas": []
+    },
+    "ThreadListResponse": {
+      "schema_sha256": {
+        "0.156.1": "513ddf3babd67f180d604b04dd10ef7fe37d6215a57b465b6b084da07dc8610c",
+        "0.159.0": "5f63ef2ca27f93bd9cdad7845dfeac443b75bce6758b5881583c4be8b6035d55"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/CodexErrorInfo/oneOf/0/enum",
+          {
+            "removed": []
+          },
+          {
+            "added": [
+              "flexUnavailable",
+              "tooManyDenials"
+            ]
+          }
+        ]
+      ]
+    },
+    "ThreadLoadedListParams": {
+      "schema_sha256": {
+        "0.156.1": "c242673609b292759e07e2265f63bad1df4132ce07077cd4b7806ee3e375197c",
+        "0.159.0": "c242673609b292759e07e2265f63bad1df4132ce07077cd4b7806ee3e375197c"
+      },
+      "structural_deltas": []
+    },
+    "ThreadLoadedListResponse": {
+      "schema_sha256": {
+        "0.156.1": "067f647080902330ccf60bac9a0b1bf0b5ab17abff34b2c3e91d097d067499f9",
+        "0.159.0": "067f647080902330ccf60bac9a0b1bf0b5ab17abff34b2c3e91d097d067499f9"
+      },
+      "structural_deltas": []
+    },
+    "ThreadMetadataUpdateParams": {
+      "schema_sha256": {
+        "0.156.1": "bd9018267a588f05be6bae38318842c5037bef745586e17ae22b2012894b91d1",
+        "0.159.0": "bd9018267a588f05be6bae38318842c5037bef745586e17ae22b2012894b91d1"
+      },
+      "structural_deltas": []
+    },
+    "ThreadMetadataUpdateResponse": {
+      "schema_sha256": {
+        "0.156.1": "953587a94f929df377440bf94aa4f533cad8797b862130e550af46f99ad52666",
+        "0.159.0": "5cadc8dce16e0877e8650530a408bc4243c3be8347ea678839e59a48d57b6530"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/CodexErrorInfo/oneOf/0/enum",
+          {
+            "removed": []
+          },
+          {
+            "added": [
+              "flexUnavailable",
+              "tooManyDenials"
+            ]
+          }
+        ]
+      ]
+    },
+    "ThreadReadParams": {
+      "schema_sha256": {
+        "0.156.1": "034ae7f41fe195edb1010ab8927ac4215caacabbf24f15da96170f604aacb901",
+        "0.159.0": "034ae7f41fe195edb1010ab8927ac4215caacabbf24f15da96170f604aacb901"
+      },
+      "structural_deltas": []
+    },
+    "ThreadReadResponse": {
+      "schema_sha256": {
+        "0.156.1": "df4eee3c8708d01fce5ea49cf466acb940a5cfdaf716af370389918ab450ca7c",
+        "0.159.0": "b0c4edd135609bfbb12da353e59cc6481f0691b36f76bcb4d64600b3e40134cc"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/CodexErrorInfo/oneOf/0/enum",
+          {
+            "removed": []
+          },
+          {
+            "added": [
+              "flexUnavailable",
+              "tooManyDenials"
+            ]
+          }
+        ]
+      ]
+    },
+    "ThreadResumeParams": {
+      "schema_sha256": {
+        "0.156.1": "3065dfae69296ef81ed893330f19703aa5212726a75ab025e197bb8cf6d67663",
+        "0.159.0": "3065dfae69296ef81ed893330f19703aa5212726a75ab025e197bb8cf6d67663"
+      },
+      "structural_deltas": []
+    },
+    "ThreadResumeResponse": {
+      "schema_sha256": {
+        "0.156.1": "1133ea3940f84502e3ec2872618edd03cc9bc57fd3f1efb4e3a3542be2e8b1d4",
+        "0.159.0": "e8e8fb99f592e67514a175ff3e370a9b1079f392d77da2a6cd5294727968ee4c"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/CodexErrorInfo/oneOf/0/enum",
+          {
+            "removed": []
+          },
+          {
+            "added": [
+              "flexUnavailable",
+              "tooManyDenials"
+            ]
+          }
+        ]
+      ]
+    },
+    "ThreadSetNameParams": {
+      "schema_sha256": {
+        "0.156.1": "82a3c1be49106366a581fb8265045e27884742aa66a19a580e54ceeb83783242",
+        "0.159.0": "82a3c1be49106366a581fb8265045e27884742aa66a19a580e54ceeb83783242"
+      },
+      "structural_deltas": []
+    },
+    "ThreadSetNameResponse": {
+      "schema_sha256": {
+        "0.156.1": "95fce33f29f96967f4b29e5404e2718b0d1f8491e942f2398b447ef795a3c62b",
+        "0.159.0": "95fce33f29f96967f4b29e5404e2718b0d1f8491e942f2398b447ef795a3c62b"
+      },
+      "structural_deltas": []
+    },
+    "ThreadStartParams": {
+      "schema_sha256": {
+        "0.156.1": "44a122637f6208314268b9d58c395b8fe7e9277f05af11f9d199b327db7d71e5",
+        "0.159.0": "44a122637f6208314268b9d58c395b8fe7e9277f05af11f9d199b327db7d71e5"
+      },
+      "structural_deltas": []
+    },
+    "ThreadStartResponse": {
+      "schema_sha256": {
+        "0.156.1": "2c78fb7266c0f02f232cf1ae3d2451ea509fa9ddd58b83c7fbc02106e9938e3c",
+        "0.159.0": "0afc9860d4a1d41f2af9ac36603af033264c33e1660abc2f9790be9900ce326a"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/CodexErrorInfo/oneOf/0/enum",
+          {
+            "removed": []
+          },
+          {
+            "added": [
+              "flexUnavailable",
+              "tooManyDenials"
+            ]
+          }
+        ]
+      ]
+    },
+    "ThreadStatusChangedNotification": {
+      "schema_sha256": {
+        "0.156.1": "538acb0fee602ec811ae7c7be1d92a6ba47ce1e235ce5c2c9e0d5872f93d8df3",
+        "0.159.0": "538acb0fee602ec811ae7c7be1d92a6ba47ce1e235ce5c2c9e0d5872f93d8df3"
+      },
+      "structural_deltas": []
+    },
+    "ToolRequestUserInputParams": {
+      "schema_sha256": {
+        "0.156.1": "b99ace3211269f77083d8d86664393deb7992c3b53ef596582915b1256668682",
+        "0.159.0": "b99ace3211269f77083d8d86664393deb7992c3b53ef596582915b1256668682"
+      },
+      "structural_deltas": []
+    },
+    "ToolRequestUserInputResponse": {
+      "schema_sha256": {
+        "0.156.1": "18735c465696eda1d8da032be0ff06097656ef1d1bf2cedc86b8707164aa105c",
+        "0.159.0": "18735c465696eda1d8da032be0ff06097656ef1d1bf2cedc86b8707164aa105c"
+      },
+      "structural_deltas": []
+    },
+    "TurnCompletedNotification": {
+      "schema_sha256": {
+        "0.156.1": "b48f9cf49a39becf928f450b6b13c1bfe75e1ebb28e88a19ba2f99b5c0e56e1a",
+        "0.159.0": "78e6f8b0eff801649f93623eed4ec5551caa7d05dda740d36515d0d34cd82c70"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/CodexErrorInfo/oneOf/0/enum",
+          {
+            "removed": []
+          },
+          {
+            "added": [
+              "flexUnavailable",
+              "tooManyDenials"
+            ]
+          }
+        ]
+      ]
+    },
+    "TurnStartParams": {
+      "schema_sha256": {
+        "0.156.1": "cfd7b3291e0e3506612117887884c7debc1e994c0aeee1fc26cc1554c928df0e",
+        "0.159.0": "cfd7b3291e0e3506612117887884c7debc1e994c0aeee1fc26cc1554c928df0e"
+      },
+      "structural_deltas": []
+    },
+    "TurnStartResponse": {
+      "schema_sha256": {
+        "0.156.1": "4128d607092eb3efbfd7b6843211792d5f099bdb1f93531e50e23e6b6fa0d43f",
+        "0.159.0": "34265704e3467009384cd020add555cf537a5423a844fc73e68c2294d275177a"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/CodexErrorInfo/oneOf/0/enum",
+          {
+            "removed": []
+          },
+          {
+            "added": [
+              "flexUnavailable",
+              "tooManyDenials"
+            ]
+          }
+        ]
+      ]
+    },
+    "TurnStartedNotification": {
+      "schema_sha256": {
+        "0.156.1": "d7d6bcbdb02ad064414040c7a1e436d400187f1c09f9571a71fc4f01399722a4",
+        "0.159.0": "47843afca69f2327e89c8f9949385819db4f977a0cf70bf83363ded8899e3093"
+      },
+      "structural_deltas": [
+        [
+          "/definitions/CodexErrorInfo/oneOf/0/enum",
+          {
+            "removed": []
+          },
+          {
+            "added": [
+              "flexUnavailable",
+              "tooManyDenials"
+            ]
+          }
+        ]
+      ]
+    }
+  },
+  "scope": "Broker-used requests/responses/notifications; no stored user task data.",
+  "source": "Locally retained official Codex CLIs; isolated HOME and CODEX_HOME, no credentials.",
+  "unique_structural_deltas": [
+    [
+      "/definitions/CodexErrorInfo/oneOf/0/enum",
+      {
+        "removed": []
+      },
+      {
+        "added": [
+          "flexUnavailable",
+          "tooManyDenials"
+        ]
+      }
+    ],
+    [
+      "/definitions/InitializeCapabilities/properties/explicitGatewayOauth",
+      null,
+      {
+        "type": "boolean"
+      }
+    ]
+  ],
+  "versions": {
+    "0.156.1": {
+      "binary_sha256": "0196e89fe5a7598f816ee54232c3d7c26d75e502ab5cfe2c9240e81d90f7255a",
+      "reported_version": "codex-cli 0.156.1"
+    },
+    "0.159.0": {
+      "binary_sha256": "e89718aa1969bfc4a471277bdc4679a3a3529293de0a309909822dfd67ddb77a",
+      "reported_version": "codex-cli 0.159.0"
+    }
+  }
+}

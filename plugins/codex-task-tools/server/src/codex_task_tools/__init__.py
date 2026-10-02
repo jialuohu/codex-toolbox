@@ -1,3 +1,3 @@
-"""Local Codex task creation; no Codex data-store writes."""
+"""Local task creation through the managed Codex App Server."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

@@ -13,9 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from protocol_contract import validate_client_request
 
 from codex_task_tools.app_server import AppServerError, OutcomeUnknown, RPCRejected
 from codex_task_tools.broker import TaskBroker, _claim_broker_lock
+from codex_task_tools.compatibility import SUPPORTED_APP_VERSIONS
 from codex_task_tools.ledger import LedgerError
 
 ROOT = str(Path(__file__).resolve().parents[4])
@@ -25,18 +27,20 @@ PROMPT = "Reply exactly: TOOLBOX_TASK_OK. Do not use tools or change files."
 class FakeAppServer:
     """An in-memory App Server with injectable post-commit transport loss."""
 
+    default_version = "0.156.1"
+
     def __init__(
         self,
         *,
         projects: list[dict[str, Any]] | None = None,
         backend_identity: str = "a" * 64,
-        version: str = "0.156.1",
+        version: str | None = None,
     ) -> None:
         self.projects = projects or [
             {"id": "project-1", "name": "codex-toolbox", "roots": [{"path": ROOT}]}
         ]
         self.backend_identity = backend_identity
-        self.version = version
+        self.version = self.default_version if version is None else version
         self.generation = "generation-1"
         self.threads: dict[str, dict[str, Any]] = {}
         self.turns: dict[str, list[dict[str, Any]]] = {}
@@ -68,6 +72,7 @@ class FakeAppServer:
         self.responses.append((request_id, copy.deepcopy(result)))
 
     async def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        validate_client_request(method, params)
         self.calls.append((method, copy.deepcopy(params)))
         if self.reject_before_commit[method]:
             self.reject_before_commit[method] -= 1
@@ -136,6 +141,12 @@ class FakeAppServer:
 
     def count(self, method: str) -> int:
         return sum(candidate == method for candidate, _ in self.calls)
+
+
+@pytest.fixture(autouse=True, params=sorted(SUPPORTED_APP_VERSIONS))
+def supported_runtime(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run retry, loss, reconnect, approval, and journal cases on both qualified versions."""
+    monkeypatch.setattr(FakeAppServer, "default_version", request.param)
 
 
 def project_ref(found: dict[str, Any]) -> str:
@@ -211,6 +222,10 @@ def test_unsupported_runtime_cannot_create(tmp_path: Path) -> None:
         with pytest.raises(Exception, match="(?i)(unsupported|certified)"):
             await broker.projects_find()
         assert app.calls == []
+        assert app.connected is False
+        assert broker.app is None
+        assert broker.ledger.tracked(app.backend_identity) == []
+        assert broker.service_status()["activeTaskCount"] is None
 
     asyncio.run(exercise())
 
@@ -853,6 +868,30 @@ def test_reconnect_readback_clears_stale_active_status(tmp_path: Path) -> None:
         assert broker.service_status()["activeTaskCount"] == 0
         assert app.count("thread/resume") == 0
         assert app.count("turn/start") == 1
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("terminal_status", ["completed", "failed", "interrupted"])
+def test_terminal_startup_reads_history_without_resuming_or_mutating_task(
+    tmp_path: Path, terminal_status: str,
+) -> None:
+    async def exercise() -> None:
+        app = FakeAppServer()
+        broker = TaskBroker(tmp_path, lambda: app)
+        ref = project_ref(await broker.projects_find())
+        await create(broker, ref)
+        app.threads["task-1"]["turns"][0]["status"] = terminal_status
+        await broker.close()
+        app.calls.clear()
+        restarted = TaskBroker(tmp_path, lambda: app)
+        try:
+            connected = await restarted.ensure_connected()
+            await restarted._resume_tracked(connected)  # noqa: SLF001 - startup reconciliation
+            assert app.calls == [("thread/read", {"threadId": "task-1", "includeTurns": True})]
+            assert restarted.service_status()["activeTaskCount"] == 0
+        finally:
+            await restarted.close()
 
     asyncio.run(exercise())
 

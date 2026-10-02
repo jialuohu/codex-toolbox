@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODEX_TASK_HOME="${CODEX_HOME:-$HOME/.codex}"
 MARKETPLACE_NAME="${CODEX_TASK_MARKETPLACE_NAME:-jialuo-codex-toolbox}"
+PACKAGE_VERSION="0.1.1"
 RUNTIME_DIR="$CODEX_TASK_HOME/runtime/codex-task-tools"
 RUNTIME_VENV="$RUNTIME_DIR/.venv"
 
@@ -23,7 +24,7 @@ case "${1:-}" in
   *) usage; exit 2 ;;
 esac
 
-[ "$(uname -s)" = "Darwin" ] || fail "Codex Task Tools v0.1.0 requires macOS"
+[ "$(uname -s)" = "Darwin" ] || fail "Codex Task Tools requires macOS"
 if [ -n "${CODEX_TASK_MARKETPLACE_NAME:-}" ] && \
    [ -z "${CODEX_TASK_DEV_MARKETPLACE_ROOT:-}" ]; then
   fail "CODEX_TASK_MARKETPLACE_NAME requires CODEX_TASK_DEV_MARKETPLACE_ROOT"
@@ -42,6 +43,7 @@ SERVER_DIR="$(
   CODEX_TASK_HOME="$CODEX_TASK_HOME" \
   CODEX_TASK_SOURCE_ROOT="$ROOT/plugins/codex-task-tools" \
   CODEX_TASK_MARKETPLACE="$MARKETPLACE_NAME" \
+  CODEX_TASK_PACKAGE_VERSION="$PACKAGE_VERSION" \
   CODEX_TASK_MARKETPLACES_JSON="$MARKETPLACES_JSON" \
   CODEX_TASK_DEV_MARKETPLACE_ROOT="${CODEX_TASK_DEV_MARKETPLACE_ROOT:-}" \
   python3 - <<'PY'
@@ -70,7 +72,7 @@ try:
         / "cache"
         / os.environ["CODEX_TASK_MARKETPLACE"]
         / "codex-task-tools"
-        / "0.1.0"
+        / os.environ["CODEX_TASK_PACKAGE_VERSION"]
     ).resolve()
     marketplaces = json.loads(os.environ["CODEX_TASK_MARKETPLACES_JSON"])
     matching = [
@@ -115,7 +117,8 @@ try:
         "run", "--frozen", "--no-dev", "--no-editable", "--no-env-file",
         "--project", "server", "codex-task-tools-mcp",
     ]
-    if (manifest.get("name"), manifest.get("version")) != ("codex-task-tools", "0.1.0"):
+    expected_version = os.environ["CODEX_TASK_PACKAGE_VERSION"]
+    if (manifest.get("name"), manifest.get("version")) != ("codex-task-tools", expected_version):
         fail("Installed Codex Task Tools manifest is unexpected")
     if (manifest.get("mcpServers"), manifest.get("skills")) != ("./.mcp.json", "./skills/"):
         fail("Installed Codex Task Tools layout is unexpected")
@@ -140,8 +143,8 @@ try:
         fail("Installed Codex Task Tools dependency lock is missing")
     project_text = (plugin_root / "server" / "pyproject.toml").read_text()
     lock_text = (plugin_root / "server" / "uv.lock").read_text()
-    if ('name = "codex-task-tools"\nversion = "0.1.0"' not in project_text
-        or 'name = "codex-task-tools"\nversion = "0.1.0"' not in lock_text):
+    version_lines = f'name = "codex-task-tools"\nversion = "{expected_version}"'
+    if version_lines not in project_text or version_lines not in lock_text:
         fail("Installed Codex Task Tools package version is unexpected")
     print((plugin_root / "server").resolve(strict=True))
 except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
@@ -193,10 +196,26 @@ for path in (home, home / "runtime", runtime, venv):
 PY
 }
 
+refuse_interrupted_install() {
+  CODEX_TASK_HOME="$CODEX_TASK_HOME" python3 - <<'PY' || \
+    fail "Interrupted Codex Task Tools installation requires reviewed recovery; broker must remain unloaded"
+import os
+from pathlib import Path
+
+marker = Path(os.environ["CODEX_TASK_HOME"]) / "state/codex-task-tools/upgrade-install.json"
+if os.path.lexists(marker):
+    raise SystemExit(1)
+PY
+}
+
 umask 077
+if [ "$ACTION" = --install ]; then
+  refuse_interrupted_install
+fi
 validate_runtime_directory
 
 if [ "$ACTION" = --install ]; then
+  RUNTIME_SYNCED=no
   UV_BIN="$(command -v uv || true)"
   if [ -z "$UV_BIN" ] && [ -n "${CODEX_LOCAL_BIN_DIR:-}" ] && \
      [ -x "$CODEX_LOCAL_BIN_DIR/uv" ]; then
@@ -210,10 +229,19 @@ if [ "$ACTION" = --install ]; then
     fail "Installed broker service exists without a verifiable status command"
   fi
   if [ -x "$SERVICE_BIN" ]; then
+    [ -x "$RUNTIME_VENV/bin/python" ] || fail "Existing broker Python is unavailable"
+    RUNTIME_PACKAGE_VERSION="$("$RUNTIME_VENV/bin/python" -I -c \
+      'import importlib.metadata; print(importlib.metadata.version("codex-task-tools"))')" || \
+      fail "Existing broker package version is unavailable"
+    case "$RUNTIME_PACKAGE_VERSION" in
+      0.1.0|"$PACKAGE_VERSION") ;;
+      *) fail "Existing broker package is not a supported upgrade source" ;;
+    esac
     STATUS_JSON="$("$SERVICE_BIN" status)" || \
       fail "Existing broker status is unavailable; refusing to replace its runtime"
     IS_LOADED="$(
-      CODEX_TASK_SERVICE_STATUS="$STATUS_JSON" python3 - <<'PY'
+      CODEX_TASK_SERVICE_STATUS="$STATUS_JSON" \
+      CODEX_TASK_RUNTIME_PACKAGE_VERSION="$RUNTIME_PACKAGE_VERSION" python3 - <<'PY'
 import json
 import os
 import sys
@@ -222,33 +250,126 @@ try:
     status = json.loads(os.environ["CODEX_TASK_SERVICE_STATUS"])
     if status.get("ok") is not True or type(status.get("loaded")) is not bool:
         raise ValueError
+    broker = status.get("broker")
+    if not isinstance(broker, dict):
+        raise ValueError
     if status["loaded"]:
-        broker = status.get("broker")
-        if (not isinstance(broker, dict)
-            or broker.get("running") is not True
+        legacy_disconnected = (
+            os.environ["CODEX_TASK_RUNTIME_PACKAGE_VERSION"] == "0.1.0"
+            and broker.get("running") is True
+            and broker.get("backendConnected") is False
+            and broker.get("appServerVersion") is None
+            and broker.get("backendIdentity") is None
+            and broker.get("activeTaskCount") is None
+            and broker.get("pendingApprovalCount") is None
+            and broker.get("eventProcessingError") is False
+            and type(broker.get("quiesced")) is bool
+        )
+        if legacy_disconnected:
+            print("upgrade")
+            raise SystemExit(0)
+        if (broker.get("running") is not True
+            or broker.get("backendConnected") is not True
+            or broker.get("eventProcessingError") is not False
             or type(broker.get("activeTaskCount")) is not int
             or type(broker.get("pendingApprovalCount")) is not int):
             raise ValueError
         if broker["activeTaskCount"] or broker["pendingApprovalCount"]:
             print("Broker has an active task or pending approval", file=sys.stderr)
             raise SystemExit(1)
-    print("yes" if status["loaded"] else "no")
+        print("yes")
+    else:
+        if broker.get("running") is not False:
+            raise ValueError
+        # A previous guarded upgrade may have stopped the old broker before
+        # setup was interrupted. Re-prove its journal rather than skipping it.
+        print("upgrade" if os.environ["CODEX_TASK_RUNTIME_PACKAGE_VERSION"] == "0.1.0" else "no")
 except (KeyError, TypeError, ValueError, json.JSONDecodeError):
     print("Existing broker health is unknown", file=sys.stderr)
     raise SystemExit(1)
 PY
     )" || fail "Refusing to replace an active or unverified broker runtime"
-    if [ "$IS_LOADED" = yes ]; then
-      "$SERVICE_BIN" stop || fail "Could not stop the idle toolbox broker"
+    refuse_interrupted_install
+    case "$IS_LOADED" in
+      yes) "$SERVICE_BIN" stop || fail "Could not stop the idle toolbox broker" ;;
+      upgrade)
+        # Build the verified candidate separately. The running stable venv is
+        # unchanged until the guarded predecessor shutdown has succeeded. The
+        # helper retains the broker lock through its own stable-environment sync.
+        HELPER_JSON="$(env -u UV_PROJECT_ENVIRONMENT -u VIRTUAL_ENV "$UV_BIN" run \
+          --isolated --frozen --no-dev --no-editable --no-env-file \
+          --refresh-package codex-task-tools \
+          --project "$SERVER_DIR" python -I -m codex_task_tools.upgrade \
+          --from-version 0.1.0 --to-version "$PACKAGE_VERSION" \
+          --state-dir "$CODEX_TASK_HOME/state/codex-task-tools" \
+          --install-project "$SERVER_DIR" --uv-executable "$UV_BIN")" || \
+          fail "Disconnected broker upgrade could not complete a guarded runtime replacement"
+        VERIFIED_HELPER_RECEIPT="$(CODEX_TASK_UPGRADE_RECEIPT="$HELPER_JSON" python3 - <<'PY'
+import json
+import os
+
+
+def unique_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate receipt key")
+        result[key] = value
+    return result
+
+
+try:
+    receipt = json.loads(os.environ["CODEX_TASK_UPGRADE_RECEIPT"], object_pairs_hook=unique_pairs)
+    expected = {"ok", "fromVersion", "toVersion", "appServerVersion", "stopped",
+                "runtimeInstalled", "verifiedTerminalTaskCount"}
+    if (not isinstance(receipt, dict) or set(receipt) != expected
+        or receipt["ok"] is not True or receipt["runtimeInstalled"] is not True
+        or receipt["stopped"] is not True or receipt["fromVersion"] != "0.1.0"
+        or receipt["toVersion"] != "0.1.1"
+        or receipt["appServerVersion"] not in {"0.156.1", "0.159.0"}
+        or type(receipt["verifiedTerminalTaskCount"]) is not int
+        or receipt["verifiedTerminalTaskCount"] < 0):
+        raise ValueError("Upgrade receipt is unverified")
+    print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+except (TypeError, ValueError, KeyError):
+    raise SystemExit(1)
+PY
+        )" || fail "Guarded broker upgrade returned an invalid completion receipt; refusing startup"
+        printf '%s\n' "$VERIFIED_HELPER_RECEIPT" >&2
+        RUNTIME_SYNCED=yes
+        ;;
+      no) ;;
+      *) fail "Existing broker state is unsupported" ;;
+    esac
+    STOPPED_STATUS="$("$SERVICE_BIN" status)" || fail "Stopped broker status is unavailable"
+    CODEX_TASK_SERVICE_STATUS="$STOPPED_STATUS" python3 - <<'PY' || \
+      fail "Broker did not remain stopped before runtime replacement"
+import json
+import os
+import sys
+
+try:
+    status = json.loads(os.environ["CODEX_TASK_SERVICE_STATUS"])
+    if (status.get("ok") is not True or status.get("loaded") is not False
+        or not isinstance(status.get("broker"), dict)
+        or status["broker"].get("running") is not False):
+        raise ValueError
+except (TypeError, ValueError, json.JSONDecodeError):
+    raise SystemExit(1)
+PY
+  fi
+  refuse_interrupted_install
+  if [ "$RUNTIME_SYNCED" != yes ]; then
+    if [ ! -x "$RUNTIME_VENV/bin/python" ]; then
+      "$UV_BIN" venv --python 3.12 "$RUNTIME_VENV"
     fi
+    env -u UV_PROJECT_ENVIRONMENT VIRTUAL_ENV="$RUNTIME_VENV" \
+      "$UV_BIN" sync --active --locked --no-dev --no-editable --project "$SERVER_DIR"
   fi
-  if [ ! -x "$RUNTIME_VENV/bin/python" ]; then
-    "$UV_BIN" venv --python 3.12 "$RUNTIME_VENV"
-  fi
-  env -u UV_PROJECT_ENVIRONMENT VIRTUAL_ENV="$RUNTIME_VENV" \
-    "$UV_BIN" sync --active --locked --no-dev --no-editable --project "$SERVER_DIR"
+  refuse_interrupted_install
   [ -x "$SERVICE_BIN" ] || fail "Codex Task Tools service entry point is missing"
   "$SERVICE_BIN" install
+  refuse_interrupted_install
   "$SERVICE_BIN" start
 fi
 
@@ -258,12 +379,26 @@ if [ "$ACTION" = --status ]; then
   exit
 fi
 
+if [ "$ACTION" = --check ]; then
+  [ -x "$RUNTIME_VENV/bin/python" ] || fail "Existing broker Python is unavailable"
+  RUNTIME_PACKAGE_VERSION="$("$RUNTIME_VENV/bin/python" -I -c \
+    'import importlib.metadata; print(importlib.metadata.version("codex-task-tools"))')" || \
+    fail "Existing broker package version is unavailable"
+  case "$RUNTIME_PACKAGE_VERSION" in
+    0.1.0) fail "Codex Task Tools runtime 0.1.0 must be upgraded with --install before --check" ;;
+    "$PACKAGE_VERSION") ;;
+    *) fail "Existing broker package is not a supported runtime version" ;;
+  esac
+fi
+
 for attempt in 1 2 3; do
   if STATUS_JSON="$("$SERVICE_BIN" status)" && \
-     CODEX_TASK_SERVICE_STATUS="$STATUS_JSON" python3 - <<'PY'
+     CODEX_TASK_SERVICE_STATUS="$STATUS_JSON" "$RUNTIME_VENV/bin/python" -I - <<'PY'
 import json
 import os
 import sys
+
+from codex_task_tools.compatibility import SUPPORTED_APP_VERSIONS
 
 try:
     status = json.loads(os.environ["CODEX_TASK_SERVICE_STATUS"])
@@ -273,8 +408,12 @@ try:
         or status.get("loaded") is not True
         or not isinstance(broker, dict)
         or broker.get("running") is not True
+        or broker.get("backendConnected") is not True
+        or broker.get("appServerVersion") not in SUPPORTED_APP_VERSIONS
+        or broker.get("eventProcessingError") is not False
         or type(broker.get("activeTaskCount")) is not int
-        or type(broker.get("pendingApprovalCount")) is not int):
+        or type(broker.get("pendingApprovalCount")) is not int
+        or broker["activeTaskCount"] < 0 or broker["pendingApprovalCount"] < 0):
         raise ValueError
 except (KeyError, TypeError, ValueError, json.JSONDecodeError):
     raise SystemExit(1)

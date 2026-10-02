@@ -4498,6 +4498,22 @@ def main() -> None:
     )
     require(CODEX_TASK_SETUP.exists(), "codex-task-tools service setup must exist")
     task_setup_text = CODEX_TASK_SETUP.read_text()
+    require(
+        re.search(rf'(?m)^PACKAGE_VERSION="{task_version}"$', task_setup_text) is not None,
+        "Codex task installer version must match its plugin and Python package",
+    )
+    task_source = CODEX_TASK_SERVER / "src/codex_task_tools"
+    require(
+        'from . import __version__' in (task_source / "app_server.py").read_text()
+        and '"version": __version__' in (task_source / "app_server.py").read_text(),
+        "Codex task initialize metadata must use the package version",
+    )
+    require(
+        (task_source / "compatibility.py").exists()
+        and 'from .compatibility import' in (task_source / "app_server.py").read_text()
+        and 'from .compatibility import' in (task_source / "broker.py").read_text(),
+        "Codex task transport and broker must share the exact compatibility contract",
+    )
     for expected in (
         "codex mcp get codex_task_tools --json",
         "codex-task-tools-service",
@@ -4508,6 +4524,9 @@ def main() -> None:
         '"$SERVICE_BIN" start',
         "activeTaskCount",
         "pendingApprovalCount",
+        "--isolated --frozen --no-dev --no-editable --no-env-file",
+        "python -I -m codex_task_tools.upgrade",
+        '--install-project "$SERVER_DIR" --uv-executable "$UV_BIN"',
     ):
         require(
             expected in task_setup_text or expected.replace("codex mcp", '"$CODEX_BIN" mcp') in task_setup_text,

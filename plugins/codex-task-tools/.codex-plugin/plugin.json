@@ -1,6 +1,6 @@
 {
   "name": "codex-task-tools",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Create and track durable local Codex tasks in existing backend projects.",
   "author": {
     "name": "Codex Toolbox Contributors"

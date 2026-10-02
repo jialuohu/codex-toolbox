@@ -25,9 +25,9 @@ from .app_server import (
     RPCRejected,
     strict_json,
 )
+from .compatibility import SUPPORTED_APP_VERSIONS
 from .ledger import KeyConflict, Ledger, LedgerError, private_dir
 
-APP_VERSION = "0.156.1"
 KEY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RESPONDABLE_REQUESTS = {
     "item/commandExecution/requestApproval",
@@ -107,12 +107,12 @@ class TaskBroker:
         if self.closed:
             raise TaskError("broker_closed", "Task broker is closed")
         async with self.connect_lock:
-            if self.app is not None and self.app.version == APP_VERSION:
+            if self.app is not None and self.app.version in SUPPORTED_APP_VERSIONS:
                 return self.app
             candidate = self.app_factory()
             try:
                 await candidate.connect()
-                if candidate.version != APP_VERSION:
+                if candidate.version not in SUPPORTED_APP_VERSIONS:
                     raise TaskError(
                         "unsupported_runtime",
                         f"App Server {candidate.version} is not certified for task creation",

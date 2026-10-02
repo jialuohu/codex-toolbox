@@ -10,13 +10,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from protocol_contract import validate_client_request
 
-from codex_task_tools import app_server
+from codex_task_tools import __version__, app_server
+from codex_task_tools.compatibility import SUPPORTED_APP_VERSIONS, app_server_version
 
 
 class FakeWebSocket:
-    def __init__(self, codex_home: Path) -> None:
+    def __init__(self, codex_home: Path, user_agent: str = "codex_cli/0.156.1") -> None:
         self.codex_home = codex_home
+        self.user_agent = user_agent
         self.incoming: asyncio.Queue[str | None] = asyncio.Queue()
         self.sent: list[dict[str, Any]] = []
 
@@ -24,6 +27,8 @@ class FakeWebSocket:
         message = json.loads(raw)
         self.sent.append(message)
         method = message.get("method")
+        if "id" in message and isinstance(method, str):
+            validate_client_request(method, message["params"])
         if method == "initialize":
             await self.incoming.put(
                 json.dumps(
@@ -37,7 +42,7 @@ class FakeWebSocket:
                         "result": {
                             "codexHome": str(self.codex_home),
                             "platformOs": "macos",
-                            "userAgent": "codex_cli/0.156.1",
+                            "userAgent": self.user_agent,
                         },
                     }
                 )
@@ -70,8 +75,10 @@ class FakeWebSocket:
             yield value
 
 
+@pytest.mark.parametrize("version", sorted(SUPPORTED_APP_VERSIONS))
+@pytest.mark.parametrize("product", ["Codex Desktop", "codex_cli", "codex_task_tools"])
 def test_interleaved_notifications_and_server_requests_are_preserved(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, product: str,
 ) -> None:
     async def exercise() -> None:
         socket_path = tmp_path / "app-server-control" / "app-server-control.sock"
@@ -85,7 +92,7 @@ def test_interleaved_notifications_and_server_requests_are_preserved(
                 )
             return original_lstat(path, *args, **kwargs)
 
-        socket = FakeWebSocket(tmp_path)
+        socket = FakeWebSocket(tmp_path, f"{product}/{version} (Mac OS 26.6.2; arm64) unknown (test; 1.0.0)")
 
         async def connect(*_args: Any, **_kwargs: Any) -> FakeWebSocket:
             return socket
@@ -97,7 +104,8 @@ def test_interleaved_notifications_and_server_requests_are_preserved(
         client = app_server.AppServerClient(tmp_path, timeout=2)
         await client.connect()
         try:
-            assert client.version == "0.156.1"
+            assert client.version == version
+            assert socket.sent[0]["params"]["clientInfo"]["version"] == __version__
             result = await client.request("thread/read", {"threadId": "task-1"})
             assert result == {"thread": {"id": "task-1"}}
             first = await asyncio.wait_for(client.next_event(), timeout=1)
@@ -113,6 +121,24 @@ def test_interleaved_notifications_and_server_requests_are_preserved(
             await client.close()
 
     asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("version", sorted(SUPPORTED_APP_VERSIONS))
+def test_qualified_bare_cli_version(version: str) -> None:
+    assert app_server_version(f"codex_cli/{version}") == version
+
+
+@pytest.mark.parametrize("user_agent", [
+    None, 159, {}, [], "", "0.159.0", "codex_cli/0.999.0",
+    "codex_cli/0.159.0-alpha", "codex_cli/0.159.0+patched", "codex_cli/0.159.00",
+    "prefix codex_cli/0.159.0", "untrusted/0.159.0", "codex_cli/10.159.0",
+    "codex_cli/0.999.0 (Mac OS 26.6.2; arm64) unknown (test; 0.159.0)",
+    "Codex Desktop/0.159.0 arbitrary suffix", " codex_cli/0.159.0", "codex_cli/0.159.0 ",
+    "codex_cli/0.159.0\n", "codex_cli/0.159.0 (Mac OS\n26; arm64) unknown (test; 1.0.0)",
+    "codex_cli/0.159.0 (Mac OS 26; arm64) unknown (test; 1.0.0) trailing",
+])
+def test_unknown_malformed_or_embedded_versions_are_not_qualified(user_agent: object) -> None:
+    assert app_server_version(user_agent) is None
 
 
 def test_duplicate_json_keys_and_oversized_requests_fail_closed(tmp_path: Path) -> None:

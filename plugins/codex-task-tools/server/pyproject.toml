@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codex-task-tools"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local, durable Codex project task creation with fail-closed retries."
 requires-python = ">=3.12,<3.13"
 dependencies = ["mcp==1.30.0", "websockets==15.0.1"]

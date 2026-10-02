@@ -17,6 +17,9 @@ from typing import Any, Protocol
 from websockets.asyncio.client import ClientConnection, unix_connect
 from websockets.exceptions import ConnectionClosed
 
+from . import __version__
+from .compatibility import app_server_version
+
 
 class AppServerError(RuntimeError):
     """A safe, client-authored error without server text or prompt content."""
@@ -125,7 +128,7 @@ class AppServerClient:
                     "clientInfo": {
                         "name": "codex_task_tools",
                         "title": "Codex Task Tools",
-                        "version": "0.1.0",
+                        "version": __version__,
                     },
                     "capabilities": {
                         "experimentalApi": True,
@@ -148,9 +151,7 @@ class AppServerClient:
                 or init.get("platformOs") != "macos"
             ):
                 raise AppServerError("App Server identity does not match this local Codex home")
-            agent = init.get("userAgent", "")
-            match = re.search(r"(?<!\d)(0\.156\.1)(?!\d)", agent)
-            self.version = match.group(1) if match else "unsupported"
+            self.version = app_server_version(init.get("userAgent")) or "unsupported"
             self.backend_identity = hashlib.sha256(
                 f"{_machine_binding()}\0{self.codex_home}\0{os.getuid()}".encode()
             ).hexdigest()
