@@ -397,6 +397,44 @@ class MigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(migration.Blocked, "installed_candidate_verification_failed"):
             migration.package_readback(self.target, self.cli, "diagram-tools")
 
+    def test_setup_readback_accepts_git_normalized_permissions_but_migration_is_strict(self):
+        source_file = self.target / "plugins/workflow-tools/.codex-plugin/plugin.json"
+        source_file.chmod(0o600)
+        self.cli.add("workflow-tools", self.target)
+        installed_file = self.cli.home / "plugins/cache" / migration.MARKETPLACE / "workflow-tools/0.19.0/.codex-plugin/plugin.json"
+        installed_file.chmod(0o644)
+        result = migration.package_readback(self.target, self.cli, "workflow-tools")
+        self.assertEqual(result["status"], "verified")
+        self.assertEqual(result["mode_semantics"], "git_executable_bit")
+        self.assertEqual(source_file.read_bytes(), installed_file.read_bytes())
+        with self.assertRaisesRegex(migration.Blocked, "installed_candidate_verification_failed"):
+            migration.verify_package(self.cli, "workflow-tools", migration.candidates(self.target)["workflow-tools"])
+
+    def test_setup_git_mode_readback_still_rejects_content_and_executable_changes(self):
+        self.cli.add("workflow-tools", self.target)
+        installed_file = self.cli.home / "plugins/cache" / migration.MARKETPLACE / "workflow-tools/0.19.0/.codex-plugin/plugin.json"
+        content = installed_file.read_text()
+        installed_file.write_text(content + "\n")
+        with self.assertRaisesRegex(migration.Blocked, "installed_candidate_verification_failed"):
+            migration.package_readback(self.target, self.cli, "workflow-tools")
+        installed_file.write_text(content)
+        installed_file.chmod(0o744)
+        with self.assertRaisesRegex(migration.Blocked, "installed_candidate_verification_failed"):
+            migration.package_readback(self.target, self.cli, "workflow-tools")
+
+    def test_recovery_rejects_permission_only_edits_with_original_receipt_hashes(self):
+        self.install_old()
+        self.cli.interruption = "add:workflow-tools"
+        with self.assertRaises(KeyboardInterrupt):
+            self.call_apply()
+        installed_file = self.cli.home / "plugins/cache" / migration.MARKETPLACE / "diagram-tools/0.6.0/.codex-plugin/plugin.json"
+        installed_file.chmod(0o600)
+        self.cli.interruption = None
+        self.cli.operations.clear()
+        with self.assertRaisesRegex(migration.Blocked, "recovery_family_package_changed"):
+            self.call_apply()
+        self.assertEqual(self.cli.operations, [])
+
     def test_interruption_blocks_setup_and_next_apply_recovers_only(self):
         self.install_old()
         before = migration.inventory(self.cli)

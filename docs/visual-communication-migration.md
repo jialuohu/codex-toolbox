@@ -151,7 +151,14 @@ families; it does not authorize an upgrade. JSON distinguishes `predecessor`,
 `fresh`, `current`, `migrated`, `recovered`, `verified`, and `blocked`.
 `--verify-package diagram-tools|workflow-tools` is read-only and verifies one
 installed package against the source candidate's exact version, bytes, skills,
-and enabled state. It reports `scope: package`; it does not claim the complete
+and enabled state. For this normal-setup readback only, permissions use Git's
+regular-file semantics: the owner's executable bit is preserved, while other
+permission bits are normalized. A source file with mode `0600` and identical
+installed bytes with mode `0644` therefore matches; changed bytes or executable
+status still block. The receipt states `mode_semantics: git_executable_bit`.
+Migration snapshots, candidate checks, recovery, and existing transaction
+receipts retain their original full-permission hashes and reject permission-only
+edits. It reports `scope: package`; it does not claim the complete
 family is ready while fresh installation is still in progress. Setup invokes
 it immediately after each supported in-place `plugin add`. A stale or changed
 readback blocks instead of falling back to destructive removal. A verified

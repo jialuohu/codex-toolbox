@@ -119,7 +119,7 @@ def checked_child(root: Path, *parts: str) -> Path:
     return candidate
 
 
-def package_info(path: Path, name: str) -> dict:
+def package_info(path: Path, name: str, *, git_modes: bool = False) -> dict:
     """Inspect a complete immutable package without following symlinks."""
     if not path.is_dir() or path.is_symlink():
         raise Blocked(f"package_unavailable:{name}")
@@ -144,7 +144,13 @@ def package_info(path: Path, name: str) -> dict:
             raise Blocked(f"package_symlink:{name}")
         if not item.is_file():
             raise Blocked(f"package_special_file:{name}")
-        files[relative.as_posix()] = [hashlib.sha256(item.read_bytes()).hexdigest(), item.stat().st_mode & 0o777]
+        permissions = item.stat().st_mode & 0o777
+        # Git preserves only the owner's executable bit for regular files.
+        # Normal setup reads Git-materialized packages, whereas transaction
+        # snapshots/recovery must retain their existing full-permission hash.
+        if git_modes:
+            permissions = 0o755 if permissions & stat.S_IXUSR else 0o644
+        files[relative.as_posix()] = [hashlib.sha256(item.read_bytes()).hexdigest(), permissions]
         if len(relative.parts) == 3 and relative.parts[0] == "skills" and item.name == "SKILL.md":
             body = item.read_text(encoding="utf-8")
             frontmatter = body.split("---", 2) if body.startswith("---") else []
@@ -411,8 +417,8 @@ def version_at_least(version: str, floor: str) -> bool:
     return tuple(map(int, version.split("."))) >= tuple(map(int, floor.split(".")))
 
 
-def candidates(root: Path, *, exact_migration: bool = False) -> dict:
-    result = {name: package_info(root / "plugins" / name, name) for name in TARGET}
+def candidates(root: Path, *, exact_migration: bool = False, git_modes: bool = False) -> dict:
+    result = {name: package_info(root / "plugins" / name, name, git_modes=git_modes) for name in TARGET}
     versions = {name: info["version"] for name, info in result.items()}
     if ((exact_migration and versions != TARGET)
             or not all(version_at_least(versions[name], floor) for name, floor in TARGET.items())):
@@ -523,7 +529,7 @@ def assert_unrelated(before: dict, after: dict) -> None:
             raise Blocked("unrelated_installation_changed")
 
 
-def verify_package(cli: CodexCLI, name: str, expected: dict) -> None:
+def verify_package(cli: CodexCLI, name: str, expected: dict, *, git_modes: bool = False) -> None:
     # Validate this exact add independently: another family cache may be absent
     # after an interrupted operation and must not prevent supported recovery.
     configured = config_document(cli.home).get("plugins", {}).get(f"{name}@{MARKETPLACE}", {})
@@ -531,7 +537,7 @@ def verify_package(cli: CodexCLI, name: str, expected: dict) -> None:
     versions = list(cache.iterdir()) if cache.is_dir() else []
     if configured.get("enabled") is not True or len(versions) != 1 or versions[0].name != expected["version"]:
         raise Blocked(f"installed_candidate_verification_failed:{name}")
-    info = package_info(versions[0], name)
+    info = package_info(versions[0], name, git_modes=git_modes)
     rows = [row for row in cli.installed() if row.get("name") == name]
     # Successor names remain catalogued and must be discoverable. Only the
     # retired paper plugin may be absent from CLI discovery during recovery.
@@ -542,10 +548,11 @@ def verify_package(cli: CodexCLI, name: str, expected: dict) -> None:
 
 
 def package_readback(root: Path, cli: CodexCLI, name: str) -> dict:
-    expected = candidates(root)[name]
-    verify_package(cli, name, expected)
+    expected = candidates(root, git_modes=True)[name]
+    verify_package(cli, name, expected, git_modes=True)
     return {"schema_version": 1, "status": "verified", "migration": "visual-communication",
             "scope": "package", "package": name, "version": expected["version"],
+            "mode_semantics": "git_executable_bit",
             "sha256": expected["sha256"], "skills": expected["skills"],
             "live_execution_verified": True}
 
