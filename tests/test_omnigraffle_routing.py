@@ -23,19 +23,19 @@ class OmniGraffleRoutingTests(unittest.TestCase):
 
     def test_visual_owners_observe_application_and_format(self):
         paths = [
-            "paper-figure-tools/skills/paper-figure-workflow/SKILL.md",
+            "diagram-tools/skills/paper-figure-workflow/SKILL.md",
             "diagram-tools/skills/archify/SKILL.md",
             "diagram-tools/skills/pretty-mermaid/SKILL.md",
             "drawio-tools/skills/drawio/SKILL.md",
             "photo-tools/skills/mono-color/SKILL.md",
-            "workflow-tools/skills/explain-clearly/SKILL.md",
+            "diagram-tools/skills/explain-clearly/SKILL.md",
         ]
         for path in paths:
             with self.subTest(path=path):
                 text = (ROOT / "plugins" / path).read_text()
                 self.assertIn("$omnigraffle-workflow", text)
                 self.assertIn(".graffle", text)
-                self.assertIn("Explicit application choice takes precedence, followed by the existing artifact format", text)
+                self.assertIn("Explicit application choice takes precedence, followed by the existing artifact format", " ".join(text.split()))
         paper = (ROOT / "plugins" / paths[0]).read_text()
         self.assertNotIn("Use draw.io or diagrams.net for AI/ML/system pipeline and architecture diagrams.", paper)
         self.assertIn("publication directories, regeneration commands, and cross-figure checks", paper)

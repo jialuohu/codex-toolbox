@@ -1,10 +1,12 @@
 {
   "name": "diagram-tools-plugin-tests",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
+    "test:explanation-artifacts": "python3 scripts/eval-explanation-artifacts.py",
+    "test:explanation:browser": "node tests/explanation-browser-evidence.mjs",
     "test:archify": "node --test tests/archify-runtime.test.mjs tests/child-lifecycle.test.mjs",
     "test:archify:integration": "DIAGRAM_TOOLS_ARCHIFY_INTEGRATION=1 node --test tests/archify-runtime.integration.test.mjs",
     "test:contract": "node skills/pretty-mermaid/scripts/contract-cli.mjs runtime/bootstrap",

@@ -1,7 +1,7 @@
 {
   "name": "diagram-tools",
-  "version": "0.5.3",
-  "description": "Validated Archify maps and editable Mermaid rendering with research figure composition guidance.",
+  "version": "0.6.0",
+  "description": "Clear explanations, adaptive visual communication, validated diagrams, and reproducible publication figures.",
   "author": {
     "name": "Jialuo Hu",
     "email": "hjlnobugs@gmail.com"
@@ -19,13 +19,16 @@
     "png",
     "ascii",
     "cloudflare",
-    "sharing"
+    "sharing",
+    "explanation",
+    "research",
+    "publication"
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Diagram Tools",
-    "shortDescription": "Create diagrams and share accepted Archify maps.",
-    "longDescription": "Diagram Tools makes Archify the graphical default for validated interactive architecture and workflow maps while preserving Pretty Mermaid for explicit Mermaid, compact static diagrams, and terminal ASCII. Research figure guidance uses existing Mermaid flags and Archify presets. Both lanes retain editable source and guarded local runtimes; installation-specific opt-in enables Cloudflare Pages sharing after Archify visual review.",
+    "displayName": "Visual Communication",
+    "shortDescription": "Explain mechanisms and create verified visual artifacts.",
+    "longDescription": "Visual Communication retains the diagram-tools plugin identity and its guarded runtimes. Explain Clearly chooses concise prose, diagrams, interactive causal explanations, or requested video through existing owners. Archify owns graphical maps; Pretty Mermaid owns explicit Mermaid, compact static diagrams, and terminal ASCII. Paper Figure Workflow supplies reproducible research plots and delegates native diagrams to their application owners. Bundled Visualize and installed Remotion remain external owners. Public sharing remains limited to accepted Archify HTML under the existing installation-specific opt-in.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -33,6 +36,8 @@
       "Write"
     ],
     "defaultPrompt": [
+      "Use $explain-clearly to explain the mechanism and choose a visual only when it helps understanding.",
+      "Use $paper-figure-workflow to create reproducible publication plots and editable diagrams.",
       "Use $archify to create a validated interactive architecture or workflow map with retained typed JSON source.",
       "Use $pretty-mermaid for explicit Mermaid, compact static diagrams, or terminal ASCII.",
       "Render these Mermaid sources as terminal-friendly ASCII."

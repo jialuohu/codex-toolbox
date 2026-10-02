@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OWNERS = {
     "omnigraffle": "plugins/omnigraffle-tools/skills/omnigraffle-workflow",
     "drawio": "plugins/drawio-tools/skills/drawio",
-    "paper-figure": "plugins/paper-figure-tools/skills/paper-figure-workflow",
+    "paper-figure": "plugins/diagram-tools/skills/paper-figure-workflow",
 }
 
 

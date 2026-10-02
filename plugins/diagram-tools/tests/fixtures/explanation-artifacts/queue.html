@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Synthetic queue explanation fixture</title>
+  <style>
+    :root { color-scheme: light dark; --surface: #ffffff; --text: #202124; --a: #2148b8; --b: #087549; }
+    @media (prefers-color-scheme: dark) { :root { --surface: #17191d; --text: #f0f1f4; --a: #97b5ff; --b: #85dab1; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; background: var(--surface); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+    main { max-width: 736px; margin-inline: auto; }
+    h1 { font-size: 20px; margin: 0 0 8px; }
+    p { margin: 8px 0 16px; }
+    .controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+    label { flex: 1 1 200px; }
+    input { display: block; width: 100%; min-height: 44px; }
+    button { min-height: 44px; padding: 8px 16px; font: inherit; }
+    svg { display: block; width: 100%; height: 156px; margin-block: 12px; }
+    svg text { fill: var(--text); font: 14px system-ui, sans-serif; }
+    #summary { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Synthetic queue example</h1>
+    <p>First-in, first-out (FIFO) service: A takes 3 seconds; B takes 2 seconds.</p>
+    <div class="controls">
+      <label for="arrival">B arrival: <output id="arrival-value" for="arrival">1 s</output>
+        <input id="arrival" type="range" min="0" max="5" step="1" value="1">
+      </label>
+      <button id="reset" type="button">Reset</button>
+    </div>
+    <svg id="timeline" role="img" aria-labelledby="timeline-title timeline-description">
+      <title id="timeline-title">Single-server schedule</title>
+      <desc id="timeline-description"></desc>
+      <text x="0" y="30">A</text><rect id="job-a" y="12" height="24" fill="var(--a)"/>
+      <text x="0" y="88">B</text><rect id="job-b" y="70" height="24" fill="var(--b)"/>
+      <text id="time-a" y="56"></text><text id="time-b" y="114"></text>
+      <text x="0" y="148">Time in seconds; bar length shows service.</text>
+    </svg>
+    <p id="summary" aria-live="polite"></p>
+  </main>
+  <script type="module">
+    import { schedule } from './queue-model.mjs';
+    const input = document.getElementById('arrival');
+    const timeline = document.getElementById('timeline');
+    function update() {
+      const arrival = Number(input.value);
+      const events = schedule([{ id: 'A', arrival: 0, service: 3 }, { id: 'B', arrival, service: 2 }]);
+      const width = timeline.getBoundingClientRect().width;
+      timeline.setAttribute('viewBox', `0 0 ${width} 156`);
+      const scale = (width - 40) / events[1].finish;
+      for (const event of events) {
+        const mark = document.getElementById(`job-${event.id.toLowerCase()}`);
+        const label = document.getElementById(`time-${event.id.toLowerCase()}`);
+        const x = 32 + event.start * scale;
+        mark.setAttribute('x', x);
+        mark.setAttribute('width', (event.finish - event.start) * scale);
+        label.setAttribute('x', x);
+        label.textContent = `${event.start}–${event.finish} s`;
+      }
+      const summary = `B starts at ${events[1].start} s, finishes at ${events[1].finish} s, and waits ${events[1].wait} s.`;
+      document.getElementById('arrival-value').textContent = `${arrival} s`;
+      document.getElementById('summary').textContent = summary;
+      document.getElementById('timeline-description').textContent = `A runs from 0 to 3 seconds. ${summary}`;
+    }
+    input.addEventListener('input', update);
+    document.getElementById('reset').addEventListener('click', () => { input.value = '1'; update(); });
+    new ResizeObserver(update).observe(timeline);
+    // Immediate state changes respect reduced motion without a separate animation path.
+    update();
+  </script>
+</body>
+</html>

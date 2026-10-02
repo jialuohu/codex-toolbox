@@ -1,15 +1,15 @@
 {
   "name": "workflow-tools",
-  "version": "0.18.2",
-  "description": "Codex planning, independent counsel, explanations, sidebar recovery, upstream maintenance, synchronization, and explicit shipping skills.",
+  "version": "0.19.0",
+  "description": "Codex planning, independent counsel, sidebar recovery, upstream maintenance, synchronization, and explicit shipping skills.",
   "author": {
     "name": "Jialuo Hu"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Workflow Tools",
-    "shortDescription": "Plan, explain, recover, upgrade, sync, and ship.",
-    "longDescription": "Workflow Tools packages ChatGPT Planner for global GPT-6 Pro consultation with one active conversation per Codex task in Plan Mode, guarded replacement after confirmed access denial, OS default browser selection and live connection checks before new requests, browser creation and native messaging when available, Claude Counselor for bounded independent planning and code review, Explain Clearly for concise explanations, Deep Planning for adversarial critique, Recover Codex Sidebar for on-request macOS project placement through owning app tools across desktop upgrades and audited legacy registration recovery, Upgrade Toolbox for upstream audits and compatible integration updates, Sync Toolbox for applying the published toolbox and checking installed plugin, MCP, and skill health with actionable diagnostics, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
+    "shortDescription": "Plan, recover, upgrade, sync, and ship.",
+    "longDescription": "Workflow Tools packages ChatGPT Planner for global GPT-6 Pro consultation with one active conversation per Codex task in Plan Mode, guarded replacement after confirmed access denial, OS default browser selection and live connection checks before new requests, browser creation and native messaging when available, Claude Counselor for bounded independent planning and code review, Deep Planning for adversarial critique, Recover Codex Sidebar for on-request macOS project placement through owning app tools across desktop upgrades and audited legacy registration recovery, Upgrade Toolbox for upstream audits and compatible integration updates, Sync Toolbox for applying the published toolbox and checking installed plugin, MCP, and skill health with actionable diagnostics, and Ship Toolbox for explicit validation, commit, push, CI, and local marketplace refresh workflows.",
     "developerName": "Jialuo Hu",
     "category": "Productivity",
     "capabilities": [
@@ -19,7 +19,6 @@
     "defaultPrompt": [
       "Use $recover-codex-sidebar to restore macOS sidebar project placement across desktop upgrades, recover audited missing registrations, or import a selected existing layout.",
       "Use $chatgpt-planner to consult GPT-6 Pro with global setup and one active conversation per Plan-mode task.",
-      "Use $explain-clearly to answer directly, adapt the depth to my question, and add examples or visuals only when they help.",
       "Use $deep-planning to critique this plan before implementation.",
       "Use $claude-counselor for bounded independent planning and final code review on major work.",
       "Use $ship-toolbox to validate, commit, push, refresh, and verify the current toolbox changes.",

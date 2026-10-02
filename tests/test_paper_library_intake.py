@@ -27,14 +27,6 @@ RESEARCH_MCP = ROOT / "plugins" / "research-tools" / ".mcp.json"
 RESEARCH_PLUGIN = ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugin.json"
 GLOBAL_AGENTS = ROOT / "config" / "codex" / "AGENTS.global.md"
 README = ROOT / "docs/research.md"
-RESEARCH_LLM_WIKI = (
-    ROOT
-    / "plugins"
-    / "research-tools"
-    / "skills"
-    / "research-llm-wiki"
-    / "SKILL.md"
-)
 SETUP_CHECKER = ROOT / "scripts" / "check-codex-toolbox-setup.py"
 HELPER = (
     ROOT
@@ -997,11 +989,10 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
         self.assertIn("$paper-read-review", prompts)
         self.assertIn("MinerU", prompts)
 
-    def test_global_routing_readme_wiki_and_checker_expose_one_workflow(self) -> None:
+    def test_global_routing_readme_and_checker_expose_one_workflow(self) -> None:
         agents = GLOBAL_AGENTS.read_text()
         skill = SKILL.read_text()
         readme = README.read_text()
-        wiki = RESEARCH_LLM_WIKI.read_text()
         checker = SETUP_CHECKER.read_text()
         intake_routing = next(
             line for line in agents.splitlines()
@@ -1036,13 +1027,6 @@ class PaperLibrarySkillContractTests(unittest.TestCase):
             "Firecrawl only",
         ):
             self.assertIn(expected, readme)
-        for expected in (
-            "$paper-library-intake",
-            "built-in Codex web search",
-            "Defuddle",
-            "Firecrawl only",
-        ):
-            self.assertIn(expected, wiki)
         for expected in (
             "PAPER_LIBRARY_INTAKE_SKILL",
             "PAPER_LIBRARY_INTAKE_OPENAI",

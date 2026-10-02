@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CASES = ROOT / "tests" / "fixtures" / "research-figure-routing.json"
 SKILLS = {
-    "paper-figure-workflow": ROOT / "plugins/paper-figure-tools/skills/paper-figure-workflow/SKILL.md",
+    "paper-figure-workflow": ROOT / "plugins/diagram-tools/skills/paper-figure-workflow/SKILL.md",
     "drawio": ROOT / "plugins/drawio-tools/skills/drawio/SKILL.md",
     "omnigraffle-workflow": ROOT / "plugins/omnigraffle-tools/skills/omnigraffle-workflow/SKILL.md",
     "archify": ROOT / "plugins/diagram-tools/skills/archify/SKILL.md",

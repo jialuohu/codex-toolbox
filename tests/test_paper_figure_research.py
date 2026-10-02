@@ -16,7 +16,7 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL = ROOT / "plugins/paper-figure-tools/skills/paper-figure-workflow"
+SKILL = ROOT / "plugins/diagram-tools/skills/paper-figure-workflow"
 PLOTS = SKILL / "assets/research-figure-starter/figures_src/plots"
 sys.path.insert(0, str(PLOTS))
 import figure_common as common  # noqa: E402
@@ -273,7 +273,7 @@ class ScaffoldTests(unittest.TestCase):
     def test_installed_plugin_layout_copies_diagrams_and_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            skill = root / "market/paper-figure-tools/0.3.0/skills/paper-figure-workflow"
+            skill = root / "market/diagram-tools/0.6.0/skills/paper-figure-workflow"
             shutil.copytree(SKILL / "assets", skill / "assets")
             (skill / "scripts").mkdir(parents=True)
             shutil.copy2(SKILL / "scripts/scaffold_research_figures.py", skill / "scripts")
@@ -298,7 +298,7 @@ class ScaffoldTests(unittest.TestCase):
     def test_missing_diagram_templates_fail_unless_plots_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            skill = root / "market/paper-figure-tools/0.3.0/skills/paper-figure-workflow"
+            skill = root / "market/diagram-tools/0.6.0/skills/paper-figure-workflow"
             shutil.copytree(SKILL / "assets", skill / "assets")
             (skill / "scripts").mkdir(parents=True)
             shutil.copy2(SKILL / "scripts/scaffold_research_figures.py", skill / "scripts")

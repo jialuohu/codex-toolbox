@@ -284,13 +284,16 @@ class GoogleWorkspaceToolsIntegrationTests(unittest.TestCase):
 
     def test_setup_checker_rejects_additive_gmail_surface_mixing(self) -> None:
         additions = (
-            "\nUse the official Gmail connector and direct gws together in the same request.\n",
-            "\nFor urgent Gmail work, use the official connector and direct `gws` together.\n",
+            "\nOfficial Gmail connector and direct gws together.\n",
+            "\nUse official connector and direct `gws` together.\n",
         )
         for addition in additions:
             def mutate(root: Path, added: str = addition) -> None:
                 path = root / "config/codex/AGENTS.global.md"
-                path.write_text(path.read_text(encoding="utf-8") + added, encoding="utf-8")
+                content = path.read_text(encoding="utf-8") + added
+                self.assertLessEqual(len(content.encode("utf-8")), 8192,
+                                     "Keep this semantic fixture inside the separate byte-limit gate")
+                path.write_text(content, encoding="utf-8")
             with self.subTest(addition=addition):
                 self.assert_checker_rejects(
                     mutate, "global AGENTS Gmail routing policy must reject additive surface-mixing contradictions",

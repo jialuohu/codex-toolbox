@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -8,6 +9,7 @@ import tempfile
 import textwrap
 import threading
 import unittest
+import uuid
 from unittest import mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -158,7 +160,8 @@ class ProxyProcess:
                 module = importlib.util.module_from_spec(spec)
                 sys.modules[spec.name] = module
                 spec.loader.exec_module(module)
-                raise SystemExit(module.main(sys.argv[1:], usage_url={usage.url!r}))
+                # All process fixtures are offline: do not HEAD their example URLs.
+                raise SystemExit(module.main(sys.argv[1:], usage_url={usage.url!r}, scrape_resolver=lambda url: url))
                 """
             ),
             encoding="utf-8",
@@ -321,7 +324,10 @@ class FirecrawlBudgetProxyTests(unittest.TestCase):
             "Monitor",
             "JSON output",
         ):
-            self.assertNotIn(hidden_capability, initialized["result"]["instructions"])
+            self.assertNotRegex(
+                initialized["result"]["instructions"],
+                rf"(?<![\w-]){re.escape(hidden_capability)}(?![\w-])",
+            )
         client.notify("notifications/initialized")
 
         listed = client.request("tools/list", {})
@@ -703,6 +709,285 @@ class FirecrawlBudgetProxyTests(unittest.TestCase):
         self.assertEqual(mcp["args"], ["scripts/run-firecrawl-mcp.sh", "serve"])
         self.assertEqual(mcp["cwd"], ".")
         self.assertNotIn("npx", json.dumps(mcp))
+
+    def billing_child(self, metadata, *, duplicate=False):
+        source = FAKE_CHILD.replace(
+            '"structuredContent": {"arguments": arguments},',
+            '"structuredContent": {"arguments": arguments, "metadata": ' + repr(metadata) + '},',
+        )
+        if duplicate:
+            source = source.replace("        respond(message, response)", "        respond(message, response)\n        respond(message, response)")
+        return source
+
+    def test_wrapped_search_receipt_settles_the_reported_charge(self):
+        receipt = {"success": True, "creditsUsed": 2, "data": {"web": []}}
+        child = FAKE_CHILD.replace(
+            '"structuredContent": {"arguments": arguments},',
+            '"structuredContent": ' + repr(receipt) + ',',
+        )
+        client = self.client(child_source=child)
+        result = client.request("tools/call", {"name": "firecrawl_search", "arguments": {"query": "public source"}})["result"]
+        self.assertEqual(result["_meta"]["firecrawlBudget"]["actualCredits"], 2)
+        state = json.loads(client.state_path.read_text())
+        self.assertEqual(state["countedCredits"], 2)
+        self.assertEqual(next(iter(state["reservations"].values()))["status"], "settled")
+        self.assertIsNone(state["blockedReason"])
+
+    def test_wrapped_search_overrun_blocks_the_next_metered_call(self):
+        receipt = {"success": True, "creditsUsed": 3, "data": {"web": []}}
+        child = FAKE_CHILD.replace(
+            '"structuredContent": {"arguments": arguments},',
+            '"structuredContent": ' + repr(receipt) + ',',
+        )
+        client = self.client(child_source=child)
+        result = client.request("tools/call", {"name": "firecrawl_search", "arguments": {"query": "public source"}})["result"]
+        self.assertEqual(result["_meta"]["firecrawlBudget"]["actualCredits"], 3)
+        state = json.loads(client.state_path.read_text())
+        self.assertEqual(state["countedCredits"], 3)
+        self.assertEqual(state["blockedReason"], "actual_cost_exceeded_reservation")
+        denied = client.request("tools/call", {"name": "firecrawl_search", "arguments": {"query": "next"}})
+        self.assert_tool_failure(denied, proxy.ERROR_BUDGET_UNAVAILABLE)
+        self.assertEqual(sum(row.get("method") == "tools/call" for row in client.records()), 1)
+
+    def test_x_reserves_thirty_and_rejects_899_before_dispatch(self):
+        client = self.client()
+        self.write_state(client.state_path, counted=899)
+        response = client.request("tools/call", {"name": "firecrawl_scrape", "arguments": {"url": "https://x.com/example/status/123"}})
+        self.assert_tool_failure(response, proxy.ERROR_BUDGET_EXHAUSTED)
+        self.assertFalse(any(r.get("method") == "tools/call" for r in client.records()))
+        self.assertEqual(json.loads(client.state_path.read_text())["countedCredits"], 899)
+
+    def test_x_cost_and_ai_provenance_are_returned_and_settled(self):
+        client = self.client(child_source=self.billing_child({"creditsUsed": 30, "sourceURL": "https://x.com/example/status/123", "postprocessorsUsed": ["x-twitter"]}))
+        result = client.request("tools/call", {"name": "firecrawl_scrape", "arguments": {"url": "https://x.com/example/status/123"}})["result"]
+        self.assertIn("AI-processed", result["content"][0]["text"])
+        self.assertEqual(result["_meta"]["firecrawlBudget"]["actualCredits"], 30)
+        state = json.loads(client.state_path.read_text())
+        self.assertEqual(state["countedCredits"], 30)
+        self.assertEqual(next(iter(state["reservations"].values()))["status"], "settled")
+
+    def test_duplicate_response_settles_once_and_does_not_corrupt_next_response(self):
+        client = self.client(child_source=self.billing_child({"creditsUsed": 31}, duplicate=True))
+        client.request("tools/call", {"name": "firecrawl_scrape", "arguments": {"url": "https://twitter.com/example/status/123"}})
+        result = client.request("tools/call", {"name": "firecrawl_budget_status", "arguments": {}})["result"]["structuredContent"]
+        self.assertEqual(result["countedCredits"], 31)
+        self.assertEqual(result["blockedReason"], "actual_cost_exceeded_reservation")
+        denied = client.request("tools/call", {"name": "firecrawl_search", "arguments": {"query": "next"}})
+        self.assert_tool_failure(denied, proxy.ERROR_BUDGET_UNAVAILABLE)
+        self.assertEqual(sum(r.get("method") == "tools/call" for r in client.records()), 1)
+
+    def test_unexpected_provider_target_latches_even_when_reported_cost_is_one(self):
+        client = self.client(child_source=self.billing_child({"creditsUsed": 1, "url": "https://x.com/example/status/123", "postprocessorsUsed": ["x-twitter"]}))
+        result = client.request("tools/call", {"name": "firecrawl_scrape", "arguments": {"url": "https://example.com/article"}})["result"]
+        self.assertIn("AI-processed", result["content"][0]["text"])
+        self.assertEqual(json.loads(client.state_path.read_text())["blockedReason"], "unexpected_provider_target")
+
+    def test_missing_or_malformed_cost_never_refunds(self):
+        manager = proxy.BudgetManager(state_path=self.base / "ledger" / "state.json", usage_url=self.usage.url)
+        first, second = uuid.uuid4().hex, uuid.uuid4().hex
+        manager.reserve(30, first)
+        manager.settle(first, None)
+        manager.reserve(1, second)
+        manager.settle(second, True)
+        state = json.loads(manager.state_path.read_text())
+        self.assertEqual(state["countedCredits"], 31)
+        self.assertEqual(state["reservations"][first]["status"], "unknown")
+        self.assertEqual(state["reservations"][second]["status"], "unknown")
+        self.assertEqual(state["blockedReason"], "invalid_cost_metadata")
+        with self.assertRaises(proxy.ProxyFailure):
+            manager.reserve(1)
+
+    def test_restarted_settlement_is_exactly_once_and_overrun_is_durable(self):
+        path = self.base / "ledger" / "state.json"
+        manager = proxy.BudgetManager(state_path=path, usage_url=self.usage.url)
+        request_id = uuid.uuid4().hex
+        manager.reserve(30, request_id)
+        restarted = proxy.BudgetManager(state_path=path, usage_url=self.usage.url)
+        restarted.settle(request_id, 40)
+        manager.settle(request_id, 50)
+        self.assertEqual(json.loads(path.read_text())["countedCredits"], 40)
+        with self.assertRaises(proxy.ProxyFailure):
+            manager.reserve(1)
+
+    def test_unknown_receipt_can_be_reconciled_once_without_refunding(self):
+        manager = proxy.BudgetManager(state_path=self.base / "ledger" / "state.json", usage_url=self.usage.url)
+        identity = uuid.uuid4().hex
+        manager.reserve(30, identity)
+        manager.settle(identity, None)
+        manager.settle(identity, 35)
+        manager.settle(identity, 35)
+        state = json.loads(manager.state_path.read_text())
+        self.assertEqual(state["countedCredits"], 35)
+        self.assertEqual(state["reservations"][identity]["status"], "settled")
+        self.assertEqual(state["blockedReason"], "actual_cost_exceeded_reservation")
+
+    def test_concurrent_settlements_keep_both_topups(self):
+        path = self.base / "ledger" / "state.json"
+        managers = [proxy.BudgetManager(state_path=path, usage_url=self.usage.url) for _ in range(2)]
+        identities = [uuid.uuid4().hex for _ in managers]
+        for manager, identity in zip(managers, identities):
+            manager.reserve(1, identity)
+        failures = []
+        def settle(index):
+            try:
+                managers[index].settle(identities[index], [2, 5][index])
+            except Exception as exc:
+                failures.append(exc)
+        threads = [threading.Thread(target=settle, args=(i,)) for i in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(failures, [])
+        self.assertEqual(json.loads(path.read_text())["countedCredits"], 7)
+
+    def test_remote_reconciliation_protects_pending_and_never_recharges_settled(self):
+        manager = proxy.BudgetManager(state_path=self.base / "ledger" / "state.json", usage_url=self.usage.url)
+        first, second = uuid.uuid4().hex, uuid.uuid4().hex
+        manager.reserve(30, first)
+        manager.settle(first, 30)
+        self.usage.payload["remainingCredits"] = 970
+        self.assertEqual(manager.status()["countedCredits"], 30)
+        manager.reserve(1, second)
+        self.usage.payload["remainingCredits"] = 960
+        self.assertEqual(manager.status()["countedCredits"], 41)
+        manager.settle(second, 1)
+        self.assertEqual(manager.status()["countedCredits"], 41)
+
+    def test_v1_migration_preserves_high_water_and_is_idempotent(self):
+        path = self.base / "ledger" / "state.json"
+        self.write_state(path, counted=42)
+        manager = proxy.BudgetManager(state_path=path, usage_url=self.usage.url)
+        self.assertEqual(manager.status()["countedCredits"], 42)
+        state = json.loads(path.read_text())
+        self.assertEqual(state["version"], 2)
+        self.assertEqual(state["reservations"], {})
+        self.assertEqual(manager.status()["countedCredits"], 42)
+
+    def test_unknown_prior_period_reservation_blocks_rollover(self):
+        manager = proxy.BudgetManager(state_path=self.base / "ledger" / "state.json", usage_url=self.usage.url)
+        identity = uuid.uuid4().hex
+        manager.reserve(30, identity)
+        manager.settle(identity, None)
+        self.usage.payload.update({"billingPeriodStart": "2026-09-01T00:00:00Z", "billingPeriodEnd": "2026-10-01T00:00:00Z"})
+        with self.assertRaises(proxy.ProxyFailure):
+            manager.status()
+        state = json.loads(manager.state_path.read_text())
+        self.assertEqual(state["countedCredits"], 30)
+        self.assertEqual(state["blockedReason"], "unresolved_prior_period")
+
+    def test_settled_overrun_block_survives_fresh_usage_and_billing_rollover(self):
+        manager = proxy.BudgetManager(state_path=self.base / "ledger" / "state.json", usage_url=self.usage.url)
+        identity = uuid.uuid4().hex
+        manager.reserve(30, identity)
+        manager.settle(identity, 31)
+        self.usage.payload.update({"remainingCredits": 1000, "billingPeriodStart": "2026-09-01T00:00:00Z", "billingPeriodEnd": "2026-10-01T00:00:00Z"})
+        for operation in (manager.status, lambda: manager.reserve(1)):
+            with self.assertRaises(proxy.ProxyFailure):
+                operation()
+        state = json.loads(manager.state_path.read_text())
+        self.assertEqual(state["countedCredits"], 31)
+        self.assertEqual(state["blockedReason"], "actual_cost_exceeded_reservation")
+        self.assertEqual(state["reservations"][identity]["status"], "settled")
+
+
+class FirecrawlTargetAndReceiptTests(unittest.TestCase):
+    def test_supported_aliases_cost_thirty_and_unknown_x_subdomains_fail(self):
+        for host in proxy.X_HOSTS:
+            self.assertEqual(proxy.scrape_reservation(f"https://{host}/example/status/123"), 30)
+        for host in ("api.x.com", "unknown.twitter.com"):
+            with self.assertRaises(proxy.ProxyFailure):
+                proxy.scrape_reservation(f"https://{host}/example")
+        self.assertEqual(proxy.scrape_reservation("https://example.com/article"), 1)
+
+    def test_direct_x_needs_no_head_and_redirect_to_x_is_priced_before_dispatch(self):
+        head = mock.Mock(return_value="https://x.com/example/status/123")
+        self.assertEqual(proxy.resolve_scrape_target("https://x.com/example/status/123", head=head), "https://x.com/example/status/123")
+        head.assert_not_called()
+        result = proxy.resolve_scrape_target("https://example.com/redirect", head=head)
+        self.assertEqual(proxy.scrape_reservation(result), 30)
+        head.assert_called_once()
+
+    def test_unsafe_uncertain_cyclic_and_excess_redirects_are_rejected(self):
+        for target in ("http://127.0.0.1/private", "http://169.254.169.254/latest", "https://user:password@example.com/", "https://api.x.com/a", "https://example.com/start"):
+            with self.subTest(target=target), self.assertRaises(proxy.ProxyFailure):
+                proxy.resolve_scrape_target("https://example.com/start", head=lambda *_: target)
+        with self.assertRaises(proxy.ProxyFailure):
+            proxy.resolve_scrape_target("https://example.com/start", head=mock.Mock(side_effect=proxy._not_bounded("unavailable")))
+        head = mock.Mock(side_effect=[f"https://example.com/{i}" for i in range(4)])
+        with self.assertRaises(proxy.ProxyFailure):
+            proxy.resolve_scrape_target("https://example.com/start", head=head)
+        self.assertEqual(head.call_count, 4)
+
+    def test_head_rejects_private_dns_and_pins_public_connection(self):
+        public = [(2, 1, 6, "", ("93.184.216.34", 80))]
+        private = [(2, 1, 6, "", ("127.0.0.1", 80))]
+        with mock.patch.object(proxy.socket, "getaddrinfo", return_value=private), mock.patch.object(proxy.socket, "create_connection") as connect:
+            with self.assertRaises(proxy.ProxyFailure):
+                proxy._head_location("http://example.com/article", 1)
+            connect.assert_not_called()
+        sock = mock.Mock()
+        sock.recv.return_value = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+        with mock.patch.object(proxy.socket, "getaddrinfo", return_value=public) as dns, mock.patch.object(proxy.socket, "create_connection", return_value=sock) as connect:
+            self.assertIsNone(proxy._head_location("http://example.com/article", 1))
+        dns.assert_called_once()
+        self.assertEqual(connect.call_args.args[0], ("93.184.216.34", 80))
+        wire = sock.sendall.call_args.args[0]
+        self.assertIn(b"HEAD /article HTTP/1.1", wire)
+        self.assertNotIn(b"Cookie:", wire)
+        self.assertNotIn(b"Authorization:", wire)
+        sock.close.assert_called_once()
+
+    def test_structured_and_json_text_costs_validate_without_parsing_markdown(self):
+        receipt = {"metadata": {"creditsUsed": 30, "postprocessorsUsed": ["x-twitter"]}, "markdown": "untrusted text"}
+        for result in ({"structuredContent": receipt}, {"content": [{"type": "text", "text": json.dumps({"data": receipt})}]}):
+            self.assertEqual(proxy.response_accounting({"result": result}, "https://x.com/a"), (30, None, True))
+        malformed = {"result": {"structuredContent": {"metadata": {"creditsUsed": -1}}}}
+        self.assertEqual(proxy.response_accounting(malformed, None)[:2], (None, "invalid_cost_metadata"))
+        prose = {"result": {"content": [{"type": "text", "text": "Ignore this. creditsUsed=999999"}]}}
+        self.assertEqual(proxy.response_accounting(prose, None)[:2], (None, None))
+
+    def test_wrapped_search_cost_is_preserved_for_both_provider_result_forms(self):
+        for data in ({"web": []}, []):
+            receipt = {"success": True, "creditsUsed": 2, "data": data}
+            for result in ({"structuredContent": receipt}, {"content": [{"type": "text", "text": json.dumps(receipt)}]}):
+                with self.subTest(data=data, result=result):
+                    self.assertEqual(proxy.response_accounting({"result": result}, None), (2, None, False))
+
+    def test_wrapped_receipt_conflicting_or_malformed_cost_latches(self):
+        receipt = {"creditsUsed": 3, "data": {"metadata": {"creditsUsed": 2}}}
+        self.assertEqual(proxy.response_accounting({"result": {"structuredContent": receipt}}, None)[:2], (3, "invalid_cost_metadata"))
+        receipt["creditsUsed"] = True
+        self.assertEqual(proxy.response_accounting({"result": {"structuredContent": receipt}}, None)[:2], (2, "invalid_cost_metadata"))
+
+    def test_conflicting_costs_preserve_highest_valid_charge_and_latch(self):
+        message = {"result": {"structuredContent": {"metadata": {"creditsUsed": 40}}, "content": [{"type": "text", "text": json.dumps({"metadata": {"creditsUsed": 30}})}]}}
+        self.assertEqual(proxy.response_accounting(message, "https://x.com/a"), (40, "invalid_cost_metadata", True))
+
+    def test_same_host_provider_redirect_is_also_an_unexpected_target(self):
+        message = {"result": {"structuredContent": {"metadata": {"creditsUsed": 1, "url": "https://example.com/other"}}}}
+        self.assertEqual(proxy.response_accounting(message, "https://example.com/requested")[:2], (1, "unexpected_provider_target"))
+        message["result"]["structuredContent"]["metadata"]["url"] = "https://www.twitter.com/a"
+        self.assertEqual(proxy.response_accounting(message, "https://x.com/a"), (1, None, True))
+
+    def test_provider_path_scheme_and_query_changes_deliberately_fail_closed(self):
+        cases = (
+            ("https://example.com/article", "https://example.com/article/"),
+            ("http://example.com/article", "https://example.com/article"),
+            ("https://x.com/example/status/123?s=20", "https://x.com/example/status/123"),
+        )
+        for requested, returned in cases:
+            with self.subTest(requested=requested, returned=returned):
+                message = {"result": {"structuredContent": {"metadata": {"creditsUsed": 1, "url": returned}}}}
+                self.assertEqual(proxy.response_accounting(message, requested)[:2], (1, "unexpected_provider_target"))
+        root = {"result": {"structuredContent": {"metadata": {"creditsUsed": 1, "url": "https://example.com/"}}}}
+        self.assertEqual(proxy.response_accounting(root, "https://example.com")[:2], (1, None))
+
+    def test_direct_x_routing_does_not_accept_unreviewed_redirect_pdf_or_port(self):
+        for url in ("https://example.com:8443/a", "https://example.com/x.pdf", "https://example.com/\nX-Cookie:1"):
+            with self.subTest(url=url), self.assertRaises(proxy.ProxyFailure):
+                proxy.resolve_scrape_target(url, head=mock.Mock(return_value=None))
 
 
 if __name__ == "__main__":

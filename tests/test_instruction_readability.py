@@ -16,10 +16,10 @@ ARCHIFY_OPENAI = ARCHIFY_SKILL.parent / "agents" / "openai.yaml"
 DIAGRAM_PLUGIN = ROOT / "plugins" / "diagram-tools" / ".codex-plugin" / "plugin.json"
 DRAWIO_SKILL = ROOT / "plugins" / "drawio-tools" / "skills" / "drawio" / "SKILL.md"
 PAPER_FIGURE_SKILL = (
-    ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
+    ROOT / "plugins" / "diagram-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
 )
 EXPLAIN_SKILL = (
-    ROOT / "plugins" / "workflow-tools" / "skills" / "explain-clearly" / "SKILL.md"
+    ROOT / "plugins" / "diagram-tools" / "skills" / "explain-clearly" / "SKILL.md"
 )
 SHIP_AGENT = (
     ROOT

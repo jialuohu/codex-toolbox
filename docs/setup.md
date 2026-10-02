@@ -7,6 +7,7 @@ Run shell commands from the repository root. Read the owning skill before using 
 - [Obsidian filesystem roots](#obsidian-filesystem-roots)
 - [New Device Setup](#new-device-setup)
 - [Sync Toolbox](#sync-toolbox)
+- [Visual Communication migration](#visual-communication-migration)
 - [AGENTS.md Sync](#agentsmd-sync)
 - [Managed Codex Pet](#managed-codex-pet)
 
@@ -52,7 +53,9 @@ confinement solution. See the isolated qualification in
    plugins, installs third-party marketplace pins, removes stale direct MCP
    overrides for managed servers, and copies
    `config/codex/AGENTS.global.md` to `${CODEX_HOME:-$HOME/.codex}/AGENTS.md`.
-   Before Codex operations, it safely removes only the seven known duplicate
+   Before changing instructions, prerequisites, or plugins, it checks whether
+   the Visual Communication family needs the explicit migration described below.
+   After that check, it safely removes only the seven known duplicate
    user-skill links that still point into `.cc-switch/skills`, preserves their
    targets and `hatch-pet`, ensures a working `rg` through Homebrew when needed,
    and resolves Codex from `PATH`, the current ChatGPT app, then the legacy
@@ -131,6 +134,24 @@ default to stdout; optional JSON and Markdown files must stay outside Git.
 Unsupported live probes remain unverified. See the
 [health-check contract](../plugins/workflow-tools/skills/sync-toolbox/references/health-checks.md)
 for evidence, time limits, safe probes, and report commands.
+
+## Visual Communication migration
+
+The explanation and publication-figure skills now belong to `diagram-tools`
+(display name **Visual Communication**). Existing installations must pass the
+family migration before ordinary setup can refresh these packages:
+
+```bash
+scripts/setup-codex-toolbox.sh --migration-plan visual-communication
+```
+
+This command inspects versions, enabled states, skill ownership, and available
+recovery packages without changing the installation. A separately authorized
+`--migrate visual-communication` operation rehearses upgrade and recovery before
+changing the installed family. Mixed, disabled, partial, and unknown states are
+blocked. Fresh installations use ordinary setup. See the
+[migration and recovery contract](visual-communication-migration.md) for supported
+versions, failure behavior, and verification.
 
 ## AGENTS.md Sync
 

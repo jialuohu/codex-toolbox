@@ -12,7 +12,7 @@ Create one compact, factual note shell for a paper. The note records verified me
 - A standard create-draft request authorizes only one new note. A bounded call from `$zotero-todoist-reading-tasks` authorizes at most one create-or-reuse action per uniquely resolved parent.
 - Resolve the configured vault through `CODEX_OBSIDIAN_VAULT` and `obsidian_files`. Write only beneath `PaperRead/`; never use the current working directory as the vault.
 - Accept a title, DOI, arXiv ID or URL, publisher URL, or Zotero item.
-- Do not add or update Zotero and do not ingest the LLM Wiki.
+- Do not add or update Zotero.
 
 ## Resolve Identity and Metadata
 

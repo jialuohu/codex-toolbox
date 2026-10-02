@@ -1,12 +1,6 @@
 # Research figure style for new AI and systems paper figures
 
-Use this guide for **new** research figures, or when a user asks to restyle an existing one. Apply choices **per setting** in this order: explicit request, project or venue convention, this research default, then the general figure default. A venue's required dimensions, fonts, or color rules take precedence. Do not modify existing figures merely because the default changed.
-
-## Visual composition
-
-Use a white canvas, pale groups around related components, dark outlines, and short action labels. Number operations where their order matters. Draw a cache as entries, layers, or occupied/free segments so its state explains the mechanism; a generic storage icon does not convey eviction or reuse. Align baseline and proposed timelines on the same event and state rows. Distinguish a schematic timeline from measured duration with a visible label. An inset plot is useful when it explains the mechanism and uses values traceable to its own source.
-
-These choices adapt recurring patterns inspected in [FineMoE, Figure 5 and Figures 10–12](https://arxiv.org/pdf/2502.05370v2), [Stellaris, Figure 4](https://intellisys.haow.us/assets/pdf/SC41406.2024.00045.pdf), [RainbowCake, Figures 4–9](https://intellisys.haow.us/assets/pdf/hanfei-asplos24spring.pdf), and [Nitro, Figure 6](https://www.vldb.org/pvldb/vol18/p66-yu.pdf). They are layout and encoding references, not artwork to copy. FineMoE uses numbered operations and resource details; Stellaris connects roles and temporal steps; RainbowCake aligns competing timelines and presents distributions, breakdowns, and uncertainty; Nitro combines workflow and a small explanatory plot.
+Use this guide for **new** research figures, or when a user asks to restyle an existing one. Read [shared research composition](../../research-figure-style.md) for source references, diagram composition, and per-setting precedence. This guide owns publication data, dimensions, typography, and regeneration. Do not modify existing figures merely because the default changed.
 
 ## Plots and encodings
 

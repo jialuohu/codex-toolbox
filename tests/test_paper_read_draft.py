@@ -300,10 +300,9 @@ class PaperReadDraftSkillTests(unittest.TestCase):
             skill,
         )
 
-    def test_skill_has_no_zotero_or_llm_wiki_mutation_path(self) -> None:
+    def test_skill_has_no_zotero_mutation_or_reading_content_path(self) -> None:
         skill = self.read(SKILL)
         self.assertRegex(skill, r"(?i)do not add or update Zotero")
-        self.assertRegex(skill, r"(?i)do not ingest the LLM Wiki")
         self.assertRegex(skill, r"(?i)do not provide.*?(paper summary|claims|methods|evaluation|critique|quotes|reading log)")
 
 

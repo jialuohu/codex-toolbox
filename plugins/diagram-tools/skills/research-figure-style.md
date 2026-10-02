@@ -1,10 +1,24 @@
-# Research composition with Diagram Tools
+# Shared research figure composition
 
-These are defaults for **new research figures** when Mermaid or Archify is the
-selected owner. Apply each setting in this order: explicit request, project or
+These are defaults for **new research figures** across Visual Communication.
+Apply each setting in this order: explicit request, project or
 venue convention, research default, general default. Preserve existing
 diagrams unless restyling is requested. The purpose is a readable research
-composition, not a new renderer, preset, or data format.
+composition, not a new renderer, preset, or data format. The publication
+pipeline's [plot and export rules](paper-figure-workflow/references/research-style.md)
+own quantitative data, dimensions, typography, and reproducibility. Ordinary
+diagrams retain their selected owner's defaults.
+
+## Composition and source evidence
+
+Where the selected owner supports these controls, use a white canvas, pale
+component groups, dark outlines, and short action labels. Number operations
+only when order matters. Show cache or memory state as entries, layers, or
+occupied/free segments when that state explains the mechanism. Align baseline
+and proposed timelines on the same event and state rows. Label a qualitative
+timeline **schematic**; measured duration requires source data and units. An
+inset plot must use values traceable to its own source. Renderer-specific
+constraints below take precedence over unsupported style suggestions.
 
 The inspected [FineMoE](https://arxiv.org/pdf/2502.05370v2),
 [Stellaris](https://intellisys.haow.us/assets/pdf/SC41406.2024.00045.pdf),
@@ -28,8 +42,11 @@ pretty-mermaid render \
 ```
 
 The values above are starting points. The cobalt ink is from Mono-Color's
-[`ink_cobalt`](../../photo-tools/skills/mono-color/references/design-system/colors.json)
-catalog entry; the neutral grays are local presentation choices. If Mono-Color
+`ink_cobalt` catalog entry; the neutral grays are local presentation choices.
+For requested palette selection, resolve `$mono-color` from the current skill
+catalog and read `<active-mono-color-skill>/references/design-system/colors.json`
+under that exact active skill directory. Do not traverse sibling cache directories, assume a version,
+or copy the catalog. If Mono-Color
 selects a different palette, pass its exact HEX values through the same
 supported flags and record them beside the `.mmd` source. The font flag names
 a recipient font; inspect substitutions and glyph coverage on the actual

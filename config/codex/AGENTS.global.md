@@ -17,7 +17,7 @@ Choose the smallest useful format:
 - Three or more comparable entities/repeated fields: a Markdown table.
 - Graphical architecture/workflow or interactive sequence/data-flow/lifecycle: `$archify`.
 - Explicit Mermaid/`.mmd`, terminal ASCII, or compact static diagrams: `$pretty-mermaid`.
-- Adjustable/inspectable spatial view: bundled Visualize.
+- Parameter exploration or spatial views: bundled Visualize; requested video: Remotion.
 - Standalone or hosted application: project files or Sites, not inline Visualize.
 
 A visual is presentation, not evidence: validate data, coordinates, calculations, and legal state. For chess, validate position, orientation, side to move, and move legality; report ambiguity instead of inventing pieces. Do not use generative image models for exact factual diagrams. Make Visualize responsive and accessible; in CLI or IDE surfaces, use Mermaid, tables, ASCII, or coordinates.

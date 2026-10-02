@@ -24,6 +24,7 @@ README = ROOT / "README.md"
 DOCUMENTATION_GUIDES = (
     "docs/setup.md",
     "docs/diagrams.md",
+    "docs/visual-communication-migration.md",
     "docs/apple-mail.md",
     "docs/gmail.md",
     "docs/overleaf.md",
@@ -63,15 +64,6 @@ RESEARCH_PLUGIN = ROOT / "plugins" / "research-tools" / ".codex-plugin" / "plugi
 RESEARCH_MCP = ROOT / "plugins" / "research-tools" / ".mcp.json"
 RESEARCH_LLM_WIKI_SKILL = (
     ROOT / "plugins" / "research-tools" / "skills" / "research-llm-wiki" / "SKILL.md"
-)
-RESEARCH_LLM_WIKI_LINT = (
-    ROOT
-    / "plugins"
-    / "research-tools"
-    / "skills"
-    / "research-llm-wiki"
-    / "scripts"
-    / "lint_research_llm_wiki.py"
 )
 DOCMOST_LAB_WIKI_SKILL = (
     ROOT / "plugins" / "research-tools" / "skills" / "docmost-lab-wiki" / "SKILL.md"
@@ -192,7 +184,7 @@ DEEP_PLANNING_OPENAI = (
     ROOT / "plugins" / "workflow-tools" / "skills" / "deep-planning" / "agents" / "openai.yaml"
 )
 EXPLAIN_CLEARLY_SKILL = (
-    ROOT / "plugins" / "workflow-tools" / "skills" / "explain-clearly" / "SKILL.md"
+    ROOT / "plugins" / "diagram-tools" / "skills" / "explain-clearly" / "SKILL.md"
 )
 EXPLAIN_CLEARLY_OPENAI = EXPLAIN_CLEARLY_SKILL.parent / "agents" / "openai.yaml"
 SHIP_TOOLBOX_SKILL = (
@@ -216,17 +208,17 @@ CHATGPT_PLANNER_SKILL = (
 )
 CHATGPT_PLANNER_OPENAI = CHATGPT_PLANNER_SKILL.parent / "agents" / "openai.yaml"
 CHATGPT_PLANNER_SCRIPT = CHATGPT_PLANNER_SKILL.parent / "scripts" / "planner_state.py"
-PAPER_FIGURE_PLUGIN = ROOT / "plugins" / "paper-figure-tools" / ".codex-plugin" / "plugin.json"
+PAPER_FIGURE_PLUGIN = ROOT / "plugins" / "diagram-tools" / ".codex-plugin" / "plugin.json"
 PAPER_FIGURE_SKILL = (
-    ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
+    ROOT / "plugins" / "diagram-tools" / "skills" / "paper-figure-workflow" / "SKILL.md"
 )
 PAPER_FIGURE_OPENAI = (
-    ROOT / "plugins" / "paper-figure-tools" / "skills" / "paper-figure-workflow" / "agents" / "openai.yaml"
+    ROOT / "plugins" / "diagram-tools" / "skills" / "paper-figure-workflow" / "agents" / "openai.yaml"
 )
 PAPER_FIGURE_REFERENCE = (
     ROOT
     / "plugins"
-    / "paper-figure-tools"
+    / "diagram-tools"
     / "skills"
     / "paper-figure-workflow"
     / "references"
@@ -2789,6 +2781,31 @@ def validate_diagram_tools_contract(
     plugin = json.loads(DIAGRAM_TOOLS_PLUGIN.read_text())
     require(plugin.get("name") == "diagram-tools", "diagram-tools manifest name must be exact")
     require_plugin_version(plugin, "diagram-tools")
+    require(plugin.get("interface", {}).get("displayName") == "Visual Communication",
+            "diagram-tools must use the Visual Communication display name")
+    for skill in ("explain-clearly", "paper-figure-workflow"):
+        owners = sorted(path.parent.parent.parent.name for path in
+                        (ROOT / "plugins").glob(f"*/skills/{skill}/SKILL.md"))
+        require(owners == ["diagram-tools"], f"{skill} must have exactly one diagram-tools owner")
+    require(not (ROOT / "plugins/paper-figure-tools/.codex-plugin/plugin.json").exists(),
+            "the standalone publication plugin must be retired from source")
+    require(not any(item.get("name") == "paper-figure-tools" for item in marketplace.get("plugins", [])),
+            "the retired publication plugin must not remain in the marketplace")
+    migration_script = ROOT / "scripts/migrate_visual_communication.py"
+    require(migration_script.is_file(), "the family migration helper must exist")
+    preflight = 'python3 "$ROOT/scripts/migrate_visual_communication.py" --check-setup'
+    require(preflight in setup_text, "ordinary setup must preflight the family migration")
+    for mutation in ('legacy-skills --install', 'ensure-rg --install',
+                     '"$ROOT/scripts/sync-agents.sh" --install'):
+        require(setup_text.index(preflight) < setup_text.index(mutation),
+                f"migration preflight must precede {mutation}")
+    for option in ("--migration-plan", "--migrate"):
+        require(option in setup_text, f"setup must expose the {option} family operation")
+    package_readback = 'python3 "$ROOT/scripts/migrate_visual_communication.py" --verify-package "$plugin_name"'
+    require(package_readback in setup_text, "family refresh must verify installed package bytes and enabled state")
+    require(setup_text.index(package_readback) > setup_text.index(
+        '"$CODEX_BIN" plugin add "${plugin_name}@${marketplace_name}"'),
+        "family package verification must follow its supported add operation")
     publisher = DIAGRAM_TOOLS_DIR / "skills" / "diagram-publish"
     publisher_runtime = DIAGRAM_TOOLS_DIR / "runtime" / "publisher"
     for relative in ("SKILL.md", "agents/openai.yaml", "scripts/diagram_publish.py"):
@@ -3133,8 +3150,8 @@ def validate_diagram_tools_contract(
 
     readme_normalized = " ".join(readme_text.split())
     for expected in (
-        "## Diagram Tools",
-        "two bounded rendering lanes",
+        "## Visual Communication",
+        "two bounded diagram rendering lanes",
         "graphical default",
         "task-scoped temporary directory",
         "contract-gated rolling runtime",
@@ -3152,7 +3169,7 @@ def validate_diagram_tools_contract(
         "task-scoped temporary output",
         "$drawio` owns explicit native, multi-page, WYSIWYG",
         "$paper-figure-workflow",
-        "Adjustable/inspectable spatial view: bundled Visualize",
+        "Parameter exploration or spatial views: bundled Visualize; requested video: Remotion",
     ):
         require(expected in global_agents_text, f"global AGENTS diagram routing must mention {expected}")
     for retired in (
@@ -3451,7 +3468,7 @@ def validate_drawio_tools_contract(
         "paper-figure-workflow must delegate Draw.io execution without giving up pipeline ownership",
     )
     require_plugin_version(json.loads(DIAGRAM_TOOLS_PLUGIN.read_text()), "diagram-tools")
-    require_plugin_version(json.loads(PAPER_FIGURE_PLUGIN.read_text()), "paper-figure-tools")
+    require_plugin_version(json.loads(PAPER_FIGURE_PLUGIN.read_text()), "diagram-tools")
     require_plugin_version(json.loads(OMNIGRAFFLE_PLUGIN.read_text()), "omnigraffle-tools")
     require(
         "doctor --probe-app" in paper_text and "native acceptance" in paper_text,
@@ -3747,10 +3764,9 @@ def main() -> None:
     require(GAME_ASSET_MCP.exists(), "game-asset-tools must define an MCP config")
     require(RESEARCH_PLUGIN.exists(), "research-tools plugin manifest must exist")
     require(RESEARCH_MCP.exists(), "research-tools must define an MCP config")
-    require(RESEARCH_LLM_WIKI_SKILL.exists(), "research-tools must include research-llm-wiki skill")
     require(
-        RESEARCH_LLM_WIKI_LINT.exists(),
-        "research-llm-wiki must include a deterministic lint helper",
+        not RESEARCH_LLM_WIKI_SKILL.exists(),
+        "retired Research LLM Wiki skill must remain absent",
     )
     for path in (
         DOCMOST_LAB_WIKI_SKILL,
@@ -3845,7 +3861,7 @@ def main() -> None:
     require(WORKFLOW_PLUGIN.exists(), "workflow-tools plugin manifest must exist")
     require(DEEP_PLANNING_SKILL.exists(), "workflow-tools must include deep-planning skill")
     require(DEEP_PLANNING_OPENAI.exists(), "deep-planning must include OpenAI agent metadata")
-    require(EXPLAIN_CLEARLY_SKILL.exists(), "workflow-tools must include explain-clearly skill")
+    require(EXPLAIN_CLEARLY_SKILL.exists(), "diagram-tools must include explain-clearly skill")
     require(
         EXPLAIN_CLEARLY_OPENAI.exists(),
         "explain-clearly must include OpenAI agent metadata",
@@ -3865,10 +3881,10 @@ def main() -> None:
     require(CHATGPT_PLANNER_SKILL.exists(), "workflow-tools must include chatgpt-planner")
     require(CHATGPT_PLANNER_OPENAI.exists(), "chatgpt-planner must include OpenAI metadata")
     require(CHATGPT_PLANNER_SCRIPT.exists(), "chatgpt-planner must include local request tracking")
-    require(PAPER_FIGURE_PLUGIN.exists(), "paper-figure-tools plugin manifest must exist")
+    require(PAPER_FIGURE_PLUGIN.exists(), "Visual Communication plugin manifest must exist")
     require(
         PAPER_FIGURE_SKILL.exists(),
-        "paper-figure-tools must include paper-figure-workflow skill",
+        "diagram-tools must include paper-figure-workflow skill",
     )
     require(
         PAPER_FIGURE_OPENAI.exists(),
@@ -4218,8 +4234,9 @@ def main() -> None:
     for expected in (
         "Explain Clearly",
         "$explain-clearly",
-        "mental model",
-        "concrete example",
+        "Visual Communication",
+        "Remotion",
+        "adapts depth, examples, and structure",
         "smallest useful format",
         "bundled Visualize",
         "ambiguous chess positions",
@@ -4367,8 +4384,8 @@ def main() -> None:
         "setup script must install the codex-task-tools broker",
     )
     require(
-        '  "paper-figure-tools"' in default_plugins,
-        "setup script must install the paper-figure-tools plugin",
+        '  "paper-figure-tools"' not in default_plugins,
+        "setup defaults must use diagram-tools for the consolidated publication workflow",
     )
     require(
         '  "productivity-tools"' in default_plugins,
@@ -4550,11 +4567,11 @@ def main() -> None:
     )
     require(
         any(
-            plugin.get("name") == "paper-figure-tools"
-            and plugin.get("source", {}).get("path") == "./plugins/paper-figure-tools"
+            plugin.get("name") == "diagram-tools"
+            and plugin.get("source", {}).get("path") == "./plugins/diagram-tools"
             for plugin in marketplace.get("plugins", [])
         ),
-        "marketplace must include paper-figure-tools",
+        "marketplace must include the consolidated diagram-tools owner",
     )
     require(
         any(
@@ -5040,12 +5057,12 @@ def main() -> None:
         "workflow-tools default prompts must surface deep-planning usage",
     )
     require(
-        any("explain-clearly" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
-        "workflow-tools default prompts must surface explain-clearly usage",
+        not any("explain-clearly" in prompt for prompt in workflow_interface.get("defaultPrompt", [])),
+        "workflow-tools must transfer explain-clearly discovery to diagram-tools",
     )
     require(
-        "explanation" in workflow_interface.get("longDescription", "").lower(),
-        "workflow-tools plugin description must mention explanations",
+        "Explain Clearly" not in workflow_interface.get("longDescription", ""),
+        "workflow-tools must not advertise the moved explanation skill",
     )
     require(
         "Ship Toolbox" in workflow_interface.get("longDescription", ""),
@@ -5094,16 +5111,15 @@ def main() -> None:
     explain_clearly_text = EXPLAIN_CLEARLY_SKILL.read_text()
     for expected in (
         "name: explain-clearly",
-        "Use for explanations",
+        "Explain concepts",
         "direct answer",
-        "mental model",
         "concrete example",
         "There is no required example count or fixed sequence",
         "mechanism and limits",
         "input",
         "state",
         "output",
-        "analogy",
+        "analogies only when requested",
         "terse factual query",
         "Explicit user instructions",
         "Choose the Smallest Useful Format",
@@ -5120,8 +5136,8 @@ def main() -> None:
     explain_clearly_openai = EXPLAIN_CLEARLY_OPENAI.read_text()
     for expected in (
         'display_name: "Explain Clearly"',
-        'short_description: "Direct explanations with depth suited to the question."',
-        'default_prompt: "Use $explain-clearly to answer directly, adapt the depth to my question, and add examples or visuals only when they help."',
+        'short_description: "Sourced explanations with the smallest useful medium."',
+        'default_prompt: "Use $explain-clearly to answer directly, trace the mechanism, and choose prose, a diagram, an interactive explanation, or requested video when it helps."',
         "allow_implicit_invocation: true",
     ):
         require(
@@ -5215,20 +5231,20 @@ def main() -> None:
         )
     require(
         paper_figure_plugin.get("skills") == "./skills/",
-        "paper-figure-tools must expose bundled figure workflow skills",
+        "diagram-tools must expose bundled figure workflow skills",
     )
     require(
         "mcpServers" not in paper_figure_plugin,
-        "paper-figure-tools must not expose an MCP server",
+        "diagram-tools must not expose an MCP server",
     )
     paper_figure_interface = paper_figure_plugin.get("interface", {})
     require(
-        "AI/systems paper" in paper_figure_interface.get("longDescription", ""),
-        "paper-figure-tools plugin description must mention AI/systems paper figures",
+        "reproducible research plots" in paper_figure_interface.get("longDescription", ""),
+        "Visual Communication description must mention reproducible research plots",
     )
     require(
         any("paper-figure-workflow" in prompt for prompt in paper_figure_interface.get("defaultPrompt", [])),
-        "paper-figure-tools default prompts must surface paper-figure-workflow usage",
+        "Visual Communication default prompts must surface paper-figure-workflow usage",
     )
     paper_figure_skill_text = PAPER_FIGURE_SKILL.read_text()
     for expected in (
@@ -5665,8 +5681,8 @@ def main() -> None:
     )
     research_interface = research_plugin.get("interface", {})
     require(
-        "LLM Wiki" in research_interface.get("longDescription", ""),
-        "research-tools plugin description must mention the Research LLM Wiki workflow",
+        "LLM Wiki" not in research_interface.get("longDescription", ""),
+        "research-tools plugin description must not advertise the retired Research LLM Wiki",
     )
     require(
         any("wiki" in prompt.lower() for prompt in research_interface.get("defaultPrompt", [])),
@@ -5726,7 +5742,6 @@ def main() -> None:
         "metadata-only",
         "do not guess",
         "Do not add or update Zotero",
-        "do not ingest the LLM Wiki",
         "Fill a metadata field only when the user supplied it or current-task source/tool output actually observed it.",
         "Never claim a Zotero or canonical lookup occurred without actual returned evidence.",
         "Missing evidence means blank optional fields.",
@@ -5856,28 +5871,6 @@ def main() -> None:
         "no chat-only review mode",
     ):
         require(expected in readme_text, f"Documentation PaperRead review section must mention {expected}")
-    research_skill_text = RESEARCH_LLM_WIKI_SKILL.read_text()
-    for expected in (
-        "name: research-llm-wiki",
-        "Research/LLM Wiki",
-        "$research-llm-wiki ingest",
-        "$research-llm-wiki query",
-        "$research-llm-wiki lint",
-        "lint_research_llm_wiki.py",
-        "Do not rewrite raw source notes",
-        "index.md",
-        "log.md",
-        "$paper-library-intake",
-    ):
-        require(expected in research_skill_text, f"research-llm-wiki skill must mention {expected}")
-    lint_script_text = RESEARCH_LLM_WIKI_LINT.read_text()
-    for expected in (
-        "Missing required wiki path",
-        "missing source identity",
-        "citation",
-        "orphan concept page",
-    ):
-        require(expected in lint_script_text, f"research-llm-wiki lint helper must check {expected}")
     require(
         pixellab_server is not None,
         "game-asset-tools must define the pixellab MCP server",

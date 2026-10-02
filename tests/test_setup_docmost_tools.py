@@ -7,8 +7,10 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -322,6 +324,58 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.install_fake_node()
         self.install_fake_drawio_runtime_prerequisites()
         self.write_executable("rg", "#!/bin/sh\n[ \"${1:-}\" = --version ]\n")
+        # The real migration preflight requires a standard-library TOML parser.
+        # Reuse an installed interpreter in this otherwise intentionally minimal
+        # PATH; do not bypass preflight or let it inherit the test's FAKE_* state.
+        interpreter = None
+        choices = [sys.executable, *(shutil.which(name) for name in ("python3.13", "python3.12", "python3.11"))]
+        for candidate in dict.fromkeys(path for path in choices if path):
+            probe = subprocess.run(
+                [candidate, "-I", "-c", "import sys,tomllib;assert sys.version_info >= (3,11)"],
+                env={"PATH": os.defpath, "HOME": str(self.home)},
+                capture_output=True, timeout=10, check=False,
+            )
+            if probe.returncode == 0:
+                interpreter = candidate
+                break
+        if interpreter is None:
+            self.skipTest("global setup fixture requires an installed Python 3.11+ TOML parser")
+        self.write_executable("python3.11", "#!/bin/sh\nexec " + shlex.quote(interpreter) + ' "$@"\n')
+        # Simulate supported family adds in the temporary Codex home, including
+        # actual package bytes and the config/inventory used by strict readback.
+        # Constants survive the production helper's credential-free environment.
+        family_fixture = self.home / "fake-family-codex.py"
+        family_fixture.write_text(
+            "import json, pathlib, shutil, sys\n"
+            f"home = pathlib.Path({str(self.codex_home)!r})\n"
+            f"source_root = pathlib.Path({str(ROOT)!r})\n"
+            f"log = pathlib.Path({str(self.log_file)!r})\n"
+            "with log.open('a') as stream:\n"
+            "    stream.write('codex ' + ' '.join(sys.argv[1:]) + '\\n')\n"
+            "state = home / 'fake-family-inventory.json'\n"
+            "rows = json.loads(state.read_text()) if state.exists() else []\n"
+            "if sys.argv[1:3] == ['plugin', 'add']:\n"
+            "    name, marketplace = sys.argv[3].split('@', 1)\n"
+            "    assert name in {'diagram-tools', 'workflow-tools'}\n"
+            "    assert marketplace == 'jialuo-codex-toolbox'\n"
+            "    source = source_root / 'plugins' / name\n"
+            "    manifest = json.loads((source / '.codex-plugin/plugin.json').read_text())\n"
+            "    target = home / 'plugins/cache' / marketplace / name / manifest['version']\n"
+            "    if target.exists():\n"
+            "        shutil.rmtree(target)\n"
+            "    shutil.copytree(source, target, ignore=shutil.ignore_patterns(\n"
+            "        '.git', '__pycache__', 'node_modules', '.DS_Store', '*.pyc', '*.pyo'))\n"
+            "    if not any(row['name'] == name for row in rows):\n"
+            "        with (home / 'config.toml').open('a') as config:\n"
+            "            config.write('\\n[plugins.' + json.dumps(sys.argv[3]) + ']\\nenabled = true\\n')\n"
+            "    rows = [row for row in rows if row['name'] != name]\n"
+            "    rows.append({'pluginId': sys.argv[3], 'name': name,\n"
+            "                 'marketplaceName': marketplace, 'version': manifest['version'],\n"
+            "                 'installed': True, 'enabled': True})\n"
+            "    state.write_text(json.dumps(rows))\n"
+            "print(json.dumps({'installed': rows}))\n"
+        )
+        family_command = shlex.quote(interpreter) + " " + shlex.quote(str(family_fixture))
         if not self.marketplace_plugin_root.exists():
             shutil.copytree(
                 ROOT / "plugins" / "docmost-tools",
@@ -342,6 +396,12 @@ class SetupDocmostToolsTest(unittest.TestCase):
         self.write_executable(
             "codex",
             "#!/bin/sh\n"
+            # Start with no family owners; later return each installed family
+            # package. Docmost MCP-copy fixtures remain separately validated.
+            "case \"$*\" in\n"
+            "  'plugin list --json'|'plugin add diagram-tools@jialuo-codex-toolbox --json'|'plugin add workflow-tools@jialuo-codex-toolbox --json')\n"
+            "    exec " + family_command + ' "$@" ;;\n'
+            "esac\n"
             "printf 'codex %s\\n' \"$*\" >> \"$FAKE_DOCMOST_LOG\"\n"
             "if [ \"$1\" = --version ]; then printf 'codex test\\n'; exit 0; fi\n"
             "if [ \"$1\" = mcp ] && [ \"$2\" = get ] && [ \"$3\" = docmost ] && [ \"$4\" = --json ]; then\n"

@@ -30,7 +30,7 @@ or rendered ASCII as requested.
    ```
 
 6. For PNG, default to `--scale 2` unless the user requests another scale. For terminal output, use `--format ascii`; add `--use-ascii` only when Unicode box drawing is unsuitable.
-7. Verify the output exists. Display SVG or PNG using its absolute path in the final response and link the `.mmd` source. For ASCII, include the rendered text and the `.mmd` path.
+7. Verify the output exists and inspect the delivered SVG/PNG at its intended viewing size. Check legible labels, clipping, arrow direction, and agreement with the source. The runtime's dimensions and nonblank-PNG checks do not establish visual review. For a small diagram, one actual inspection is sufficient; for dense or resized figures, inspect the final-size result. If graphical inspection is unavailable, report visual review as unverified. For ASCII, inspect the rendered text and relationships. Display SVG or PNG using its absolute path in the final response and link the `.mmd` source. For ASCII, include the rendered text and the `.mmd` path.
 
 ## Selection Rules
 
@@ -44,8 +44,9 @@ or rendered ASCII as requested.
 - Use native inline Mermaid only when the user explicitly requests it or when the runtime is unavailable or rejects the syntax. Briefly disclose automatic fallback, reuse the exact source, and do not silently change semantics.
 - Use `$drawio` for explicit draw.io or diagrams.net requests, editable `.drawio` source, multi-page files, specialized shapes, browser editing, or draw.io Desktop exports.
 - Use `$paper-figure-workflow` for reproducible publication figure pipelines; it delegates native execution to the selected application owner.
-- Use bundled Visualize for adjustable, inspectable, in-conversation spatial
-  views rather than a standalone static export.
+- Use bundled Visualize for adjustable, inspectable, in-conversation causal or
+  spatial views rather than a standalone static export. `$explain-clearly`
+  selects the medium from the question; requested videos delegate to Remotion.
 - Beautiful Mermaid implements a Mermaid subset. Run `capabilities` when syntax support is uncertain. If rendering rejects a diagram family, preserve the `.mmd`, fall back to native inline Mermaid, and report the limitation.
 
 ## Commands

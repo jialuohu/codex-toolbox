@@ -53,7 +53,12 @@ manual registration, and require an explicit restore request before repairs.
 3. Recheck clean state and fast-forward with `git merge --ff-only <selected-sha>`
    when behind. When already current, skip the merge and still apply setup.
    Require `HEAD` to equal the selected revision before continuing.
-4. Run `scripts/setup-codex-toolbox.sh --non-interactive` from that committed checkout. Use the
+4. Before marketplace refresh, run `scripts/setup-codex-toolbox.sh --migration-plan visual-communication`.
+   A required or blocked family migration stops ordinary sync. Report its specific
+   plan and use `--migrate visual-communication` only when that transition is
+   authorized; do not remove the predecessor package or refresh donors manually.
+   After successful migration, or when none is needed, run
+   `scripts/setup-codex-toolbox.sh --non-interactive` from that committed checkout. Use the
    production Git-backed marketplace on `main`; do not silently accept a local
    development mode or a different source/ref override. The setup script owns
    managed instructions, pets, default plugins, runtime dependencies, stale
@@ -63,8 +68,9 @@ manual registration, and require an explicit restore request before repairs.
 5. Compare the installed toolbox plugins with the selected revision's plugin
    manifests. Include previously installed optional plugins, not just setup
    defaults. Marketplace upgrade may already refresh them; only repair remaining
-   mismatches, using the setup script's scoped `codex plugin remove` / `codex
-   plugin add` sequence. Preserve optional-plugin selection and enabled flags;
+   mismatches through the setup script's scoped replacement sequence. The visual
+   communication family uses verified in-place `codex plugin add`, never a
+   remove-first refresh. Preserve optional-plugin selection and enabled flags;
    verify a supported way to restore a disabled flag before replacing that plugin.
    If an optional plugin disappeared upstream, report it rather than deleting it.
 

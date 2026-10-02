@@ -14,9 +14,9 @@
     {"id":"skill:ui-ux-pro-max","kind":"skill","owner":"ui-ux-pro-max","description":"Review broad UI layout, typography, colors, and accessibility.","available":true,"explicit_only":false},
     {"id":"skill:ship-toolbox","kind":"skill","owner":"workflow-tools","description":"Ship toolbox changes when explicitly invoked.","available":true,"explicit_only":true},
     {"id":"skill:latex-compile","kind":"skill","owner":"latex","description":"Compile a LaTeX document.","available":true,"explicit_only":false},
-    {"id":"skill:explain-clearly","kind":"skill","owner":"workflow-tools","description":"Explain a substantive technical concept clearly.","available":true,"explicit_only":false},
+    {"id":"skill:explain-clearly","kind":"skill","owner":"diagram-tools","description":"Explain a substantive technical concept clearly.","available":true,"explicit_only":false},
     {"id":"skill:community-research","kind":"skill","owner":"web-data-tools","description":"Read or compare public community discussions.","available":true,"explicit_only":false},
-    {"id":"skill:paper-figure-workflow","kind":"skill","owner":"paper-figure-tools","description":"Create reproducible publication figures from research data.","available":true,"explicit_only":false},
+    {"id":"skill:paper-figure-workflow","kind":"skill","owner":"diagram-tools","description":"Create reproducible publication figures from research data.","available":true,"explicit_only":false},
     {"id":"tool:web_search","kind":"tool","owner":"Codex","description":"Look up current public information on the web.","available":true,"explicit_only":false},
     {"id":"tool:exec_command","kind":"tool","owner":"Codex","description":"Inspect or run commands in the local checkout.","available":true,"explicit_only":false},
     {"id":"tool:docmost_read","kind":"tool","owner":"Docmost","description":"Read a private Docmost page when the connector is available.","available":false,"explicit_only":false}

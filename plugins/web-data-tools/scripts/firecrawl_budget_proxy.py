@@ -12,25 +12,33 @@ import contextlib
 import dataclasses
 import datetime as dt
 import fcntl
+import http.client
+import io
+import ipaddress
 import json
 import os
 import pathlib
+import queue
 import select
 import stat
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from typing import Any, BinaryIO, Mapping, Sequence
 
 
 BUDGET_CAP_CREDITS = 900
 STATE_FILENAME = "firecrawl-budget.json"
-STATE_VERSION = 1
-MAX_STATE_BYTES = 64 * 1024
+STATE_VERSION = 2
+MAX_STATE_BYTES = 256 * 1024
 MAX_USAGE_RESPONSE_BYTES = 64 * 1024
 MAX_CREDIT_VALUE = 1_000_000_000_000
 DEFAULT_CREDIT_USAGE_URL = "https://api.firecrawl.dev/v2/team/credit-usage"
@@ -48,6 +56,13 @@ ERROR_REQUEST_NOT_BOUNDED = "FIRECRAWL_REQUEST_NOT_BOUNDED"
 
 SEARCH_RESERVATION_CREDITS = 2
 SCRAPE_RESERVATION_CREDITS = 1
+X_SCRAPE_RESERVATION_CREDITS = 30
+X_HOSTS = frozenset({"x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"})
+X_PROVENANCE = (
+    "Provenance: Firecrawl X/Twitter output is AI-processed (Grok), not a "
+    "verified verbatim transcript. Attribute it as an AI-processed retrieval "
+    "and corroborate material claims with primary sources."
+)
 
 
 class ProxyFailure(Exception):
@@ -165,10 +180,50 @@ class BudgetManager:
     def status(self) -> dict[str, Any]:
         return self._update(reservation=0)
 
-    def reserve(self, credits: int) -> dict[str, Any]:
+    def reserve(self, credits: int, request_id: str | None = None) -> dict[str, Any]:
         if isinstance(credits, bool) or not isinstance(credits, int) or credits <= 0:
             raise ValueError("reservation must be a positive integer")
-        return self._update(reservation=credits)
+        request_id = request_id or uuid.uuid4().hex
+        if not isinstance(request_id, str) or len(request_id) != 32 or any(c not in "0123456789abcdef" for c in request_id):
+            raise ValueError("reservation ID must be a UUID hex string")
+        return self._update(reservation=credits, request_id=request_id)
+
+    def settle(self, request_id: str, actual: int | None, issue: str | None = None) -> None:
+        """Settle once, never refund, and persist uncertainty before returning output."""
+        self._ensure_state_directory()
+        lock_fd = self._open_lock()
+        try:
+            state = self._read_state()
+            if state is None or state["version"] != STATE_VERSION:
+                raise _unavailable("Firecrawl reservation state is unavailable.")
+            entry = state["reservations"].get(request_id)
+            if entry is None:
+                raise _unavailable("Firecrawl response has no durable reservation.")
+            if entry["status"] == "settled" or (entry["status"] == "unknown" and actual is None):
+                return
+            if actual is not None:
+                try:
+                    _nonnegative_integer(actual, "creditsUsed")
+                    if state["countedCredits"] + max(0, actual - entry["reservedCredits"]) > MAX_CREDIT_VALUE:
+                        raise _unavailable("Firecrawl returned unrepresentable aggregate usage.")
+                except ProxyFailure:
+                    actual, issue = None, "invalid_cost_metadata"
+            if actual is not None:
+                state["countedCredits"] += max(0, actual - entry["reservedCredits"])
+                entry["actualCredits"] = actual
+                entry["status"] = "settled"
+                if actual > entry["reservedCredits"]:
+                    issue = "actual_cost_exceeded_reservation"
+            else:
+                entry["status"] = "unknown"
+            if issue:
+                state["blockedReason"] = issue
+            state["accountRemainingCredits"] = max(0, state["accountPlanCredits"] - state["countedCredits"])
+            state["updatedAt"] = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
+            self._write_state(state)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
 
     def _ensure_state_directory(self) -> None:
         parent = self.state_path.parent
@@ -260,9 +315,11 @@ class BudgetManager:
             "billingPeriodEnd",
             "updatedAt",
         }
+        if state.get("version") == STATE_VERSION:
+            expected_fields |= {"remoteSpentCredits", "reservations", "blockedReason"}
         if set(state) != expected_fields:
             raise _unavailable("The Firecrawl budget state has unexpected fields.")
-        if state.get("version") != STATE_VERSION:
+        if state.get("version") not in (1, STATE_VERSION):
             raise _unavailable("The Firecrawl budget state has an unsupported version.")
         if state.get("capCredits") != BUDGET_CAP_CREDITS:
             raise _unavailable("The Firecrawl budget state has an unexpected cap.")
@@ -291,6 +348,28 @@ class BudgetManager:
         if end <= start:
             raise _unavailable("The Firecrawl budget state has an invalid billing period.")
         _parse_timestamp(state.get("updatedAt"), "updatedAt")
+        if state["version"] == STATE_VERSION:
+            _nonnegative_integer(state["remoteSpentCredits"], "remoteSpentCredits")
+            if state["blockedReason"] not in (None, "actual_cost_exceeded_reservation", "invalid_cost_metadata", "unexpected_provider_target", "unresolved_prior_period", "settlement_unavailable"):
+                raise _unavailable("Firecrawl budget blocked reason is invalid.")
+            ledger = state["reservations"]
+            if not isinstance(ledger, dict) or len(ledger) > BUDGET_CAP_CREDITS:
+                raise _unavailable("Firecrawl reservation ledger is invalid.")
+            for key, entry in ledger.items():
+                if not isinstance(key, str) or len(key) != 32 or any(c not in "0123456789abcdef" for c in key):
+                    raise _unavailable("Firecrawl reservation identity is invalid.")
+                if not isinstance(entry, dict) or set(entry) != {"reservedCredits", "actualCredits", "status"}:
+                    raise _unavailable("Firecrawl reservation entry is invalid.")
+                reserved = _nonnegative_integer(entry["reservedCredits"], "reservedCredits")
+                if not 1 <= reserved <= BUDGET_CAP_CREDITS or entry["status"] not in {"pending", "settled", "unknown"}:
+                    raise _unavailable("Firecrawl reservation entry is invalid.")
+                if entry["actualCredits"] is not None:
+                    _nonnegative_integer(entry["actualCredits"], "actualCredits")
+                if (entry["status"] == "settled") != (entry["actualCredits"] is not None):
+                    raise _unavailable("Firecrawl reservation settlement is inconsistent.")
+            charged = sum(max(entry["reservedCredits"], entry["actualCredits"] or 0) for entry in ledger.values())
+            if charged > state["countedCredits"] or state["remoteSpentCredits"] > state["countedCredits"]:
+                raise _unavailable("Firecrawl reservation totals are inconsistent.")
 
     def _fetch_usage(self) -> UsageSnapshot:
         credential = os.environ.get(FIRECRAWL_CREDENTIAL_ENV)
@@ -378,11 +457,14 @@ class BudgetManager:
                     os.unlink(temporary_path)
 
     @staticmethod
-    def _state_document(usage: UsageSnapshot, counted: int) -> dict[str, Any]:
+    def _state_document(usage: UsageSnapshot, counted: int, state: dict[str, Any] | None = None) -> dict[str, Any]:
         return {
             "version": STATE_VERSION,
             "capCredits": BUDGET_CAP_CREDITS,
             "countedCredits": counted,
+            "remoteSpentCredits": max(usage.spent_credits, (state or {}).get("remoteSpentCredits", 0)),
+            "reservations": (state or {}).get("reservations", {}),
+            "blockedReason": (state or {}).get("blockedReason"),
             "accountPlanCredits": usage.plan_credits,
             "accountRemainingCredits": max(0, usage.plan_credits - counted),
             "billingPeriodStart": usage.billing_period_start,
@@ -392,23 +474,38 @@ class BudgetManager:
             .replace("+00:00", "Z"),
         }
 
-    def _update(self, reservation: int) -> dict[str, Any]:
+    def _update(self, reservation: int, request_id: str | None = None) -> dict[str, Any]:
         self._ensure_state_directory()
         lock_fd = self._open_lock()
         try:
             state = self._read_state()
             usage = self._fetch_usage()
             counted = self._reconcile(state, usage)
+            if state and usage.start_time > _parse_timestamp(state["billingPeriodStart"], "billingPeriodStart"):
+                if any(entry["status"] != "settled" for entry in state.get("reservations", {}).values()):
+                    state["blockedReason"] = "unresolved_prior_period"
+                    self._write_state(state)
+                    raise _unavailable("Unresolved Firecrawl reservations span a billing-period change.")
+                if state.get("blockedReason"):
+                    raise _unavailable("Firecrawl accounting is blocked pending review.")
+                state = None
+            outstanding = sum(entry["reservedCredits"] for entry in (state or {}).get("reservations", {}).values() if entry["status"] != "settled")
+            # Aggregate remote usage cannot identify which in-flight calls it includes.
+            # Protect all unresolved reservations, accepting conservative overcount.
+            counted = max(counted, usage.spent_credits + outstanding)
+            if reservation and (state or {}).get("blockedReason"):
+                self._write_state(self._state_document(usage, counted, state))
+                raise _unavailable("Firecrawl accounting is blocked pending review.")
             account_remaining = max(0, usage.plan_credits - counted)
             if reservation:
                 if counted + reservation > BUDGET_CAP_CREDITS:
-                    self._write_state(self._state_document(usage, counted))
+                    self._write_state(self._state_document(usage, counted, state))
                     raise ProxyFailure(
                         ERROR_BUDGET_EXHAUSTED,
                         "The fixed 900-credit Firecrawl billing-period cap would be exceeded.",
                     )
                 if account_remaining < reservation:
-                    self._write_state(self._state_document(usage, counted))
+                    self._write_state(self._state_document(usage, counted, state))
                     raise ProxyFailure(
                         ERROR_BUDGET_EXHAUSTED,
                         "The Firecrawl account has insufficient remaining credits.",
@@ -416,7 +513,11 @@ class BudgetManager:
                 counted += reservation
                 account_remaining -= reservation
 
-            durable = self._state_document(usage, counted)
+            durable = self._state_document(usage, counted, state)
+            if reservation:
+                if request_id in durable["reservations"]:
+                    raise _unavailable("Firecrawl reservation identity was reused.")
+                durable["reservations"][request_id] = {"reservedCredits": reservation, "actualCredits": None, "status": "pending"}
             self._write_state(durable)
             return {
                 "capCredits": BUDGET_CAP_CREDITS,
@@ -428,6 +529,8 @@ class BudgetManager:
                 "billingPeriodStart": usage.billing_period_start,
                 "billingPeriodEnd": usage.billing_period_end,
                 "allowedTools": sorted(ALLOWED_TOOLS),
+                "blockedReason": durable["blockedReason"],
+                "accounting": "conservative; unresolved reservations and remote usage may overlap",
             }
         finally:
             with contextlib.suppress(OSError):
@@ -460,12 +563,17 @@ def _is_public_http_url(value: Any) -> bool:
     if not isinstance(value, str) or not value or len(value) > 8192:
         return False
     try:
+        if any(ord(c) <= 32 or ord(c) == 127 for c in value) or "\\" in value:
+            return False
         parsed = urllib.parse.urlsplit(value)
+        port = parsed.port
     except ValueError:
         return False
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return False
     if parsed.username is not None or parsed.password is not None:
+        return False
+    if port is not None and port != (443 if parsed.scheme == "https" else 80):
         return False
     hostname = parsed.hostname.lower().rstrip(".")
     if hostname in {"localhost", "localhost.localdomain"}:
@@ -477,7 +585,7 @@ def _is_public_http_url(value: Any) -> bool:
 
         address = ipaddress.ip_address(hostname)
     except ValueError:
-        return True
+        return "." in hostname
     return not (
         address.is_private
         or address.is_loopback
@@ -486,6 +594,170 @@ def _is_public_http_url(value: Any) -> bool:
         or address.is_reserved
         or address.is_unspecified
     )
+
+
+def scrape_reservation(url: str) -> int:
+    """Reviewed current price, not a guarantee of future provider billing."""
+    hostname = urllib.parse.urlsplit(url).hostname.lower().rstrip(".")
+    if hostname in X_HOSTS:
+        return X_SCRAPE_RESERVATION_CREDITS
+    if hostname.endswith((".x.com", ".twitter.com")):
+        raise _not_bounded("This X/Twitter hostname has no reviewed pricing contract.")
+    return SCRAPE_RESERVATION_CREDITS
+
+
+def _head_location(url: str, timeout: float) -> str | None:
+    """HEAD with validated, pinned DNS addresses, no proxy, cookies or redirects."""
+    parsed = urllib.parse.urlsplit(url)
+    port = 443 if parsed.scheme == "https" else 80
+    deadline = time.monotonic() + timeout
+
+    def remaining() -> float:
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise _not_bounded("Scrape target verification exceeded its time limit.")
+        return value
+
+    resolved = queue.Queue(maxsize=1)
+
+    def resolve():
+        try:
+            resolved.put(socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM))
+        except OSError as exc:
+            resolved.put(exc)
+
+    try:
+        # A stalled system resolver must not defeat the HTTP request deadline.
+        threading.Thread(target=resolve, daemon=True).start()
+        addresses = resolved.get(timeout=remaining())
+        if isinstance(addresses, OSError):
+            raise addresses
+        if not addresses or any(not ipaddress.ip_address(row[4][0]).is_global for row in addresses):
+            raise _not_bounded("Scrape target does not resolve exclusively to public addresses.")
+        connection = http.client.HTTPConnection(parsed.hostname, port, timeout=remaining())
+        # Connect to the exact validated address; a second DNS lookup cannot rebind it.
+        connection.sock = socket.create_connection((addresses[0][4][0], port), timeout=remaining())
+        try:
+            if parsed.scheme == "https":
+                connection.sock.settimeout(remaining())
+                connection.sock = ssl.create_default_context().wrap_socket(connection.sock, server_hostname=parsed.hostname)
+            target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+            connection.sock.settimeout(remaining())
+            connection.request("HEAD", target, headers={"User-Agent": "codex-toolbox-firecrawl-target-check/1", "Connection": "close"})
+            # Bound both size and total read time, including a peer dripping headers.
+            headers = bytearray()
+            while b"\r\n\r\n" not in headers:
+                connection.sock.settimeout(remaining())
+                block = connection.sock.recv(4096)
+                if not block or len(headers) + len(block) > 65536:
+                    raise _not_bounded("Scrape HEAD response headers are unavailable or oversized.")
+                headers.extend(block)
+            class HeaderSocket:
+                def makefile(self, *_args, **_kwargs):
+                    return io.BytesIO(bytes(headers))
+            response = http.client.HTTPResponse(HeaderSocket())
+            response.begin()
+            if response.status in (301, 302, 303, 307, 308):
+                location = response.getheader("Location")
+                if not location or len(location) > 8192:
+                    raise _not_bounded("Scrape redirect target is unavailable.")
+                return urllib.parse.urljoin(url, location)
+            if not 200 <= response.status < 300:
+                raise _not_bounded("Scrape target could not be verified with a bounded HEAD request.")
+            if "application/pdf" in response.getheader("Content-Type", "").lower():
+                raise _not_bounded("Scrape supports HTML pages, not redirected PDF documents.")
+            return None
+        finally:
+            connection.close()
+    except (OSError, ValueError, queue.Empty, http.client.HTTPException) as exc:
+        raise _not_bounded("Scrape target verification is unavailable.") from exc
+
+
+def resolve_scrape_target(url: str, *, head=_head_location, clock=time.monotonic) -> str:
+    """Resolve at most three redirects before choosing a reservation."""
+    deadline = clock() + 10
+    visited = set()
+    for _ in range(4):
+        if not _is_public_http_url(url) or url in visited:
+            raise _not_bounded("Scrape redirect is unsafe or cyclic.")
+        if urllib.parse.urlsplit(url).path.lower().endswith(".pdf"):
+            raise _not_bounded("Scrape redirect targets a PDF document.")
+        visited.add(url)
+        if scrape_reservation(url) == X_SCRAPE_RESERVATION_CREDITS:
+            return url
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise _not_bounded("Scrape target verification exceeded its time limit.")
+        redirected = head(url, min(5, remaining))
+        if redirected is None:
+            return url
+        url = redirected
+    raise _not_bounded("Scrape target exceeded three redirects.")
+
+
+def response_accounting(message: dict[str, Any], expected_url: str | None) -> tuple[int | None, str | None, bool]:
+    """Read provider JSON fields only; never interpret scraped prose as instructions."""
+    result = message.get("result")
+    if not isinstance(result, dict):
+        return None, None, bool(expected_url and scrape_reservation(expected_url) == 30)
+    envelopes = []
+    if isinstance(result.get("structuredContent"), dict):
+        envelopes.append(result["structuredContent"])
+    content = result.get("content", [])
+    for block in content if isinstance(content, list) else []:
+        if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+            try:
+                value = json.loads(block["text"])
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if isinstance(value, dict):
+                envelopes.append(value)
+    values, targets, processors = [], [], []
+    invalid = False
+    for envelope in envelopes:
+        data = envelope.get("data", envelope)
+        metadata = data.get("metadata", {}) if isinstance(data, dict) else {}
+        if not isinstance(metadata, dict):
+            invalid = True
+            metadata = {}
+        # Search returns billing fields beside `data`; Scrape may put them in
+        # the document metadata. Do not discard the outer provider receipt.
+        for fields in (envelope, data, metadata):
+            if not isinstance(fields, dict):
+                continue
+            if "creditsUsed" in fields:
+                value = fields["creditsUsed"]
+                try:
+                    values.append(_nonnegative_integer(value, "creditsUsed"))
+                except ProxyFailure:
+                    invalid = True
+        for name in ("url", "sourceURL"):
+            if name in metadata:
+                targets.append(metadata[name])
+        if "postprocessorsUsed" in metadata:
+            if not isinstance(metadata["postprocessorsUsed"], list) or any(not isinstance(p, str) for p in metadata["postprocessorsUsed"]):
+                invalid = True
+            else:
+                processors.extend(metadata["postprocessorsUsed"])
+    issue = "invalid_cost_metadata" if invalid or len(set(values)) > 1 else None
+    is_x = bool(expected_url and scrape_reservation(expected_url) == X_SCRAPE_RESERVATION_CREDITS) or "x-twitter" in processors
+    if expected_url:
+        expected_parts = urllib.parse.urlsplit(expected_url)
+        expected_host = expected_parts.hostname.lower().rstrip(".")
+        for target in targets:
+            if not _is_public_http_url(target):
+                issue = "unexpected_provider_target"
+                continue
+            parts = urllib.parse.urlsplit(target)
+            hostname = parts.hostname.lower().rstrip(".")
+            same_host = hostname == expected_host or (hostname in X_HOSTS and expected_host in X_HOSTS)
+            same_resource = (parts.scheme, parts.path or "/", parts.query) == (expected_parts.scheme, expected_parts.path or "/", expected_parts.query)
+            if not same_host or not same_resource:
+                issue = "unexpected_provider_target"
+        if any(p != "x-twitter" for p in processors) or ("x-twitter" in processors and expected_host not in X_HOSTS):
+            issue = "unexpected_provider_target"
+    # Contradictory values are uncertain; preserve the highest valid reported charge.
+    return max(values) if values else None, issue, is_x
 
 
 def normalize_scrape_arguments(arguments: Any) -> dict[str, Any]:
@@ -557,7 +829,7 @@ def _search_tool_definition() -> dict[str, Any]:
 def _scrape_tool_definition() -> dict[str, Any]:
     return {
         "name": SCRAPE_TOOL_NAME,
-        "description": "Scrape one public HTML page as Markdown with the basic proxy (1-credit reservation).",
+        "description": "Scrape public HTML as Markdown. Ordinary pages reserve 1 credit after a direct local HEAD check (the target sees this machine's network IP and User-Agent). Supported X/Twitter URLs reserve 30 and return AI-processed Grok retrieval. Unverified redirects and cost overruns fail closed.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -597,8 +869,13 @@ BOUNDED_SERVER_INSTRUCTIONS = (
     "This Firecrawl server is a bounded, metered surface. Use only "
     "firecrawl_search for one web source with at most five results, "
     "firecrawl_scrape for one public HTML page as Markdown through the basic "
-    "proxy, and firecrawl_budget_status for read-only budget status. All other "
-    "Firecrawl tools and costly options are unavailable."
+    "proxy, and firecrawl_budget_status for read-only budget status. Verified "
+    "ordinary HTML reserves 1 credit; supported X/Twitter retrieval reserves 30 "
+    "and is AI-processed through Grok, not verified verbatim text. Actual-cost "
+    "overruns block further metered requests. Ordinary-URL HEAD verification "
+    "connects directly from this machine; targets see its network IP and "
+    "User-Agent. Other Firecrawl tools and "
+    "unsupported costly options are unavailable."
 )
 
 
@@ -691,6 +968,7 @@ class StdioProxy:
         stdin: BinaryIO | None = None,
         stdout: BinaryIO | None = None,
         stderr: BinaryIO | None = None,
+        scrape_resolver=resolve_scrape_target,
     ) -> None:
         if not child_command:
             raise ValueError("child command is required")
@@ -703,6 +981,10 @@ class StdioProxy:
         self._pending_tool_lists: set[str] = set()
         self._pending_initializations: set[str] = set()
         self._pending_lock = threading.Lock()
+        self._pending_calls: dict[str, tuple[str, str | None, int]] = {}
+        self._metered_ids: set[str] = set()
+        self._accounting_failed = False
+        self.scrape_resolver = scrape_resolver
 
     def _write_client(self, message: Mapping[str, Any]) -> None:
         encoded = (
@@ -740,10 +1022,39 @@ class StdioProxy:
                     is_initialization = key in self._pending_initializations
                     if is_initialization:
                         self._pending_initializations.remove(key)
+                    pending_call = self._pending_calls.pop(key, None)
+                    duplicate_call = key in self._metered_ids and pending_call is None
+                if duplicate_call:
+                    continue
                 if is_tool_list:
                     message = filter_tool_list(message)
                 if is_initialization:
                     message = sanitize_initialize_result(message)
+                if pending_call:
+                    reservation_id, expected_url, reserved = pending_call
+                    actual, issue, is_x = response_accounting(message, expected_url)
+                    try:
+                        self.budget.settle(reservation_id, actual, issue)
+                    except (ProxyFailure, OSError, ValueError):
+                        self._accounting_failed = True
+                        issue = "settlement_unavailable"
+                    if actual is not None and actual > reserved:
+                        issue = "actual_cost_exceeded_reservation"
+                    result = message.get("result")
+                    if isinstance(result, dict):
+                        result = dict(result)
+                        content = result.get("content", [])
+                        if not isinstance(content, list):
+                            content = []
+                        notices = []
+                        if is_x:
+                            notices.append({"type": "text", "text": X_PROVENANCE})
+                        if issue:
+                            notices.append({"type": "text", "text": "Firecrawl accounting requires review; further metered requests are blocked. Reason: " + issue})
+                        result["content"] = [*notices, *content]
+                        metadata = result.get("_meta", {})
+                        result["_meta"] = {**(metadata if isinstance(metadata, dict) else {}), "firecrawlBudget": {"reservedCredits": reserved, "actualCredits": actual, "outcome": "settled" if actual is not None else "unknown", "blockedReason": issue}}
+                        message = {**message, "result": result}
             if isinstance(message, dict):
                 self._write_client(message)
 
@@ -773,14 +1084,30 @@ class StdioProxy:
                     raise _not_bounded("Budget status does not accept arguments.")
                 self._write_client(_status_result(request_id, self.budget.status()))
                 return
+            if self._accounting_failed:
+                raise _unavailable("Firecrawl response accounting could not be persisted.")
+            if "id" not in message or isinstance(request_id, bool) or not isinstance(request_id, (str, int)):
+                raise _not_bounded("Metered tool calls require a unique JSON-RPC request ID.")
+            key = _message_id_key(request_id)
+            with self._pending_lock:
+                if key in self._metered_ids:
+                    raise _not_bounded("Metered request IDs cannot be reused in a session.")
+            expected_url = None
             if name == SEARCH_TOOL_NAME:
                 normalized = normalize_search_arguments(arguments)
-                self.budget.reserve(SEARCH_RESERVATION_CREDITS)
+                credits = SEARCH_RESERVATION_CREDITS
             elif name == SCRAPE_TOOL_NAME:
                 normalized = normalize_scrape_arguments(arguments)
-                self.budget.reserve(SCRAPE_RESERVATION_CREDITS)
+                expected_url = self.scrape_resolver(normalized["url"])
+                normalized = normalize_scrape_arguments({**normalized, "url": expected_url})
+                credits = scrape_reservation(expected_url)
             else:
                 raise _not_bounded(f"Firecrawl tool {name!r} is not exposed.")
+            reservation_id = uuid.uuid4().hex
+            self.budget.reserve(credits, reservation_id)
+            with self._pending_lock:
+                self._metered_ids.add(key)
+                self._pending_calls[key] = (reservation_id, expected_url, credits)
         except ProxyFailure as failure:
             if "id" in message:
                 self._write_client(_failure_result(request_id, failure))
@@ -896,6 +1223,7 @@ def main(
     argv: Sequence[str] | None = None,
     *,
     usage_url: str = DEFAULT_CREDIT_USAGE_URL,
+    scrape_resolver=resolve_scrape_target,
 ) -> int:
     args = _parser().parse_args(argv)
     budget = BudgetManager(usage_url=usage_url)
@@ -918,7 +1246,7 @@ def main(
     if not child:
         print("A child MCP command is required.", file=sys.stderr)
         return 2
-    return StdioProxy(child, budget).run()
+    return StdioProxy(child, budget, scrape_resolver=scrape_resolver).run()
 
 
 if __name__ == "__main__":

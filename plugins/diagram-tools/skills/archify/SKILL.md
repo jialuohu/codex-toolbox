@@ -124,8 +124,10 @@ Archify behavior was essential, say that the fallback is not equivalent. Report
   multi-page or WYSIWYG editing, specialized shapes, or draw.io Desktop export.
 - Use `$paper-figure-workflow` for reproducible publication figures; it owns the
   overall pipeline even when a diagram is one input.
-- Use bundled Visualize for adjustable, inspectable, in-conversation spatial
-  views rather than a standalone Archify artifact.
+- Use bundled Visualize for adjustable, inspectable, in-conversation causal or
+  spatial views rather than a standalone Archify artifact. `$explain-clearly`
+  selects the medium from the question; requested videos delegate to Remotion.
+  This routing does not extend Archify's automatic publication opt-in.
 
 ## Network and brand behavior
 

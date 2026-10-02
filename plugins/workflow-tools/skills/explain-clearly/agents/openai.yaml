@@ -1,6 +1,0 @@
-interface:
-  display_name: "Explain Clearly"
-  short_description: "Direct explanations with depth suited to the question."
-  default_prompt: "Use $explain-clearly to answer directly, adapt the depth to my question, and add examples or visuals only when they help."
-policy:
-  allow_implicit_invocation: true

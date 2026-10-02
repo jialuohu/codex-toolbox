@@ -1,0 +1,6 @@
+interface:
+  display_name: "Explain Clearly"
+  short_description: "Sourced explanations with the smallest useful medium."
+  default_prompt: "Use $explain-clearly to answer directly, trace the mechanism, and choose prose, a diagram, an interactive explanation, or requested video when it helps."
+policy:
+  allow_implicit_invocation: true

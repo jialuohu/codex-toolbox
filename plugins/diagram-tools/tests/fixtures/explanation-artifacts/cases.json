@@ -1,0 +1,11 @@
+{
+  "unit": "s",
+  "synthetic": true,
+  "cases": [
+    {"id":"waiting","jobs":[{"id":"A","arrival":0,"service":3},{"id":"B","arrival":1,"service":2}]},
+    {"id":"idle","jobs":[{"id":"A","arrival":0,"service":1},{"id":"B","arrival":4,"service":2}]},
+    {"id":"zero-service","jobs":[{"id":"A","arrival":0,"service":0},{"id":"B","arrival":0,"service":1}]},
+    {"id":"fractional","jobs":[{"id":"A","arrival":0.5,"service":1.25},{"id":"B","arrival":1,"service":0.5}]},
+    {"id":"empty","jobs":[]}
+  ]
+}

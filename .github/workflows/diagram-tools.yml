@@ -1,4 +1,4 @@
-name: Diagram Tools
+name: Visual Communication
 
 on:
   pull_request:
@@ -11,8 +11,10 @@ on:
       - "config/codex/AGENTS.global.md"
       - "plugins/diagram-tools/**"
       - "plugins/drawio-tools/skills/drawio/**"
-      - "plugins/paper-figure-tools/skills/paper-figure-workflow/**"
-      - "plugins/workflow-tools/skills/explain-clearly/**"
+      - "plugins/workflow-tools/.codex-plugin/plugin.json"
+      - "scripts/migrate_visual_communication.py"
+      - "tests/test_visual_communication*.py"
+      - "tests/test_paper_figure_research.py"
       - "scripts/check-codex-toolbox-setup.py"
       - "scripts/setup-codex-toolbox.sh"
       - "scripts/setup-archify-tools.sh"
@@ -31,8 +33,10 @@ on:
       - "config/codex/AGENTS.global.md"
       - "plugins/diagram-tools/**"
       - "plugins/drawio-tools/skills/drawio/**"
-      - "plugins/paper-figure-tools/skills/paper-figure-workflow/**"
-      - "plugins/workflow-tools/skills/explain-clearly/**"
+      - "plugins/workflow-tools/.codex-plugin/plugin.json"
+      - "scripts/migrate_visual_communication.py"
+      - "tests/test_visual_communication*.py"
+      - "tests/test_paper_figure_research.py"
       - "scripts/check-codex-toolbox-setup.py"
       - "scripts/setup-codex-toolbox.sh"
       - "scripts/setup-archify-tools.sh"
@@ -76,7 +80,7 @@ jobs:
       - name: Validate toolbox integration
         run: python3 scripts/check-codex-toolbox-setup.py
       - name: Validate visual routing instructions
-        run: python3 -m unittest tests.test_instruction_readability
+        run: python3 -m unittest tests.test_instruction_readability tests.test_visual_communication tests.test_visual_communication_migration
       - name: Scan current tree for private paths and secrets
         run: scripts/privacy-audit.sh current
       - name: Run unit tests

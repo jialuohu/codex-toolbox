@@ -156,7 +156,7 @@ repeated H1. New filenames use
 `feng26-StreamDiffusionV2.md`; the venue publication year takes precedence over
 the preprint year. Before creation, the workflow checks all `PaperRead/` notes
 for the same paper identity so a legacy title-based note is not duplicated.
-The workflow does not add or update Zotero or ingest the Research LLM Wiki.
+The workflow does not add or update Zotero.
 
 ## PaperRead Annotation
 

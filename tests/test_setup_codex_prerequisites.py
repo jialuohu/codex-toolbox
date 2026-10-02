@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -218,19 +219,54 @@ esac
             )
         )
 
-    def test_setup_runs_safe_prerequisites_before_codex_operations(self) -> None:
+    def test_setup_inspects_migration_before_mutating_prerequisites(self) -> None:
         source = SETUP.read_text()
         legacy_call = 'python3 "$PREREQUISITES" legacy-skills --install'
         rg_call = 'python3 "$PREREQUISITES" ensure-rg --install'
         resolve_call = 'python3 "$PREREQUISITES" resolve-codex'
+        migration_check = 'python3 "$ROOT/scripts/migrate_visual_communication.py" --check-setup'
 
+        self.assertLess(source.index(resolve_call), source.index(migration_check))
+        self.assertLess(source.index(migration_check), source.index(legacy_call))
         self.assertLess(source.index(legacy_call), source.index(rg_call))
-        self.assertLess(source.index(rg_call), source.index(resolve_call))
         self.assertIn('"$ROOT/scripts/sync-agents.sh" --install', source)
         self.assertLess(
-            source.index(resolve_call),
+            source.index(rg_call),
             source.index('"$ROOT/scripts/sync-agents.sh" --install'),
         )
+
+    def test_setup_stops_before_prerequisite_mutations_when_family_is_blocked(self) -> None:
+        self.assert_migration_wrapper((), "--check-setup", 2)
+
+    def test_explicit_family_modes_exit_without_running_normal_setup(self) -> None:
+        for option, action in (("--migration-plan", "--plan"), ("--migrate", "--apply")):
+            with self.subTest(option=option):
+                self.assert_migration_wrapper((option, "visual-communication"), action, 0)
+
+    def assert_migration_wrapper(self, arguments: tuple[str, ...], action: str, expected_code: int) -> None:
+        command_log = self.root / "migration-wrapper.log"
+        command_log.write_text("")
+        fake_codex = executable(self.root / "bin/codex")
+        executable(self.root / "bin/python3", '''
+printf '%s\\n' "$*" >> "$MIGRATION_TEST_LOG"
+case "$1:$2" in
+  */setup-codex-prerequisites.py:resolve-codex) printf '%s\\n' "$MIGRATION_TEST_CODEX" ;;
+  */migrate_visual_communication.py:--check-setup) exit 2 ;;
+  */migrate_visual_communication.py:--plan|*/migrate_visual_communication.py:--apply) printf '{}\\n' ;;
+  *) exit 99 ;;
+esac
+''')
+        environment = {"HOME": str(self.root), "CODEX_HOME": str(self.root / "codex-home"),
+                       "PATH": str(fake_codex.parent) + ":/usr/bin:/bin",
+                       "MIGRATION_TEST_LOG": str(command_log), "MIGRATION_TEST_CODEX": str(fake_codex)}
+        result = subprocess.run(["/bin/bash", str(SETUP), *arguments], env=environment,
+                                text=True, capture_output=True, check=False, timeout=10)
+        self.assertEqual(result.returncode, expected_code, result.stdout + result.stderr)
+        calls = command_log.read_text().splitlines()
+        self.assertEqual(len(calls), 2, calls)
+        self.assertIn("setup-codex-prerequisites.py resolve-codex", calls[0])
+        self.assertIn("migrate_visual_communication.py " + action, calls[1])
+        self.assertFalse((self.root / "codex-home").exists())
 
     def test_codex_app_fallback_constants_are_current_then_legacy(self) -> None:
         self.assertEqual(

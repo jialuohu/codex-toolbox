@@ -4,22 +4,35 @@
 
 Run shell commands from the repository root. Read the owning skill before using a workflow.
 
-- [Diagram Tools](#diagram-tools)
+- [Visual Communication](#visual-communication)
 - [Cloudflare Pages sharing](#cloudflare-pages-sharing)
 - [Draw.io Tools](#drawio-tools)
 - [OmniGraffle Tools](#omnigraffle-tools)
 - [Paper Figure Workflow](#paper-figure-workflow)
 
-## Diagram Tools
+## Visual Communication
 
-The default `diagram-tools` plugin provides two bounded rendering lanes.
+The default `diagram-tools` plugin is displayed as **Visual Communication**.
+It owns `$explain-clearly`, `$paper-figure-workflow`, and two bounded diagram
+rendering lanes. The explanation selector establishes source-backed facts and
+chooses the smallest useful format; prose does not start a rendering runtime.
 `$archify` is the graphical default for architecture and workflow maps and for
 polished interactive sequence, data-flow, or lifecycle artifacts.
 `$pretty-mermaid` owns explicit Mermaid or `.mmd`, terminal ASCII, and compact
 static diagrams. `$drawio` remains the owner of explicit native draw.io,
 multi-page, WYSIWYG, specialized-shape, and Desktop export work;
 `$paper-figure-workflow` owns publication pipelines; bundled Visualize owns
-adjustable, inspectable spatial views in the conversation.
+parameter exploration and inspectable spatial views in the conversation.
+Requested explainer videos delegate to installed Remotion, retaining editable
+source and its preview/export contract. These external capabilities remain
+independently managed; no new renderer is bundled here.
+
+The unqualified `$explain-clearly` and `$paper-figure-workflow` names are unchanged.
+Their qualified names are now `diagram-tools:explain-clearly` and
+`diagram-tools:paper-figure-workflow`, replacing `workflow-tools:explain-clearly`
+and `paper-figure-tools:paper-figure-workflow`. Existing installations use the
+[guarded migration](visual-communication-migration.md); do not remove the old
+figure plugin before its replacement is verified.
 
 Archify retains editable `<name>.<type>.json` beside a validated standalone
 `<name>.html`. New workflows use schema v2; architecture, sequence, data-flow,
@@ -295,14 +308,14 @@ aligned comparisons, and stable method encodings. Plot widths are 3.3 inches
 for a single column or 6.9 inches for two columns, with 8-point text and a
 7-point minimum at final size. A venue's requirements override these values.
 
-The [research plot starter](../plugins/paper-figure-tools/skills/paper-figure-workflow/assets/research-figure-starter/)
+The [research plot starter](../plugins/diagram-tools/skills/paper-figure-workflow/assets/research-figure-starter/)
 contains grouped bars, line/scaling, empirical cumulative distributions, and
 additive breakdowns. Its examples use labeled synthetic data. The
 [Draw.io research templates](../plugins/drawio-tools/assets/research-templates/)
 provide editable architecture, aligned schematic timeline, and cache/memory
 mechanism sources. The [OmniGraffle research templates](../plugins/omnigraffle-tools/assets/research-templates/README.md)
 cover the same three composition families with editable native sources after initialization.
-The [research style guide](../plugins/paper-figure-tools/skills/paper-figure-workflow/references/research-style.md)
+The [research style guide](../plugins/diagram-tools/skills/paper-figure-workflow/references/research-style.md)
 records the inspected figure references and the data, typography, font, and
 export contracts. Mono-Color can supply exact project-local HEX values and
 provenance; its catalog stays immutable. Pretty Mermaid uses its existing
@@ -313,7 +326,7 @@ Copy the starter into a research project, then regenerate from that project's
 sources rather than from the toolbox cache:
 
 ```bash
-python3 plugins/paper-figure-tools/skills/paper-figure-workflow/scripts/scaffold_research_figures.py --project /absolute/path/to/research-project --diagram-owner auto
+python3 plugins/diagram-tools/skills/paper-figure-workflow/scripts/scaffold_research_figures.py --project /absolute/path/to/research-project --diagram-owner auto
 cd /absolute/path/to/research-project
 make plots
 make diagrams

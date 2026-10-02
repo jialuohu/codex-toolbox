@@ -17,6 +17,7 @@ on:
       - "plugins/workflow-tools/skills/recover-codex-sidebar/**"
       - "plugins/workflow-tools/skills/chatgpt-planner/**"
       - "plugins/workflow-tools/skills/sync-toolbox/**"
+      - "plugins/web-data-tools/scripts/firecrawl_budget_proxy.py"
       - ".agents/plugins/marketplace.json"
       - "scripts/audit_skill_instructions.py"
       - "scripts/eval_skill_routing.py"
@@ -24,6 +25,7 @@ on:
       - "scripts/check-codex-toolbox-setup.py"
       - "scripts/setup-codex-toolbox.sh"
       - "scripts/setup-toolbox-health.sh"
+      - "scripts/migrate_visual_communication.py"
       - "tests/**"
       - ".github/workflows/skill-instructions.yml"
   push:
@@ -53,6 +55,8 @@ jobs:
         run: python scripts/check-codex-toolbox-setup.py
       - name: Check instructions, evaluator refusal, and privacy
         run: python -m unittest tests.test_skill_instructions tests.test_instruction_readability tests.test_web_routing tests.test_privacy_audit tests.test_mono_color tests.test_check_codex_toolbox_setup tests.test_recover_codex_sidebar tests.test_recover_codex_sidebar_v2 tests.test_recover_codex_sidebar_app tests.test_chatgpt_planner tests.test_browser_cleanup_contracts tests.test_native_ui_cleanup tests.test_toolbox_health tests.test_setup_toolbox_health tests.test_health_command
+      - name: Check metered requests and migration recovery
+        run: python -m unittest tests.test_firecrawl_budget_proxy tests.test_visual_communication_migration
       - name: Check whitespace
         env:
           INSTRUCTION_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

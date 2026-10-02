@@ -3,17 +3,23 @@ set -euo pipefail
 
 # Parse before prerequisite installs or any other mutation.
 NON_INTERACTIVE=0
+MIGRATION_ACTION=""
 case "${1:-}" in
   "") [ "$#" -eq 0 ] || exit 2 ;;
   --non-interactive) [ "$#" -eq 1 ] || exit 2; NON_INTERACTIVE=1 ;;
+  --migration-plan|--migrate)
+    [ "$#" -eq 2 ] && [ "$2" = visual-communication ] || exit 2
+    if [ "$1" = --migration-plan ]; then MIGRATION_ACTION=--plan; else MIGRATION_ACTION=--apply; fi
+    ;;
   --help|-h)
-    echo "Usage: scripts/setup-codex-toolbox.sh [--non-interactive]"
+    echo "Usage: scripts/setup-codex-toolbox.sh [--non-interactive | --migration-plan visual-communication | --migrate visual-communication]"
     echo "--non-interactive defers Docmost login and Apple Mail permission checks."
     exit 0
     ;;
-  *) echo "Usage: scripts/setup-codex-toolbox.sh [--non-interactive]" >&2; exit 2 ;;
+  *) echo "Usage: scripts/setup-codex-toolbox.sh [--non-interactive | --migration-plan visual-communication | --migrate visual-communication]" >&2; exit 2 ;;
 esac
 readonly NON_INTERACTIVE
+readonly MIGRATION_ACTION
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREREQUISITES="$ROOT/scripts/setup-codex-prerequisites.py"
@@ -45,7 +51,6 @@ DEFAULT_PLUGINS=(
   "coder-tools"
   "diagram-tools"
   "drawio-tools"
-  "paper-figure-tools"
   "omnigraffle-tools"
   "productivity-tools"
   "trading-tools"
@@ -84,8 +89,6 @@ MANAGED_MCP_SERVERS=(
   "apple_mail"
   "drawio"
 )
-python3 "$PREREQUISITES" legacy-skills --install
-python3 "$PREREQUISITES" ensure-rg --install
 CODEX_BIN="$(python3 "$PREREQUISITES" resolve-codex || true)"
 
 if [ -z "$CODEX_BIN" ]; then
@@ -98,6 +101,14 @@ Reinstall or repair Codex, then rerun this script.
 EOF
   exit 1
 fi
+
+# Resolve the family transition before instructions, marketplace refresh, or installs.
+if [ -n "$MIGRATION_ACTION" ]; then
+  exec python3 "$ROOT/scripts/migrate_visual_communication.py" "$MIGRATION_ACTION" --root "$ROOT" --codex-bin "$CODEX_BIN"
+fi
+python3 "$ROOT/scripts/migrate_visual_communication.py" --check-setup --root "$ROOT" --codex-bin "$CODEX_BIN"
+python3 "$PREREQUISITES" legacy-skills --install
+python3 "$PREREQUISITES" ensure-rg --install
 
 echo "Using Codex binary: $CODEX_BIN"
 "$CODEX_BIN" --version
@@ -716,12 +727,20 @@ install_or_refresh_plugin() {
 
   if plugin_installed "$plugin_name" "$marketplace_name"; then
     echo "Refreshing plugin: ${plugin_name}@${marketplace_name}"
-    "$CODEX_BIN" plugin remove "${plugin_name}@${marketplace_name}" --json >/dev/null
+    case "$plugin_name" in
+      diagram-tools|workflow-tools) ;; # Verified in-place replacement preserves the family.
+      *) "$CODEX_BIN" plugin remove "${plugin_name}@${marketplace_name}" --json >/dev/null ;;
+    esac
   else
     echo "Installing plugin: ${plugin_name}@${marketplace_name}"
   fi
 
   "$CODEX_BIN" plugin add "${plugin_name}@${marketplace_name}" --json >/dev/null
+  case "$plugin_name" in
+    diagram-tools|workflow-tools)
+      python3 "$ROOT/scripts/migrate_visual_communication.py" --verify-package "$plugin_name" --root "$ROOT" --codex-bin "$CODEX_BIN"
+      ;;
+  esac
 }
 
 direct_mcp_config_present() {

@@ -15,14 +15,28 @@ RUNNER = RESEARCH / "scripts" / "docmost-lab-wiki.sh"
 
 
 class DocmostLabWikiContractTests(unittest.TestCase):
-    def test_research_plugin_exposes_the_separate_lab_wiki(self) -> None:
+    def test_research_plugin_exposes_the_read_only_lab_wiki(self) -> None:
         manifest = json.loads((RESEARCH / ".codex-plugin" / "plugin.json").read_text())
         prompts = manifest["interface"]["defaultPrompt"]
 
         self.assertRegex(manifest["version"], r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
         self.assertIn("$docmost-lab-wiki", " ".join(prompts))
-        self.assertIn("Research LLM Wiki", manifest["interface"]["longDescription"])
-        self.assertIn("separate read-only Docmost-to-Obsidian Lab Wiki", manifest["interface"]["longDescription"])
+        self.assertNotIn("research-llm-wiki", json.dumps(manifest))
+        self.assertNotIn("Research LLM Wiki", manifest["interface"]["longDescription"])
+        self.assertIn("read-only Docmost-to-Obsidian Lab Wiki", manifest["interface"]["longDescription"])
+
+    def test_only_the_research_llm_wiki_skill_is_retired(self) -> None:
+        skills = {path.parent.name for path in (RESEARCH / "skills").glob("*/SKILL.md")}
+        self.assertNotIn("research-llm-wiki", skills)
+        self.assertTrue({
+            "defuddle", "docmost-lab-wiki", "mineru-document-extraction",
+            "paper-library-intake", "paper-read-draft", "paper-read-review",
+            "paper-review-library-intake", "paper-review-page", "paper-review-sync",
+            "zotero-todoist-reading-tasks",
+        }.issubset(skills))
+        servers = json.loads((RESEARCH / ".mcp.json").read_text())["mcpServers"]
+        self.assertIn("paper_search_mcp", servers)
+        self.assertIn("zotero", servers)
 
     def test_skill_makes_only_snapshot_and_release_reachable_in_docmost(self) -> None:
         text = SKILL.read_text()

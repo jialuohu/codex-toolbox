@@ -152,7 +152,8 @@ Use $claude-counselor to get an independent plan and final review for this archi
 
 ## Explain Clearly
 
-Use `$explain-clearly` when a concept, why/how question, comparison, or code
+The Visual Communication plugin (`diagram-tools`) owns `$explain-clearly`.
+Use it when a concept, why/how question, comparison, or code
 walkthrough needs more than a terse fact. It leads with the direct answer and
 adapts depth, examples, and structure to the question. It has no fixed answer
 sequence or example count. It also chooses the
@@ -160,7 +161,11 @@ smallest useful format: prose for simple results, a table for repeated
 comparisons, `$archify` for graphical architecture/workflow maps or polished
 interactive sequence/data-flow/lifecycle artifacts, `$pretty-mermaid` for
 explicit Mermaid, terminal ASCII, or compact static diagrams, and bundled
-Visualize for adjustable spatial explanations in the conversation. Native
+Visualize for adjustable parameters, supported what-if calculations, and spatial
+explanations in the conversation. Requested video delegates to installed Remotion
+with its preview/export contract; ordinary explanations never create video.
+Unavailable renderers receive a disclosed fallback, not an automatic installation.
+Plain-text explanations do not launch renderers. Native
 inline Mermaid is an explicit choice or disclosed renderer fallback. Exact data
 and legal state are validated before rendering; ambiguous
 chess positions are reported rather than invented, and CLI or IDE tasks receive
@@ -169,5 +174,5 @@ text, table, Mermaid, ASCII, or coordinate fallbacks.
 Example prompt:
 
 ```text
-Use $explain-clearly to explain JavaScript closures with a simple mental model and one concrete example.
+Use $explain-clearly to explain JavaScript closures by tracing one input, its retained state, and the result.
 ```
